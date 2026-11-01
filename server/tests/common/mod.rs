@@ -6,6 +6,8 @@
 //! failure.
 #![allow(dead_code)]
 
+pub mod flows;
+
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -81,4 +83,40 @@ fn unique_suffix() -> String {
         nanos,
         COUNTER.fetch_add(1, Ordering::Relaxed)
     )
+}
+
+/// Sends one request to the app; returns the status and the JSON body
+/// (`Value::Null` when empty).
+pub async fn call(
+    app: &axum::Router,
+    method: &str,
+    path: &str,
+    bearer: Option<&str>,
+    body: Option<serde_json::Value>,
+) -> (axum::http::StatusCode, serde_json::Value) {
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    let mut request = axum::http::Request::builder().method(method).uri(path);
+    if let Some(token) = bearer {
+        request = request.header("authorization", format!("Bearer {token}"));
+    }
+    let request = match body {
+        Some(json) => request
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(json.to_string())),
+        None => request.body(axum::body::Body::empty()),
+    }
+    .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let json = if bytes.is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or_else(|_| {
+            serde_json::Value::String(String::from_utf8_lossy(&bytes).into_owned())
+        })
+    };
+    (status, json)
 }

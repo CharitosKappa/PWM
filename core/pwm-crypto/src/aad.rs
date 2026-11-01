@@ -74,6 +74,24 @@ impl Aad {
         aad
     }
 
+    /// Device name sealed under the account `sym_key` (decision D26).
+    pub fn device_name(version: u8, account_id: &Id, device_id: &Id) -> Self {
+        let mut aad = Self::labelled("pwm/device-name");
+        aad.0.push(version);
+        aad.0.extend_from_slice(account_id);
+        aad.0.extend_from_slice(device_id);
+        aad
+    }
+
+    /// OPAQUE login state the server keeps between login start and finish
+    /// (decision D26).
+    pub fn login_state(version: u8, account_id: &Id) -> Self {
+        let mut aad = Self::labelled("pwm/login-state");
+        aad.0.push(version);
+        aad.0.extend_from_slice(account_id);
+        aad
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }

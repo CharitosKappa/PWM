@@ -12,23 +12,26 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use pwm_crypto::{
-    Aad, AccountKeyset, Id, KdfParams, Secret, SecretKey, SignatureContext, SymmetricKey,
-    create_account, derive_account_keys, derive_password_key, hkdf_sha256, normalize_password,
-    open, open_export, seal,
+    Aad, AccountKeyset, Id, KdfParams, OpaqueLogin, OpaqueRegistration, Secret, SecretKey,
+    ServerSecrets, SignatureContext, SymmetricKey, create_account, derive_account_keys,
+    derive_password_key, hkdf_sha256, normalize_password, opaque_record, open, open_export, seal,
 };
+use rand_chacha::ChaCha20Rng;
+use rand_chacha::rand_core::SeedableRng;
 use serde_json::{Value, json};
 
 const ACCOUNT_A: Id = [0xA1; 16];
 const ACCOUNT_B: Id = [0xA2; 16];
 const VAULT: Id = [0xB1; 16];
 const ITEM: Id = [0xC1; 16];
+const DEVICE: Id = [0xD1; 16];
 
 /// File name, description, generator.
 type Generator = (&'static str, &'static str, fn() -> Vec<Value>);
 
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../test-vectors");
-    let files: [Generator; 11] = [
+    let files: [Generator; 13] = [
         ("aad", "AAD byte layouts (D11, D17)", aad),
         ("aead", "XChaCha20-Poly1305 v1 envelopes (D10)", aead),
         ("hkdf", "HKDF-SHA256, 32-byte output (D13)", hkdf),
@@ -55,6 +58,16 @@ fn main() {
             "export",
             "Password-protected .pwmx export files v1 (D24)",
             export,
+        ),
+        (
+            "device_name",
+            "Device names sealed under sym_key v1 (D26)",
+            device_name,
+        ),
+        (
+            "opaque",
+            "OPAQUE registration and login transcript with seeded randomness (D26)",
+            opaque,
         ),
     ];
     for (name, description, generate) in files {
@@ -353,4 +366,66 @@ fn export() -> Vec<Value> {
                     "aad": h(aad.as_bytes()), "plaintext": h(plaintext), "file": h(&file) })
         })
         .collect()
+}
+
+fn device_name() -> Vec<Value> {
+    let auk = key(0x40);
+    let (keyset, sealed, plaintext) = known_keyset(&auk, &ACCOUNT_A, 0x41, 0x42, 0x43);
+    ["Phone", &"\u{e9}".repeat(31), ""]
+        .iter()
+        .map(|name| {
+            let envelope = keyset.seal_device_name(&ACCOUNT_A, &DEVICE, name).unwrap();
+            assert_eq!(keyset.open_device_name(&envelope, &ACCOUNT_A, &DEVICE).unwrap(), *name);
+            let mut padded = [0u8; 64];
+            padded[..name.len()].copy_from_slice(name.as_bytes());
+            padded[name.len()] = 0x80;
+            json!({ "auk": h(&[0x40; 32]), "account_id": h(&ACCOUNT_A), "sealed_keyset": h(&sealed),
+                    "sym_key": h(&plaintext[1..33]), "device_id": h(&DEVICE), "name": h(name.as_bytes()),
+                    "aad": h(Aad::device_name(1, &ACCOUNT_A, &DEVICE).as_bytes()),
+                    "padded": h(&padded), "envelope": h(&envelope.to_bytes()) })
+        })
+        .collect()
+}
+
+/// One registration and login with seeded randomness. The checker replays
+/// the server's deterministic steps against the recorded messages and logs
+/// in again with the frozen record, so an `opaque-ke` upgrade or a changed
+/// setting that would lock existing accounts out fails the build.
+fn opaque() -> Vec<Value> {
+    let mut rng = ChaCha20Rng::from_seed([0x07; 32]);
+    let auth_secret = Secret::new([0x51; 32]);
+    let server = ServerSecrets::generate_with_rng(&mut rng).unwrap();
+    let (registration, registration_request) =
+        OpaqueRegistration::start_with_rng(&mut rng, &auth_secret).unwrap();
+    let registration_response = server
+        .register_respond(&ACCOUNT_A, &registration_request)
+        .unwrap();
+    let registration_upload = registration
+        .finish_with_rng(&mut rng, &auth_secret, &ACCOUNT_A, &registration_response)
+        .unwrap();
+    let record = opaque_record(&registration_upload).unwrap();
+
+    let (login, credential_request) = OpaqueLogin::start_with_rng(&mut rng, &auth_secret).unwrap();
+    let (state, credential_response) = server
+        .login_respond_with_rng(&mut rng, Some(&record), &ACCOUNT_A, &credential_request)
+        .unwrap();
+    let credential_finalization = login
+        .finish_with_rng(&mut rng, &auth_secret, &ACCOUNT_A, &credential_response)
+        .unwrap();
+    server
+        .login_finish(&state, &credential_finalization, &ACCOUNT_A)
+        .unwrap();
+
+    let (fake_id, fake_salt) = server.prelogin_fake("a@example.com");
+    vec![json!({
+        "suite": "OPRF ristretto255-SHA512, 3DH ristretto255 + SHA-512, KSF Identity",
+        "context": h(b"pwm/opaque/v1"), "rng_seed": h(&[0x07; 32]),
+        "server_secrets": h(server.to_bytes().expose_secret()),
+        "account_id": h(&ACCOUNT_A), "auth_secret": h(&[0x51; 32]),
+        "registration_request": h(&registration_request), "registration_response": h(&registration_response),
+        "registration_upload": h(&registration_upload), "record": h(&record),
+        "credential_request": h(&credential_request), "credential_response": h(&credential_response),
+        "server_state_sealed": h(&state), "credential_finalization": h(&credential_finalization),
+        "prelogin_email": "a@example.com", "prelogin_fake_id": h(&fake_id), "prelogin_fake_salt": h(&fake_salt),
+    })]
 }

@@ -7,8 +7,13 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
-use pwm_server::{app, connect};
+use pwm_crypto::ServerSecrets;
+use pwm_server::{AppState, app, connect};
 use tower::ServiceExt;
+
+fn state(pool: sqlx::PgPool) -> Router {
+    app(AppState::new(pool, ServerSecrets::generate().unwrap()))
+}
 
 async fn get(app: Router, path: &str) -> (StatusCode, String) {
     let response = app
@@ -26,7 +31,7 @@ async fn healthz_is_ok_when_the_database_answers() {
         return;
     };
     assert_eq!(
-        get(app(db.pool.clone()), "/healthz").await,
+        get(state(db.pool.clone()), "/healthz").await,
         (StatusCode::OK, "ok".into())
     );
     db.drop().await;
@@ -37,7 +42,7 @@ async fn healthz_is_unavailable_without_the_database() {
     // Nothing listens on port 1; the pool connects lazily, so the app starts.
     let pool = connect("postgres://pwm@127.0.0.1:1/pwm").unwrap();
     assert_eq!(
-        get(app(pool), "/healthz").await,
+        get(state(pool), "/healthz").await,
         (StatusCode::SERVICE_UNAVAILABLE, "unavailable".into())
     );
 }
@@ -45,5 +50,5 @@ async fn healthz_is_unavailable_without_the_database() {
 #[tokio::test]
 async fn unknown_paths_are_not_found() {
     let pool = connect("postgres://pwm@127.0.0.1:1/pwm").unwrap();
-    assert_eq!(get(app(pool), "/v1/items").await.0, StatusCode::NOT_FOUND);
+    assert_eq!(get(state(pool), "/v1/items").await.0, StatusCode::NOT_FOUND);
 }

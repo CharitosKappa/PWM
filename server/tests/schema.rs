@@ -49,12 +49,13 @@ fn bytes(n: usize) -> String {
 
 fn account(id: &str, email: &str) -> String {
     format!(
-        "INSERT INTO accounts (id, email, kdf_m, kdf_t, kdf_p, salt_pw, sealed_keyset, x25519_pub, ed25519_pub) \
-         VALUES ('{id}', '{email}', 65536, 3, 4, {}, {}, {}, {});",
+        "INSERT INTO accounts (id, email, kdf_m, kdf_t, kdf_p, salt_pw, sealed_keyset, x25519_pub, ed25519_pub, opaque_record) \
+         VALUES ('{id}', '{email}', 65536, 3, 4, {}, {}, {}, {}, {});",
         bytes(16),
         bytes(138),
         bytes(32),
-        bytes(32)
+        bytes(32),
+        bytes(192)
     )
 }
 
@@ -447,6 +448,44 @@ async fn constraints_reject_invalid_rows() {
         assert_eq!(actual.as_deref(), Some(code), "{sql}: {err}");
     }
     db.drop().await;
+}
+
+/// Rows written under schema v1 survive the v2 migration (D26).
+#[tokio::test]
+async fn v1_data_survives_the_v2_migration() {
+    let Some(db) = test_db().await else { return };
+    MIGRATOR.run_to(1, &db.pool).await.unwrap();
+    exec(&db.pool, seed()).await.unwrap();
+    let before = describe_rows(&db.pool).await;
+    migrate(&db.pool).await.unwrap();
+    assert_eq!(describe_rows(&db.pool).await, before);
+    assert_eq!(count(&db.pool, "sessions").await, 0);
+    db.drop().await;
+}
+
+/// Row counts per v1 table plus the accounts' records, to compare across a
+/// migration.
+async fn describe_rows(pool: &PgPool) -> Vec<(String, i64)> {
+    let mut out = Vec::new();
+    for table in [
+        "accounts",
+        "devices",
+        "vaults",
+        "vault_keys",
+        "items",
+        "tombstones",
+        "shares",
+        "subscriptions",
+    ] {
+        out.push((table.to_owned(), count(pool, table).await));
+    }
+    let records: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM accounts WHERE octet_length(opaque_record) = 192")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    out.push(("opaque_record".to_owned(), records));
+    out
 }
 
 #[tokio::test]

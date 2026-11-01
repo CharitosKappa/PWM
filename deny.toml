@@ -7,7 +7,15 @@ all-features = true
 # Unmaintained/unsound/yanked crates fail too; ignore a specific advisory only
 # with a comment and an expiry note.
 yanked = "deny"
-ignore = []
+ignore = [
+    # crypto-bigint 0.5 (timing leaks; fixed only in 0.7.6) comes in through
+    # elliptic-curve 0.13, which opaque-ke 4.0 always pulls in. Not reachable:
+    # our OPAQUE suite is ristretto255 (curve25519-dalek arithmetic) and uses only
+    # elliptic-curve's hash-based expand_message_xmd; no NIST curve is built.
+    # Remove when opaque-ke ships a stable release on elliptic-curve 0.14 (M3.7 at
+    # the latest, recheck when WASM builds land).
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint not reachable from the ristretto255 OPAQUE suite" },
+]
 
 [bans]
 multiple-versions = "warn"

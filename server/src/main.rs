@@ -1,17 +1,24 @@
 //! `pwm-server`: reads its settings from the environment (`PWM_DATABASE_URL`,
-//! `PWM_LISTEN`, `PWM_LOG`), applies pending migrations and serves the API
-//! until Ctrl-C or SIGTERM.
+//! `PWM_SERVER_SECRETS`, `PWM_LISTEN`, `PWM_LOG`), applies pending migrations
+//! and serves the API until Ctrl-C or SIGTERM.
+//!
+//! `pwm-server keygen` prints new server secrets for `PWM_SERVER_SECRETS`.
+//! Keep them in a secret manager with a backup: losing them locks every
+//! account out.
 #![forbid(unsafe_code)]
 
 use std::io::IsTerminal;
 use std::process::ExitCode;
 
-use pwm_server::{Config, ServerError, app, connect, migrate};
+use pwm_server::{AppState, Config, ServerError, app, connect, generate_server_secrets, migrate};
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    if std::env::args().nth(1).as_deref() == Some("keygen") {
+        return keygen();
+    }
     // sqlx logs statements at debug and slow ones at warn; requests are not
     // logged until the scrubber lands (M3.5).
     let filter =
@@ -29,6 +36,19 @@ async fn main() -> ExitCode {
     }
 }
 
+fn keygen() -> ExitCode {
+    match generate_server_secrets() {
+        Ok(secrets) => {
+            println!("{}", secrets.expose_secret());
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 async fn run() -> Result<(), ServerError> {
     let config = Config::from_env()?;
     let pool = connect(config.database_url.expose_secret())?;
@@ -41,9 +61,12 @@ async fn run() -> Result<(), ServerError> {
         env!("CARGO_PKG_VERSION"),
         listener.local_addr()?
     );
-    axum::serve(listener, app(pool.clone()))
-        .with_graceful_shutdown(shutdown())
-        .await?;
+    axum::serve(
+        listener,
+        app(AppState::new(pool.clone(), config.server_secrets)),
+    )
+    .with_graceful_shutdown(shutdown())
+    .await?;
     pool.close().await;
     tracing::info!("stopped");
     Ok(())

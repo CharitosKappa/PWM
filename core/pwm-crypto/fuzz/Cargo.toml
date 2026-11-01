@@ -73,3 +73,10 @@ path = "fuzz_targets/export_read.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "opaque_messages"
+path = "fuzz_targets/opaque_messages.rs"
+test = false
+doc = false
+bench = false

@@ -46,16 +46,18 @@ The server's integration tests need Postgres (D25). Each test creates and drops 
 ```
 just db            # disposable postgres:17 container on 127.0.0.1:54329 (`docker stop pwm-test-db` removes it)
 just test-server   # server tests against it; fails if it is not running
-just server        # run the server against it (http://127.0.0.1:8080/healthz)
+just server        # run the server against it (needs PWM_SERVER_SECRETS, see below)
 ```
 
 `just test` also runs the server tests, but skips the database ones unless `PWM_TEST_DATABASE_URL` is set; CI's `server-test` job always runs them. After adding a migration, regenerate the schema snapshot with `PWM_UPDATE_SNAPSHOT=1 just test-server` and review the diff. Never edit a merged migration: the server refuses a database whose applied migrations differ.
 
-Server settings: `PWM_DATABASE_URL` (required), `PWM_LISTEN` (default `127.0.0.1:8080`), `PWM_LOG` (log filter, default `info,sqlx=warn`).
+Server settings: `PWM_DATABASE_URL` and `PWM_SERVER_SECRETS` (both required), `PWM_LISTEN` (default `127.0.0.1:8080`), `PWM_LOG` (log filter, default `info,sqlx=warn`).
+
+`PWM_SERVER_SECRETS` holds the OPAQUE server setup and the pre-login key (D26). Create it once with `cargo run -p pwm-server -- keygen` and keep it: accounts registered under one value cannot log in under another. In production it lives in a secret manager with a backup; losing it locks every account out.
 
 ## Fuzzing
 
-Targets live in `core/pwm-crypto/fuzz/fuzz_targets/` (`envelope_decode`, `vault_share_decode`, `keyset_plaintext`, `secret_key_parse`, `password_normalize`). CI runs each for 60 s on every PR and 10 minutes nightly; crash inputs are uploaded as artifacts.
+Targets live in `core/pwm-crypto/fuzz/fuzz_targets/` (`envelope_decode`, `vault_share_decode`, `keyset_plaintext`, `secret_key_parse`, `password_normalize`, `totp_parse`, `export_read`, `opaque_messages`). CI runs each for 60 s on every PR and 10 minutes nightly; crash inputs are uploaded as artifacts.
 
 Linux/macOS (nightly + `cargo install cargo-fuzz`):
 

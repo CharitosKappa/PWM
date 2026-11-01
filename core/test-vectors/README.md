@@ -15,6 +15,8 @@ JSON vectors for every crypto and format operation in `docs/SECURITY.md`. They f
 | `signature.json` | Domain-separated Ed25519 signatures (D17) |
 | `share.json` | X25519 vault share v1 (D17) |
 | `export.json` | Password-protected `.pwmx` export file v1: header, export key, AAD and envelope (D24) |
+| `device_name.json` | Device names padded to 64 bytes and sealed under sym_key v1 (D26) |
+| `opaque.json` | OPAQUE registration and login transcript with seeded randomness (D26); Rust checker only, the protocol is covered by the RFC 9807 vectors in `opaque-ke` |
 | `totp.json` | RFC 4226 HOTP, RFC 6238 TOTP and Steam Guard codes from stored URIs (D23); RFC values copied from the RFC appendices |
 
 All byte strings are lowercase hex; revisions are decimal strings (JSON numbers above 2^53 lose precision in JavaScript).
