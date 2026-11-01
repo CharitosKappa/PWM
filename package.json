@@ -1,0 +1,20 @@
+{
+  "name": "pwm",
+  "private": true,
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "pnpm -r --if-present lint",
+    "format:check": "pnpm -r --if-present format:check",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "license-check": "node scripts/licenses.mjs",
+    "notices": "node scripts/licenses.mjs --notices"
+  },
+  "devDependencies": {
+    "license-checker-rseidelsohn": "^5.0.1"
+  }
+}

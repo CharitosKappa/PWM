@@ -16,6 +16,7 @@ Read these before writing code:
 | `docs/ROADMAP.md` | Milestones and tasks with acceptance criteria — **work from here** |
 | `docs/DECISIONS.md` | Open and settled decisions; log new ones here |
 | `docs/COMPETITORS.md` | Why each feature exists (competitor strengths, gaps, bad reviews) |
+| `docs/DEVELOPMENT.md` | Local toolchain setup and everyday commands |
 
 ## How to work
 
@@ -46,6 +47,8 @@ just test         # all unit tests (core, server, extension)
 just test-vectors # crypto test vectors
 just autofill     # Playwright autofill harness against fixture sites
 just server       # run sync server locally (docker compose: postgres + server)
+just audit        # cargo deny + npm licence allow-list + pnpm audit
+just notices      # generate THIRD_PARTY_NOTICES/
 ```
 
 ## Style

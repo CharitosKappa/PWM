@@ -1,0 +1,22 @@
+# Rust
+/target/
+
+# Node
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Generated third-party notices
+/THIRD_PARTY_NOTICES/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local env
+.env
+.env.*
+!.env.example

@@ -1,0 +1,13 @@
+[package]
+name = "pwm-autofill"
+description = "URL matching, field classification and site overrides."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

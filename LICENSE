@@ -1,0 +1,10 @@
+Copyright (c) 2026 [Company name, pending decision D5]. All rights reserved.
+
+This software and its source code are proprietary and confidential. No licence,
+express or implied, is granted to use, copy, modify, distribute or create
+derivative works of this software, in whole or in part, except under a separate
+written agreement with the copyright holder.
+
+Third-party components are licensed under their own terms; see the
+THIRD_PARTY_NOTICES shipped with each app, extension and server image
+(generated with `just notices`).
