@@ -52,6 +52,7 @@ Decisions D10–D15. All HKDF calls are HKDF-SHA256 with 32-byte output. All int
 | Item blob under vault_key | `pwm/item` | `version:u8 || vault_id || item_id || revision:u64` |
 | Vault key under sym_key | `pwm/vault-key` | `version:u8 || vault_id` |
 | Account keyset under AUK | `pwm/keyset` | `version:u8 || account_id` |
+| Vault key shared to a recipient (D17) | `pwm/share` | `version:u8 \|\| vault_id \|\| sender_ed25519_pub:32 \|\| recipient_x25519_pub:32` |
 
 A new kind of envelope gets a new label; labels are never reused.
 
@@ -75,7 +76,22 @@ A new kind of envelope gets a new label; labels are never reused.
 
 ## Sharing
 
-- Vault share: vault_key encrypted to recipient's X25519 public key, signed with sharer's Ed25519 key; recipient verifies fingerprint on first share (optional out-of-band check).
+- Vault share: vault_key encrypted to the recipient's X25519 public key and signed with the sharer's Ed25519 key (decision D17, below); the recipient verifies the sharer's key fingerprint on first share (optional out-of-band check).
+
+**Signatures (D17).** Ed25519 over `len(label):u8 || label || message`, verified in strict mode (rejects malleable signatures and small-order public keys). Labels are never reused; current label: `pwm/share-sig`.
+
+**Vault share v1 (D17).**
+
+```
+eph_secret, eph_pub = fresh X25519 key pair (one per share)
+dh        = X25519(eph_secret, recipient_x25519_pub)        # all-zero result rejected
+share_key = HKDF(ikm = dh, salt = eph_pub || recipient_x25519_pub, info = "pwm/share/v1")
+envelope  = seal(share_key, vault_key, AAD "pwm/share": version:u8 || vault_id || sender_ed25519_pub || recipient_x25519_pub)
+signature = Sign(sender, "pwm/share-sig", version:u8 || vault_id || recipient_x25519_pub || eph_pub || envelope)
+wire      = v:u8 (= 1) || eph_pub:32 || signature:64 || envelope
+```
+
+The recipient verifies the signature with the sender's Ed25519 public key before computing `dh` or decrypting.
 - One-time link to non-users: random 32B link key in the URL fragment (never sent to server), item encrypted with it; server enforces expiry and max views; link can be revoked.
 
 ## Threat model (summary)
