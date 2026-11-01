@@ -12,6 +12,14 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D7 — Bundled extras**: email aliases (planned Phase 3) yes; VPN no.
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
+- **D18 — Item plaintext format, folders and tags** · proposed 2026-11-01 · Claude Code. The specs fix how an item blob syncs but not what is inside it. Blocks M2.1. Proposal:
+  1. **Encoding:** UTF-8 JSON with a schema version `"v": 1` and a `"type"` field, parsed only in `pwm-vault`. Binary values (passkey private keys, credential ids) are base64url strings. JSON keeps imports, exports and debugging simple; size is not a concern for password items.
+  2. **Forward compatibility:** unknown fields are kept and written back unchanged, so an older client editing an item created by a newer one never drops data. A client refuses to edit (but still shows read-only) an item whose `v` is newer than it understands.
+  3. **Item types (v1):** `login` (username, password, URLs each with a match mode from `AUTOFILL.md`: domain, host, starts-with, regex, exact, never; optional TOTP as an `otpauth://` URI; passkeys with credential id, relying party id, user handle, user name, private key, sign counter), `note`, `card` (cardholder, number, expiry month/year, security code, brand), `identity` (name parts, email, phone, address lines, city, region, postal code, country, company). Every type also has title, notes, favorite flag, folder id, tags and custom fields (name, value, kind: text, hidden, url, date). Timestamps are inside the ciphertext as well as on the server record.
+  4. **Folders:** a folder is an encrypted record of type `folder` (name, optional parent id) stored in the same item table, so the server cannot tell folders from items. Items reference folders by id. Deleting a folder moves its items to no folder.
+  5. **Tags:** plain strings inside each item; there is no tag entity. The tag list is computed on the client.
+  6. **Size padding:** before encryption the JSON is padded to the next multiple of 256 bytes (ISO/IEC 7816-4: one `0x80` byte, then zeros), so the server learns sizes only in coarse buckets and cannot tell a folder or short note from a login by length. Costs at most 255 bytes per item.
+  Alternative to 1: CBOR (smaller, native binary), at the cost of harder debugging and a less common parser for importers/exporters.
 
 ## Settled
 
