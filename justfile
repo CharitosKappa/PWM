@@ -36,3 +36,8 @@ server:
 fmt:
     cargo fmt --all
     pnpm -r exec prettier --write .
+
+# dependency audit: advisories, bans, sources and licences (cargo deny + pnpm audit)
+audit:
+    cargo deny --all-features check
+    pnpm audit --audit-level high

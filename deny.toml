@@ -1,0 +1,20 @@
+# cargo-deny configuration. Run with `just audit`; CI runs it on every PR and nightly.
+
+[graph]
+all-features = true
+
+[advisories]
+# Unmaintained/unsound/yanked crates fail too; ignore a specific advisory only
+# with a comment and an expiry note.
+yanked = "deny"
+ignore = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
