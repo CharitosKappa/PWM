@@ -54,6 +54,7 @@ Decisions D10–D15. All HKDF calls are HKDF-SHA256 with 32-byte output. All int
 | Account keyset under AUK | `pwm/keyset` | `version:u8 || account_id` |
 | Vault key shared to a recipient (D17) | `pwm/share` | `version:u8 \|\| vault_id \|\| sender_ed25519_pub:32 \|\| recipient_x25519_pub:32` |
 | Export file `.pwmx` (D24) | `pwm/export` | `version:u8 \|\| m:u32 \|\| t:u32 \|\| p:u32 \|\| salt:16` |
+| Device name under sym_key (D26) | `pwm/device-name` | `version:u8 \|\| account_id \|\| device_id` |
 
 A new kind of envelope gets a new label; labels are never reused.
 
@@ -74,6 +75,12 @@ A new kind of envelope gets a new label; labels are never reused.
 **Health checks (D22).** Reuse is found by HMAC-SHA256 under a random key made per report run and dropped afterwards. The breach check sends only the first 5 hex characters of each password's SHA-1 straight from the device to the HIBP range API (`Add-Padding: true`, no cookies or account ids), never through our server; SHA-1 is used for nothing else. Results stay in memory.
 
 **Export (D24).** Every export, encrypted or plaintext, needs the master password again: the core exports only with a single-use grant, valid for 5 minutes, made by re-deriving the AUK and opening the sealed keyset. A `.pwmx` file is `"PWMX" || v:u8 (= 1) || m:u32 || t:u32 || p:u32 || salt:16 || envelope`. Its key is `HKDF(ikm = Argon2id(export password, salt, m/t/p), salt = salt, info = "pwm/export/v1")`. The export password is normalized as in D16 and must score ≥ 3 in zxcvbn, and the params must pass the account KDF bounds. The envelope (AAD `pwm/export`, binding the header) holds the JSON export padded to a multiple of 4 KiB (ISO/IEC 7816-4). The JSON export holds each item's D18 JSON unchanged plus its id. The CSV export holds logins, notes, cards and identities that are not in the trash, without history, passkeys or custom fields. The server has no export endpoint.
+
+**Server login (D26).** OPAQUE (RFC 9807) via `opaque-ke` 4.0: OPRF ristretto255-SHA512, 3DH on ristretto255 with SHA-512, KSF = Identity (the input `auth_secret` is already Argon2id-stretched and mixed with the Secret Key), context `"pwm/opaque/v1"`, client identifier and credential identifier = `account_id`, server identifier = the server's OPAQUE public key. Both protocol sides live in `pwm-crypto`. The server's long-term secrets are one blob `v:u8 (= 1) || ServerSetup || prelogin_key:32` (base64url in `PWM_SERVER_SECRETS`); losing the ServerSetup locks every account out, so it is kept in a secret manager with a backup and is not rotated in v1. D12's fake pre-login answers are `HMAC-SHA256(prelogin_key, label || email)` for the salt and the account id (shaped as UUIDv4), with the default params. Unknown accounts get `opaque-ke`'s fake credential response; every login failure returns the same error.
+
+**Session tokens (D26).** 32 random bytes, base64url with a `pwma_` (access, 15 minutes) or `pwmr_` (refresh, 90 days unused, replaced on every use) prefix. The server stores only SHA-256 hashes. Presenting a replaced refresh token ends that session. One session per device; revoking a device ends its session at once.
+
+**Device name (D26).** The UTF-8 name (at most 63 bytes) padded to exactly 64 bytes (ISO/IEC 7816-4), sealed under `sym_key` with AAD `pwm/device-name` (version 1, account_id, device_id), so every sealed name has the same size.
 
 **Secret Key text (D14).** `A1-` prefix (format version), then the 128-bit key as 26 Crockford base32 characters (most significant bit first, top two bits zero) plus one Crockford mod-37 check character, grouped `A1-XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXX`. Input is case-insensitive, ignores `-` and spaces, and maps `O`→`0`, `I`/`L`→`1`. The account id is printed separately on the Emergency Kit.
 
