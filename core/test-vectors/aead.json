@@ -1,0 +1,40 @@
+{
+  "description": "XChaCha20-Poly1305 v1 envelopes (D10)",
+  "format_version": 1,
+  "operation": "aead",
+  "vectors": [
+    {
+      "aad": "0870776d2f6974656d01b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c10000000000000001",
+      "aad_context": "item",
+      "envelope": "01de90092306634e7bd0b732dc6d43ff2d734726b9467580d946c288e0aa92debd8f3ba60ec6af2a61",
+      "item_id": "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+      "key": "1010101010101010101010101010101010101010101010101010101010101010",
+      "plaintext": "",
+      "revision": "1",
+      "vault_id": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "version": 1
+    },
+    {
+      "aad": "0870776d2f6974656d01b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c10000000000000002",
+      "aad_context": "item",
+      "envelope": "01cb0de047b32de578c92c2d6bca898db0e5180ac740c65d701e0afeb839783df7ff436c5eda79bfe66e27f956a3fe420db81c347c4bf9c6392ae8271f189a4ef0afae0947",
+      "item_id": "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+      "key": "1111111111111111111111111111111111111111111111111111111111111111",
+      "plaintext": "636f727265637420686f727365206261747465727920737461706c65",
+      "revision": "2",
+      "vault_id": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "version": 1
+    },
+    {
+      "aad": "0870776d2f6974656d01b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c10000000000000003",
+      "aad_context": "item",
+      "envelope": "017266d6b37b1f97d2b8735d5360d2b51e6512a56fb68d281ffa152fcf164059b740519bae3203578480f6e2fbe0a8f4a968cb4a172ee2b3ae8cc4a57848119f34f4782d0066b7e7f8e276ec1a12ca3822407fe38da7e5a671a43c894d58fca3cc9a589ee277a20754e1653022a95e9fa8b5e22167b83cede52b7f72ef75c660dd36df401888fd3fe4c7958796fe65094730a387be7c9469d4c07acad97e40bf23c0cb73a461274353d2009da15b406ba340a878adf29169c12d9466575604f90e8a3124a4cbbf4f6841ed421de67142e3ffa607ff6639d66c5bb77ccb25fc73e9c091294937918ad37f7120fbeda5a1e202fae7536750ba8eee5eca5173c69b59e000ba09fa3787c2c797be2229b50ee52a2d73b4b7a663c121ac40b3ad7d44bae71f1bd203df7470a7ead5587781d01375575489423c738deb7f0a13e6f78d209148e67d03fdbb5626e1600ff348310290cf988e",
+      "item_id": "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+      "key": "1212121212121212121212121212121212121212121212121212121212121212",
+      "plaintext": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "revision": "3",
+      "vault_id": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "version": 1
+    }
+  ]
+}

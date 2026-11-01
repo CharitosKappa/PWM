@@ -20,9 +20,10 @@ test:
     pnpm install --frozen-lockfile
     pnpm test
 
-# crypto test vectors (tests named `*vectors*`, see core/test-vectors/)
+# crypto test vectors: Rust checker (tests named `vectors_*`) + independent Node check
 test-vectors:
     cargo test --workspace --all-features --locked vectors
+    node core/test-vectors/verify.mjs
 
 # Playwright autofill harness against fixture sites (built in M4.7)
 autofill:

@@ -1,0 +1,43 @@
+{
+  "description": "AAD byte layouts (D11, D17)",
+  "format_version": 1,
+  "operation": "aad",
+  "vectors": [
+    {
+      "aad": "0870776d2f6974656d01b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c10000000000000007",
+      "context": "item",
+      "item_id": "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+      "revision": "7",
+      "vault_id": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "version": 1
+    },
+    {
+      "aad": "0870776d2f6974656d02b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1ffffffffffffffff",
+      "context": "item",
+      "item_id": "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+      "revision": "18446744073709551615",
+      "vault_id": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "version": 2
+    },
+    {
+      "aad": "0d70776d2f7661756c742d6b657901b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "context": "vault-key",
+      "vault_id": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "version": 1
+    },
+    {
+      "aad": "0a70776d2f6b657973657401a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "account_id": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "context": "keyset",
+      "version": 1
+    },
+    {
+      "aad": "0970776d2f736861726501b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "context": "share",
+      "recipient_x25519_pub": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "sender_ed25519_pub": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "vault_id": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "version": 1
+    }
+  ]
+}
