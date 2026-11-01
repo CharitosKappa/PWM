@@ -23,7 +23,7 @@ Phase 3  Teams           months 16–24 M16–M19
 **Done when:** `just check && just test` pass locally and in CI.
 
 ### M1 — Crypto core (`pwm-crypto`)
-- [ ] M1.1 `Secret<T>` wrapper: zeroize on drop, redacted Debug/Display, no Serialize by default.
+- [x] M1.1 `Secret<T>` wrapper: zeroize on drop, redacted Debug/Display, no Serialize by default.
 - [ ] M1.2 AEAD wrapper (XChaCha20-Poly1305) with versioned envelope `{v, nonce, ct}` and AAD.
 - [ ] M1.3 Argon2id KDF with stored params; HKDF helpers; Secret Key generation + human format (`A3-XXXXXX-...`).
 - [ ] M1.4 Key hierarchy from `SECURITY.md`: AUK, auth secret, account keyset create/unlock, vault key wrap/unwrap.
