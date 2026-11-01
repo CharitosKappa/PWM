@@ -51,6 +51,7 @@ audit:
 notices:
     cargo about generate --all-features --fail about.hbs -o THIRD_PARTY_NOTICES/rust.html
     pnpm notices
+    cp core/pwm-generator/data/NOTICE.md THIRD_PARTY_NOTICES/data.md
 
 # fuzz one decoder target (nightly + cargo-fuzz, Linux/macOS; on Windows see docs/DEVELOPMENT.md)
 [working-directory('core/pwm-crypto/fuzz')]

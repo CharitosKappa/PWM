@@ -44,7 +44,8 @@ Phase 3  Teams           months 16–24 M16–M19
   - Purge runs where the client unlocks (M3.4 wires it to sync tombstones). Read-only items (newer schema or unknown type) cannot be trashed, only deleted.
 - [x] M2.3 Local encrypted cache (SQLite storing ciphertext only) + migrations.
   - New crate `pwm-store` (D20): `Store` trait, bundled-SQLite backend, schema v1 with a frozen fixture. Deferred: IndexedDB backend for the extension (M3.7/M4); sync code that fills the cache (M3.4); concurrent access from app + autofill extension is only covered by SQLite locking and a 5 s busy timeout, revisit with the iOS/Android apps.
-- [ ] M2.4 Generator: random password and EFF-wordlist passphrase; zxcvbn strength.
+- [x] M2.4 Generator: random password and EFF-wordlist passphrase; zxcvbn strength.
+  - Per D21. `random_index` (rejection sampling) added to `pwm-crypto`. Deferred: About-screen attribution for the EFF list (each app, M5+); generator settings sync with a versioned format (M5); zxcvbn on `wasm32` is checked with the WASM build (M3.7).
 - [ ] M2.5 Health: weak, reused (compare hashes in memory), breached via HIBP k-anonymity range API.
 - [ ] M2.6 TOTP (RFC 6238) code generation.
 - [ ] M2.7 Encrypted export (`.pwmx`) and plaintext export (JSON/CSV) behind re-auth.
