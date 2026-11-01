@@ -1,0 +1,5 @@
+# LF everywhere so rustfmt/Prettier checks give the same result on every OS.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary

@@ -15,7 +15,7 @@ Phase 3  Teams           months 16–24 M16–M19
 
 ### M0 — Repo and tooling
 - [x] M0.1 Create monorepo layout from `ARCHITECTURE.md`; Rust workspace in `core/`, `server/`, `extension/` package.
-- [ ] M0.2 `justfile` with `check`, `test`, `test-vectors`, `autofill`, `server`.
+- [x] M0.2 `justfile` with `check`, `test`, `test-vectors`, `autofill`, `server`.
 - [ ] M0.3 CI workflows per `QUALITY.md` (fmt-lint, core-test, audit) — green on empty crates.
 - [ ] M0.4 `design/tokens.json` (colors light/dark, type scale, spacing, radius) — placeholder values, documented.
 - [ ] M0.5 `SECURITY.md` (disclosure policy) at repo root, proprietary `LICENSE` notice, `cargo deny` + `license-checker` licence allow-list (decision S6) failing CI on any copyleft dependency, and `THIRD_PARTY_NOTICES` generation (`cargo about`, `license-checker`).
