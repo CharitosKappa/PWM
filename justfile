@@ -30,9 +30,17 @@ test-vectors:
 autofill:
     @echo "autofill harness not built yet (M4.7): see tests/autofill-harness/README.md"
 
-# run the sync server locally (docker compose arrives in M3.6)
-server:
+# run the sync server locally against the `just db` container (docker compose arrives in M3.6)
+server $PWM_DATABASE_URL="postgres://pwm:pwm@127.0.0.1:54329/pwm":
     cargo run -p pwm-server
+
+# disposable Postgres 17 for the server's database tests (`docker stop pwm-test-db` removes it)
+db:
+    docker run --rm -d --name pwm-test-db -p 127.0.0.1:54329:5432 -e POSTGRES_USER=pwm -e POSTGRES_PASSWORD=pwm postgres:17-alpine
+
+# server tests against the `just db` container; fails instead of skipping when it is not running
+test-server $PWM_TEST_DATABASE_URL="postgres://pwm:pwm@127.0.0.1:54329/postgres" $PWM_REQUIRE_DB="1":
+    cargo test -p pwm-server --locked
 
 # apply formatters
 fmt:

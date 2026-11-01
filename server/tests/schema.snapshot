@@ -1,0 +1,142 @@
+# Schema snapshot (D25). Regenerate with PWM_UPDATE_SNAPSHOT=1 after adding a migration.
+
+table accounts
+  column id uuid not null
+  column email text not null
+  column kdf_m integer not null
+  column kdf_t integer not null
+  column kdf_p integer not null
+  column salt_pw bytea not null
+  column sealed_keyset bytea not null
+  column x25519_pub bytea not null
+  column ed25519_pub bytea not null
+  column opaque_record bytea null
+  column created_at timestamp with time zone not null default now()
+  constraint accounts_ed25519_pub_check: CHECK ((octet_length(ed25519_pub) = 32))
+  constraint accounts_email_check: CHECK (((email = btrim(email)) AND (POSITION(('@'::text) IN (email)) > 1)))
+  constraint accounts_email_key: UNIQUE (email)
+  constraint accounts_kdf_m_check: CHECK ((kdf_m > 0))
+  constraint accounts_kdf_p_check: CHECK ((kdf_p > 0))
+  constraint accounts_kdf_t_check: CHECK ((kdf_t > 0))
+  constraint accounts_pkey: PRIMARY KEY (id)
+  constraint accounts_salt_pw_check: CHECK ((octet_length(salt_pw) = 16))
+  constraint accounts_sealed_keyset_check: CHECK ((octet_length(sealed_keyset) >= 41))
+  constraint accounts_x25519_pub_check: CHECK ((octet_length(x25519_pub) = 32))
+  index CREATE UNIQUE INDEX accounts_email_key ON public.accounts USING btree (email)
+  index CREATE UNIQUE INDEX accounts_pkey ON public.accounts USING btree (id)
+
+table devices
+  column id uuid not null
+  column account_id uuid not null
+  column platform text not null
+  column name_sealed bytea null
+  column created_at timestamp with time zone not null default now()
+  column last_seen_at timestamp with time zone not null default now()
+  column revoked_at timestamp with time zone null
+  constraint devices_account_id_fkey: FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+  constraint devices_name_sealed_check: CHECK ((octet_length(name_sealed) >= 41))
+  constraint devices_pkey: PRIMARY KEY (id)
+  constraint devices_platform_check: CHECK ((platform = ANY (ARRAY['ios'::text, 'android'::text, 'macos'::text, 'windows'::text, 'linux'::text, 'extension'::text])))
+  index CREATE INDEX devices_account_id ON public.devices USING btree (account_id)
+  index CREATE UNIQUE INDEX devices_pkey ON public.devices USING btree (id)
+
+table items
+  column vault_id uuid not null
+  column id uuid not null
+  column revision bigint not null
+  column seq bigint not null
+  column blob bytea not null
+  column created_at timestamp with time zone not null default now()
+  column updated_at timestamp with time zone not null default now()
+  constraint items_blob_check: CHECK ((octet_length(blob) >= 41))
+  constraint items_pkey: PRIMARY KEY (vault_id, id)
+  constraint items_revision_check: CHECK ((revision >= 1))
+  constraint items_seq_check: CHECK ((seq >= 1))
+  constraint items_vault_id_fkey: FOREIGN KEY (vault_id) REFERENCES vaults(id) ON DELETE CASCADE
+  index CREATE UNIQUE INDEX items_pkey ON public.items USING btree (vault_id, id)
+  index CREATE UNIQUE INDEX items_vault_seq ON public.items USING btree (vault_id, seq)
+
+table shares
+  column id uuid not null
+  column account_id uuid not null
+  column blob bytea not null
+  column expires_at timestamp with time zone not null
+  column max_views integer null
+  column views integer not null default 0
+  column created_at timestamp with time zone not null default now()
+  constraint shares_account_id_fkey: FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+  constraint shares_blob_check: CHECK ((octet_length(blob) >= 41))
+  constraint shares_check: CHECK (((views >= 0) AND ((max_views IS NULL) OR (views <= max_views))))
+  constraint shares_max_views_check: CHECK ((max_views >= 1))
+  constraint shares_pkey: PRIMARY KEY (id)
+  index CREATE INDEX shares_account_created ON public.shares USING btree (account_id, created_at)
+  index CREATE INDEX shares_expires_at ON public.shares USING btree (expires_at)
+  index CREATE UNIQUE INDEX shares_pkey ON public.shares USING btree (id)
+
+table subscriptions
+  column account_id uuid not null
+  column plan text not null
+  column status text not null
+  column provider text not null
+  column provider_ref text not null
+  column price_minor bigint not null
+  column currency text not null
+  column current_period_end timestamp with time zone not null
+  column price_locked_until timestamp with time zone null
+  column cancel_at_period_end boolean not null default false
+  column created_at timestamp with time zone not null default now()
+  column updated_at timestamp with time zone not null default now()
+  constraint subscriptions_account_id_fkey: FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+  constraint subscriptions_currency_check: CHECK ((currency ~ '^[A-Z]{3}$'::text))
+  constraint subscriptions_pkey: PRIMARY KEY (account_id)
+  constraint subscriptions_plan_check: CHECK ((plan = ANY (ARRAY['premium'::text, 'family'::text, 'teams'::text])))
+  constraint subscriptions_price_minor_check: CHECK ((price_minor >= 0))
+  constraint subscriptions_provider_check: CHECK ((provider = ANY (ARRAY['stripe'::text, 'app_store'::text, 'play'::text])))
+  constraint subscriptions_provider_provider_ref_key: UNIQUE (provider, provider_ref)
+  constraint subscriptions_provider_ref_check: CHECK ((provider_ref <> ''::text))
+  constraint subscriptions_status_check: CHECK ((status = ANY (ARRAY['active'::text, 'past_due'::text, 'canceled'::text, 'expired'::text])))
+  index CREATE UNIQUE INDEX subscriptions_pkey ON public.subscriptions USING btree (account_id)
+  index CREATE UNIQUE INDEX subscriptions_provider_provider_ref_key ON public.subscriptions USING btree (provider, provider_ref)
+
+table tombstones
+  column vault_id uuid not null
+  column item_id uuid not null
+  column revision bigint not null
+  column seq bigint not null
+  column deleted_at timestamp with time zone not null default now()
+  constraint tombstones_pkey: PRIMARY KEY (vault_id, item_id)
+  constraint tombstones_revision_check: CHECK ((revision >= 1))
+  constraint tombstones_seq_check: CHECK ((seq >= 1))
+  constraint tombstones_vault_id_fkey: FOREIGN KEY (vault_id) REFERENCES vaults(id) ON DELETE CASCADE
+  index CREATE UNIQUE INDEX tombstones_pkey ON public.tombstones USING btree (vault_id, item_id)
+  index CREATE UNIQUE INDEX tombstones_vault_seq ON public.tombstones USING btree (vault_id, seq)
+
+table vault_keys
+  column vault_id uuid not null
+  column account_id uuid not null
+  column role text not null
+  column wrap text not null
+  column wrapped_key bytea not null
+  column shared_by uuid null
+  column created_at timestamp with time zone not null default now()
+  constraint vault_keys_account_id_fkey: FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+  constraint vault_keys_check: CHECK (((wrap = 'share'::text) OR (shared_by IS NULL)))
+  constraint vault_keys_pkey: PRIMARY KEY (vault_id, account_id)
+  constraint vault_keys_role_check: CHECK ((role = ANY (ARRAY['owner'::text, 'editor'::text, 'viewer'::text])))
+  constraint vault_keys_shared_by_fkey: FOREIGN KEY (shared_by) REFERENCES accounts(id) ON DELETE SET NULL
+  constraint vault_keys_vault_id_fkey: FOREIGN KEY (vault_id) REFERENCES vaults(id) ON DELETE CASCADE
+  constraint vault_keys_wrap_check: CHECK ((wrap = ANY (ARRAY['own'::text, 'share'::text])))
+  constraint vault_keys_wrapped_key_check: CHECK ((octet_length(wrapped_key) >= 41))
+  index CREATE INDEX vault_keys_account_id ON public.vault_keys USING btree (account_id)
+  index CREATE UNIQUE INDEX vault_keys_pkey ON public.vault_keys USING btree (vault_id, account_id)
+
+table vaults
+  column id uuid not null
+  column owner_id uuid not null
+  column seq bigint not null default 0
+  column created_at timestamp with time zone not null default now()
+  constraint vaults_owner_id_fkey: FOREIGN KEY (owner_id) REFERENCES accounts(id) ON DELETE CASCADE
+  constraint vaults_pkey: PRIMARY KEY (id)
+  constraint vaults_seq_check: CHECK ((seq >= 0))
+  index CREATE INDEX vaults_owner_id ON public.vaults USING btree (owner_id)
+  index CREATE UNIQUE INDEX vaults_pkey ON public.vaults USING btree (id)

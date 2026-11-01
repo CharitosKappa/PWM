@@ -56,7 +56,8 @@ Phase 3  Teams           months 16–24 M16–M19
 **Done when:** round-trip tests for all item types; export → import yields identical vault.
 
 ### M3 — Sync server + client sync
-- [ ] M3.1 axum server, Postgres schema (accounts, devices, vaults, vault_keys, items, tombstones, shares, subscriptions); migrations with `sqlx`.
+- [x] M3.1 axum server, Postgres schema (accounts, devices, vaults, vault_keys, items, tombstones, shares, subscriptions); migrations with `sqlx`.
+  - Per D25. `pwm-server` lib + binary: config from env (`PWM_DATABASE_URL`, `PWM_LISTEN`, `PWM_LOG`), migrations embedded and applied at startup (newer or edited migrations refused), `GET /healthz`, graceful shutdown. Schema v1 in `server/migrations/0001_initial.sql` with a checked-in snapshot; tests check the plaintext column allow-list, constraints and account-deletion cascade against real Postgres (`just db`, `just test-server`; new blocking CI job `server-test`). `vaults` gained `owner_id` for the cascade. Deferred: Postgres TLS (rustls + OS roots) and the reverse-proxy setup (M3.6); request logging (M3.5 scrubber); tombstone compaction; refusing an item id that has a tombstone (M3.3, in the write transaction).
 - [ ] M3.2 OPAQUE register/login; session tokens (short-lived + refresh), device registration.
 - [ ] M3.3 Item endpoints with revision checks (`If-Match`), delta sync `since=rev`.
 - [ ] M3.4 `pwm-sync` client: offline queue, retry with backoff, conflict → keep both in history.
