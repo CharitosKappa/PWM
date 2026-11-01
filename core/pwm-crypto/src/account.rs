@@ -1,0 +1,246 @@
+//! Key hierarchy from `docs/SECURITY.md`: AUK and auth secret, the account
+//! keyset, and vault key wrapping.
+
+use core::fmt;
+
+use ed25519_dalek::SigningKey;
+use x25519_dalek::{PublicKey, StaticSecret};
+use zeroize::Zeroize;
+
+use crate::{
+    Aad, CryptoError, Envelope, Id, KdfParams, Secret, SecretKey, SymmetricKey,
+    derive_password_key, generate_salt, hkdf_sha256, normalize_password, open, seal,
+};
+
+/// Keyset plaintext format: `version || sym_key || x25519_secret || ed25519_seed`.
+const KEYSET_VERSION: u8 = 1;
+const KEYSET_LEN: usize = 1 + 3 * 32;
+/// Vault key plaintext format: the 32 raw key bytes.
+const VAULT_KEY_VERSION: u8 = 1;
+
+/// The two keys derived from master password + Secret Key.
+pub struct AccountKeys {
+    auk: SymmetricKey,
+    auth_secret: Secret<[u8; 32]>,
+}
+
+impl AccountKeys {
+    /// Account Unlock Key: decrypts the account keyset.
+    pub fn auk(&self) -> &SymmetricKey {
+        &self.auk
+    }
+
+    /// OPAQUE password input; independent of the AUK.
+    pub fn auth_secret(&self) -> &Secret<[u8; 32]> {
+        &self.auth_secret
+    }
+}
+
+impl fmt::Debug for AccountKeys {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AccountKeys([REDACTED])")
+    }
+}
+
+/// Derives the AUK and auth secret (decision D13):
+///
+/// ```text
+/// pw_key      = Argon2id(normalize(password), salt, params)
+/// sk_key      = HKDF(secret_key, salt = account_id, info = "pwm/sk/v1")
+/// AUK         = HKDF(pw_key XOR sk_key, salt = account_id, info = "pwm/auk/v1")
+/// auth_secret = HKDF(pw_key XOR sk_key, salt = account_id, info = "pwm/auth/v1")
+/// ```
+pub fn derive_account_keys(
+    password: &str,
+    secret_key: &SecretKey,
+    account_id: &Id,
+    salt: &[u8; 16],
+    params: &KdfParams,
+) -> Result<AccountKeys, CryptoError> {
+    let password = normalize_password(password)?;
+    let pw_key = derive_password_key(password.expose_secret().as_bytes(), salt, params)?;
+    let sk_key = hkdf_sha256(secret_key.expose_bytes(), account_id, b"pwm/sk/v1");
+    let mixed = Secret::<[u8; 32]>::new_with(|m| {
+        for (out, (p, s)) in m
+            .iter_mut()
+            .zip(pw_key.expose_secret().iter().zip(sk_key.expose_secret()))
+        {
+            *out = p ^ s;
+        }
+    });
+    Ok(AccountKeys {
+        auk: SymmetricKey::from_secret(hkdf_sha256(
+            mixed.expose_secret(),
+            account_id,
+            b"pwm/auk/v1",
+        )),
+        auth_secret: hkdf_sha256(mixed.expose_secret(), account_id, b"pwm/auth/v1"),
+    })
+}
+
+/// The account's long-term keys, stored on the server sealed under the AUK.
+pub struct AccountKeyset {
+    sym_key: SymmetricKey,
+    x25519: StaticSecret,
+    ed25519: SigningKey,
+}
+
+impl AccountKeyset {
+    /// Fresh random keys for a new account.
+    pub fn generate() -> Result<Self, CryptoError> {
+        let x25519_secret = random_32()?;
+        let ed25519_seed = random_32()?;
+        Ok(Self {
+            sym_key: SymmetricKey::generate()?,
+            x25519: StaticSecret::from(*x25519_secret.expose_secret()),
+            ed25519: SigningKey::from_bytes(ed25519_seed.expose_secret()),
+        })
+    }
+
+    /// Public key that other users encrypt shared vault keys to.
+    pub fn x25519_public(&self) -> [u8; 32] {
+        PublicKey::from(&self.x25519).to_bytes()
+    }
+
+    /// Public key that verifies this account's shares and device approvals.
+    pub fn ed25519_public(&self) -> [u8; 32] {
+        self.ed25519.verifying_key().to_bytes()
+    }
+
+    /// Seals the keyset under the AUK, bound to `account_id`.
+    pub fn seal(&self, auk: &SymmetricKey, account_id: &Id) -> Result<Envelope, CryptoError> {
+        let plaintext = Secret::<Vec<u8>>::new_with(|buf| {
+            buf.reserve_exact(KEYSET_LEN);
+            buf.push(KEYSET_VERSION);
+            buf.extend_from_slice(self.sym_key.expose_bytes());
+            buf.extend_from_slice(self.x25519.as_bytes());
+            let mut seed = self.ed25519.to_bytes();
+            buf.extend_from_slice(&seed);
+            seed.zeroize();
+        });
+        seal(
+            auk,
+            plaintext.expose_secret(),
+            &Aad::keyset(KEYSET_VERSION, account_id),
+        )
+    }
+
+    /// Opens a keyset sealed by [`seal`](Self::seal).
+    pub fn open(
+        envelope: &Envelope,
+        auk: &SymmetricKey,
+        account_id: &Id,
+    ) -> Result<Self, CryptoError> {
+        let plaintext = open(auk, envelope, &Aad::keyset(KEYSET_VERSION, account_id))?;
+        let bytes = plaintext.expose_secret();
+        if bytes.len() != KEYSET_LEN {
+            return Err(CryptoError::Truncated);
+        }
+        if bytes[0] != KEYSET_VERSION {
+            return Err(CryptoError::UnsupportedVersion(bytes[0]));
+        }
+        let key_at = |offset: usize| {
+            Secret::<[u8; 32]>::new_with(|k| k.copy_from_slice(&bytes[offset..offset + 32]))
+        };
+        let (sym, x25519, ed25519) = (key_at(1), key_at(33), key_at(65));
+        Ok(Self {
+            sym_key: SymmetricKey::from_secret(sym),
+            x25519: StaticSecret::from(*x25519.expose_secret()),
+            ed25519: SigningKey::from_bytes(ed25519.expose_secret()),
+        })
+    }
+
+    /// Encrypts a vault key under `sym_key`, bound to `vault_id`.
+    pub fn wrap_vault_key(
+        &self,
+        vault_key: &SymmetricKey,
+        vault_id: &Id,
+    ) -> Result<Envelope, CryptoError> {
+        seal(
+            &self.sym_key,
+            vault_key.expose_bytes(),
+            &Aad::vault_key(VAULT_KEY_VERSION, vault_id),
+        )
+    }
+
+    /// Decrypts a vault key wrapped by [`wrap_vault_key`](Self::wrap_vault_key).
+    pub fn unwrap_vault_key(
+        &self,
+        envelope: &Envelope,
+        vault_id: &Id,
+    ) -> Result<SymmetricKey, CryptoError> {
+        let plaintext = open(
+            &self.sym_key,
+            envelope,
+            &Aad::vault_key(VAULT_KEY_VERSION, vault_id),
+        )?;
+        let bytes = plaintext.expose_secret();
+        if bytes.len() != 32 {
+            return Err(CryptoError::Truncated);
+        }
+        Ok(SymmetricKey::from_secret(Secret::<[u8; 32]>::new_with(
+            |k| k.copy_from_slice(bytes),
+        )))
+    }
+}
+
+impl fmt::Debug for AccountKeyset {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AccountKeyset([REDACTED])")
+    }
+}
+
+/// Everything produced at signup. `secret_key` goes on the Emergency Kit;
+/// `salt`, `params`, `sealed_keyset` and the OPAQUE registration from
+/// `auth_secret` go to the server.
+#[derive(Debug)]
+pub struct NewAccount {
+    pub secret_key: SecretKey,
+    pub salt: [u8; 16],
+    pub params: KdfParams,
+    pub keyset: AccountKeyset,
+    pub sealed_keyset: Envelope,
+    pub auth_secret: Secret<[u8; 32]>,
+}
+
+/// Creates the keys for a new account.
+pub fn create_account(
+    password: &str,
+    account_id: &Id,
+    params: KdfParams,
+) -> Result<NewAccount, CryptoError> {
+    let secret_key = SecretKey::generate()?;
+    let salt = generate_salt()?;
+    let keys = derive_account_keys(password, &secret_key, account_id, &salt, &params)?;
+    let keyset = AccountKeyset::generate()?;
+    let sealed_keyset = keyset.seal(&keys.auk, account_id)?;
+    Ok(NewAccount {
+        secret_key,
+        salt,
+        params,
+        keyset,
+        sealed_keyset,
+        auth_secret: keys.auth_secret,
+    })
+}
+
+/// Unlocks an account: derives the AUK and opens the sealed keyset. A wrong
+/// password, Secret Key, salt or account id all fail as
+/// [`CryptoError::DecryptionFailed`].
+pub fn unlock_account(
+    password: &str,
+    secret_key: &SecretKey,
+    account_id: &Id,
+    salt: &[u8; 16],
+    params: &KdfParams,
+    sealed_keyset: &Envelope,
+) -> Result<AccountKeyset, CryptoError> {
+    let keys = derive_account_keys(password, secret_key, account_id, salt, params)?;
+    AccountKeyset::open(sealed_keyset, &keys.auk, account_id)
+}
+
+fn random_32() -> Result<Secret<[u8; 32]>, CryptoError> {
+    let mut ok = false;
+    let bytes = Secret::<[u8; 32]>::new_with(|b| ok = getrandom::fill(b).is_ok());
+    if ok { Ok(bytes) } else { Err(CryptoError::Rng) }
+}

@@ -35,7 +35,6 @@ impl SecretKey {
         Self(bytes)
     }
 
-    #[allow(dead_code)] // used by the key hierarchy (M1.4)
     pub(crate) fn expose_bytes(&self) -> &[u8; 16] {
         self.0.expose_secret()
     }

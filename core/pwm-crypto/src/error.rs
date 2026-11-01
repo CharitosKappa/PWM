@@ -22,4 +22,6 @@ pub enum CryptoError {
     SecretKeyFormat,
     #[error("Secret Key check character does not match (likely a typo)")]
     SecretKeyChecksum,
+    #[error("password is empty or contains control characters")]
+    PasswordRejected,
 }
