@@ -11,3 +11,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+pwm-generator = { path = "../pwm-generator" }
+pwm-vault = { path = "../pwm-vault" }
+pwm-crypto = { path = "../pwm-crypto" }
+thiserror = "2.0.21"
+zeroize = "1.9.1"
