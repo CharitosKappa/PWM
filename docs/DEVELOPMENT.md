@@ -10,7 +10,7 @@
 | pnpm | version in `package.json` `packageManager` | JS workspace |
 | cargo-deny | 0.20+ | `just audit` |
 | cargo-about | 0.9+ (install with `--features cli`) | `just notices` |
-| Docker | any recent | `just server` (from M3.6) |
+| Docker | any recent | `just db` (Postgres for server tests and `just server`) |
 
 ## Windows
 
@@ -38,6 +38,20 @@ just fmt           # apply rustfmt + prettier
 ```
 
 The repo uses LF line endings everywhere (`.gitattributes`); format checks fail on CRLF.
+
+## Server and database tests
+
+The server's integration tests need Postgres (D25). Each test creates and drops its own database.
+
+```
+just db            # disposable postgres:17 container on 127.0.0.1:54329 (`docker stop pwm-test-db` removes it)
+just test-server   # server tests against it; fails if it is not running
+just server        # run the server against it (http://127.0.0.1:8080/healthz)
+```
+
+`just test` also runs the server tests, but skips the database ones unless `PWM_TEST_DATABASE_URL` is set; CI's `server-test` job always runs them. After adding a migration, regenerate the schema snapshot with `PWM_UPDATE_SNAPSHOT=1 just test-server` and review the diff. Never edit a merged migration: the server refuses a database whose applied migrations differ.
+
+Server settings: `PWM_DATABASE_URL` (required), `PWM_LISTEN` (default `127.0.0.1:8080`), `PWM_LOG` (log filter, default `info,sqlx=warn`).
 
 ## Fuzzing
 

@@ -57,6 +57,33 @@ jobs:
       - run: cargo test --workspace --all-features --locked
       - run: just test-vectors
 
+  # Server integration tests against a real Postgres (D25). PWM_REQUIRE_DB
+  # turns a missing database into a failure instead of a skip.
+  server-test:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pwm
+          POSTGRES_PASSWORD: pwm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pwm"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      PWM_TEST_DATABASE_URL: postgres://pwm:pwm@localhost:5432/postgres
+      PWM_REQUIRE_DB: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p pwm-server --locked
+
   extension-test:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest

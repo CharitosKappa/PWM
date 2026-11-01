@@ -63,7 +63,7 @@ Extension ──native messaging──▶ desktop app (unlock, biometrics)   or 
 
 - Clients keep a local encrypted cache so the app works offline.
 - Server API is versioned (`/v1/...`), auth via OPAQUE (see `SECURITY.md`), JSON over HTTPS, ciphertext fields base64.
-- Sync model: each item is an encrypted blob with `(item_id, vault_id, revision, updated_at)`. Last-writer-wins per item with revision check; conflicting edits keep both versions as item history (never silent data loss).
+- Sync model: each item is an encrypted blob with `(item_id, vault_id, revision, seq, updated_at)`: `revision` is per item and chosen by the client (it is in the AAD), `seq` is a per-vault change counter assigned by the server (D25). Last-writer-wins per item with revision check; conflicting edits keep both versions as item history (never silent data loss).
 
 ## Server API (v1, minimum)
 
@@ -73,7 +73,7 @@ Extension ──native messaging──▶ desktop app (unlock, biometrics)   or 
 | `POST /v1/auth/login/{start,finish}` | OPAQUE login → session token |
 | `GET /v1/account` | Encrypted account keyset, plan, devices |
 | `GET /v1/vaults` / `POST /v1/vaults` | List/create vaults (encrypted vault keys) |
-| `GET /v1/vaults/{id}/items?since=rev` | Delta sync |
+| `GET /v1/vaults/{id}/items?since=seq` | Delta sync (per-vault change counter, D25) |
 | `PUT /v1/vaults/{id}/items/{item_id}` | Upsert with `If-Match: revision` |
 | `DELETE /v1/vaults/{id}/items/{item_id}` | Tombstone |
 | `POST /v1/shares` / `GET /v1/shares/{id}` | One-time encrypted share links |
