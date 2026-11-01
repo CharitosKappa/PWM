@@ -37,6 +37,21 @@ impl Aad {
         aad
     }
 
+    /// Vault key shared to a recipient (decision D17).
+    pub fn share(
+        version: u8,
+        vault_id: &Id,
+        sender_ed25519_pub: &[u8; 32],
+        recipient_x25519_pub: &[u8; 32],
+    ) -> Self {
+        let mut aad = Self::labelled("pwm/share");
+        aad.0.push(version);
+        aad.0.extend_from_slice(vault_id);
+        aad.0.extend_from_slice(sender_ed25519_pub);
+        aad.0.extend_from_slice(recipient_x25519_pub);
+        aad
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }

@@ -80,9 +80,10 @@ pub fn derive_account_keys(
 
 /// The account's long-term keys, stored on the server sealed under the AUK.
 pub struct AccountKeyset {
+    // Crate-visible for the sharing code in `share.rs`.
     sym_key: SymmetricKey,
-    x25519: StaticSecret,
-    ed25519: SigningKey,
+    pub(crate) x25519: StaticSecret,
+    pub(crate) ed25519: SigningKey,
 }
 
 impl AccountKeyset {
@@ -174,13 +175,7 @@ impl AccountKeyset {
             envelope,
             &Aad::vault_key(VAULT_KEY_VERSION, vault_id),
         )?;
-        let bytes = plaintext.expose_secret();
-        if bytes.len() != 32 {
-            return Err(CryptoError::Truncated);
-        }
-        Ok(SymmetricKey::from_secret(Secret::<[u8; 32]>::new_with(
-            |k| k.copy_from_slice(bytes),
-        )))
+        key_from_plaintext(plaintext.expose_secret())
     }
 }
 
@@ -239,8 +234,18 @@ pub fn unlock_account(
     AccountKeyset::open(sealed_keyset, &keys.auk, account_id)
 }
 
-fn random_32() -> Result<Secret<[u8; 32]>, CryptoError> {
+pub(crate) fn random_32() -> Result<Secret<[u8; 32]>, CryptoError> {
     let mut ok = false;
     let bytes = Secret::<[u8; 32]>::new_with(|b| ok = getrandom::fill(b).is_ok());
     if ok { Ok(bytes) } else { Err(CryptoError::Rng) }
+}
+
+/// A [`SymmetricKey`] from a decrypted 32-byte key plaintext.
+pub(crate) fn key_from_plaintext(bytes: &[u8]) -> Result<SymmetricKey, CryptoError> {
+    if bytes.len() != 32 {
+        return Err(CryptoError::Truncated);
+    }
+    Ok(SymmetricKey::from_secret(Secret::<[u8; 32]>::new_with(
+        |k| k.copy_from_slice(bytes),
+    )))
 }
