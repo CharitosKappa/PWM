@@ -12,6 +12,63 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D7 — Bundled extras**: email aliases (planned Phase 3) yes; VPN no.
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
+- **D25 — Server schema, revisions and migrations** · proposed 2026-11-01 · Claude Code. The roadmap names the stack (axum, Postgres, `sqlx` migrations) and the tables (accounts, devices, vaults, vault_keys, items, tombstones, shares, subscriptions) but not their columns. Open: what each table holds, who picks ids and revisions, how delta sync finds changes, and how migrations and DB tests run. Proposal:
+  1. **Revisions vs change sequence:** these are two separate numbers.
+     - **`revision`:** per item. The client chooses it (previous + 1, or 1 for a new item) because it is bound into the item AAD before encryption (D11). In M3.3 the server accepts a write only if `If-Match` equals the stored revision.
+     - **`seq`:** a per-vault change counter, assigned by the server. Every write or delete bumps `vaults.seq` in the same transaction and stamps the row with it. Delta sync asks for `since=<seq>` and gets the items and tombstones with a higher `seq`.
+     - Why: a server-assigned counter cannot be known before encrypting, and a per-item revision cannot order changes across a vault. Per vault, not global, so the counter shows nothing about other accounts' activity.
+     - Both are `bigint` from 1 to 2^63 − 1 and go on the wire as strings (M1.6 finding). `ARCHITECTURE.md`'s `since=rev` becomes `since=seq`.
+  2. **Ids:** client-generated UUIDv4, stored as `uuid`, because they are bound into AADs before upload. The server refuses an id that is already taken, including one that has a tombstone.
+  3. **Tables (v1).** All times are `timestamptz` (UTC). Deleting an account cascades to everything it owns.
+     - `accounts`:
+       - `id`, `email` (unique, trimmed and lowercased), `kdf_m/t/p`, `salt_pw` (16 bytes), `sealed_keyset`, `x25519_pub` and `ed25519_pub` (32 bytes each, needed for sharing), `opaque_record` (null until M3.2 registration), `created_at`.
+       - The email is the only personal plaintext. It is needed to find the account at login and to send the notices `PRICING.md` requires (the price-change and renewal emails).
+     - `devices`:
+       - `id`, `account_id`, `platform` (`ios`, `android`, `macos`, `windows`, `linux`, `extension`), `name_sealed` (the device name sealed by the client; its AAD label is defined with device registration in M3.2), `created_at`, `last_seen_at`, `revoked_at`.
+       - No IP addresses or user agents.
+     - `vaults`:
+       - `id`, `seq`, `created_at`. No name; vault names come later, sealed by the client.
+     - `vault_keys`:
+       - Key `(vault_id, account_id)`: one row per member of a vault.
+       - `role` (`owner`, `editor`, `viewer`), `wrapped_key`, `wrap` (`own` = sealed under the member's sym_key with AAD `pwm/vault-key`; `share` = the D17 wire from `shared_by`), `shared_by` (null for `own`), `created_at`.
+       - Vault shares live here, not in `shares`.
+     - `items`:
+       - Key `(vault_id, id)`. `revision`, `seq`, `blob` (the D18 envelope), `created_at`, `updated_at`. Indexed on `(vault_id, seq)`.
+       - Blobs stay in Postgres. The S3 store in `ARCHITECTURE.md` is for attachments, which come later; per-item size limits arrive with M3.5.
+     - `tombstones`:
+       - Key `(vault_id, item_id)`. `revision` (the one the delete was made against), `seq`, `deleted_at`. Indexed on `(vault_id, seq)`.
+       - Kept indefinitely for now; compaction (with a "full resync" answer for an old `since`) is deferred.
+     - `shares`: one-time links to people who are not users.
+       - `id`, `account_id`, `blob` (sealed with the link key, which never reaches the server), `expires_at`, `max_views` (null = unlimited), `views`, `created_at`. Revoking deletes the row.
+       - The blob format is defined when the feature ships.
+     - `subscriptions`:
+       - At most one row per account; no row means Free.
+       - `plan` (`premium`, `family`, `teams`), `status` (`active`, `past_due`, `canceled`, `expired`), `provider` (`stripe`, `app_store`, `play`), `provider_ref`, `price_minor` and `currency`, `current_period_end`, `price_locked_until` (`PRICING.md` §1), `cancel_at_period_end`, `created_at`, `updated_at`.
+       - Provider-neutral while D6 is open. Family and Teams membership come in a later migration.
+  4. **No plaintext slips in:** a test lists every text, varchar and JSON column in the schema and fails on any column not on an allow-list. Today the list is `email`, `provider_ref` and the checked enum columns above. A new free-text column needs a reason in review.
+  5. **Migrations:**
+     - Plain SQL files in `server/migrations/`, embedded in the binary with `sqlx::migrate!` and applied at startup under sqlx's advisory lock, so several instances can start at once.
+     - The server refuses a database with a migration it doesn't know (a newer version) or with an edited migration (checksum mismatch), as D20 does for the local cache.
+     - Changes always add a new migration, and a checked-in schema snapshot (tables, columns, types, constraints) makes any change visible in the diff.
+  6. **Queries** are runtime-checked (`sqlx::query`), with integration tests behind them. The compile-time macros need a live database or checked-in offline data at build time; reconsider them in M3.3, when real queries arrive.
+  7. **Server binary:**
+     - **Config:** `PWM_DATABASE_URL` (required) and `PWM_LISTEN` (default `127.0.0.1:8080`).
+     - **`GET /healthz`:** 200 when Postgres answers, 503 otherwise, with no version or details.
+     - **Shutdown:** graceful, on Ctrl-C or SIGTERM.
+     - **Logs:** startup and migration lines only. Request logging waits for the M3.5 scrubber.
+     - **TLS:** HTTPS is terminated by a reverse proxy (documented with M3.6). Postgres TLS (rustls with the OS roots, because `webpki-roots` is CDLA-Permissive-2.0, which is not on the allow-list) arrives with docker compose in M3.6.
+     - **Crates:** `axum`, `tokio` and `sqlx` (postgres, runtime-tokio, migrate; no default features), all MIT or Apache-2.0.
+  8. **Tests (real Postgres, as `QUALITY.md` asks):**
+     - Each test creates a throwaway database from `PWM_TEST_DATABASE_URL`, migrates it and drops it afterwards. `just db` starts a disposable `postgres:17` container.
+     - Without the variable, the DB tests print "skipped" and pass. A new blocking `server-test` CI job runs a Postgres service and sets `PWM_REQUIRE_DB=1`, which turns a skip into a failure.
+     - Covered:
+       - Migrations apply, and re-running them is a no-op.
+       - An unknown or edited migration is refused.
+       - The schema snapshot matches.
+       - The plaintext allow-list holds.
+       - Constraints work: revision ≥ 1, key and salt lengths, enum values, cascade on account delete.
+       - `/healthz` answers correctly with the database up and down.
+  Why: the per-item revision has to exist before encryption, and sync needs an order the server controls, so they must be two numbers. Storing only ciphertext, sizes, ids and times (plus the email) keeps the zero-knowledge rule checkable by a test, not just by review. Refusing unknown migrations stops an older binary from running against a newer schema after a rollback.
 
 ## Settled
 
