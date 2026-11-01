@@ -4,7 +4,8 @@
 //
 // Not covered here: Argon2id (Node has no Argon2; kdf.json is checked by the
 // Rust checker and the RFC 9106 known-answer test). The `pw_key` values from
-// account.json and export.json are taken as input.
+// account.json and export.json are taken as input. OPAQUE (opaque.json) is
+// checked by the Rust checker only.
 //
 // HChaCha20 is implemented below because Node only exposes the IETF
 // ChaCha20-Poly1305. This is verification tooling, never product code, and it
@@ -106,6 +107,7 @@ const u64 = (n) => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(n)); r
 const aadItem = (version, vault, item, revision) => labelled("pwm/item", Buffer.from([version]), vault, item, u64(revision));
 const aadVaultKey = (version, vault) => labelled("pwm/vault-key", Buffer.from([version]), vault);
 const aadKeyset = (version, account) => labelled("pwm/keyset", Buffer.from([version]), account);
+const aadDeviceName = (version, account, device) => labelled("pwm/device-name", Buffer.from([version]), account, device);
 const aadShare = (version, vault, sender, recipient) => labelled("pwm/share", Buffer.from([version]), vault, sender, recipient);
 
 const hkdf = (ikm, salt, info) => Buffer.from(crypto.hkdfSync("sha256", ikm, salt, info, 32));
@@ -279,6 +281,20 @@ for (const v of load("totp")) {
   }
   check(`${v.kind} ${v.time}`, (v.kind === "steam") === (t.digits === 0) && code === v.code);
 }
+
+for (const v of load("device_name")) {
+  const symKey = openKeyset(v).subarray(1, 33);
+  check("device_name sym_key", eq(symKey, hex(v.sym_key)));
+  const aad = aadDeviceName(1, hex(v.account_id), hex(v.device_id));
+  check("device_name aad", eq(aad, hex(v.aad)));
+  const name = hex(v.name);
+  const padded = Buffer.concat([name, Buffer.from([0x80]), Buffer.alloc(63 - name.length)]);
+  check("device_name padding", padded.length === 64 && eq(padded, hex(v.padded)));
+  check("device_name open", eq(openEnvelope(symKey, hex(v.envelope), aad), padded));
+}
+
+// opaque.json is checked by the Rust checker only: the protocol itself is
+// covered by the RFC 9807 vectors in opaque-ke.
 
 if (failures > 0) {
   console.error(`${failures} of ${checks} independent vector checks failed`);

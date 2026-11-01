@@ -30,4 +30,10 @@ pub enum CryptoError {
     InvalidPublicKey,
     #[error("not a PWM export file")]
     NotExportFile,
+    #[error("login failed")]
+    AuthenticationFailed,
+    #[error("malformed protocol message")]
+    InvalidMessage,
+    #[error("device name is longer than 63 bytes or contains control characters")]
+    DeviceNameRejected,
 }

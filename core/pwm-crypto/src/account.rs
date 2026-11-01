@@ -17,6 +17,9 @@ const KEYSET_VERSION: u8 = 1;
 const KEYSET_LEN: usize = 1 + 3 * 32;
 /// Vault key plaintext format: the 32 raw key bytes.
 const VAULT_KEY_VERSION: u8 = 1;
+/// Device name plaintext format: UTF-8 padded to exactly 64 bytes (D26).
+const DEVICE_NAME_VERSION: u8 = 1;
+const DEVICE_NAME_LEN: usize = 64;
 
 /// The two keys derived from master password + Secret Key.
 pub struct AccountKeys {
@@ -176,6 +179,54 @@ impl AccountKeyset {
             &Aad::vault_key(VAULT_KEY_VERSION, vault_id),
         )?;
         key_from_plaintext(plaintext.expose_secret())
+    }
+
+    /// Seals a device name under `sym_key` (decision D26). The name (at most
+    /// 63 bytes of UTF-8, no control characters) is padded to exactly 64
+    /// bytes, so every sealed name has the same size.
+    pub fn seal_device_name(
+        &self,
+        account_id: &Id,
+        device_id: &Id,
+        name: &str,
+    ) -> Result<Envelope, CryptoError> {
+        if name.len() >= DEVICE_NAME_LEN || name.chars().any(char::is_control) {
+            return Err(CryptoError::DeviceNameRejected);
+        }
+        let mut padded = [0u8; DEVICE_NAME_LEN];
+        padded[..name.len()].copy_from_slice(name.as_bytes());
+        padded[name.len()] = 0x80;
+        seal(
+            &self.sym_key,
+            &padded,
+            &Aad::device_name(DEVICE_NAME_VERSION, account_id, device_id),
+        )
+    }
+
+    /// Opens a device name sealed by [`seal_device_name`](Self::seal_device_name).
+    pub fn open_device_name(
+        &self,
+        envelope: &Envelope,
+        account_id: &Id,
+        device_id: &Id,
+    ) -> Result<String, CryptoError> {
+        let plaintext = open(
+            &self.sym_key,
+            envelope,
+            &Aad::device_name(DEVICE_NAME_VERSION, account_id, device_id),
+        )?;
+        let bytes = plaintext.expose_secret();
+        if bytes.len() != DEVICE_NAME_LEN {
+            return Err(CryptoError::Truncated);
+        }
+        let end = bytes
+            .iter()
+            .rposition(|&b| b != 0)
+            .ok_or(CryptoError::Truncated)?;
+        if bytes[end] != 0x80 {
+            return Err(CryptoError::Truncated);
+        }
+        String::from_utf8(bytes[..end].to_vec()).map_err(|_| CryptoError::DeviceNameRejected)
     }
 }
 

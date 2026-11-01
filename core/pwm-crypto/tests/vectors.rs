@@ -3,10 +3,10 @@
 //! single-bit flip must be rejected.
 
 use pwm_crypto::{
-    Aad, AccountKeyset, Envelope, ExportHeader, Id, KdfParams, OtpAlgorithm, Secret, SecretKey,
-    SignatureContext, SymmetricKey, VaultShare, derive_account_keys, derive_password_key,
-    hkdf_sha256, hotp_value, normalize_password, open, open_export, seal, unlock_account,
-    verify_signature,
+    Aad, AccountKeyset, Envelope, ExportHeader, Id, KdfParams, OpaqueLogin, OtpAlgorithm, Secret,
+    SecretKey, ServerSecrets, SignatureContext, SymmetricKey, VaultShare, derive_account_keys,
+    derive_password_key, hkdf_sha256, hotp_value, normalize_password, opaque_record, open,
+    open_export, seal, unlock_account, verify_signature,
 };
 use serde_json::Value;
 
@@ -341,5 +341,78 @@ fn vectors_export() {
                 })
                 .is_ok_and(|pt| *pt.expose_secret() == expected)
         });
+    }
+}
+
+#[test]
+fn vectors_device_name() {
+    for v in load(include_str!("../../test-vectors/device_name.json")) {
+        let ks = keyset(&v);
+        let account: Id = arr(&v["account_id"]);
+        let device: Id = arr(&v["device_id"]);
+        let name = text(&v["name"]);
+        assert_eq!(
+            Aad::device_name(1, &account, &device).as_bytes(),
+            bytes(&v["aad"])
+        );
+        let envelope = bytes(&v["envelope"]);
+        let padded = open(
+            &key(&v["sym_key"]),
+            &Envelope::from_bytes(&envelope).unwrap(),
+            &Aad::device_name(1, &account, &device),
+        )
+        .unwrap();
+        assert_eq!(padded.expose_secret().as_slice(), bytes(&v["padded"]));
+        assert_tamper_evident(&envelope, |b| {
+            Envelope::from_bytes(b)
+                .and_then(|env| ks.open_device_name(&env, &account, &device))
+                .is_ok_and(|n| n == name)
+        });
+    }
+}
+
+/// The server's deterministic steps reproduce the recorded messages, the
+/// recorded login state and finalization still verify, and the frozen record
+/// still logs in: an `opaque-ke` upgrade or a changed setting must not lock
+/// existing accounts out.
+#[test]
+fn vectors_opaque() {
+    for v in load(include_str!("../../test-vectors/opaque.json")) {
+        let server = ServerSecrets::from_bytes(&bytes(&v["server_secrets"])).unwrap();
+        assert_eq!(
+            server.to_bytes().expose_secret(),
+            &bytes(&v["server_secrets"])
+        );
+        let account: Id = arr(&v["account_id"]);
+        let auth_secret = Secret::new(arr::<32>(&v["auth_secret"]));
+        let record = bytes(&v["record"]);
+
+        assert_eq!(
+            server
+                .register_respond(&account, &bytes(&v["registration_request"]))
+                .unwrap(),
+            bytes(&v["registration_response"])
+        );
+        assert_eq!(
+            opaque_record(&bytes(&v["registration_upload"])).unwrap(),
+            record
+        );
+        let state = bytes(&v["server_state_sealed"]);
+        assert_tamper_evident(&bytes(&v["credential_finalization"]), |f| {
+            server.login_finish(&state, f, &account).is_ok()
+        });
+
+        let (login, request) = OpaqueLogin::start(&auth_secret).unwrap();
+        let (state, response) = server
+            .login_respond(Some(&record), &account, &request)
+            .unwrap();
+        let finalization = login.finish(&auth_secret, &account, &response).unwrap();
+        server
+            .login_finish(&state, &finalization, &account)
+            .unwrap();
+
+        let (id, salt) = server.prelogin_fake(v["prelogin_email"].as_str().unwrap());
+        assert_eq!(id, arr(&v["prelogin_fake_id"]));
+        assert_eq!(salt, arr(&v["prelogin_fake_salt"]));
     }
 }

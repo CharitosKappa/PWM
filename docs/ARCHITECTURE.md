@@ -69,9 +69,11 @@ Extension ──native messaging──▶ desktop app (unlock, biometrics)   or 
 
 | Endpoint | Purpose |
 | --- | --- |
-| `POST /v1/auth/register/{start,finish}` | OPAQUE registration |
-| `POST /v1/auth/login/{start,finish}` | OPAQUE login → session token |
-| `GET /v1/account` | Encrypted account keyset, plan, devices |
+| `POST /v1/auth/prelogin` | Account id, salt and KDF params for an email (fake but stable for unknown emails, D12) |
+| `POST /v1/auth/register/{start,finish}` | OPAQUE registration (D26) |
+| `POST /v1/auth/login/{start,finish}` | OPAQUE login → access + refresh tokens (D26) |
+| `POST /v1/auth/refresh` / `POST /v1/auth/logout` | New token pair (refresh token replaced on use) / end the session |
+| `GET /v1/account` | Encrypted account keyset, KDF params, salt, public keys, plan |
 | `GET /v1/vaults` / `POST /v1/vaults` | List/create vaults (encrypted vault keys) |
 | `GET /v1/vaults/{id}/items?since=seq` | Delta sync (per-vault change counter, D25) |
 | `PUT /v1/vaults/{id}/items/{item_id}` | Upsert with `If-Match: revision` |

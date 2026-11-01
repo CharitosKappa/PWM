@@ -127,6 +127,7 @@ jobs:
           - password_normalize
           - totp_parse
           - export_read
+          - opaque_messages
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly

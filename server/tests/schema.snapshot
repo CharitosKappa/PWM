@@ -10,7 +10,7 @@ table accounts
   column sealed_keyset bytea not null
   column x25519_pub bytea not null
   column ed25519_pub bytea not null
-  column opaque_record bytea null
+  column opaque_record bytea not null
   column created_at timestamp with time zone not null default now()
   constraint accounts_ed25519_pub_check: CHECK ((octet_length(ed25519_pub) = 32))
   constraint accounts_email_check: CHECK (((email = btrim(email)) AND (POSITION(('@'::text) IN (email)) > 1)))
@@ -34,10 +34,12 @@ table devices
   column last_seen_at timestamp with time zone not null default now()
   column revoked_at timestamp with time zone null
   constraint devices_account_id_fkey: FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+  constraint devices_id_account_id_key: UNIQUE (id, account_id)
   constraint devices_name_sealed_check: CHECK ((octet_length(name_sealed) >= 41))
   constraint devices_pkey: PRIMARY KEY (id)
   constraint devices_platform_check: CHECK ((platform = ANY (ARRAY['ios'::text, 'android'::text, 'macos'::text, 'windows'::text, 'linux'::text, 'extension'::text])))
   index CREATE INDEX devices_account_id ON public.devices USING btree (account_id)
+  index CREATE UNIQUE INDEX devices_id_account_id_key ON public.devices USING btree (id, account_id)
   index CREATE UNIQUE INDEX devices_pkey ON public.devices USING btree (id)
 
 table items
@@ -55,6 +57,42 @@ table items
   constraint items_vault_id_fkey: FOREIGN KEY (vault_id) REFERENCES vaults(id) ON DELETE CASCADE
   index CREATE UNIQUE INDEX items_pkey ON public.items USING btree (vault_id, id)
   index CREATE UNIQUE INDEX items_vault_seq ON public.items USING btree (vault_id, seq)
+
+table login_attempts
+  column id uuid not null default gen_random_uuid()
+  column account_id uuid not null
+  column state bytea not null
+  column expires_at timestamp with time zone not null
+  constraint login_attempts_pkey: PRIMARY KEY (id)
+  index CREATE INDEX login_attempts_expires_at ON public.login_attempts USING btree (expires_at)
+  index CREATE UNIQUE INDEX login_attempts_pkey ON public.login_attempts USING btree (id)
+
+table sessions
+  column id uuid not null default gen_random_uuid()
+  column account_id uuid not null
+  column device_id uuid not null
+  column access_hash bytea not null
+  column access_expires_at timestamp with time zone not null
+  column refresh_hash bytea not null
+  column prev_refresh_hash bytea null
+  column refresh_expires_at timestamp with time zone not null
+  column created_at timestamp with time zone not null default now()
+  constraint sessions_access_hash_check: CHECK ((octet_length(access_hash) = 32))
+  constraint sessions_access_hash_key: UNIQUE (access_hash)
+  constraint sessions_account_id_fkey: FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+  constraint sessions_device_id_account_id_fkey: FOREIGN KEY (device_id, account_id) REFERENCES devices(id, account_id) ON DELETE CASCADE
+  constraint sessions_device_id_key: UNIQUE (device_id)
+  constraint sessions_pkey: PRIMARY KEY (id)
+  constraint sessions_prev_refresh_hash_check: CHECK ((octet_length(prev_refresh_hash) = 32))
+  constraint sessions_prev_refresh_hash_key: UNIQUE (prev_refresh_hash)
+  constraint sessions_refresh_hash_check: CHECK ((octet_length(refresh_hash) = 32))
+  constraint sessions_refresh_hash_key: UNIQUE (refresh_hash)
+  index CREATE UNIQUE INDEX sessions_access_hash_key ON public.sessions USING btree (access_hash)
+  index CREATE INDEX sessions_account_id ON public.sessions USING btree (account_id)
+  index CREATE UNIQUE INDEX sessions_device_id_key ON public.sessions USING btree (device_id)
+  index CREATE UNIQUE INDEX sessions_pkey ON public.sessions USING btree (id)
+  index CREATE UNIQUE INDEX sessions_prev_refresh_hash_key ON public.sessions USING btree (prev_refresh_hash)
+  index CREATE UNIQUE INDEX sessions_refresh_hash_key ON public.sessions USING btree (refresh_hash)
 
 table shares
   column id uuid not null

@@ -1,17 +1,20 @@
 use std::net::SocketAddr;
 
-use pwm_crypto::Secret;
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use pwm_crypto::{Secret, ServerSecrets};
 
 use crate::ServerError;
 
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:8080";
 
-/// Settings from the environment. `Debug` never shows the database URL,
-/// which holds the database password.
+/// Settings from the environment. `Debug` never shows the database URL
+/// (it holds the database password) or the server secrets.
 #[derive(Debug)]
 pub struct Config {
     pub database_url: Secret<String>,
     pub listen: SocketAddr,
+    pub server_secrets: ServerSecrets,
 }
 
 impl Config {
@@ -19,8 +22,8 @@ impl Config {
         Self::from_vars(|name| std::env::var(name).ok())
     }
 
-    /// Reads `PWM_DATABASE_URL` (required) and `PWM_LISTEN` (default
-    /// [`DEFAULT_LISTEN`]) through `var`.
+    /// Reads `PWM_DATABASE_URL` and `PWM_SERVER_SECRETS` (both required) and
+    /// `PWM_LISTEN` (default [`DEFAULT_LISTEN`]) through `var`.
     pub fn from_vars(var: impl Fn(&str) -> Option<String>) -> Result<Self, ServerError> {
         let database_url = var("PWM_DATABASE_URL")
             .filter(|url| !url.is_empty())
@@ -29,11 +32,35 @@ impl Config {
             .unwrap_or_else(|| DEFAULT_LISTEN.to_owned())
             .parse()
             .map_err(|_| ServerError::Config("PWM_LISTEN is not an address like 127.0.0.1:8080"))?;
+        let secrets =
+            var("PWM_SERVER_SECRETS")
+                .filter(|s| !s.is_empty())
+                .ok_or(ServerError::Config(
+                    "PWM_SERVER_SECRETS is not set (create one with `pwm-server keygen`)",
+                ))?;
+        let server_secrets = decode_server_secrets(&secrets)?;
         Ok(Self {
             database_url: Secret::new(database_url),
             listen,
+            server_secrets,
         })
     }
+}
+
+/// New server secrets as base64url, for `pwm-server keygen`.
+pub fn generate_server_secrets() -> Result<Secret<String>, ServerError> {
+    let secrets = ServerSecrets::generate()
+        .map_err(|_| ServerError::Config("the OS random number generator failed"))?;
+    let bytes = secrets.to_bytes();
+    Ok(Secret::new(URL_SAFE_NO_PAD.encode(bytes.expose_secret())))
+}
+
+fn decode_server_secrets(text: &str) -> Result<ServerSecrets, ServerError> {
+    let invalid = ServerError::Config("PWM_SERVER_SECRETS is not a value from `pwm-server keygen`");
+    let bytes = Secret::new(URL_SAFE_NO_PAD.decode(text.trim()).map_err(|_| invalid)?);
+    ServerSecrets::from_bytes(bytes.expose_secret()).map_err(|_| {
+        ServerError::Config("PWM_SERVER_SECRETS is not a value from `pwm-server keygen`")
+    })
 }
 
 #[cfg(test)]
@@ -50,35 +77,63 @@ mod tests {
         })
     }
 
+    fn secrets() -> String {
+        generate_server_secrets().unwrap().expose_secret().clone()
+    }
+
     #[test]
-    fn reads_the_database_url_and_defaults_the_address() {
-        let config = config(&[("PWM_DATABASE_URL", URL)]).unwrap();
+    fn reads_the_settings_and_defaults_the_address() {
+        let secrets = secrets();
+        let config =
+            config(&[("PWM_DATABASE_URL", URL), ("PWM_SERVER_SECRETS", &secrets)]).unwrap();
         assert_eq!(config.database_url.expose_secret(), URL);
         assert_eq!(config.listen, DEFAULT_LISTEN.parse().unwrap());
     }
 
     #[test]
     fn reads_the_listen_address() {
-        let config = config(&[("PWM_DATABASE_URL", URL), ("PWM_LISTEN", "0.0.0.0:9000")]).unwrap();
+        let secrets = secrets();
+        let config = config(&[
+            ("PWM_DATABASE_URL", URL),
+            ("PWM_SERVER_SECRETS", &secrets),
+            ("PWM_LISTEN", "0.0.0.0:9000"),
+        ])
+        .unwrap();
         assert_eq!(config.listen, "0.0.0.0:9000".parse().unwrap());
     }
 
     #[test]
-    fn rejects_a_missing_url_or_a_bad_address() {
-        assert!(matches!(config(&[]), Err(ServerError::Config(_))));
-        assert!(matches!(
-            config(&[("PWM_DATABASE_URL", "")]),
-            Err(ServerError::Config(_))
-        ));
-        assert!(matches!(
-            config(&[("PWM_DATABASE_URL", URL), ("PWM_LISTEN", "localhost")]),
-            Err(ServerError::Config(_))
-        ));
+    fn rejects_missing_or_bad_settings() {
+        let secrets = secrets();
+        for vars in [
+            vec![("PWM_SERVER_SECRETS", secrets.as_str())],
+            vec![("PWM_DATABASE_URL", ""), ("PWM_SERVER_SECRETS", &secrets)],
+            vec![("PWM_DATABASE_URL", URL)],
+            vec![
+                ("PWM_DATABASE_URL", URL),
+                ("PWM_SERVER_SECRETS", "not base64!"),
+            ],
+            vec![("PWM_DATABASE_URL", URL), ("PWM_SERVER_SECRETS", "AQID")],
+            vec![
+                ("PWM_DATABASE_URL", URL),
+                ("PWM_SERVER_SECRETS", &secrets),
+                ("PWM_LISTEN", "localhost"),
+            ],
+        ] {
+            assert!(
+                matches!(config(&vars), Err(ServerError::Config(_))),
+                "{vars:?}"
+            );
+        }
     }
 
     #[test]
-    fn debug_hides_the_database_password() {
-        let config = config(&[("PWM_DATABASE_URL", URL)]).unwrap();
-        assert!(!format!("{config:?}").contains("hunter2"));
+    fn debug_hides_the_database_password_and_secrets() {
+        let secrets = secrets();
+        let config =
+            config(&[("PWM_DATABASE_URL", URL), ("PWM_SERVER_SECRETS", &secrets)]).unwrap();
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("hunter2"));
+        assert!(!debug.contains(&secrets[..12]));
     }
 }
