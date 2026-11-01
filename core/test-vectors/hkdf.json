@@ -1,0 +1,25 @@
+{
+  "description": "HKDF-SHA256, 32-byte output (D13)",
+  "format_version": 1,
+  "operation": "hkdf",
+  "vectors": [
+    {
+      "ikm": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "info": "f0f1f2f3f4f5f6f7f8f9",
+      "okm": "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf",
+      "salt": "000102030405060708090a0b0c"
+    },
+    {
+      "ikm": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "info": "",
+      "okm": "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d",
+      "salt": ""
+    },
+    {
+      "ikm": "4242424242424242424242424242424242424242424242424242424242424242",
+      "info": "70776d2f61756b2f7631",
+      "okm": "40a6a19c68b5813b1074f73524aa204d3caa61ae475c4734000754e0b5012b83",
+      "salt": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+    }
+  ]
+}

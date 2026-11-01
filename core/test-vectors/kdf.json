@@ -1,0 +1,37 @@
+{
+  "description": "Argon2id password key (D12, D15)",
+  "format_version": 1,
+  "operation": "kdf",
+  "vectors": [
+    {
+      "params": {
+        "iterations": 3,
+        "memory_kib": 65536,
+        "parallelism": 4
+      },
+      "password": "70617373776f7264",
+      "pw_key": "f770ad3c6d81a6a2d10e6548623dc5f9dbd6124d97aea548135c56e9fdb203e1",
+      "salt": "01010101010101010101010101010101"
+    },
+    {
+      "params": {
+        "iterations": 4,
+        "memory_kib": 32768,
+        "parallelism": 4
+      },
+      "password": "70617373776f7264",
+      "pw_key": "8ca3d07f88c0b9836acdc3c7b9820e50224e4be370818834d5c4759152217a21",
+      "salt": "01010101010101010101010101010101"
+    },
+    {
+      "params": {
+        "iterations": 4,
+        "memory_kib": 32768,
+        "parallelism": 4
+      },
+      "password": "636166c3a920f09f9491",
+      "pw_key": "24a90870f317fc1cb26474ca9ac15ce65add8e5b99a3f01c17b95462a23b484d",
+      "salt": "02020202020202020202020202020202"
+    }
+  ]
+}

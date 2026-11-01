@@ -1,0 +1,40 @@
+{
+  "description": "Domain-separated Ed25519 signatures (D17)",
+  "format_version": 1,
+  "operation": "signature",
+  "vectors": [
+    {
+      "account_id": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "auk": "4040404040404040404040404040404040404040404040404040404040404040",
+      "context": "share",
+      "ed25519_public": "22fc297792f0b6ffc0bfcfdb7edb0c0aa14e025a365ec0e342e86e3829cb74b6",
+      "ed25519_seed": "4343434343434343434343434343434343434343434343434343434343434343",
+      "label": "pwm/share-sig",
+      "message": "",
+      "sealed_keyset": "01dc6d8a12ab73a21221a214c4dc4772130b34456f609bd0c37d457290be7173a9fca62dba4673b7c0690a94166ab56856ce0fbdeff4f52e047d4be29b6b3e6dc64fe338b43b75e8a4a3cb09611c6a747bf783a4063f702cdb1cda3248618411952285883190d7927186a60f8a223367434342d2cfea51f2f1f14eee16bfda268708039144379d98898f",
+      "signature": "265290eb322d7382c87c61efc725e45689496aca9cb180d363875f9a8479e532a38b8f0dda4ec22f8f4feba58a13796a4d19e24077646710703eb3c46d589600"
+    },
+    {
+      "account_id": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "auk": "4040404040404040404040404040404040404040404040404040404040404040",
+      "context": "share",
+      "ed25519_public": "22fc297792f0b6ffc0bfcfdb7edb0c0aa14e025a365ec0e342e86e3829cb74b6",
+      "ed25519_seed": "4343434343434343434343434343434343434343434343434343434343434343",
+      "label": "pwm/share-sig",
+      "message": "6d657373616765",
+      "sealed_keyset": "01dc6d8a12ab73a21221a214c4dc4772130b34456f609bd0c37d457290be7173a9fca62dba4673b7c0690a94166ab56856ce0fbdeff4f52e047d4be29b6b3e6dc64fe338b43b75e8a4a3cb09611c6a747bf783a4063f702cdb1cda3248618411952285883190d7927186a60f8a223367434342d2cfea51f2f1f14eee16bfda268708039144379d98898f",
+      "signature": "319d137cca61f0002672433f592565f99922ac2c6b08e7d936d254a1d46e88d0ab064fc1c0620609db338dc8b9d9d8be65ef3a8c213bb4a6bde409f0a5c6160e"
+    },
+    {
+      "account_id": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "auk": "4040404040404040404040404040404040404040404040404040404040404040",
+      "context": "share",
+      "ed25519_public": "22fc297792f0b6ffc0bfcfdb7edb0c0aa14e025a365ec0e342e86e3829cb74b6",
+      "ed25519_seed": "4343434343434343434343434343434343434343434343434343434343434343",
+      "label": "pwm/share-sig",
+      "message": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+      "sealed_keyset": "01dc6d8a12ab73a21221a214c4dc4772130b34456f609bd0c37d457290be7173a9fca62dba4673b7c0690a94166ab56856ce0fbdeff4f52e047d4be29b6b3e6dc64fe338b43b75e8a4a3cb09611c6a747bf783a4063f702cdb1cda3248618411952285883190d7927186a60f8a223367434342d2cfea51f2f1f14eee16bfda268708039144379d98898f",
+      "signature": "55a0b745ee7f331f5813d6e6e8bfc62ad1273b2579406469ea54ecbf3e778adb94ff59656b7cac60ec7cdb86a05c882e522b7919932478bbc7dcc2710a593f03"
+    }
+  ]
+}
