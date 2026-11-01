@@ -57,6 +57,12 @@ A new kind of envelope gets a new label; labels are never reused.
 
 **Password salt (D12).** `salt_pw` is 16 random bytes generated at signup and stored server-side with the KDF params. The pre-login endpoint returns them; for an unknown email it returns `HMAC-SHA256(server_secret, email)[..16]` and the default params, so it does not reveal which accounts exist.
 
+**Master password (D16).** Before Argon2id the password is prepared with the RFC 8265 OpaqueString rules: non-ASCII space characters (U+00A0, U+1680, U+2000–U+200A, U+202F, U+205F, U+3000) become U+0020, the result is normalized to Unicode NFC, case is kept, nothing is trimmed, and empty passwords or passwords containing control characters are rejected. The KDF input is the UTF-8 encoding.
+
+**Account keyset plaintext (v1).** `version:u8 (= 1) || sym_key:32 || x25519_secret:32 || ed25519_seed:32` (97 bytes), sealed under the AUK with AAD `pwm/keyset` (version 1, account_id). Public keys are derived from the secrets and are not stored inside it.
+
+**Vault key plaintext (v1).** The 32 raw key bytes, sealed under `sym_key` with AAD `pwm/vault-key` (version 1, vault_id).
+
 **Secret Key text (D14).** `A1-` prefix (format version), then the 128-bit key as 26 Crockford base32 characters (most significant bit first, top two bits zero) plus one Crockford mod-37 check character, grouped `A1-XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXX`. Input is case-insensitive, ignores `-` and spaces, and maps `O`→`0`, `I`/`L`→`1`. The account id is printed separately on the Emergency Kit.
 
 **KDF parameters (D15).** Argon2id params (`m`, `t`, `p`, version) are stored per account and are identical on every client. Default at signup m = 64 MiB, t = 3, p = 4; the m = 32 MiB, t = 4 floor only when the signup device cannot allocate 64 MiB. Single-threaded clients (WASM) compute the same `p = 4` sequentially. Memory-limited contexts (iOS AutoFill extension) never run the KDF; they use the biometric-wrapped key.
