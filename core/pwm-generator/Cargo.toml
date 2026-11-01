@@ -11,3 +11,6 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+pwm-crypto = { path = "../pwm-crypto" }
+thiserror = "2.0.21"
+zxcvbn = { version = "3.1.1", default-features = false }

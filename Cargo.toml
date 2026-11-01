@@ -42,3 +42,13 @@ opt-level = 3
 
 [profile.dev.package.curve25519-dalek]
 opt-level = 3
+
+# zxcvbn scores with heavy regex use; keep strength tests fast.
+[profile.dev.package.zxcvbn]
+opt-level = 3
+
+[profile.dev.package.fancy-regex]
+opt-level = 3
+
+[profile.dev.package.regex-automata]
+opt-level = 3
