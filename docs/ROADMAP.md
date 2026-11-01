@@ -28,7 +28,8 @@ Phase 3  Teams           months 16–24 M16–M19
   - Deferred: base64url JSON form of the envelope (lands with the first JSON wire format, M2.3/M3.3); `getrandom` `wasm_js` backend (M3.7).
 - [x] M1.3 Argon2id KDF with stored params; HKDF helpers; Secret Key generation + human format (`A3-XXXXXX-...`).
 - [x] M1.4 Key hierarchy from `SECURITY.md`: AUK, auth secret, account keyset create/unlock, vault key wrap/unwrap.
-- [ ] M1.5 X25519 share wrap/unwrap + Ed25519 sign/verify.
+- [x] M1.5 X25519 share wrap/unwrap + Ed25519 sign/verify.
+  - Deferred: fixed-randomness vectors pinning the share-key derivation bytes (M1.6); key fingerprint format for the out-of-band check (with the sharing UI, M13).
 - [ ] M1.6 Test vectors in `core/test-vectors/*.json` for every operation; tamper tests (bit flips must fail).
 - [ ] M1.7 Fuzz targets for envelope decode.
 

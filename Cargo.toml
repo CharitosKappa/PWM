@@ -30,9 +30,12 @@ all = { level = "warn", priority = -1 }
 lto = "thin"
 codegen-units = 1
 
-# Argon2 is unusably slow unoptimized; keep test runs fast.
+# Argon2 and curve25519 are very slow unoptimized; keep test runs fast.
 [profile.dev.package.argon2]
 opt-level = 3
 
 [profile.dev.package.blake2]
+opt-level = 3
+
+[profile.dev.package.curve25519-dalek]
 opt-level = 3

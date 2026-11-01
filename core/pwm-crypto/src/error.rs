@@ -24,4 +24,8 @@ pub enum CryptoError {
     SecretKeyChecksum,
     #[error("password is empty or contains control characters")]
     PasswordRejected,
+    #[error("signature verification failed")]
+    SignatureInvalid,
+    #[error("public key is invalid or of small order")]
+    InvalidPublicKey,
 }

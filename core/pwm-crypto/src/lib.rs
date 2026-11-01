@@ -10,6 +10,7 @@ mod kdf;
 mod password;
 mod secret;
 mod secret_key;
+mod share;
 
 pub use aad::{Aad, Id};
 pub use account::{
@@ -22,3 +23,4 @@ pub use kdf::{KdfParams, derive_password_key, generate_salt};
 pub use password::normalize_password;
 pub use secret::Secret;
 pub use secret_key::SecretKey;
+pub use share::{SignatureContext, VaultShare, verify_signature};
