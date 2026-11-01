@@ -12,17 +12,6 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D7 — Bundled extras**: email aliases (planned Phase 3) yes; VPN no.
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
-- **D23 — TOTP inputs and code generation** · proposed 2026-11-01 · Claude Code. Blocks M2.6. D18 stores a login's TOTP as an `otpauth://` URI; the roadmap says only "TOTP (RFC 6238) code generation". Open: which URI variants and parameters are accepted, what happens to pasted bare secrets and non-standard codes (Steam), and where the code lives. Proposal:
-  1. **Where:** the HMAC-based one-time-password step (RFC 4226 dynamic truncation over HMAC-SHA1/SHA-256/SHA-512) is a small function in `pwm-crypto`, using the `hmac`, `sha1` and `sha2` crates already there. Parsing `otpauth://` URIs and formatting codes live in `pwm-vault` next to the item model. The caller passes the current Unix time, so the core never reads the clock and every case is testable.
-  2. **Accepted inputs:**
-     - `otpauth://totp/...` with a base32 `secret` (case-insensitive; spaces and `=` padding ignored) and optional `algorithm` (SHA1, SHA256, SHA512), `digits` (6–8) and `period` (1–3600 s). Defaults: SHA1, 6 digits, 30 s, as in the Google Authenticator key-URI format.
-     - A bare base32 secret, as many sites show under "can't scan the QR code?", using the defaults.
-     - Steam Guard: `steam://<secret>` and `otpauth://...&encoder=steam` give 5-character Steam codes (HMAC-SHA1, 30 s, Steam's 26-letter alphabet). Steam is a common request and every major competitor supports it.
-  3. **Stored form:** URIs are stored exactly as entered or imported, so unknown parameters (e.g. `image=`) survive. A pasted bare secret is turned into `otpauth://totp/<title>?secret=<SECRET>` when the item is saved, so every stored value is a URI.
-  4. **Not supported (yet):** counter-based `otpauth://hotp` (it needs the counter written back on every use) and other proprietary schemes. Such a value is kept unchanged and shown as "unsupported code type", never deleted.
-  5. **Output:** the code as `Secret<String>` plus the seconds left in the current period. Copying follows the existing clipboard rule (auto-clear after 30 s).
-  6. **Vectors:** RFC 4226 Appendix D and RFC 6238 Appendix B (SHA-1, SHA-256, SHA-512) plus Steam cases go in `core/test-vectors/totp.json` and are checked by both the Rust tests and the independent Node verifier.
-  7. **Plans:** TOTP is a Premium feature (`PRICING.md`); gating is done in M9.3, so the core generator does not check plans.
 
 ## Settled
 
@@ -93,3 +82,14 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
      - Results (breach counts) stay in memory for the session and are not stored in the vault or the cache in M2.5.
   5. **Default:** weak and reused checks are always on (fully local). The breach check is **on by default with a switch in settings**, explained in one plain sentence ("Checks your passwords against known leaks without sending them: only the first 5 characters of a hash leave your device"). Alternative: off by default (opt-in), which is the most conservative choice but means most users never see leaked passwords.
   Why: k-anonymity with padding is the standard way to check leaks without revealing passwords; keeping the request off our server avoids linking prefixes to accounts; the keyed in-memory hash meets the roadmap's "compare hashes" without creating an offline-crackable table.
+- **D23 — TOTP inputs and code generation** · settled 2026-11-01 · founder (approved as proposed). D18 stores a login's TOTP as an `otpauth://` URI; the roadmap says only "TOTP (RFC 6238) code generation". Open: which URI variants and parameters are accepted, what happens to pasted bare secrets and non-standard codes (Steam), and where the code lives. Proposal:
+  1. **Where:** the HMAC-based one-time-password step (RFC 4226 dynamic truncation over HMAC-SHA1/SHA-256/SHA-512) is a small function in `pwm-crypto`, using the `hmac`, `sha1` and `sha2` crates already there. Parsing `otpauth://` URIs and formatting codes live in `pwm-vault` next to the item model. The caller passes the current Unix time, so the core never reads the clock and every case is testable.
+  2. **Accepted inputs:**
+     - `otpauth://totp/...` with a base32 `secret` (case-insensitive; spaces and `=` padding ignored) and optional `algorithm` (SHA1, SHA256, SHA512), `digits` (6–8) and `period` (1–3600 s). Defaults: SHA1, 6 digits, 30 s, as in the Google Authenticator key-URI format.
+     - A bare base32 secret, as many sites show under "can't scan the QR code?", using the defaults.
+     - Steam Guard: `steam://<secret>` and `otpauth://...&encoder=steam` give 5-character Steam codes (HMAC-SHA1, 30 s, Steam's 26-letter alphabet). Steam is a common request and every major competitor supports it.
+  3. **Stored form:** URIs are stored exactly as entered or imported, so unknown parameters (e.g. `image=`) survive. A pasted bare secret is turned into `otpauth://totp/<title>?secret=<SECRET>` when the item is saved, so every stored value is a URI.
+  4. **Not supported (yet):** counter-based `otpauth://hotp` (it needs the counter written back on every use) and other proprietary schemes. Such a value is kept unchanged and shown as "unsupported code type", never deleted.
+  5. **Output:** the code as `Secret<String>` plus the seconds left in the current period. Copying follows the existing clipboard rule (auto-clear after 30 s).
+  6. **Vectors:** RFC 4226 Appendix D and RFC 6238 Appendix B (SHA-1, SHA-256, SHA-512) plus Steam cases go in `core/test-vectors/totp.json` and are checked by both the Rust tests and the independent Node verifier.
+  7. **Plans:** TOTP is a Premium feature (`PRICING.md`); gating is done in M9.3, so the core generator does not check plans.
