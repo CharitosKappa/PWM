@@ -12,13 +12,6 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D7 — Bundled extras**: email aliases (planned Phase 3) yes; VPN no.
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
-- **D19 — Item history and trash storage** · proposed 2026-11-01 · Claude Code. M2.2 needs "last 10 versions" and a 30-day trash; the specs do not say where they live. Blocks M2.2. Proposal:
-  1. **History inside the item:** each item carries `history`, its previous versions newest first, at most 10. A version is a full snapshot of the item fields (without its own history) plus `saved_at`. Saving pushes the previous version only when something other than `favorite` or `updated_at` changed. Sync conflicts (M3.4) push the losing version the same way, so no edit is ever silently lost.
-  2. **Trash inside the item:** a `trashed_at` timestamp (ms) in the encrypted item. Trashed items are hidden from lists, search and autofill and shown in Trash, where they can be restored (clears `trashed_at`) or deleted now.
-  3. **Purge on the client:** at each unlock a client permanently deletes items trashed more than 30 days ago, which sends the normal tombstone (`DELETE`) to the server. The server never learns which items are in the trash, only the final deletion.
-  4. **Folders:** trashing a folder moves its items to no folder right away (as D18 does for deletion); restoring the folder does not move them back.
-  5. **Schema:** both fields are added to item schema v1 rather than v2, because no v1 client has shipped yet; the v1 fixture is extended.
-  Why: the server already sees every revision number, so keeping history inside the ciphertext reveals nothing new, and padding hides most of the size growth. Alternatives: separate encrypted history records (unbounded, but the server sees how often each item changes) and a server-visible trash flag with a server-side purge job (works when no client opens the vault for 30 days, but the server learns which items were deleted and when).
 
 ## Settled
 
@@ -57,3 +50,10 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   5. **Tags:** plain strings inside each item; there is no tag entity. The tag list is computed on the client.
   6. **Size padding:** before encryption the JSON is padded to the next multiple of 256 bytes (ISO/IEC 7816-4: one `0x80` byte, then zeros), so the server learns sizes only in coarse buckets and cannot tell a folder or short note from a login by length. Costs at most 255 bytes per item.
   Alternative to 1: CBOR (smaller, native binary), at the cost of harder debugging and a less common parser for importers/exporters.
+- **D19 — Item history and trash storage** · settled 2026-11-01 · founder (approved as proposed). M2.2 needs "last 10 versions" and a 30-day trash; the specs do not say where they live. Proposal:
+  1. **History inside the item:** each item carries `history`, its previous versions newest first, at most 10. A version is a full snapshot of the item fields (without its own history) plus `saved_at`. Saving pushes the previous version only when something other than `favorite` or `updated_at` changed. Sync conflicts (M3.4) push the losing version the same way, so no edit is ever silently lost.
+  2. **Trash inside the item:** a `trashed_at` timestamp (ms) in the encrypted item. Trashed items are hidden from lists, search and autofill and shown in Trash, where they can be restored (clears `trashed_at`) or deleted now.
+  3. **Purge on the client:** at each unlock a client permanently deletes items trashed more than 30 days ago, which sends the normal tombstone (`DELETE`) to the server. The server never learns which items are in the trash, only the final deletion.
+  4. **Folders:** trashing a folder moves its items to no folder right away (as D18 does for deletion); restoring the folder does not move them back.
+  5. **Schema:** both fields are added to item schema v1 rather than v2, because no v1 client has shipped yet; the v1 fixture is extended.
+  Why: the server already sees every revision number, so keeping history inside the ciphertext reveals nothing new, and padding hides most of the size growth. Alternatives: separate encrypted history records (unbounded, but the server sees how often each item changes) and a server-visible trash flag with a server-side purge job (works when no client opens the vault for 30 days, but the server learns which items were deleted and when).
