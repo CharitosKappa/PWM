@@ -6,16 +6,31 @@
     "notes": "main account",
     "favorite": true,
     "folder_id": "0f0e0d0c-0b0a-4908-8706-050403020100",
-    "tags": ["work", "email"],
-    "custom_fields": [{ "name": "PIN", "value": "1234", "kind": "hidden" }],
+    "tags": [
+      "work",
+      "email"
+    ],
+    "custom_fields": [
+      {
+        "name": "PIN",
+        "value": "1234",
+        "kind": "hidden"
+      }
+    ],
     "created_at": 1767225600000,
     "updated_at": 1767312000000,
     "login": {
       "username": "alice@example.com",
       "password": "hunter2",
       "urls": [
-        { "url": "https://example.com", "match": "domain" },
-        { "url": "https://login.example.net/auth", "match": "starts_with" }
+        {
+          "url": "https://example.com",
+          "match": "domain"
+        },
+        {
+          "url": "https://login.example.net/auth",
+          "match": "starts_with"
+        }
       ],
       "totp": "otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP&issuer=Example",
       "passkeys": [
@@ -70,7 +85,10 @@
       "email": "alice@example.com",
       "phone": "+30 210 000 0000",
       "company": "Example Ltd",
-      "address_lines": ["1 Main Street", "Flat 2"],
+      "address_lines": [
+        "1 Main Street",
+        "Flat 2"
+      ],
       "city": "Athens",
       "region": "Attica",
       "postal_code": "10431",
@@ -83,7 +101,9 @@
     "title": "Work",
     "created_at": 1767225600000,
     "updated_at": 1767225600000,
-    "folder": { "parent_id": null }
+    "folder": {
+      "parent_id": null
+    }
   },
   {
     "v": 1,
@@ -91,12 +111,31 @@
     "title": "Fields from a newer app version",
     "created_at": 1767225600000,
     "updated_at": 1767225600000,
-    "future_top_level": { "kept": [1, 2, 3] },
-    "custom_fields": [{ "name": "code", "value": "42", "kind": "otp", "future_field_flag": true }],
+    "future_top_level": {
+      "kept": [
+        1,
+        2,
+        3
+      ]
+    },
+    "custom_fields": [
+      {
+        "name": "code",
+        "value": "42",
+        "kind": "otp",
+        "future_field_flag": true
+      }
+    ],
     "login": {
       "username": "bob",
       "password": "pw",
-      "urls": [{ "url": "https://example.org", "match": "fuzzy", "future_url_option": "x" }],
+      "urls": [
+        {
+          "url": "https://example.org",
+          "match": "fuzzy",
+          "future_url_option": "x"
+        }
+      ],
       "future_login_field": "keep me"
     }
   },
@@ -106,7 +145,10 @@
     "title": "Home network (type from a newer app version)",
     "created_at": 1767225600000,
     "updated_at": 1767225600000,
-    "wifi": { "ssid": "home", "passphrase": "secret" }
+    "wifi": {
+      "ssid": "home",
+      "passphrase": "secret"
+    }
   },
   {
     "v": 2,
@@ -114,7 +156,61 @@
     "title": "Item from schema v2",
     "created_at": 1767225600000,
     "updated_at": 1767225600000,
-    "login": { "username": "carol", "password": "pw2" },
+    "login": {
+      "username": "carol",
+      "password": "pw2"
+    },
     "v2_only": "value"
+  },
+  {
+    "v": 1,
+    "type": "login",
+    "title": "Bank",
+    "created_at": 1767225600000,
+    "updated_at": 1767398400000,
+    "trashed_at": 1767484800000,
+    "login": {
+      "username": "alice",
+      "password": "third-password",
+      "urls": [
+        {
+          "url": "https://bank.example",
+          "match": "host"
+        }
+      ]
+    },
+    "history": [
+      {
+        "saved_at": 1767398400000,
+        "v": 1,
+        "type": "login",
+        "title": "Bank",
+        "created_at": 1767225600000,
+        "updated_at": 1767312000000,
+        "login": {
+          "username": "alice",
+          "password": "second-password",
+          "urls": [
+            {
+              "url": "https://bank.example",
+              "match": "host"
+            }
+          ]
+        }
+      },
+      {
+        "saved_at": 1767312000000,
+        "v": 1,
+        "type": "login",
+        "title": "Bank",
+        "created_at": 1767225600000,
+        "updated_at": 1767225600000,
+        "login": {
+          "username": "alice",
+          "password": "first-password"
+        },
+        "future_snapshot_field": "kept"
+      }
+    ]
   }
 ]

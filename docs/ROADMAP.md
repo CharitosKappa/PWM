@@ -40,7 +40,8 @@ Phase 3  Teams           months 16–24 M16–M19
 ### M2 — Vault model (`pwm-vault`, `pwm-generator`, `pwm-health`)
 - [x] M2.1 Item types: login (multi-URL, TOTP secret, passkey), secure note, card, identity; custom fields; tags; folders. Versioned schema.
   - Note: zeroizing decrypted items is best effort; serde_json's internal parse buffers are not wiped.
-- [ ] M2.2 Item history (last 10 versions) and soft-delete (trash 30 days).
+- [x] M2.2 Item history (last 10 versions) and soft-delete (trash 30 days).
+  - Purge runs where the client unlocks (M3.4 wires it to sync tombstones). Read-only items (newer schema or unknown type) cannot be trashed, only deleted.
 - [ ] M2.3 Local encrypted cache (SQLite storing ciphertext only) + migrations.
 - [ ] M2.4 Generator: random password and EFF-wordlist passphrase; zxcvbn strength.
 - [ ] M2.5 Health: weak, reused (compare hashes in memory), breached via HIBP k-anonymity range API.

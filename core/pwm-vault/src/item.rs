@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use zeroize::Zeroize;
 
+use crate::history::ItemVersion;
 use crate::string_enum::string_enum;
 use crate::{ItemId, VaultError};
 
@@ -202,8 +203,13 @@ pub struct Item {
     pub created_at: i64,
     /// Unix time in milliseconds.
     pub updated_at: i64,
-    schema_version: u32,
-    extra: Extra,
+    /// When the item was moved to the trash (Unix ms); `None` if not trashed.
+    /// Change it with [`trash`](Item::trash) / [`restore_from_trash`](Item::restore_from_trash).
+    pub trashed_at: Option<i64>,
+    /// Previous versions, newest first (see `history.rs`).
+    pub(crate) history: Vec<ItemVersion>,
+    pub(crate) schema_version: u32,
+    pub(crate) extra: Extra,
 }
 
 impl Item {
@@ -219,6 +225,8 @@ impl Item {
             custom_fields: Vec::new(),
             created_at: now_ms,
             updated_at: now_ms,
+            trashed_at: None,
+            history: Vec::new(),
             schema_version: SCHEMA_VERSION,
             extra: Extra::new(),
         }
@@ -241,7 +249,7 @@ impl Item {
 
     pub(crate) fn from_slice(json: &[u8]) -> Result<Self, VaultError> {
         let raw: RawItem = serde_json::from_slice(json).map_err(|_| VaultError::InvalidItem)?;
-        Self::try_from(upgrade(raw)?)
+        Self::from_raw(raw, false)
     }
 
     /// Serializes the item to JSON.
@@ -349,6 +357,14 @@ struct RawItem {
     created_at: i64,
     updated_at: i64,
     #[serde(default)]
+    trashed_at: Option<i64>,
+    /// Only on history entries: when this version was replaced.
+    #[serde(default)]
+    saved_at: Option<i64>,
+    /// Only on the top-level item.
+    #[serde(default)]
+    history: Vec<RawItem>,
+    #[serde(default)]
     login: Option<Login>,
     #[serde(default)]
     card: Option<Card>,
@@ -362,6 +378,8 @@ struct RawItem {
 
 #[derive(Serialize)]
 struct RawItemOut<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    saved_at: Option<i64>,
     v: u32,
     #[serde(rename = "type")]
     item_type: &'a str,
@@ -373,6 +391,9 @@ struct RawItemOut<'a> {
     custom_fields: &'a [CustomField],
     created_at: i64,
     updated_at: i64,
+    trashed_at: Option<i64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    history: Vec<RawItemOut<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     login: Option<&'a Login>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -387,6 +408,19 @@ struct RawItemOut<'a> {
 
 impl<'a> From<&'a Item> for RawItemOut<'a> {
     fn from(item: &'a Item) -> Self {
+        let mut out = Self::snapshot(item, None);
+        out.history = item
+            .history
+            .iter()
+            .map(|v| Self::snapshot(&v.item, Some(v.saved_at)))
+            .collect();
+        out
+    }
+}
+
+impl<'a> RawItemOut<'a> {
+    /// The item's own fields, without history.
+    fn snapshot(item: &'a Item, saved_at: Option<i64>) -> Self {
         let (mut login, mut card, mut identity, mut folder) = (None, None, None, None);
         match &item.kind {
             ItemKind::Login(l) => login = Some(l),
@@ -396,6 +430,7 @@ impl<'a> From<&'a Item> for RawItemOut<'a> {
             ItemKind::Note | ItemKind::Unknown(_) => {}
         }
         Self {
+            saved_at,
             v: item.schema_version,
             item_type: item.kind.type_name(),
             title: &item.title,
@@ -406,6 +441,8 @@ impl<'a> From<&'a Item> for RawItemOut<'a> {
             custom_fields: &item.custom_fields,
             created_at: item.created_at,
             updated_at: item.updated_at,
+            trashed_at: item.trashed_at,
+            history: Vec::new(),
             login,
             card,
             identity,
@@ -422,6 +459,32 @@ fn upgrade(raw: RawItem) -> Result<RawItem, VaultError> {
     match raw.v {
         0 => Err(VaultError::InvalidItem),
         _ => Ok(raw),
+    }
+}
+
+impl Item {
+    /// Converts parsed JSON. A top-level item may carry history but no
+    /// `saved_at`; a history entry needs `saved_at` and may not nest history.
+    fn from_raw(raw: RawItem, is_history_entry: bool) -> Result<Self, VaultError> {
+        let mut raw = upgrade(raw)?;
+        if raw.saved_at.is_some() != is_history_entry
+            || (is_history_entry && !raw.history.is_empty())
+        {
+            return Err(VaultError::InvalidItem);
+        }
+        let history = std::mem::take(&mut raw.history)
+            .into_iter()
+            .map(|entry| {
+                let saved_at = entry.saved_at.ok_or(VaultError::InvalidItem)?;
+                Ok(ItemVersion {
+                    saved_at,
+                    item: Self::from_raw(entry, true)?,
+                })
+            })
+            .collect::<Result<Vec<_>, VaultError>>()?;
+        let mut item = Self::try_from(raw)?;
+        item.history = history;
+        Ok(item)
     }
 }
 
@@ -463,6 +526,8 @@ impl TryFrom<RawItem> for Item {
             custom_fields: std::mem::take(&mut raw.custom_fields),
             created_at: raw.created_at,
             updated_at: raw.updated_at,
+            trashed_at: raw.trashed_at,
+            history: Vec::new(),
             schema_version: raw.v,
             extra: std::mem::take(&mut raw.extra),
         })

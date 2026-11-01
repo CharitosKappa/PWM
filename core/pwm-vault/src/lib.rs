@@ -3,12 +3,14 @@
 
 mod codec;
 mod error;
+mod history;
 mod id;
 mod item;
 mod string_enum;
 
 pub use codec::{decrypt_item, encrypt_item};
 pub use error::VaultError;
+pub use history::{HISTORY_LIMIT, ItemVersion, TRASH_RETENTION_MS, trash_folder};
 pub use id::{ItemId, ParseIdError};
 pub use item::{
     Card, CustomField, FieldKind, Folder, Identity, Item, ItemKind, Login, LoginUrl, Passkey,
