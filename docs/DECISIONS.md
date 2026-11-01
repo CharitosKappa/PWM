@@ -12,6 +12,14 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D7 — Bundled extras**: email aliases (planned Phase 3) yes; VPN no.
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
+- **D17 — Vault share format and signatures** · proposed 2026-11-01 · Claude Code. `SECURITY.md` says a shared vault key is "encrypted to the recipient X25519 key, signed with the sharer Ed25519 key" but not how. Blocks M1.5. Proposal (ECIES-style, only crates already on the vetted list):
+  1. **Signatures (all uses):** Ed25519 over `len(label):u8 || label || message`, so a signature made for one purpose (share, device approval, ...) can never verify for another. Verification uses strict mode (rejects malleable signatures and weak public keys).
+  2. **Key agreement:** the sharer makes a fresh X25519 key pair per share; `dh = X25519(eph_secret, recipient_x25519_pub)`; an all-zero (non-contributory) result is rejected.
+  3. **Share key:** `share_key = HKDF(ikm = dh, salt = eph_pub || recipient_x25519_pub, info = "pwm/share/v1")`.
+  4. **Encryption:** the vault key is sealed as a normal v1 envelope under `share_key` with AAD label `pwm/share` and fields `version:u8 || vault_id || sender_ed25519_pub || recipient_x25519_pub`.
+  5. **Signature:** label `pwm/share-sig` over `version:u8 || vault_id || recipient_x25519_pub || eph_pub || envelope`.
+  6. **Wire format:** `v:u8 (= 1) || eph_pub:32 || signature:64 || envelope` (base64url in JSON). The recipient verifies the signature with the sender Ed25519 key (fingerprint check per `SECURITY.md`) before decrypting.
+  Why: a fresh ephemeral key gives every share its own key; binding both public keys and the sender identity into the KDF, AAD and signature stops a share being re-targeted to another recipient, vault or sender. Alternative: HPKE (RFC 9180) via the `hpke` crate, which is standardized but adds a crate outside the vetted list and a second AEAD construction.
 
 ## Settled
 
