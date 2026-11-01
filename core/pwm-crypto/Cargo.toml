@@ -11,3 +11,4 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+zeroize = "1.9.1"
