@@ -5,6 +5,7 @@ mod aad;
 mod account;
 mod aead;
 mod error;
+mod health;
 mod hkdf;
 mod kdf;
 mod password;
@@ -19,6 +20,7 @@ pub use account::{
 };
 pub use aead::{Envelope, SymmetricKey, open, seal};
 pub use error::CryptoError;
+pub use health::{ReuseHasher, hibp_sha1};
 pub use hkdf::hkdf_sha256;
 pub use kdf::{KdfParams, derive_password_key, generate_salt};
 pub use password::normalize_password;
