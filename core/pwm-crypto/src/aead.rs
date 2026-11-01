@@ -30,6 +30,10 @@ impl SymmetricKey {
         Self(bytes)
     }
 
+    pub(crate) fn expose_bytes(&self) -> &[u8; 32] {
+        self.0.expose_secret()
+    }
+
     fn cipher(&self) -> XChaCha20Poly1305 {
         XChaCha20Poly1305::new_from_slice(self.0.expose_secret()).expect("key is 32 bytes")
     }

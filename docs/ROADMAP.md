@@ -27,7 +27,7 @@ Phase 3  Teams           months 16–24 M16–M19
 - [x] M1.2 AEAD wrapper (XChaCha20-Poly1305) with versioned envelope `{v, nonce, ct}` and AAD.
   - Deferred: base64url JSON form of the envelope (lands with the first JSON wire format, M2.3/M3.3); `getrandom` `wasm_js` backend (M3.7).
 - [x] M1.3 Argon2id KDF with stored params; HKDF helpers; Secret Key generation + human format (`A3-XXXXXX-...`).
-- [ ] M1.4 Key hierarchy from `SECURITY.md`: AUK, auth secret, account keyset create/unlock, vault key wrap/unwrap.
+- [x] M1.4 Key hierarchy from `SECURITY.md`: AUK, auth secret, account keyset create/unlock, vault key wrap/unwrap.
 - [ ] M1.5 X25519 share wrap/unwrap + Ed25519 sign/verify.
 - [ ] M1.6 Test vectors in `core/test-vectors/*.json` for every operation; tamper tests (bit flips must fail).
 - [ ] M1.7 Fuzz targets for envelope decode.
