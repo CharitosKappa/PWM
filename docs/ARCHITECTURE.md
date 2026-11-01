@@ -16,6 +16,7 @@ pwm/
   core/                     # Rust workspace
     pwm-crypto/             # primitives wrappers, KDF, key hierarchy, Secret<T>
     pwm-vault/              # item model, vault/account structs, versioned formats
+    pwm-store/              # local encrypted cache (SQLite, ciphertext only) behind a Store trait (D20)
     pwm-sync/               # sync engine (CRDT-lite, see below), conflict resolution
     pwm-autofill/           # URL matching, field classification, site overrides
     pwm-import/             # importers (Bitwarden, 1Password, Keeper, NordPass, Proton Pass, Dashlane, KeePass, LastPass, CSV)
