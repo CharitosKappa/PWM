@@ -52,6 +52,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          # Only node is needed here; skip the automatic pnpm cache.
+          package-manager-cache: false
       - run: cargo test --workspace --all-features --locked
       - run: just test-vectors
 
