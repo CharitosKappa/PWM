@@ -12,6 +12,52 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D7 — Bundled extras**: email aliases (planned Phase 3) yes; VPN no.
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
+- **D26 — OPAQUE login, session tokens and device registration** · proposed 2026-11-02 · Claude Code. The roadmap says "OPAQUE register/login; session tokens (short-lived + refresh), device registration". `SECURITY.md` fixes the OPAQUE input (`auth_secret`) and the pre-login rule (D12), but not the OPAQUE settings, the token design, where the server's long-term keys live, or the device-name format. Proposal:
+  1. **OPAQUE settings (RFC 9807):**
+     - **Crate and suite:** `opaque-ke` 4.0.1, the latest stable release (4.1 is a pre-release). Suite: OPRF ristretto255-SHA512, key exchange 3DH on ristretto255 with SHA-512.
+     - **No extra stretching (KSF = Identity):** the input is `auth_secret`, which already went through Argon2id and is mixed with the 128-bit Secret Key. Stretching it again would only slow down logins.
+     - **Bindings:** context `"pwm/opaque/v1"`; client identifier = `account_id` (16 bytes); server identifier = the server's OPAQUE public key (the protocol's default); credential identifier = `account_id`.
+     - **Placement:** both client and server sides live in `pwm-crypto` (module `opaque`), so the server calls the core and implements no crypto itself.
+  2. **Server secrets:**
+     - One versioned blob, `v:u8 (= 1) || OPAQUE ServerSetup || prelogin_key:32`, passed as base64url in `PWM_SERVER_SECRETS`. `pwm-server keygen` prints a new one. The server refuses to start without it.
+     - `prelogin_key` is the HMAC key for D12's fake answers.
+     - Losing or changing the ServerSetup locks every account out, so it must live in a secret manager with a backup. There is no rotation in v1.
+  3. **Endpoints (JSON, bytes as base64url without padding, ids as UUID strings):**
+     - `POST /v1/auth/prelogin {email}` → `{account_id, salt, kdf}`. For an unknown email the server returns a fake `account_id` and salt (`HMAC(prelogin_key, label || email)`, the id shaped as a UUIDv4) and the default params, so the answer looks like a real one (D12). The client needs `account_id` because it salts the key derivation.
+     - `POST /v1/auth/register/start {account_id, registration_request}` → `{registration_response}`. This stores nothing on the server.
+     - `POST /v1/auth/register/finish {email, account_id, registration_upload, salt, kdf, sealed_keyset, x25519_pub, ed25519_pub, device}` → 201 with tokens. The account, its first device and a session are created in one transaction. KDF params must pass `KdfParams::validate`. A taken email or id gets 409.
+     - `POST /v1/auth/login/start {account_id, credential_request}` → `{login_id, credential_response}`. For an unknown id, `opaque-ke`'s fake record gives an answer that looks the same. The server's login state is kept for 60 s in a `login_attempts` table, so any instance can finish the login.
+     - `POST /v1/auth/login/finish {login_id, credential_finalization, device}` → tokens, or 401 `invalid_credentials`. A wrong password, a wrong Secret Key, an unknown account and an expired attempt all get the same answer.
+     - `POST /v1/auth/refresh {refresh_token}` → new tokens. `POST /v1/auth/logout` ends the session.
+     - `GET /v1/account` → `{account_id, email, kdf, salt, sealed_keyset, x25519_pub, ed25519_pub, plan}`. `plan` is `free` when there is no subscription row.
+     - `GET /v1/devices` and `DELETE /v1/devices/{id}`. Revoking a device sets `revoked_at` and ends its session.
+     - Errors are `{"error": "<code>"}` and never include input values.
+  4. **Tokens:**
+     - **Format:** random 32-byte tokens, base64url with a prefix (`pwma_` for access, `pwmr_` for refresh) so secret scanners can spot leaked ones.
+     - **Storage:** the server stores only their SHA-256 hashes. That is enough because the tokens are random, not passwords. Generating and hashing tokens lives in `pwm-crypto`.
+     - **Access token:** lasts 15 minutes and is sent as `Authorization: Bearer`.
+     - **Refresh token:** expires after 90 days unused and is replaced on every use. Presenting an already-replaced refresh token (a sign it was copied) ends that session.
+     - **One session per device:** a new login on a device replaces its old session.
+     - Why not JWTs: every request checks the session in the database anyway (revocation must be instant), so signed tokens would add a signing key and save nothing.
+  5. **Devices:**
+     - Each device is registered when it registers or logs in, with a client-generated `id`, its `platform` and a sealed name.
+     - A revoked device id cannot log in again; the client makes a new id. A device id that belongs to another account gets 409.
+     - Approving a new device from an existing one (which hands over the Secret Key) is a later milestone; until then a new device needs the master password plus the Secret Key.
+  6. **Device name format v1 (normative, goes into `SECURITY.md`):**
+     - The UTF-8 name, at most 63 bytes, is padded to exactly 64 bytes (ISO/IEC 7816-4), so every sealed name has the same size.
+     - It is sealed under `sym_key` with the new AAD label `pwm/device-name` and fields `version:u8 || account_id || device_id`.
+     - Vectors go in `core/test-vectors/device_name.json`, checked in Rust and Node.
+  7. **Schema migration 0002:**
+     - New table `sessions`: `id`, `account_id`, `device_id` (unique), `access_hash`, `access_expires_at`, `refresh_hash`, `prev_refresh_hash`, `refresh_expires_at`, `created_at`.
+     - New table `login_attempts`: `id`, `account_id` (no foreign key, because it may be a fake id), `state`, `expires_at`.
+     - `accounts.opaque_record` becomes NOT NULL.
+     - A migration test checks that v1 data survives the upgrade.
+  8. **Email:** trimmed and lowercased, at most 254 bytes, exactly one `@` with text on both sides, and no spaces or control characters. **Known gap:** registration answers 409 for a taken email, so it reveals which emails have accounts. The fix is email verification ("check your inbox" for every signup), which needs an email provider; it is deferred until notices and billing emails land. Rate limits (M3.5) slow down enumeration meanwhile. Alternative: build email verification now, before any email provider is chosen.
+  9. **Tests:**
+     - **OPAQUE vectors:** a frozen server setup, registration record and login transcript, generated with seeded randomness. They catch a changed setting or an `opaque-ke` upgrade that breaks existing accounts. These are checked in Rust only; the RFC 9807 vectors in `opaque-ke` cover the protocol itself.
+     - **Server tests:** full register → login → refresh → logout runs against Postgres. Also: a wrong password and an unknown account answer identically; fake prelogin answers are the same each time; refresh-token reuse ends the session; expired access tokens and login attempts are refused; a revoked device is locked out.
+     - **Logging:** a check that tokens and OPAQUE messages never appear in errors or logs.
+  Why: OPAQUE keeps the password, and even a password-equivalent, off the server. Opaque random tokens with hashes in the database give instant revocation without a token-signing key to protect. One versioned secrets blob makes the single unrecoverable server secret explicit, so it gets backed up.
 
 ## Settled
 
