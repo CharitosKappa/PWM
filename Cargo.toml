@@ -12,6 +12,7 @@ members = [
     "core/pwm-import",
     "core/pwm-generator",
     "core/pwm-health",
+    "core/pwm-export",
     "core/pwm-ffi",
     "core/pwm-wasm",
     "server",

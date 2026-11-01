@@ -321,3 +321,42 @@ fn deleting_a_folder_moves_items_to_no_folder() {
     assert_eq!(items[2].folder_id, None);
     assert_eq!(items[3].folder_id, Some(item_id(6)));
 }
+
+#[test]
+fn json_with_id_round_trips_every_fixture() {
+    for (n, raw) in fixtures().iter().enumerate() {
+        let item = Item::from_json(&raw.to_string()).unwrap();
+        let id = item_id(n as u8 + 1);
+        let json = item.to_json_with_id(&id).unwrap();
+        let value: Value = serde_json::from_str(json.expose_secret()).unwrap();
+        assert_eq!(value["id"], id.to_string());
+        assert!(json.expose_secret().starts_with("{\"id\":"));
+        let (parsed_id, parsed) = Item::from_json_with_id(json.expose_secret()).unwrap();
+        assert_eq!(parsed_id, id);
+        assert!(parsed == item, "fixture {n} changed");
+        // The id is not kept as an unknown field.
+        assert_eq!(
+            parsed.to_json().unwrap().expose_secret(),
+            item.to_json().unwrap().expose_secret()
+        );
+    }
+}
+
+#[test]
+fn json_with_id_needs_a_valid_id() {
+    let raw = fixtures()[1].to_string();
+    assert!(matches!(
+        Item::from_json_with_id(&raw),
+        Err(VaultError::InvalidItem)
+    ));
+    let bad = raw.replacen('{', "{\"id\":\"not-an-id\",", 1);
+    assert!(matches!(
+        Item::from_json_with_id(&bad),
+        Err(VaultError::InvalidItem)
+    ));
+    let number = raw.replacen('{', "{\"id\":7,", 1);
+    assert!(matches!(
+        Item::from_json_with_id(&number),
+        Err(VaultError::InvalidItem)
+    ));
+}

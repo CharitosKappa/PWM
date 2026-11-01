@@ -3,9 +3,10 @@
 //! single-bit flip must be rejected.
 
 use pwm_crypto::{
-    Aad, AccountKeyset, Envelope, Id, KdfParams, OtpAlgorithm, Secret, SecretKey, SignatureContext,
-    SymmetricKey, VaultShare, derive_account_keys, derive_password_key, hkdf_sha256, hotp_value,
-    normalize_password, open, seal, unlock_account, verify_signature,
+    Aad, AccountKeyset, Envelope, ExportHeader, Id, KdfParams, OtpAlgorithm, Secret, SecretKey,
+    SignatureContext, SymmetricKey, VaultShare, derive_account_keys, derive_password_key,
+    hkdf_sha256, hotp_value, normalize_password, open, open_export, seal, unlock_account,
+    verify_signature,
 };
 use serde_json::Value;
 
@@ -304,5 +305,41 @@ fn vectors_hotp() {
         let value = hotp_value(OtpAlgorithm::Sha1, &bytes(&v["key"]), num(&v["counter"]));
         let code = format!("{:06}", value % 1_000_000);
         assert_eq!(code, v["code"].as_str().unwrap());
+    }
+}
+
+#[test]
+fn vectors_export() {
+    for v in load(include_str!("../../test-vectors/export.json")) {
+        let password = text(&v["password"]);
+        let p = params(&v["params"]);
+        let salt: [u8; 16] = arr(&v["salt"]);
+        let file = bytes(&v["file"]);
+
+        let normalized = normalize_password(&password).unwrap();
+        let pw_key = derive_password_key(normalized.expose_secret().as_bytes(), &salt, &p).unwrap();
+        assert_eq!(pw_key.expose_secret().as_slice(), bytes(&v["pw_key"]));
+        let export_key = hkdf_sha256(pw_key.expose_secret(), &salt, b"pwm/export/v1");
+        assert_eq!(
+            export_key.expose_secret().as_slice(),
+            bytes(&v["export_key"])
+        );
+        assert_eq!(Aad::export(1, &p, &salt).as_bytes(), bytes(&v["aad"]));
+
+        let (header, _) = ExportHeader::parse(&file).unwrap();
+        assert_eq!((header.params, header.salt), (p, salt));
+        let plaintext = open_export(&password, &file).unwrap();
+        assert_eq!(plaintext.expose_secret().as_slice(), bytes(&v["plaintext"]));
+
+        // Tamper test with the recorded key (re-deriving per flip would be slow).
+        let recorded = key(&v["export_key"]);
+        let expected = bytes(&v["plaintext"]);
+        assert_tamper_evident(&file, |f| {
+            ExportHeader::parse(f)
+                .and_then(|(h, envelope)| {
+                    open(&recorded, &envelope, &Aad::export(f[4], &h.params, &h.salt))
+                })
+                .is_ok_and(|pt| *pt.expose_secret() == expected)
+        });
     }
 }

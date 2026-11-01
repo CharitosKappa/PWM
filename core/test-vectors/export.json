@@ -1,0 +1,35 @@
+{
+  "description": "Password-protected .pwmx export files v1 (D24)",
+  "format_version": 1,
+  "operation": "export",
+  "vectors": [
+    {
+      "aad": "0a70776d2f6578706f7274010001000000000003000000043c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c",
+      "export_key": "0a401dc4638514853b06dce2c421571b4291991219926590356b202e04034fdb",
+      "file": "50574d58010001000000000003000000043c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c013c5ed9727e57189ec454e908dd931256f8010ad6939e7a340e8fcfc96a6d411ab9410c746b11cfaf932018f1dff46bc40bee85aa71628ee90f73f8cef6561e8e8edc390b56e3c08f3592295170fe69308f2a4bce8239c90082fde733268df4cd8e0255351edf93",
+      "params": {
+        "iterations": 3,
+        "memory_kib": 65536,
+        "parallelism": 4
+      },
+      "password": "6f726269742076656c7665742063616e646c6520686172626f72206e696e7468",
+      "plaintext": "7b22666f726d6174223a2270776d2d6578706f7274222c2276657273696f6e223a312c226578706f727465645f6174223a302c227661756c7473223a5b5d7d",
+      "pw_key": "d685a1f9959655baa3a258b6f0a9a774ff4698d6ab9ca8b024dc28c9aafdd1a6",
+      "salt": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"
+    },
+    {
+      "aad": "0a70776d2f6578706f727401000080000000000400000004c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+      "export_key": "028eabbaa5f4414af6dab7f43f687326f9a8bbfecdeeff1c7334e2da265f4904",
+      "file": "50574d5801000080000000000400000004c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c30101480dc3a7478c0cfcde24ca929fb8f7b7bd07bd5e714e49a4b9415ee08cf687b454b51bd8446a99",
+      "params": {
+        "iterations": 4,
+        "memory_kib": 32768,
+        "parallelism": 4
+      },
+      "password": "636166c3a9c2a06578706f7274",
+      "plaintext": "",
+      "pw_key": "599ed9193541e416dfc97ca4608ce575043f0fd74aad8de1f74c6ddd082ef38d",
+      "salt": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+    }
+  ]
+}

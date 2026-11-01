@@ -274,6 +274,48 @@ impl Item {
         serde_json::to_writer(buf, &RawItemOut::from(self)).map_err(|_| VaultError::InvalidItem)
     }
 
+    /// Serializes the item with its id as a leading `"id"` field, the form
+    /// used inside exports (decision D24).
+    pub fn to_json_with_id(&self, id: &ItemId) -> Result<Secret<String>, VaultError> {
+        #[derive(Serialize)]
+        struct WithId<'a> {
+            id: &'a ItemId,
+            #[serde(flatten)]
+            item: RawItemOut<'a>,
+        }
+        // An unknown field named `id` would be written twice.
+        if self.extra.contains_key("id") {
+            return Err(VaultError::InvalidItem);
+        }
+        let mut failed = false;
+        let json = Secret::<String>::new_with(|s| {
+            let with_id = WithId {
+                id,
+                item: RawItemOut::from(self),
+            };
+            match serde_json::to_string(&with_id) {
+                Ok(mut out) => {
+                    s.push_str(&out);
+                    out.zeroize();
+                }
+                Err(_) => failed = true,
+            }
+        });
+        if failed {
+            Err(VaultError::InvalidItem)
+        } else {
+            Ok(json)
+        }
+    }
+
+    /// Parses item JSON written by [`to_json_with_id`](Self::to_json_with_id).
+    pub fn from_json_with_id(json: &str) -> Result<(ItemId, Self), VaultError> {
+        let mut raw: RawItem = serde_json::from_str(json).map_err(|_| VaultError::InvalidItem)?;
+        let id = raw.extra.remove("id").ok_or(VaultError::InvalidItem)?;
+        let id: ItemId = serde_json::from_value(id).map_err(|_| VaultError::InvalidItem)?;
+        Ok((id, Self::from_raw(raw, false)?))
+    }
+
     /// Checks values that would break autofill or display.
     pub fn validate(&self) -> Result<(), VaultError> {
         match &self.kind {

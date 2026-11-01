@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use pwm_crypto::{
     Aad, AccountKeyset, Id, KdfParams, Secret, SecretKey, SignatureContext, SymmetricKey,
     create_account, derive_account_keys, derive_password_key, hkdf_sha256, normalize_password,
-    open, seal,
+    open, open_export, seal,
 };
 use serde_json::{Value, json};
 
@@ -28,7 +28,7 @@ type Generator = (&'static str, &'static str, fn() -> Vec<Value>);
 
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../test-vectors");
-    let files: [Generator; 10] = [
+    let files: [Generator; 11] = [
         ("aad", "AAD byte layouts (D11, D17)", aad),
         ("aead", "XChaCha20-Poly1305 v1 envelopes (D10)", aead),
         ("hkdf", "HKDF-SHA256, 32-byte output (D13)", hkdf),
@@ -51,6 +51,11 @@ fn main() {
             signature,
         ),
         ("share", "X25519 vault shares v1 (D17)", share),
+        (
+            "export",
+            "Password-protected .pwmx export files v1 (D24)",
+            export,
+        ),
     ];
     for (name, description, generate) in files {
         write(&dir, name, description, generate());
@@ -308,4 +313,44 @@ fn share() -> Vec<Value> {
                        "x25519_secret": h(&recipient_pt[33..65]), "x25519_public": h(&recipient.x25519_public()) },
         "share": h(&share.to_bytes()),
     })]
+}
+
+fn export() -> Vec<Value> {
+    let cases: [(&str, KdfParams, [u8; 16], &[u8]); 2] = [
+        (
+            "orbit velvet candle harbor ninth",
+            KdfParams::DEFAULT,
+            [0x3C; 16],
+            br#"{"format":"pwm-export","version":1,"exported_at":0,"vaults":[]}"#,
+        ),
+        (
+            "caf\u{e9}\u{a0}export",
+            KdfParams::MOBILE_FLOOR,
+            [0xC3; 16],
+            b"",
+        ),
+    ];
+    cases
+        .iter()
+        .map(|(password, params, salt, plaintext)| {
+            let normalized = normalize_password(password).unwrap();
+            let pw_key = derive_password_key(normalized.expose_secret().as_bytes(), salt, params).unwrap();
+            let export_key = hkdf_sha256(pw_key.expose_secret(), salt, b"pwm/export/v1");
+            let aad = Aad::export(1, params, salt);
+            let key = SymmetricKey::from_secret(Secret::new(*export_key.expose_secret()));
+            let envelope = seal(&key, plaintext, &aad).unwrap();
+            let mut file = b"PWMX\x01".to_vec();
+            for n in [params.memory_kib, params.iterations, params.parallelism] {
+                file.extend_from_slice(&n.to_be_bytes());
+            }
+            file.extend_from_slice(salt);
+            file.extend_from_slice(&envelope.to_bytes());
+            // Cross-check against the high-level API.
+            assert_eq!(open_export(password, &file).unwrap().expose_secret().as_slice(), *plaintext);
+
+            json!({ "password": h(password.as_bytes()), "params": params_json(params), "salt": h(salt),
+                    "pw_key": h(pw_key.expose_secret()), "export_key": h(export_key.expose_secret()),
+                    "aad": h(aad.as_bytes()), "plaintext": h(plaintext), "file": h(&file) })
+        })
+        .collect()
 }

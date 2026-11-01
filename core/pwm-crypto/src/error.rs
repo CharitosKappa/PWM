@@ -28,4 +28,6 @@ pub enum CryptoError {
     SignatureInvalid,
     #[error("public key is invalid or of small order")]
     InvalidPublicKey,
+    #[error("not a PWM export file")]
+    NotExportFile,
 }
