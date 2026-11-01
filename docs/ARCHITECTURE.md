@@ -7,6 +7,8 @@ One Rust core holds all crypto, vault logic, sync, import/export and autofill fi
 ```
 pwm/
   CLAUDE.md
+  Cargo.toml                # Cargo workspace root: members are core/pwm-* and server/ (one lockfile)
+  package.json              # pnpm workspace root: extension/ and tests/*
   justfile
   docs/                     # these specs
   design/

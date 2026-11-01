@@ -14,7 +14,7 @@ Phase 3  Teams           months 16–24 M16–M19
 ## Phase 0 — Foundation
 
 ### M0 — Repo and tooling
-- [ ] M0.1 Create monorepo layout from `ARCHITECTURE.md`; Rust workspace in `core/`, `server/`, `extension/` package.
+- [x] M0.1 Create monorepo layout from `ARCHITECTURE.md`; Rust workspace in `core/`, `server/`, `extension/` package.
 - [ ] M0.2 `justfile` with `check`, `test`, `test-vectors`, `autofill`, `server`.
 - [ ] M0.3 CI workflows per `QUALITY.md` (fmt-lint, core-test, audit) — green on empty crates.
 - [ ] M0.4 `design/tokens.json` (colors light/dark, type scale, spacing, radius) — placeholder values, documented.

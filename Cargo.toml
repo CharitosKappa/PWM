@@ -1,0 +1,31 @@
+# One Cargo workspace for all Rust code: the core crates in `core/` and the
+# sync server in `server/`. A single lockfile keeps the core version identical
+# across server, FFI and WASM builds, and lets `cargo deny` see every dependency.
+[workspace]
+resolver = "3"
+members = [
+    "core/pwm-crypto",
+    "core/pwm-vault",
+    "core/pwm-sync",
+    "core/pwm-autofill",
+    "core/pwm-import",
+    "core/pwm-generator",
+    "core/pwm-health",
+    "core/pwm-ffi",
+    "core/pwm-wasm",
+    "server",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+license = "LicenseRef-Proprietary"
+publish = false
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
