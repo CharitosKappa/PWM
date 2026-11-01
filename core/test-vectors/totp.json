@@ -1,0 +1,244 @@
+{
+  "description": "RFC 4226 HOTP (Appendix D), RFC 6238 TOTP (Appendix B) and Steam Guard codes (D23)",
+  "format_version": 1,
+  "operation": "totp",
+  "note": "hotp entries test the truncation step; totp and steam entries go from the stored URI or bare secret plus Unix time to the code.",
+  "vectors": [
+    {
+      "kind": "hotp",
+      "algorithm": "SHA1",
+      "key": "3132333435363738393031323334353637383930",
+      "counter": 0,
+      "digits": 6,
+      "code": "755224"
+    },
+    {
+      "kind": "hotp",
+      "algorithm": "SHA1",
+      "key": "3132333435363738393031323334353637383930",
+      "counter": 1,
+      "digits": 6,
+      "code": "287082"
+    },
+    {
+      "kind": "hotp",
+      "algorithm": "SHA1",
+      "key": "3132333435363738393031323334353637383930",
+      "counter": 2,
+      "digits": 6,
+      "code": "359152"
+    },
+    {
+      "kind": "hotp",
+      "algorithm": "SHA1",
+      "key": "3132333435363738393031323334353637383930",
+      "counter": 3,
+      "digits": 6,
+      "code": "969429"
+    },
+    {
+      "kind": "hotp",
+      "algorithm": "SHA1",
+      "key": "3132333435363738393031323334353637383930",
+      "counter": 4,
+      "digits": 6,
+      "code": "338314"
+    },
+    {
+      "kind": "hotp",
+      "algorithm": "SHA1",
+      "key": "3132333435363738393031323334353637383930",
+      "counter": 5,
+      "digits": 6,
+      "code": "254676"
+    },
+    {
+      "kind": "hotp",
+      "algorithm": "SHA1",
+      "key": "3132333435363738393031323334353637383930",
+      "counter": 6,
+      "digits": 6,
+      "code": "287922"
+    },
+    {
+      "kind": "hotp",
+      "algorithm": "SHA1",
+      "key": "3132333435363738393031323334353637383930",
+      "counter": 7,
+      "digits": 6,
+      "code": "162583"
+    },
+    {
+      "kind": "hotp",
+      "algorithm": "SHA1",
+      "key": "3132333435363738393031323334353637383930",
+      "counter": 8,
+      "digits": 6,
+      "code": "399871"
+    },
+    {
+      "kind": "hotp",
+      "algorithm": "SHA1",
+      "key": "3132333435363738393031323334353637383930",
+      "counter": 9,
+      "digits": 6,
+      "code": "520489"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA1?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&algorithm=SHA1&digits=8&period=30",
+      "time": 59,
+      "code": "94287082"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA256?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&algorithm=SHA256&digits=8&period=30",
+      "time": 59,
+      "code": "46119246"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA512?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA&algorithm=SHA512&digits=8&period=30",
+      "time": 59,
+      "code": "90693936"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA1?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&algorithm=SHA1&digits=8&period=30",
+      "time": 1111111109,
+      "code": "07081804"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA256?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&algorithm=SHA256&digits=8&period=30",
+      "time": 1111111109,
+      "code": "68084774"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA512?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA&algorithm=SHA512&digits=8&period=30",
+      "time": 1111111109,
+      "code": "25091201"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA1?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&algorithm=SHA1&digits=8&period=30",
+      "time": 1111111111,
+      "code": "14050471"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA256?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&algorithm=SHA256&digits=8&period=30",
+      "time": 1111111111,
+      "code": "67062674"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA512?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA&algorithm=SHA512&digits=8&period=30",
+      "time": 1111111111,
+      "code": "99943326"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA1?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&algorithm=SHA1&digits=8&period=30",
+      "time": 1234567890,
+      "code": "89005924"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA256?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&algorithm=SHA256&digits=8&period=30",
+      "time": 1234567890,
+      "code": "91819424"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA512?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA&algorithm=SHA512&digits=8&period=30",
+      "time": 1234567890,
+      "code": "93441116"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA1?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&algorithm=SHA1&digits=8&period=30",
+      "time": 2000000000,
+      "code": "69279037"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA256?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&algorithm=SHA256&digits=8&period=30",
+      "time": 2000000000,
+      "code": "90698825"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA512?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA&algorithm=SHA512&digits=8&period=30",
+      "time": 2000000000,
+      "code": "38618901"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA1?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&algorithm=SHA1&digits=8&period=30",
+      "time": 20000000000,
+      "code": "65353130"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA256?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&algorithm=SHA256&digits=8&period=30",
+      "time": 20000000000,
+      "code": "77737706"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/RFC6238:SHA512?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA&algorithm=SHA512&digits=8&period=30",
+      "time": 20000000000,
+      "code": "47863826"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/Example:alice@example.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Example",
+      "time": 1111111109,
+      "code": "081804"
+    },
+    {
+      "kind": "totp",
+      "uri": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+      "time": 1234567890,
+      "code": "005924"
+    },
+    {
+      "kind": "totp",
+      "uri": "gezd gnbv gy3t qojq gezd gnbv gy3t qojq====",
+      "time": 1234567890,
+      "code": "005924"
+    },
+    {
+      "kind": "totp",
+      "uri": "otpauth://totp/Example?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&period=60&digits=6",
+      "time": 2000000000,
+      "code": "864010"
+    },
+    {
+      "kind": "steam",
+      "uri": "steam://ON2GKYLNFVTXKYLSMQWXIZLTOQWXGZLDOJSXIII",
+      "time": 0,
+      "code": "VTPQB"
+    },
+    {
+      "kind": "steam",
+      "uri": "steam://ON2GKYLNFVTXKYLSMQWXIZLTOQWXGZLDOJSXIII",
+      "time": 1500000000,
+      "code": "JBNVN"
+    },
+    {
+      "kind": "steam",
+      "uri": "steam://ON2GKYLNFVTXKYLSMQWXIZLTOQWXGZLDOJSXIII",
+      "time": 1767225600,
+      "code": "3TJTV"
+    },
+    {
+      "kind": "steam",
+      "uri": "otpauth://totp/Steam:alice?secret=ON2GKYLNFVTXKYLSMQWXIZLTOQWXGZLDOJSXIII&issuer=Steam&encoder=steam",
+      "time": 1767225600,
+      "code": "3TJTV"
+    }
+  ]
+}

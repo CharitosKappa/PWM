@@ -14,6 +14,7 @@ JSON vectors for every crypto and format operation in `docs/SECURITY.md`. They f
 | `vault_key.json` | Vault key wrapped under sym_key |
 | `signature.json` | Domain-separated Ed25519 signatures (D17) |
 | `share.json` | X25519 vault share v1 (D17) |
+| `totp.json` | RFC 4226 HOTP, RFC 6238 TOTP and Steam Guard codes from stored URIs (D23); RFC values copied from the RFC appendices |
 
 All byte strings are lowercase hex; revisions are decimal strings (JSON numbers above 2^53 lose precision in JavaScript).
 
@@ -24,4 +25,4 @@ All byte strings are lowercase hex; revisions are decimal strings (JSON numbers 
 
 ## Adding vectors
 
-Add a generator to `core/pwm-crypto/examples/gen_vectors.rs` and run `cargo run -p pwm-crypto --example gen_vectors`. Existing files are never overwritten. Inputs are fixed; nonces and ephemeral keys are random and recorded.
+Add a generator to `core/pwm-crypto/examples/gen_vectors.rs` (`totp.json` is the exception: its values come from the RFCs) and run `cargo run -p pwm-crypto --example gen_vectors`. Existing files are never overwritten. Inputs are fixed; nonces and ephemeral keys are random and recorded.

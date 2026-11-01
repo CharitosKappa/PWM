@@ -48,7 +48,8 @@ Phase 3  Teams           months 16–24 M16–M19
   - Per D21. `random_index` (rejection sampling) added to `pwm-crypto`. Deferred: About-screen attribution for the EFF list (each app, M5+); generator settings sync with a versioned format (M5); zxcvbn on `wasm32` is checked with the WASM build (M3.7).
 - [x] M2.5 Health: weak, reused (compare hashes in memory), breached via HIBP k-anonymity range API.
   - Per D22. `hibp_sha1` and `ReuseHasher` added to `pwm-crypto`; platforms implement `RangeFetcher` (HTTPS GET with `Add-Padding: true`). Deferred: the platform fetchers and the settings switch for the breach check (M4/M5); card PINs and custom fields are not checked yet.
-- [ ] M2.6 TOTP (RFC 6238) code generation.
+- [x] M2.6 TOTP (RFC 6238) code generation.
+  - Per D23. `hotp_value` in `pwm-crypto`; `Totp`/`normalize_totp` in `pwm-vault` (otpauth URIs, bare secrets, Steam). Vectors in `core/test-vectors/totp.json` (Rust + Node); new fuzz target `totp_parse`. Deferred: counter-based HOTP; QR scanning (apps); Premium gating (M9.3).
 - [ ] M2.7 Encrypted export (`.pwmx`) and plaintext export (JSON/CSV) behind re-auth.
 
 **Done when:** round-trip tests for all item types; export → import yields identical vault.

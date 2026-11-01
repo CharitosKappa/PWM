@@ -221,6 +221,49 @@ for (const v of load("share")) {
   check("share vault key", eq(vaultKey, hex(v.vault_key)));
 }
 
+// TOTP (D23): parse the stored value independently, then RFC 4226 truncation.
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+function fromBase32(s) {
+  let bits = 0, value = 0;
+  const out = [];
+  for (const c of s.toUpperCase().replace(/[ =]/g, "")) {
+    const v = B32.indexOf(c);
+    if (v < 0) throw new Error("bad base32");
+    value = (value << 5) | v; bits += 5;
+    if (bits >= 8) { bits -= 8; out.push((value >>> bits) & 255); }
+  }
+  return Buffer.from(out);
+}
+function otpValue(alg, key, counter) {
+  const c = Buffer.alloc(8); c.writeBigUInt64BE(BigInt(counter));
+  const h = crypto.createHmac(alg, key).update(c).digest();
+  return h.readUInt32BE(h[h.length - 1] & 15) & 0x7fffffff;
+}
+function totpConfig(input) {
+  if (/^steam:\/\//i.test(input)) return { key: fromBase32(input.slice(8)), alg: "sha1", digits: 0, period: 30 };
+  if (!/^otpauth:\/\//i.test(input)) return { key: fromBase32(input), alg: "sha1", digits: 6, period: 30 };
+  const url = new URL(input);
+  const p = Object.fromEntries([...url.searchParams].map(([k, v]) => [k.toLowerCase(), v]));
+  if (p.encoder?.toLowerCase() === "steam") return { key: fromBase32(p.secret), alg: "sha1", digits: 0, period: 30 };
+  return { key: fromBase32(p.secret), alg: (p.algorithm ?? "SHA1").toLowerCase(), digits: Number(p.digits ?? 6), period: Number(p.period ?? 30) };
+}
+const STEAM = "23456789BCDFGHJKMNPQRTVWXY";
+for (const v of load("totp")) {
+  if (v.kind === "hotp") {
+    check(`hotp ${v.counter}`, String(otpValue("sha1", hex(v.key), v.counter) % 1e6).padStart(6, "0") === v.code);
+    continue;
+  }
+  const t = totpConfig(v.uri);
+  let value = otpValue(t.alg, t.key, Math.floor(v.time / t.period));
+  let code = "";
+  if (t.digits === 0) {
+    for (let i = 0; i < 5; i++) { code += STEAM[value % 26]; value = Math.floor(value / 26); }
+  } else {
+    code = String(value % 10 ** t.digits).padStart(t.digits, "0");
+  }
+  check(`${v.kind} ${v.time}`, (v.kind === "steam") === (t.digits === 0) && code === v.code);
+}
+
 if (failures > 0) {
   console.error(`${failures} of ${checks} independent vector checks failed`);
   process.exit(1);
