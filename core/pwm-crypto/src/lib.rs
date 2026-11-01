@@ -5,6 +5,7 @@ mod aad;
 mod account;
 mod aead;
 mod error;
+mod export;
 mod health;
 mod hkdf;
 mod kdf;
@@ -21,6 +22,7 @@ pub use account::{
 };
 pub use aead::{Envelope, SymmetricKey, open, seal};
 pub use error::CryptoError;
+pub use export::{EXPORT_MAGIC, ExportHeader, open_export, seal_export};
 pub use health::{ReuseHasher, hibp_sha1};
 pub use hkdf::hkdf_sha256;
 pub use kdf::{KdfParams, derive_password_key, generate_salt};

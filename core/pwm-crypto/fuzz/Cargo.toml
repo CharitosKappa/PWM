@@ -1,4 +1,4 @@
-# Fuzz targets for pwm-crypto decoders (M1.7) and pwm-vault parsers. Run with `just fuzz <target>`
+# Fuzz targets for pwm-crypto decoders (M1.7), pwm-vault parsers and export readers. Run with `just fuzz <target>`
 # (Linux/macOS, nightly) or in Docker on Windows, see docs/DEVELOPMENT.md.
 #
 # Separate workspace on purpose: libFuzzer (Apache-2.0 WITH LLVM-exception)
@@ -19,6 +19,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 pwm-crypto = { path = ".." }
+pwm-export = { path = "../../pwm-export" }
 pwm-vault = { path = "../../pwm-vault" }
 
 [profile.release]
@@ -62,6 +63,13 @@ bench = false
 [[bin]]
 name = "totp_parse"
 path = "fuzz_targets/totp_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "export_read"
+path = "fuzz_targets/export_read.rs"
 test = false
 doc = false
 bench = false

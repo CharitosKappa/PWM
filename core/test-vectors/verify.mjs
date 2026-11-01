@@ -4,7 +4,7 @@
 //
 // Not covered here: Argon2id (Node has no Argon2; kdf.json is checked by the
 // Rust checker and the RFC 9106 known-answer test). The `pw_key` values from
-// account.json are taken as input.
+// account.json and export.json are taken as input.
 //
 // HChaCha20 is implemented below because Node only exposes the IETF
 // ChaCha20-Poly1305. This is verification tooling, never product code, and it
@@ -219,6 +219,22 @@ for (const v of load("share")) {
   const shareKey = hkdf(dh, Buffer.concat([ephPub, recipientPub]), Buffer.from("pwm/share/v1"));
   const vaultKey = openEnvelope(shareKey, envelope, aadShare(1, vault, senderPub, recipientPub));
   check("share vault key", eq(vaultKey, hex(v.vault_key)));
+}
+
+// Export files (D24): parse the .pwmx header, then HKDF and the envelope from pw_key.
+const u32 = (n) => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
+for (const v of load("export")) {
+  const file = hex(v.file);
+  const p = v.params;
+  check("export magic and version", file.subarray(0, 5).toString("latin1") === "PWMX\x01");
+  check("export header params", file.readUInt32BE(5) === p.memory_kib && file.readUInt32BE(9) === p.iterations && file.readUInt32BE(13) === p.parallelism);
+  const salt = file.subarray(17, 33);
+  check("export header salt", eq(salt, hex(v.salt)));
+  const aad = labelled("pwm/export", Buffer.from([1]), u32(p.memory_kib), u32(p.iterations), u32(p.parallelism), salt);
+  check("export aad", eq(aad, hex(v.aad)));
+  const exportKey = hkdf(hex(v.pw_key), salt, Buffer.from("pwm/export/v1"));
+  check("export key", eq(exportKey, hex(v.export_key)));
+  check("export open", eq(openEnvelope(exportKey, file.subarray(33), aad), hex(v.plaintext)));
 }
 
 // TOTP (D23): parse the stored value independently, then RFC 4226 truncation.

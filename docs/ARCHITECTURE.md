@@ -19,6 +19,7 @@ pwm/
     pwm-store/              # local encrypted cache (SQLite, ciphertext only) behind a Store trait (D20)
     pwm-sync/               # sync engine (CRDT-lite, see below), conflict resolution
     pwm-autofill/           # URL matching, field classification, site overrides
+    pwm-export/             # our own export formats: .pwmx (encrypted), JSON, CSV, behind re-auth (D24)
     pwm-import/             # importers (Bitwarden, 1Password, Keeper, NordPass, Proton Pass, Dashlane, KeePass, LastPass, CSV)
     pwm-generator/          # password/passphrase generator, strength estimation (zxcvbn)
     pwm-health/             # weak/reused/breached checks (HIBP k-anonymity)

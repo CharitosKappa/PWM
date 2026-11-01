@@ -99,6 +99,7 @@ jobs:
           - secret_key_parse
           - password_normalize
           - totp_parse
+          - export_read
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly

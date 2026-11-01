@@ -50,7 +50,8 @@ Phase 3  Teams           months 16–24 M16–M19
   - Per D22. `hibp_sha1` and `ReuseHasher` added to `pwm-crypto`; platforms implement `RangeFetcher` (HTTPS GET with `Add-Padding: true`). Deferred: the platform fetchers and the settings switch for the breach check (M4/M5); card PINs and custom fields are not checked yet.
 - [x] M2.6 TOTP (RFC 6238) code generation.
   - Per D23. `hotp_value` in `pwm-crypto`; `Totp`/`normalize_totp` in `pwm-vault` (otpauth URIs, bare secrets, Steam). Vectors in `core/test-vectors/totp.json` (Rust + Node); new fuzz target `totp_parse`. Deferred: counter-based HOTP; QR scanning (apps); Premium gating (M9.3).
-- [ ] M2.7 Encrypted export (`.pwmx`) and plaintext export (JSON/CSV) behind re-auth.
+- [x] M2.7 Encrypted export (`.pwmx`) and plaintext export (JSON/CSV) behind re-auth.
+  - Per D24. New crate `pwm-export`: `authorize_export` grant (master password, single use, 5 min), JSON, `.pwmx` and CSV writers and readers. `seal_export`/`open_export` in `pwm-crypto`; `Item::to_json_with_id`/`from_json_with_id` in `pwm-vault`. JSON and `.pwmx` round-trip every fixture item unchanged (frozen `export_v1` fixtures); CSV keeps what it can hold (it also drops URL match modes, beyond the D24 list). Vectors in `core/test-vectors/export.json` (Rust + Node); new fuzz target `export_read`. Deferred: export dialogs, warning text and file saving in each app (M4/M5); importing an export into an existing account (id clashes, merge) with the importers (M8).
 
 **Done when:** round-trip tests for all item types; export → import yields identical vault.
 

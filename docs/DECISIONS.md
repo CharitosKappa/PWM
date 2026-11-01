@@ -93,3 +93,30 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   5. **Output:** the code as `Secret<String>` plus the seconds left in the current period. Copying follows the existing clipboard rule (auto-clear after 30 s).
   6. **Vectors:** RFC 4226 Appendix D and RFC 6238 Appendix B (SHA-1, SHA-256, SHA-512) plus Steam cases go in `core/test-vectors/totp.json` and are checked by both the Rust tests and the independent Node verifier.
   7. **Plans:** TOTP is a Premium feature (`PRICING.md`); gating is done in M9.3, so the core generator does not check plans.
+- **D24 — Export formats and re-authentication** · settled 2026-11-01 · founder (approved as proposed). Normative text in `SECURITY.md`. The roadmap says "encrypted export (`.pwmx`) and plaintext export (JSON/CSV) behind re-auth", done when export → import gives an identical vault. Open: what key protects `.pwmx`, the file layouts, what each format contains and how re-auth is enforced. Proposal:
+  1. **Where:** a new `core/pwm-export` crate writes and reads our own three formats. It does no file I/O: it returns bytes, and each platform saves them through its own file picker. Competitor importers stay in `pwm-import` (M8), which will call these readers for our own files. There is no plan check: export works on every plan and after a subscription lapses (`PRICING.md` §7). The server has no export endpoint (`ARCHITECTURE.md`).
+  2. **Re-auth for every export, enforced in the core:** both encrypted and plaintext exports ask for the master password again inside the export flow. Neither biometrics nor the unlocked session counts, because someone at an unlocked device who can choose an export password can read the result just as well. Export functions take an `ExportGrant`, which only `authorize_export(master password, …)` can create, after re-deriving the AUK and opening the sealed keyset (the same check as unlock). A grant works once and expires 5 minutes after it was made (the caller passes the time, as for TOTP).
+  3. **`.pwmx` key:** a separate export password, chosen in the export dialog, so the file opens without the account: after the account is deleted, on another device, or if we disappear.
+     - The password is normalized like the master password (D16) and must score ≥ 3 in zxcvbn (D21). The dialog offers a generated 5-word passphrase.
+     - `key = HKDF(ikm = Argon2id(export password, salt, params), salt = salt, info = "pwm/export/v1")`, with a random 16-byte salt per file.
+     - The params are the signup default (64 MiB, t = 3, p = 4) and are written in the file. The reader enforces the same bounds as the account KDF (`KdfParams::validate`), so a crafted file cannot exhaust memory or force weak params.
+     - Alternative: encrypt to the account keys, which needs no extra password but is useless without the account, which is the main reason to keep an export.
+  4. **`.pwmx` layout v1:** `"PWMX" (4 bytes) || v:u8 (= 1) || m:u32 || t:u32 || p:u32 || salt:16 || envelope`.
+     - The envelope is a normal v1 envelope (D10) with the new AAD label `pwm/export` and fields `version:u8 || m || t || p || salt`, so changing any header byte makes decryption fail.
+     - The plaintext is the JSON export below, padded to a multiple of 4 KiB (ISO/IEC 7816-4, as in D18), so the file size shows the vault size only in coarse steps.
+     - One envelope holds the whole file; vaults are small (no attachments, S5).
+  5. **JSON export (also the `.pwmx` payload):** UTF-8 `{"format": "pwm-export", "version": 1, "exported_at": <ms>, "vaults": [{"id": "<uuid>", "items": [{"id": "<uuid>", ...item JSON...}]}]}`.
+     - Each item is its D18 JSON unchanged, including folders, trashed items, history, passkeys and unknown fields, so importing gives back exactly the same items with the same ids.
+     - Vaults have no names yet. When names arrive, they become an optional field with a version bump and a migration test.
+  6. **CSV export (for moving to another manager):** RFC 4180, UTF-8, with a header row and one row per login, note, card and identity that is not in the trash.
+     - Columns: `type, title, folder, favorite, tags, notes, url, username, password, totp`, then `card_*` and `identity_*` columns, one per field. Multiple URLs or tags go in one quoted cell, one per line. The folder is its name, with nested folders written as `Parent/Child`.
+     - Left out: history, trash, passkeys, custom fields, ids and timestamps. CSV cannot carry them well, and the JSON export is the complete format.
+     - Uses `csv-core`, the allocation-free core of the `csv` project (licensed MIT OR Unlicense; we take MIT). It reads and writes through buffers we own, so they can be zeroized; the higher-level `csv` crate keeps its own buffers.
+     - Cells starting with `=`, `+`, `-` or `@` are not escaped against spreadsheet formulas, because escaping would change passwords that start with those characters. The warning tells users not to open the file in a spreadsheet.
+  7. **Warning and hygiene:** before a plaintext file is saved, one plain warning is shown: "This file is not encrypted. Anyone who gets it can read all your passwords. Delete it when you're done." Exported bytes are returned as `Secret<Vec<u8>>` so they are zeroized after saving; nothing is logged.
+  8. **Tests:**
+     - A round trip for every item type through all three formats; for CSV, the omissions above are listed and checked.
+     - A frozen `.pwmx` v1 fixture that every later version must keep opening.
+     - Vectors in `core/test-vectors/export.json`, checked by the independent Node verifier: KDF, HKDF, AAD and envelope.
+     - A fuzz target for the `.pwmx`, JSON and CSV readers.
+  Why: an export is mostly needed when the account is not: after deletion, during a move to another manager, or as an offline backup. A separate, strong export password keeps the file safe without the account. Requiring the master password closes the "unlocked laptop" route to a full copy of the vault. Keeping the export plaintext identical to the item JSON makes the round trip exact by construction.

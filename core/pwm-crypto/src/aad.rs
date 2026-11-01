@@ -1,7 +1,7 @@
 //! Associated data that binds every envelope to its context (decision D11,
 //! `docs/SECURITY.md` "Encodings").
 
-use crate::CryptoError;
+use crate::{CryptoError, KdfParams};
 
 /// A 16-byte random identifier (UUIDv4) for accounts, vaults and items.
 pub type Id = [u8; 16];
@@ -60,6 +60,17 @@ impl Aad {
         aad.0.extend_from_slice(vault_id);
         aad.0.extend_from_slice(sender_ed25519_pub);
         aad.0.extend_from_slice(recipient_x25519_pub);
+        aad
+    }
+
+    /// `.pwmx` export file header (decision D24).
+    pub fn export(version: u8, params: &KdfParams, salt: &[u8; 16]) -> Self {
+        let mut aad = Self::labelled("pwm/export");
+        aad.0.push(version);
+        aad.0.extend_from_slice(&params.memory_kib.to_be_bytes());
+        aad.0.extend_from_slice(&params.iterations.to_be_bytes());
+        aad.0.extend_from_slice(&params.parallelism.to_be_bytes());
+        aad.0.extend_from_slice(salt);
         aad
     }
 
