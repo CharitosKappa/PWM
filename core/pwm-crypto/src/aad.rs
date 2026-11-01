@@ -1,8 +1,19 @@
 //! Associated data that binds every envelope to its context (decision D11,
 //! `docs/SECURITY.md` "Encodings").
 
+use crate::CryptoError;
+
 /// A 16-byte random identifier (UUIDv4) for accounts, vaults and items.
 pub type Id = [u8; 16];
+
+/// A new random [`Id`] with the UUIDv4 version and variant bits set.
+pub fn generate_id() -> Result<Id, CryptoError> {
+    let mut id = [0u8; 16];
+    getrandom::fill(&mut id).map_err(|_| CryptoError::Rng)?;
+    id[6] = (id[6] & 0x0F) | 0x40;
+    id[8] = (id[8] & 0x3F) | 0x80;
+    Ok(id)
+}
 
 /// AAD for one envelope: `len(label):u8 || label || fields`, integers
 /// big-endian. Only the constructors below can build one, so every envelope
