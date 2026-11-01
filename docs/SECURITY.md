@@ -68,6 +68,8 @@ A new kind of envelope gets a new label; labels are never reused.
 
 **History and trash (D19).** Previous versions (at most 10) and the `trashed_at` time live inside the encrypted item, so the server never learns how an item changed or what is in the trash. Clients purge items trashed for 30 days at unlock; the server sees only the resulting tombstone.
 
+**Local cache (D20).** Each device caches only what the server also holds: account id, salt, KDF params, sealed keyset, wrapped vault keys, item envelopes with revisions, plus local sync state. The Secret Key and unlocked keys are never written to it (platform secure storage only). Deleted rows are overwritten (`secure_delete`); the schema is versioned and a newer or foreign database is refused.
+
 **Secret Key text (D14).** `A1-` prefix (format version), then the 128-bit key as 26 Crockford base32 characters (most significant bit first, top two bits zero) plus one Crockford mod-37 check character, grouped `A1-XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXX`. Input is case-insensitive, ignores `-` and spaces, and maps `O`→`0`, `I`/`L`→`1`. The account id is printed separately on the Emergency Kit.
 
 **KDF parameters (D15).** Argon2id params (`m`, `t`, `p`, version) are stored per account and are identical on every client. Default at signup m = 64 MiB, t = 3, p = 4; the m = 32 MiB, t = 4 floor only when the signup device cannot allocate 64 MiB. Single-threaded clients (WASM) compute the same `p = 4` sequentially. Memory-limited contexts (iOS AutoFill extension) never run the KDF; they use the biometric-wrapped key.
