@@ -42,7 +42,8 @@ Phase 3  Teams           months 16–24 M16–M19
   - Note: zeroizing decrypted items is best effort; serde_json's internal parse buffers are not wiped.
 - [x] M2.2 Item history (last 10 versions) and soft-delete (trash 30 days).
   - Purge runs where the client unlocks (M3.4 wires it to sync tombstones). Read-only items (newer schema or unknown type) cannot be trashed, only deleted.
-- [ ] M2.3 Local encrypted cache (SQLite storing ciphertext only) + migrations.
+- [x] M2.3 Local encrypted cache (SQLite storing ciphertext only) + migrations.
+  - New crate `pwm-store` (D20): `Store` trait, bundled-SQLite backend, schema v1 with a frozen fixture. Deferred: IndexedDB backend for the extension (M3.7/M4); sync code that fills the cache (M3.4); concurrent access from app + autofill extension is only covered by SQLite locking and a 5 s busy timeout, revisit with the iOS/Android apps.
 - [ ] M2.4 Generator: random password and EFF-wordlist passphrase; zxcvbn strength.
 - [ ] M2.5 Health: weak, reused (compare hashes in memory), breached via HIBP k-anonymity range API.
 - [ ] M2.6 TOTP (RFC 6238) code generation.

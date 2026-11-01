@@ -1,0 +1,23 @@
+[package]
+name = "pwm-store"
+description = "Local encrypted cache: ciphertext-only storage with versioned schema migrations."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["sqlite"]
+# SQLite backend for native platforms. WASM builds turn it off and use a
+# browser backend behind the same `Store` trait.
+sqlite = ["dep:rusqlite"]
+
+[dependencies]
+pwm-crypto = { path = "../pwm-crypto" }
+pwm-vault = { path = "../pwm-vault" }
+rusqlite = { version = "0.40.2", features = ["bundled"], optional = true }
+thiserror = "2.0.21"

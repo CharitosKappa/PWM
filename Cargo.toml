@@ -6,6 +6,7 @@ resolver = "3"
 members = [
     "core/pwm-crypto",
     "core/pwm-vault",
+    "core/pwm-store",
     "core/pwm-sync",
     "core/pwm-autofill",
     "core/pwm-import",
