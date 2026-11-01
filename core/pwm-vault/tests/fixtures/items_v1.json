@@ -1,0 +1,120 @@
+[
+  {
+    "v": 1,
+    "type": "login",
+    "title": "Example",
+    "notes": "main account",
+    "favorite": true,
+    "folder_id": "0f0e0d0c-0b0a-4908-8706-050403020100",
+    "tags": ["work", "email"],
+    "custom_fields": [{ "name": "PIN", "value": "1234", "kind": "hidden" }],
+    "created_at": 1767225600000,
+    "updated_at": 1767312000000,
+    "login": {
+      "username": "alice@example.com",
+      "password": "hunter2",
+      "urls": [
+        { "url": "https://example.com", "match": "domain" },
+        { "url": "https://login.example.net/auth", "match": "starts_with" }
+      ],
+      "totp": "otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP&issuer=Example",
+      "passkeys": [
+        {
+          "credential_id": "AQIDBA",
+          "rp_id": "example.com",
+          "user_handle": "BQYHCA",
+          "user_name": "alice",
+          "private_key": "MC4CAQAwBQYDK2VwBCIEIA",
+          "sign_count": 3,
+          "created_at": 1767225600000
+        }
+      ]
+    }
+  },
+  {
+    "v": 1,
+    "type": "note",
+    "title": "Wi-Fi codes",
+    "notes": "guest: abc123",
+    "favorite": false,
+    "tags": [],
+    "custom_fields": [],
+    "created_at": 1767225600000,
+    "updated_at": 1767225600000
+  },
+  {
+    "v": 1,
+    "type": "card",
+    "title": "Visa",
+    "created_at": 1767225600000,
+    "updated_at": 1767225600000,
+    "card": {
+      "cardholder": "Alice Example",
+      "number": "4111 1111 1111 1111",
+      "expiry_month": 12,
+      "expiry_year": 2030,
+      "security_code": "123",
+      "brand": "visa"
+    }
+  },
+  {
+    "v": 1,
+    "type": "identity",
+    "title": "Home",
+    "created_at": 1767225600000,
+    "updated_at": 1767225600000,
+    "identity": {
+      "first_name": "Alice",
+      "middle_name": "",
+      "last_name": "Example",
+      "email": "alice@example.com",
+      "phone": "+30 210 000 0000",
+      "company": "Example Ltd",
+      "address_lines": ["1 Main Street", "Flat 2"],
+      "city": "Athens",
+      "region": "Attica",
+      "postal_code": "10431",
+      "country": "GR"
+    }
+  },
+  {
+    "v": 1,
+    "type": "folder",
+    "title": "Work",
+    "created_at": 1767225600000,
+    "updated_at": 1767225600000,
+    "folder": { "parent_id": null }
+  },
+  {
+    "v": 1,
+    "type": "login",
+    "title": "Fields from a newer app version",
+    "created_at": 1767225600000,
+    "updated_at": 1767225600000,
+    "future_top_level": { "kept": [1, 2, 3] },
+    "custom_fields": [{ "name": "code", "value": "42", "kind": "otp", "future_field_flag": true }],
+    "login": {
+      "username": "bob",
+      "password": "pw",
+      "urls": [{ "url": "https://example.org", "match": "fuzzy", "future_url_option": "x" }],
+      "future_login_field": "keep me"
+    }
+  },
+  {
+    "v": 1,
+    "type": "wifi",
+    "title": "Home network (type from a newer app version)",
+    "created_at": 1767225600000,
+    "updated_at": 1767225600000,
+    "wifi": { "ssid": "home", "passphrase": "secret" }
+  },
+  {
+    "v": 2,
+    "type": "login",
+    "title": "Item from schema v2",
+    "created_at": 1767225600000,
+    "updated_at": 1767225600000,
+    "login": { "username": "carol", "password": "pw2" },
+    "v2_only": "value"
+  }
+]

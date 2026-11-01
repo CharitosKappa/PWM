@@ -12,7 +12,7 @@ mod secret;
 mod secret_key;
 mod share;
 
-pub use aad::{Aad, Id};
+pub use aad::{Aad, Id, generate_id};
 pub use account::{
     AccountKeys, AccountKeyset, NewAccount, create_account, derive_account_keys, unlock_account,
 };

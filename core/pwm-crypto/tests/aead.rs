@@ -184,3 +184,14 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn generated_ids_are_uuid_v4() {
+    let a = pwm_crypto::generate_id().unwrap();
+    let b = pwm_crypto::generate_id().unwrap();
+    assert_ne!(a, b);
+    for id in [a, b] {
+        assert_eq!(id[6] >> 4, 4, "version nibble");
+        assert_eq!(id[8] >> 6, 0b10, "RFC 4122 variant");
+    }
+}

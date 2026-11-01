@@ -38,7 +38,8 @@ Phase 3  Teams           months 16–24 M16–M19
 **Done when:** 100% of vectors pass; fuzzers run 10 min clean; no `unsafe`.
 
 ### M2 — Vault model (`pwm-vault`, `pwm-generator`, `pwm-health`)
-- [ ] M2.1 Item types: login (multi-URL, TOTP secret, passkey), secure note, card, identity; custom fields; tags; folders. Versioned schema.
+- [x] M2.1 Item types: login (multi-URL, TOTP secret, passkey), secure note, card, identity; custom fields; tags; folders. Versioned schema.
+  - Note: zeroizing decrypted items is best effort; serde_json's internal parse buffers are not wiped.
 - [ ] M2.2 Item history (last 10 versions) and soft-delete (trash 30 days).
 - [ ] M2.3 Local encrypted cache (SQLite storing ciphertext only) + migrations.
 - [ ] M2.4 Generator: random password and EFF-wordlist passphrase; zxcvbn strength.
