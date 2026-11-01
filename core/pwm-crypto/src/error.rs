@@ -14,4 +14,12 @@ pub enum CryptoError {
     EncryptionFailed,
     #[error("the OS random number generator failed")]
     Rng,
+    #[error("KDF parameters are outside the allowed range")]
+    KdfParamsRejected,
+    #[error("key derivation failed")]
+    Kdf,
+    #[error("Secret Key is not in the expected format")]
+    SecretKeyFormat,
+    #[error("Secret Key check character does not match (likely a typo)")]
+    SecretKeyChecksum,
 }
