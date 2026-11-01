@@ -37,7 +37,14 @@ fmt:
     cargo fmt --all
     pnpm -r exec prettier --write .
 
-# dependency audit: advisories, bans, sources and licences (cargo deny + pnpm audit)
+# dependency audit: advisories, bans, sources and licence allow-list (decision S6)
 audit:
     cargo deny --all-features check
+    pnpm install --frozen-lockfile
+    pnpm license-check
     pnpm audit --audit-level high
+
+# generate THIRD_PARTY_NOTICES/ (rust.html + npm.txt) for shipping in apps and extensions
+notices:
+    cargo about generate --all-features --fail about.hbs -o THIRD_PARTY_NOTICES/rust.html
+    pnpm notices

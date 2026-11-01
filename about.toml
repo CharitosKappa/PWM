@@ -1,0 +1,16 @@
+# cargo-about configuration for THIRD_PARTY_NOTICES (`just notices`).
+# Keep `accepted` identical to the allow-list in deny.toml (decision S6).
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "MPL-2.0",
+]
+
+# Our own crates are unpublished and proprietary; only list third-party crates.
+private = { ignore = true }
