@@ -20,9 +20,10 @@ KDF parameters are stored per account so they can be raised later without breaki
 ## Key hierarchy
 
 ```
-master_password ──Argon2id(salt_pw)──▶ pw_key (32B)
-secret_key (128-bit, random, shown once as "Emergency Kit") ──HKDF──▶ sk_key (32B)
-account_unlock_key (AUK) = HKDF(pw_key XOR sk_key, info="pwm/auk/v1")
+master_password ──Argon2id(salt_pw, account params)──▶ pw_key (32B)
+secret_key (128-bit, random, shown once as "Emergency Kit")
+    sk_key = HKDF(ikm=secret_key, salt=account_id, info="pwm/sk/v1")
+account_unlock_key (AUK) = HKDF(ikm=pw_key XOR sk_key, salt=account_id, info="pwm/auk/v1")
 
 AUK ──decrypts──▶ account_keyset {
     sym_key       (32B random)        # encrypts vault keys
@@ -33,10 +34,32 @@ sym_key ──decrypts──▶ vault_key[n] (32B random per vault)
 vault_key ──decrypts──▶ item blobs (each item: own random nonce, AAD below)
 ```
 
-- AAD for items: `version || vault_id || item_id || revision`.
-- The OPAQUE password input is derived separately: `HKDF(pw_key XOR sk_key, info="pwm/auth/v1")`, so the server-auth secret and AUK are independent.
+- Every envelope is bound to its context by AAD (see Encodings below); for items the fields are `version || vault_id || item_id || revision`.
+- The OPAQUE password input is derived separately: `HKDF(ikm=pw_key XOR sk_key, salt=account_id, info="pwm/auth/v1")`, so the server-auth secret and AUK are independent.
 - New device login needs master password + Secret Key (or approval from an existing device that transfers the Secret Key over an authenticated X25519 channel).
 - Biometric unlock: AUK (or sym_key) wrapped by a platform key (Secure Enclave / Android Keystore with `setUserAuthenticationRequired` / Windows Hello / TPM). Never store the master password.
+
+## Encodings (format v1)
+
+Decisions D10–D15. All HKDF calls are HKDF-SHA256 with 32-byte output. All integers are big-endian. Ids (`account_id`, `vault_id`, `item_id`) are 16 random bytes (UUIDv4).
+
+**Envelope (D10).** `v:u8 || nonce:24 || ciphertext || tag:16`. `v = 1` is XChaCha20-Poly1305 with a fresh random nonce per encryption and fully determines the layout. Decoders reject any other `v` and any input shorter than 41 bytes. In JSON the envelope is base64url without padding.
+
+**AAD (D11).** `len(label):u8 || label (ASCII) || fields`:
+
+| Context | Label | Fields |
+| --- | --- | --- |
+| Item blob under vault_key | `pwm/item` | `version:u8 || vault_id || item_id || revision:u64` |
+| Vault key under sym_key | `pwm/vault-key` | `version:u8 || vault_id` |
+| Account keyset under AUK | `pwm/keyset` | `version:u8 || account_id` |
+
+A new kind of envelope gets a new label; labels are never reused.
+
+**Password salt (D12).** `salt_pw` is 16 random bytes generated at signup and stored server-side with the KDF params. The pre-login endpoint returns them; for an unknown email it returns `HMAC-SHA256(server_secret, email)[..16]` and the default params, so it does not reveal which accounts exist.
+
+**Secret Key text (D14).** `A1-` prefix (format version), then the 128-bit key as 26 Crockford base32 characters (most significant bit first, top two bits zero) plus one Crockford mod-37 check character, grouped `A1-XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXX`. Input is case-insensitive, ignores `-` and spaces, and maps `O`→`0`, `I`/`L`→`1`. The account id is printed separately on the Emergency Kit.
+
+**KDF parameters (D15).** Argon2id params (`m`, `t`, `p`, version) are stored per account and are identical on every client. Default at signup m = 64 MiB, t = 3, p = 4; the m = 32 MiB, t = 4 floor only when the signup device cannot allocate 64 MiB. Single-threaded clients (WASM) compute the same `p = 4` sequentially. Memory-limited contexts (iOS AutoFill extension) never run the KDF; they use the biometric-wrapped key.
 
 ## Recovery
 
