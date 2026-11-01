@@ -14,4 +14,7 @@ pub enum VaultError {
     ReadOnly,
     #[error("invalid item: {0}")]
     Invalid(&'static str),
+    /// Valid data this app version cannot use yet (kept unchanged).
+    #[error("not supported: {0}")]
+    Unsupported(&'static str),
 }

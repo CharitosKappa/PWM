@@ -3,9 +3,9 @@
 //! single-bit flip must be rejected.
 
 use pwm_crypto::{
-    Aad, AccountKeyset, Envelope, Id, KdfParams, Secret, SecretKey, SignatureContext, SymmetricKey,
-    VaultShare, derive_account_keys, derive_password_key, hkdf_sha256, normalize_password, open,
-    seal, unlock_account, verify_signature,
+    Aad, AccountKeyset, Envelope, Id, KdfParams, OtpAlgorithm, Secret, SecretKey, SignatureContext,
+    SymmetricKey, VaultShare, derive_account_keys, derive_password_key, hkdf_sha256, hotp_value,
+    normalize_password, open, seal, unlock_account, verify_signature,
 };
 use serde_json::Value;
 
@@ -288,5 +288,21 @@ fn vectors_share() {
                 .and_then(|vk| open(&vk, &probe, &probe_aad))
                 .is_ok_and(|pt| pt.expose_secret() == b"probe")
         });
+    }
+}
+
+#[test]
+fn vectors_hotp() {
+    // The totp/steam entries are checked from their URIs in pwm-vault.
+    let hotp: Vec<Value> = load(include_str!("../../test-vectors/totp.json"))
+        .into_iter()
+        .filter(|v| v["kind"] == "hotp")
+        .collect();
+    assert_eq!(hotp.len(), 10);
+    for v in hotp {
+        assert_eq!(v["algorithm"], "SHA1");
+        let value = hotp_value(OtpAlgorithm::Sha1, &bytes(&v["key"]), num(&v["counter"]));
+        let code = format!("{:06}", value % 1_000_000);
+        assert_eq!(code, v["code"].as_str().unwrap());
     }
 }
