@@ -16,6 +16,8 @@ members = [
     "server",
 ]
 
+exclude = ["core/pwm-crypto/fuzz"]
+
 [workspace.package]
 version = "0.0.0"
 edition = "2024"

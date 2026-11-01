@@ -8,6 +8,7 @@ default:
 # fmt + clippy + lint for all packages
 check:
     cargo fmt --all --check
+    cargo fmt --manifest-path core/pwm-crypto/fuzz/Cargo.toml --check
     cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
     pnpm install --frozen-lockfile
     pnpm format:check
@@ -36,6 +37,7 @@ server:
 # apply formatters
 fmt:
     cargo fmt --all
+    cargo fmt --manifest-path core/pwm-crypto/fuzz/Cargo.toml
     pnpm -r exec prettier --write .
 
 # dependency audit: advisories, bans, sources and licence allow-list (decision S6)
@@ -49,3 +51,8 @@ audit:
 notices:
     cargo about generate --all-features --fail about.hbs -o THIRD_PARTY_NOTICES/rust.html
     pnpm notices
+
+# fuzz one decoder target (nightly + cargo-fuzz, Linux/macOS; on Windows see docs/DEVELOPMENT.md)
+[working-directory('core/pwm-crypto/fuzz')]
+fuzz target secs="60":
+    cargo +nightly fuzz run {{target}} -- -max_total_time={{secs}}

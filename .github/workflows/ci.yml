@@ -86,3 +86,36 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm license-check
       - run: pnpm audit --audit-level high
+
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - envelope_decode
+          - vault_share_decode
+          - keyset_plaintext
+          - secret_key_parse
+          - password_normalize
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/pwm-crypto/fuzz
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - name: Fuzz ${{ matrix.target }} (60 s on PRs, 10 min nightly)
+        working-directory: core/pwm-crypto/fuzz
+        # The prebuilt cargo-fuzz is a musl binary and would default to the musl
+        # target, which the address sanitizer does not support.
+        run: >
+          cargo +nightly fuzz run --target x86_64-unknown-linux-gnu ${{ matrix.target }} --
+          -max_total_time=${{ github.event_name == 'schedule' && 600 || 60 }}
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: core/pwm-crypto/fuzz/artifacts/

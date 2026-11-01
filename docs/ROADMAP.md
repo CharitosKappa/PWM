@@ -32,7 +32,8 @@ Phase 3  Teams           months 16–24 M16–M19
   - Deferred: key fingerprint format for the out-of-band check (with the sharing UI, M13). Share-key bytes are pinned by `share.json`, re-derived independently in `verify.mjs` (M1.6).
 - [x] M1.6 Test vectors in `core/test-vectors/*.json` for every operation; tamper tests (bit flips must fail).
   - Finding for M3.3: revisions above 2^53 lose precision as JSON numbers in JavaScript; send them as strings on the wire.
-- [ ] M1.7 Fuzz targets for envelope decode.
+- [x] M1.7 Fuzz targets for envelope decode.
+  - 5 targets (`envelope_decode`, `vault_share_decode`, `keyset_plaintext`, `secret_key_parse`, `password_normalize`) ran 10 min each clean on 2026-11-01 (6–76 M executions each). CI: 60 s per target on PRs, 10 min nightly.
 
 **Done when:** 100% of vectors pass; fuzzers run 10 min clean; no `unsafe`.
 
