@@ -11,4 +11,11 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
+getrandom = "0.4.3"
+thiserror = "2.0.21"
 zeroize = "1.9.1"
+
+[dev-dependencies]
+hex = "0.4.3"
+proptest = "1.11.0"

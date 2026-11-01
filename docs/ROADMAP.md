@@ -24,7 +24,8 @@ Phase 3  Teams           months 16–24 M16–M19
 
 ### M1 — Crypto core (`pwm-crypto`)
 - [x] M1.1 `Secret<T>` wrapper: zeroize on drop, redacted Debug/Display, no Serialize by default.
-- [ ] M1.2 AEAD wrapper (XChaCha20-Poly1305) with versioned envelope `{v, nonce, ct}` and AAD.
+- [x] M1.2 AEAD wrapper (XChaCha20-Poly1305) with versioned envelope `{v, nonce, ct}` and AAD.
+  - Deferred: base64url JSON form of the envelope (lands with the first JSON wire format, M2.3/M3.3); `getrandom` `wasm_js` backend (M3.7).
 - [ ] M1.3 Argon2id KDF with stored params; HKDF helpers; Secret Key generation + human format (`A3-XXXXXX-...`).
 - [ ] M1.4 Key hierarchy from `SECURITY.md`: AUK, auth secret, account keyset create/unlock, vault key wrap/unwrap.
 - [ ] M1.5 X25519 share wrap/unwrap + Ed25519 sign/verify.
