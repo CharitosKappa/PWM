@@ -13,64 +13,6 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D32 — Transactional email provider** · open · founder. Needed for M10.7: email verification at sign-up (so registration stops revealing which emails have accounts) and account notices. To choose: provider and region (EU hosting fits D5), and its licence and data-processing terms.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
-- **D41 — The shared Swift package for iOS and macOS: layout, the core as an XCFramework, the async layer, secrets, design tokens and tests** · proposed 2026-11-02 · Claude Code.
-  The roadmap says "Shared Swift package over UniFFI core; design tokens". D31 gives the core's API (`PwmClient`, the step pattern for every server conversation, items as D18 JSON), and its bindings already compile and run with `swiftc` on Linux in CI.
-  Open:
-  - how the package is laid out
-  - how the Rust library reaches Xcode
-  - what the Swift layer adds over the generated bindings
-  - where the cache and keys live on the device
-  - how secrets are handled in Swift
-  - how design tokens become Swift
-  - how all this is tested when development happens on Windows, without Xcode
-
-  Proposal:
-  1. **One SwiftPM package, `apps/apple/PWMKit`, with three targets.** The iOS app, its AutoFill extension (M5.5) and the macOS app (M5.6) all depend on it.
-     - **`PWMCore`:** the generated UniFFI Swift file over a binary target, `PWMCoreFFI.xcframework`. It is generated, never edited.
-     - **`PWMKit`:** the Swift layer apps use (§3). It is the only target apps import for core features.
-     - **`PWMDesign`:** the design tokens as SwiftUI values (§5).
-     - **Minimum versions:** iOS 17 and macOS 14, for SwiftUI's Observation. No third-party Swift dependencies.
-  2. **The core as an XCFramework**, built by `just apple` on a Mac:
-     - **Targets:** `pwm-ffi` for `aarch64-apple-ios`, `aarch64-apple-ios-sim`, `aarch64-apple-darwin` and `x86_64-apple-darwin`. The two macOS slices are merged with `lipo`, then joined with `xcodebuild -create-xcframework`.
-     - **Release profile:** the workspace profile, with symbols stripped.
-     - **Not committed:** the XCFramework and the generated Swift file go to `apps/apple/PWMKit/Generated/` (gitignored). The package fails to resolve until `just apple` has run, and the error says so.
-     - **Intel simulators (`x86_64-apple-ios`):** left out; Apple Silicon Macs only for development.
-  3. **What `PWMKit` adds**, so apps never touch steps, requests or JSON:
-     - **`Session`, an actor around one `PwmClient`:** async methods `signUp`, `logIn`, `unlock`, `sync` and so on.
-       - **The step loop:** each method drives the D28/D31 loop with `URLSession`: send the request, hand back the answer, then `network_failed` on a transport error. Task cancellation calls `cancel`.
-       - **Events:** published as an `AsyncStream`.
-       - **The HTTP stack:** `URLSession` with an ephemeral configuration (no cookies, no cache on disk) and TLS left to the system.
-     - **Items:** `Codable` Swift types for the D18 item JSON. Unknown fields are kept, as D18 requires, by keeping the raw JSON beside the typed fields and merging on save.
-     - **Errors:** a Swift `PWMError` that wraps the core's stable codes, with plain-language messages for the UI.
-     - **The generator, strength and TOTP:** thin wrappers.
-  4. **Storage and secrets:**
-     - **The cache:** `PwmClient.open(path)` in the App Group container, so the AutoFill extension (M5.5) reads the same file. It holds ciphertext only (D20), with file protection `completeUntilFirstUserAuthentication` so background sync (M5.8) and AutoFill work after the first unlock.
-     - **The device keys:** the Keychain, through a `KeyStore` protocol with an in-memory fake for tests. Items are this-device-only and after-first-unlock, in a shared access group for the extension. The core decides what is stored; Swift only keeps the bytes.
-     - **Face ID / Touch ID** (Secure Enclave wrapping) is M5.4, not here.
-     - **Secrets in Swift** (D31 §4): Swift strings cannot be wiped.
-       - **Short-lived:** the master password, the Secret Key and revealed fields stay in local variables and are passed straight to the core, never stored in long-lived state.
-       - **Redacted:** a `Redacted<T>` wrapper whose `description` and `debugDescription` are `"<redacted>"` is used for any value that must be held.
-       - **Never logged:** `os.Logger` calls take only codes and counts. A unit test checks that `Redacted`'s descriptions and `PWMError` messages carry no values.
-  5. **Design tokens:** `scripts/tokens-swift.mjs` turns `design/tokens.json` into `PWMDesign/Tokens.swift`. Colors pair light and dark, plus spacing, radius and type sizes.
-     - **Committed,** since SwiftPM cannot run Node at build time.
-     - **Kept current:** `just check` fails if the file is stale (the same tokens feed the extension's CSS, D34).
-  6. **Tests and CI.** This repository is developed on Windows without Xcode, so every Apple check runs in CI:
-     - **Linux (the existing `bindings` job, no macOS minutes):** `swift test` for `PWMKit` against the Linux build of `pwm-ffi`.
-       - **Covered:** the step loop against the local server (in `docker compose`): sign up, log in on a second session, save an item, sync. Also the item JSON round trip, error codes and `Redacted`.
-       - **Apple-only code** (Keychain, file protection, SwiftUI) sits behind `#if canImport(...)` and is tested on macOS.
-     - **macOS (new job `apple`, on PRs touching `apps/apple` or `core/`):** `just apple`, then `swift test` on macOS, and an iOS simulator build of the package (`xcodebuild build -scheme PWMKit -destination 'generic/platform=iOS Simulator'`).
-       - **Cost:** about 10–15 macOS minutes per run, which bill at 10× on a private repository. Nightly is skipped unless `core/` changed.
-     - **Not in M5.1:** an app target, signing, bundle ids and team ids. They wait for D1 and the Apple developer account (M5.2).
-  7. **What the founder needs for M5.2 onward:**
-     - **A Mac with Xcode,** to run the apps; CI can build and test but not run the UI.
-     - **An Apple Developer account,** for signing, App Groups and the AutoFill entitlement.
-     - M5.1 itself needs neither.
-
-  Alternatives:
-  - **Commit the XCFramework (or publish it as a release asset):** Xcode would open the package without Rust, but binaries in git, or a download step, are worse than one `just apple`.
-  - **A separate Swift package per app:** duplicates the session and item code that the app and its AutoFill extension must share.
-  - **Generate Swift types for items from the Rust model:** D31 chose JSON so bindings don't mirror the item model; hand-written `Codable` with a round-trip test is enough.
-  - **macOS CI only:** simpler, but every PR touching the core would pay macOS minutes; the Linux job catches most breakage first.
 
 ## Settled
 
@@ -1071,3 +1013,61 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **AMO:** the source zip for reviewers, and the `data_collection_permissions` declaration that AMO asks of new add-ons.
     - **Chromium:** loading the store zip itself in a browser test; the harness loads the test build.
   - **Parity gaps logged:** on Firefox, the inline icon, the save card and filling in frames. Revisit when Firefox ships `IntersectionObserver` v2.
+- **D41 — The shared Swift package for iOS and macOS: layout, the core as an XCFramework, the async layer, secrets, design tokens and tests** · settled 2026-11-02 · founder (approved as proposed).
+  The roadmap says "Shared Swift package over UniFFI core; design tokens". D31 gives the core's API (`PwmClient`, the step pattern for every server conversation, items as D18 JSON), and its bindings already compile and run with `swiftc` on Linux in CI.
+  Open:
+  - how the package is laid out
+  - how the Rust library reaches Xcode
+  - what the Swift layer adds over the generated bindings
+  - where the cache and keys live on the device
+  - how secrets are handled in Swift
+  - how design tokens become Swift
+  - how all this is tested when development happens on Windows, without Xcode
+
+  Proposal:
+  1. **One SwiftPM package, `apps/apple/PWMKit`, with three targets.** The iOS app, its AutoFill extension (M5.5) and the macOS app (M5.6) all depend on it.
+     - **`PWMCore`:** the generated UniFFI Swift file over a binary target, `PWMCoreFFI.xcframework`. It is generated, never edited.
+     - **`PWMKit`:** the Swift layer apps use (§3). It is the only target apps import for core features.
+     - **`PWMDesign`:** the design tokens as SwiftUI values (§5).
+     - **Minimum versions:** iOS 17 and macOS 14, for SwiftUI's Observation. No third-party Swift dependencies.
+  2. **The core as an XCFramework**, built by `just apple` on a Mac:
+     - **Targets:** `pwm-ffi` for `aarch64-apple-ios`, `aarch64-apple-ios-sim`, `aarch64-apple-darwin` and `x86_64-apple-darwin`. The two macOS slices are merged with `lipo`, then joined with `xcodebuild -create-xcframework`.
+     - **Release profile:** the workspace profile, with symbols stripped.
+     - **Not committed:** the XCFramework and the generated Swift file go to `apps/apple/PWMKit/Generated/` (gitignored). The package fails to resolve until `just apple` has run, and the error says so.
+     - **Intel simulators (`x86_64-apple-ios`):** left out; Apple Silicon Macs only for development.
+  3. **What `PWMKit` adds**, so apps never touch steps, requests or JSON:
+     - **`Session`, an actor around one `PwmClient`:** async methods `signUp`, `logIn`, `unlock`, `sync` and so on.
+       - **The step loop:** each method drives the D28/D31 loop with `URLSession`: send the request, hand back the answer, then `network_failed` on a transport error. Task cancellation calls `cancel`.
+       - **Events:** published as an `AsyncStream`.
+       - **The HTTP stack:** `URLSession` with an ephemeral configuration (no cookies, no cache on disk) and TLS left to the system.
+     - **Items:** `Codable` Swift types for the D18 item JSON. Unknown fields are kept, as D18 requires, by keeping the raw JSON beside the typed fields and merging on save.
+     - **Errors:** a Swift `PWMError` that wraps the core's stable codes, with plain-language messages for the UI.
+     - **The generator, strength and TOTP:** thin wrappers.
+  4. **Storage and secrets:**
+     - **The cache:** `PwmClient.open(path)` in the App Group container, so the AutoFill extension (M5.5) reads the same file. It holds ciphertext only (D20), with file protection `completeUntilFirstUserAuthentication` so background sync (M5.8) and AutoFill work after the first unlock.
+     - **The device keys:** the Keychain, through a `KeyStore` protocol with an in-memory fake for tests. Items are this-device-only and after-first-unlock, in a shared access group for the extension. The core decides what is stored; Swift only keeps the bytes.
+     - **Face ID / Touch ID** (Secure Enclave wrapping) is M5.4, not here.
+     - **Secrets in Swift** (D31 §4): Swift strings cannot be wiped.
+       - **Short-lived:** the master password, the Secret Key and revealed fields stay in local variables and are passed straight to the core, never stored in long-lived state.
+       - **Redacted:** a `Redacted<T>` wrapper whose `description` and `debugDescription` are `"<redacted>"` is used for any value that must be held.
+       - **Never logged:** `os.Logger` calls take only codes and counts. A unit test checks that `Redacted`'s descriptions and `PWMError` messages carry no values.
+  5. **Design tokens:** `scripts/tokens-swift.mjs` turns `design/tokens.json` into `PWMDesign/Tokens.swift`. Colors pair light and dark, plus spacing, radius and type sizes.
+     - **Committed,** since SwiftPM cannot run Node at build time.
+     - **Kept current:** `just check` fails if the file is stale (the same tokens feed the extension's CSS, D34).
+  6. **Tests and CI.** This repository is developed on Windows without Xcode, so every Apple check runs in CI:
+     - **Linux (the existing `bindings` job, no macOS minutes):** `swift test` for `PWMKit` against the Linux build of `pwm-ffi`.
+       - **Covered:** the step loop against the local server (in `docker compose`): sign up, log in on a second session, save an item, sync. Also the item JSON round trip, error codes and `Redacted`.
+       - **Apple-only code** (Keychain, file protection, SwiftUI) sits behind `#if canImport(...)` and is tested on macOS.
+     - **macOS (new job `apple`, on PRs touching `apps/apple` or `core/`):** `just apple`, then `swift test` on macOS, and an iOS simulator build of the package (`xcodebuild build -scheme PWMKit -destination 'generic/platform=iOS Simulator'`).
+       - **Cost:** about 10–15 macOS minutes per run, which bill at 10× on a private repository. Nightly is skipped unless `core/` changed.
+     - **Not in M5.1:** an app target, signing, bundle ids and team ids. They wait for D1 and the Apple developer account (M5.2).
+  7. **What the founder needs for M5.2 onward:**
+     - **A Mac with Xcode,** to run the apps; CI can build and test but not run the UI.
+     - **An Apple Developer account,** for signing, App Groups and the AutoFill entitlement.
+     - M5.1 itself needs neither.
+
+  Alternatives:
+  - **Commit the XCFramework (or publish it as a release asset):** Xcode would open the package without Rust, but binaries in git, or a download step, are worse than one `just apple`.
+  - **A separate Swift package per app:** duplicates the session and item code that the app and its AutoFill extension must share.
+  - **Generate Swift types for items from the Rust model:** D31 chose JSON so bindings don't mirror the item model; hand-written `Codable` with a round-trip test is enough.
+  - **macOS CI only:** simpler, but every PR touching the core would pay macOS minutes; the Linux job catches most breakage first.
