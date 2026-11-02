@@ -1193,3 +1193,14 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Draw the kit on each platform** (PDFKit on Apple, `PdfDocument` on Android, the browser's print view): native, but each kit would look different and need its own tests. The QR format would also be repeated four times.
   - **A PDF crate** (`printpdf`, MIT): fonts and layout come for free, but it pulls in many dependencies for one fixed page.
   - **Wait for D1 and the Apple account:** it blocks all of M5. The placeholders are a handful of settings, changed in one place later.
+
+  Implementation notes (M5.2):
+  - **Sign-out wipes the cache:** a new core call, `sign_out`, locks and clears the store. `Session.signOut` also deletes the tokens, the Secret Key and the email from the Keychain, and keeps the device id. This matches the extension, which starts a fresh core.
+  - **New error codes:** `invalid_email`, `invalid_server`, `invalid_date`, `not_a_kit` and `kit_too_new`. A bad account id is `invalid_id`.
+  - **The QR code's test:** `rqrr` (MIT or Apache-2.0, a dev-dependency only) redraws the PDF's own squares as an image and decodes them. This checks the drawing, not just the encoder.
+  - **Self-hosted over plain HTTP:** only to `localhost`, `127.0.0.1` or `[::1]`, in the kit and the app alike, as in the extension. The app's `Info.plist` allows local networking for this.
+  - **The server choice** sits on the welcome screen, under "Other server". A scanned kit sets it. It is kept in `UserDefaults`, and a `-server <url>` launch argument overrides it, which is how the UI test points the app at its server.
+  - **Copy:** a String Catalog (`App/Localizable.xcstrings`) with English as the source. The screens' literals are localizable keys looked up in the app's bundle.
+  - **The extension popup** has no UI tests, so the kit download is covered by a background test (the request and its signed-out error) and by the WASM test on the real build.
+  - **Not verified on this machine:** there is no Xcode here. The package, its view models and the server tests run on Linux in the `swift` Docker image. The views, the scanner, the Keychain, the app target and the UI test run first in the macOS job.
+  - **Recheck of the `cargo deny` ignores** (due at M5.1): unchanged upstream. The next recheck is at M5.5.

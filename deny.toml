@@ -16,7 +16,8 @@ ignore = [
     # Rechecked at M4.9 (2026-11-02): the latest is 4.1.0-pre.2, and it and
     # voprf 0.6.0-pre.1 are still on elliptic-curve 0.13. The crypto-bigint
     # 0.7 that p256 0.14 brings for passkeys (D37) is 0.7.10, past the fix.
-    # Recheck at M5.1.
+    # Rechecked at M5.2 (2026-11-02, due at M5.1): unchanged, still
+    # 4.1.0-pre.2 and 0.6.0-pre.1. Recheck at M5.5.
     { id = "RUSTSEC-2026-0387", reason = "crypto-bigint not reachable from the ristretto255 OPAQUE suite" },
     # basic-toml is unmaintained (not vulnerable). It comes in only through
     # uniffi_bindgen's askama templates, in pwm-ffi-bindgen: a build tool that
@@ -25,7 +26,8 @@ ignore = [
     # Rechecked at M4.9 (2026-11-02): uniffi 0.32.2 (the latest) still
     # pulls it in through askama 0.16.1. It runs only inside askama's derive
     # macro at compile time, and `cargo tree -p pwm-ffi -i basic-toml` finds
-    # nothing. Recheck at M5.1.
+    # nothing. Rechecked at M5.2 (2026-11-02, due at M5.1): uniffi 0.32.2
+    # and askama 0.16.1 are still the latest. Recheck at M5.5.
     { id = "RUSTSEC-2026-0374", reason = "build-time only (uniffi-bindgen tool), never shipped, reads only our own config" },
 ]
 
