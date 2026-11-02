@@ -13,12 +13,19 @@ ignore = [
     # our OPAQUE suite is ristretto255 (curve25519-dalek arithmetic) and uses only
     # elliptic-curve's hash-based expand_message_xmd; no NIST curve is built.
     # Remove when opaque-ke ships a stable release on elliptic-curve 0.14.
-    # Rechecked at M3.7 (2026-11-02): only 4.1.0-pre.2 exists; recheck at M4.
+    # Rechecked at M4.9 (2026-11-02): the latest is 4.1.0-pre.2, and it and
+    # voprf 0.6.0-pre.1 are still on elliptic-curve 0.13. The crypto-bigint
+    # 0.7 that p256 0.14 brings for passkeys (D37) is 0.7.10, past the fix.
+    # Recheck at M5.1.
     { id = "RUSTSEC-2026-0387", reason = "crypto-bigint not reachable from the ristretto255 OPAQUE suite" },
     # basic-toml is unmaintained (not vulnerable). It comes in only through
     # uniffi_bindgen's askama templates, in pwm-ffi-bindgen: a build tool that
     # reads our own uniffi config and is never shipped. The library the apps
     # link (pwm-ffi) does not contain it. Remove when uniffi drops it.
+    # Rechecked at M4.9 (2026-11-02): uniffi 0.32.2 (the latest) still
+    # pulls it in through askama 0.16.1. It runs only inside askama's derive
+    # macro at compile time, and `cargo tree -p pwm-ffi -i basic-toml` finds
+    # nothing. Recheck at M5.1.
     { id = "RUSTSEC-2026-0374", reason = "build-time only (uniffi-bindgen tool), never shipped, reads only our own config" },
 ]
 
