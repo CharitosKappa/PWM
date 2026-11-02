@@ -212,6 +212,7 @@ struct StrengthMeter: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Password strength")
+        .accessibilityIdentifier("strength")
         .accessibilityValue(strength.map { Self.words[min(max($0.score, 0), 4)] } ?? "Empty")
     }
 }

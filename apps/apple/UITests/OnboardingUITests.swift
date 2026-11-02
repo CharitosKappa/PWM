@@ -85,9 +85,16 @@ final class OnboardingUITests: XCTestCase {
     private func screen() -> String {
         let error = app.staticTexts["error"]
         let shown = error.exists ? error.label.trimmingCharacters(in: .whitespaces) : ""
-        let controls = (app.buttons.allElementsBoundByIndex + app.textFields.allElementsBoundByIndex
-            + app.secureTextFields.allElementsBoundByIndex)
+        let buttons = app.buttons.allElementsBoundByIndex
             .map { "\($0.identifier.isEmpty ? $0.label : $0.identifier)\($0.isEnabled ? "" : " (disabled)")" }
-        return "Error line: \"\(shown)\". Controls: \(controls.joined(separator: ", "))."
+        // Field values are test data; secure fields show one dot per character.
+        let fields = (app.textFields.allElementsBoundByIndex + app.secureTextFields.allElementsBoundByIndex)
+            .map { "\($0.identifier)=\"\(($0.value as? String) ?? "")\"" }
+        let texts = app.staticTexts.allElementsBoundByIndex.map(\.label)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        let strength = app.otherElements["strength"]
+        let meter = strength.exists ? (strength.value as? String) ?? "?" : "none"
+        return "Error line: \"\(shown)\". Buttons: \(buttons.joined(separator: ", ")). "
+            + "Fields: \(fields.joined(separator: ", ")). Texts: \(texts.joined(separator: " | ")). Strength: \(meter)."
     }
 }
