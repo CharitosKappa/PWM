@@ -273,6 +273,11 @@ jobs:
           xcodebuild test -project PWM.xcodeproj -scheme PWM -destination "id=$device" -resultBundlePath "$RUNNER_TEMP/ui.xcresult" -quiet
       - if: failure()
         run: cat target/pwm-server.log || true
+      - name: UI test failures
+        if: failure()
+        run: |
+          [ -d "$RUNNER_TEMP/ui.xcresult" ] || exit 0
+          xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/ui.xcresult" --compact             | jq -r '.. | objects | select(.nodeType? == "Failure Message") | .name'
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
