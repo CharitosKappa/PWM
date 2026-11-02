@@ -13,6 +13,62 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D32 — Transactional email provider** · open · founder. Needed for M10.7: email verification at sign-up (so registration stops revealing which emails have accounts) and account notices. To choose: provider and region (EU hosting fits D5), and its licence and data-processing terms.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
+- **D39 — Autofill harness: the full fixture set, the top-sites runner, its report and the release gate** · proposed 2026-11-02 · Claude Code.
+  The roadmap says "Autofill harness: fixture sites incl. clickjacking/overlay attacks that must not fill; top-1,000 runner + JSON report". M4 is done when the fixture suite passes 100%, top-1,000 classification reaches 90% (95% by launch), and overlay attacks never fill. `AUTOFILL.md` and `QUALITY.md` describe a nightly run against real login pages, "no real credentials; assert field classification and fill targets only", a release gate ("blocked if pass rate drops > 0.5 pts"), and a public dashboard. M4.3–M4.6 started the harness (24 browser tests).
+  Open:
+  - what "passes" means on a real site
+  - where the site list comes from, and its licence
+  - how to treat bot walls
+  - what the runner may do on someone else's site
+  - where results go
+
+  Proposal:
+  1. **The fixture suite becomes data-driven:**
+     - **`fixtures/fixtures.json`** lists every fixture page with its expected outcome: filled (and which fields with which values), refused with a reason, copied, or no form. One Playwright test runs them all, and a fixture without an entry fails the suite.
+     - **New fixtures:**
+       - **Login forms:** an open shadow DOM login; a closed shadow root (expected: no form, documented); an SPA that renders its form after load; an SPA that re-renders the form on each keystroke.
+       - **Codes and frames:** a split 6-box one-time code (expected: copied, not filled); a frame inside a frame (same site).
+       - **Hidden-field attacks:** the field moved off-screen after load; hidden with `clip-path`; covered by an element with `pointer-events: none`.
+       - **Covering in a parent page:** a frame covered by a transparent overlay in its parent page (`IntersectionObserver` v2 catches it).
+       - **Icon attacks:** an overlay added on top of the inline icon after it appears (no click taken); the icon moved under the cursor right before a click (no click within 500 ms).
+     - **Run:** on every extension PR, as now (`autofill-harness` job).
+  2. **The top-sites runner:**
+     - **The site list:** `sites/sites.json` holds `{site, login_url, username?, password?}`, with optional CSS selectors for the expected fields. Each entry is added by hand after checking its login page, because no public list gives login URLs.
+       - **To start:** about 100 popular sites, with selectors for at least 50.
+       - **Growing to 1,000:** over M10, ordered by the Tranco top-sites list (CC BY 4.0; attribution in `THIRD_PARTY_NOTICES`). It is used only to choose and order sites, and is not vendored.
+     - **What a run does** on each site, one at a time:
+       - make a throwaway login in the test vault, with username `pwm-check-user@example.invalid` and password `pwm-check-password`
+       - open the login URL
+       - ask the extension to fill, through the same path as the shortcut
+       - read which inputs got the two values
+       - **Never** submit, click anything, solve a challenge or type anything but those two values. A real account is never used.
+     - **Result per site:**
+       - **pass:** the username and password reached the expected inputs (or, without selectors, a visible text-like input and a visible password input).
+       - **fail:** nothing filled, the wrong inputs, or the checks refused a visible field.
+       - **blocked:** a CAPTCHA, a bot wall or a 4xx/5xx page. It is recorded and left out of the pass rate; we never try to get past it (CLAUDE.md, system safety rules).
+       - **error:** a timeout or a load failure.
+     - **Multi-step sites** (username first): pass when the username page fills. The password page needs a real submit, which the runner never does.
+     - **Being polite:** one site at a time, 20 s per page, the normal Chromium user agent with `PWM-AutofillCheck/1` added, and no retries beyond one. The run is nightly, not on PRs (real sites are slow and change).
+  3. **The report** (`autofill-report.json`, `"v": 1`):
+     - **Run details:** date, extension, core and rules versions, browser version.
+     - **Per site:** status, duration, the engine's fill targets as field descriptions (D38-cleaned, never values), and the refusal reason if any.
+     - **Totals:** the pass rate (pass ÷ (pass + fail)), and the counts per status.
+     - **Where it goes:** uploaded as a CI artifact (90 days). `scripts/compare.mjs old.json new.json` prints what changed and exits non-zero when the pass rate dropped more than 0.5 points, which is the release gate `QUALITY.md` asks for.
+     - **Later:** the release workflow and the public dashboard read it (M10).
+  4. **Not in M4.7:**
+     - **Tickets from user reports (D38):** they need server access from CI. They go with the release and ops tooling (M10).
+     - **The public dashboard:** M10.
+     - **Reaching 1,000 curated sites, and the 90% / 95% targets:** M4.7 delivers the runner and the first list; the targets are measured each night from then on and gate the launch (M10). The M4 "done when" is updated to say so.
+  5. **Tests:**
+     - **The runner, against the local fixture server:** its statuses (pass, fail, blocked by a fake CAPTCHA page, error by a timeout page).
+     - **The report schema.**
+     - **`compare.mjs`:** a drop of 0.4 vs 0.6 points.
+     - **That the runner never submits:** the fixture's form posts to a page that fails the test if reached.
+
+  Alternatives:
+  - **Discover login pages automatically** (follow "Sign in" links): no list to keep, but it clicks around other people's sites and misses many. It may come later as a helper for curating entries.
+  - **Assert classification only, without filling:** less intrusive, but it would not test the visibility checks or the fill itself, which is what users meet.
+  - **A commercial top-sites list:** better data, but a licence cost and terms for a closed-source product.
 
 ## Settled
 
