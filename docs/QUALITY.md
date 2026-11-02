@@ -24,7 +24,7 @@ Most one-star reviews in this market come from broken updates. Release safety is
 | `extension-test` + autofill fixtures | PRs touching extension/core | yes |
 | `ios-build`, `android-build`, `desktop-build` | PRs touching that app/core | yes |
 | `audit` (cargo audit/deny, npm audit) | every PR + nightly | high severity |
-| `autofill-top1000` | nightly + release candidates | release only |
+| `autofill-top-sites` (D39) | nightly + release candidates | release only (`runner/compare.ts`) |
 
 ## Release process
 

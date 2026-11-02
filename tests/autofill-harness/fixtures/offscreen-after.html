@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Moved off-screen after load</title>
+    <style>
+      body {
+        font: 16px system-ui;
+        margin: 40px;
+      }
+      input {
+        display: block;
+        width: 280px;
+        height: 32px;
+        margin: 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Moved off-screen after load</h1>
+    <form action="#" onsubmit="return false;">
+      <label for="email">Email</label>
+      <input id="email" type="email" name="email" autocomplete="username" />
+      <label for="password">Password</label>
+      <input
+        id="password"
+        type="password"
+        name="password"
+        autocomplete="current-password"
+      />
+      <button>Sign in</button>
+    </form>
+    <script>
+      // Shown at first, then parked outside the page.
+      setTimeout(() => {
+        document.querySelector("form").style.cssText =
+          "position: absolute; left: -10000px";
+      }, 100);
+    </script>
+  </body>
+</html>

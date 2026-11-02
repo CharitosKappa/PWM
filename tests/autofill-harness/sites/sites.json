@@ -1,0 +1,442 @@
+{
+  "description": "Sites for the nightly runner (D39 §2): login URL and, where someone checked the page, CSS selectors of the expected inputs. Grow towards 1,000 over M10, ordered by the Tranco top-sites list (CC BY 4.0, https://tranco-list.eu, attribution in THIRD_PARTY_NOTICES when it is used). Entries are unchecked until a nightly run confirms them.",
+  "checked": "2026-11-02: list drafted from public login URLs; selectors only where the form is well known; to be confirmed by the first nightly runs",
+  "sites": [
+    {
+      "site": "google.com",
+      "login_url": "https://accounts.google.com/signin",
+      "username": "#identifierId"
+    },
+    {
+      "site": "youtube.com",
+      "login_url": "https://accounts.google.com/ServiceLogin?service=youtube"
+    },
+    {
+      "site": "facebook.com",
+      "login_url": "https://www.facebook.com/login",
+      "username": "#email",
+      "password": "#pass"
+    },
+    {
+      "site": "instagram.com",
+      "login_url": "https://www.instagram.com/accounts/login/"
+    },
+    {
+      "site": "x.com",
+      "login_url": "https://x.com/i/flow/login"
+    },
+    {
+      "site": "linkedin.com",
+      "login_url": "https://www.linkedin.com/login",
+      "username": "#username",
+      "password": "#password"
+    },
+    {
+      "site": "microsoft.com",
+      "login_url": "https://login.live.com/",
+      "username": "input[name=\"loginfmt\"]"
+    },
+    {
+      "site": "office.com",
+      "login_url": "https://login.microsoftonline.com/",
+      "username": "input[name=\"loginfmt\"]"
+    },
+    {
+      "site": "apple.com",
+      "login_url": "https://account.apple.com/sign-in"
+    },
+    {
+      "site": "amazon.com",
+      "login_url": "https://www.amazon.com/ap/signin?openid.pape.max_auth_age=0&openid.return_to=https%3A%2F%2Fwww.amazon.com%2F&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=usflex&openid.mode=checkid_setup&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0"
+    },
+    {
+      "site": "netflix.com",
+      "login_url": "https://www.netflix.com/login"
+    },
+    {
+      "site": "github.com",
+      "login_url": "https://github.com/login",
+      "username": "#login_field",
+      "password": "#password"
+    },
+    {
+      "site": "gitlab.com",
+      "login_url": "https://gitlab.com/users/sign_in",
+      "username": "#user_login",
+      "password": "#user_password"
+    },
+    {
+      "site": "bitbucket.org",
+      "login_url": "https://bitbucket.org/account/signin/"
+    },
+    {
+      "site": "wikipedia.org",
+      "login_url": "https://en.wikipedia.org/w/index.php?title=Special:UserLogin",
+      "username": "#wpName1",
+      "password": "#wpPassword1"
+    },
+    {
+      "site": "reddit.com",
+      "login_url": "https://www.reddit.com/login/"
+    },
+    {
+      "site": "yahoo.com",
+      "login_url": "https://login.yahoo.com/",
+      "username": "#login-username"
+    },
+    {
+      "site": "ebay.com",
+      "login_url": "https://signin.ebay.com/",
+      "username": "#userid"
+    },
+    {
+      "site": "paypal.com",
+      "login_url": "https://www.paypal.com/signin",
+      "username": "#email"
+    },
+    {
+      "site": "twitch.tv",
+      "login_url": "https://www.twitch.tv/login"
+    },
+    {
+      "site": "discord.com",
+      "login_url": "https://discord.com/login"
+    },
+    {
+      "site": "spotify.com",
+      "login_url": "https://accounts.spotify.com/login"
+    },
+    {
+      "site": "zoom.us",
+      "login_url": "https://zoom.us/signin"
+    },
+    {
+      "site": "slack.com",
+      "login_url": "https://slack.com/signin"
+    },
+    {
+      "site": "pinterest.com",
+      "login_url": "https://www.pinterest.com/login/"
+    },
+    {
+      "site": "tumblr.com",
+      "login_url": "https://www.tumblr.com/login"
+    },
+    {
+      "site": "quora.com",
+      "login_url": "https://www.quora.com/"
+    },
+    {
+      "site": "stackoverflow.com",
+      "login_url": "https://stackoverflow.com/users/login",
+      "username": "#email",
+      "password": "#password"
+    },
+    {
+      "site": "salesforce.com",
+      "login_url": "https://login.salesforce.com/",
+      "username": "#username",
+      "password": "#password"
+    },
+    {
+      "site": "atlassian.com",
+      "login_url": "https://id.atlassian.com/login",
+      "username": "#username"
+    },
+    {
+      "site": "heroku.com",
+      "login_url": "https://id.heroku.com/login",
+      "username": "#email",
+      "password": "#password"
+    },
+    {
+      "site": "proton.me",
+      "login_url": "https://account.proton.me/login",
+      "username": "#username",
+      "password": "#password"
+    },
+    {
+      "site": "dropbox.com",
+      "login_url": "https://www.dropbox.com/login"
+    },
+    {
+      "site": "box.com",
+      "login_url": "https://account.box.com/login"
+    },
+    {
+      "site": "adobe.com",
+      "login_url": "https://auth.services.adobe.com/"
+    },
+    {
+      "site": "wordpress.com",
+      "login_url": "https://wordpress.com/log-in",
+      "username": "#usernameOrEmail"
+    },
+    {
+      "site": "medium.com",
+      "login_url": "https://medium.com/m/signin"
+    },
+    {
+      "site": "imdb.com",
+      "login_url": "https://www.imdb.com/registration/signin"
+    },
+    {
+      "site": "booking.com",
+      "login_url": "https://account.booking.com/sign-in"
+    },
+    {
+      "site": "airbnb.com",
+      "login_url": "https://www.airbnb.com/login"
+    },
+    {
+      "site": "etsy.com",
+      "login_url": "https://www.etsy.com/signin"
+    },
+    {
+      "site": "shopify.com",
+      "login_url": "https://accounts.shopify.com/lookup"
+    },
+    {
+      "site": "cloudflare.com",
+      "login_url": "https://dash.cloudflare.com/login"
+    },
+    {
+      "site": "digitalocean.com",
+      "login_url": "https://cloud.digitalocean.com/login"
+    },
+    {
+      "site": "aws.amazon.com",
+      "login_url": "https://signin.aws.amazon.com/signin"
+    },
+    {
+      "site": "azure.com",
+      "login_url": "https://portal.azure.com/"
+    },
+    {
+      "site": "npmjs.com",
+      "login_url": "https://www.npmjs.com/login"
+    },
+    {
+      "site": "docker.com",
+      "login_url": "https://login.docker.com/u/login"
+    },
+    {
+      "site": "vimeo.com",
+      "login_url": "https://vimeo.com/log_in"
+    },
+    {
+      "site": "soundcloud.com",
+      "login_url": "https://soundcloud.com/signin"
+    },
+    {
+      "site": "deezer.com",
+      "login_url": "https://account.deezer.com/en/login/"
+    },
+    {
+      "site": "steamcommunity.com",
+      "login_url": "https://steamcommunity.com/login/home/"
+    },
+    {
+      "site": "epicgames.com",
+      "login_url": "https://www.epicgames.com/id/login"
+    },
+    {
+      "site": "roblox.com",
+      "login_url": "https://www.roblox.com/login"
+    },
+    {
+      "site": "ea.com",
+      "login_url": "https://signin.ea.com/p/juno/login"
+    },
+    {
+      "site": "playstation.com",
+      "login_url": "https://my.account.sony.com/"
+    },
+    {
+      "site": "nintendo.com",
+      "login_url": "https://accounts.nintendo.com/login"
+    },
+    {
+      "site": "telegram.org",
+      "login_url": "https://web.telegram.org/"
+    },
+    {
+      "site": "whatsapp.com",
+      "login_url": "https://web.whatsapp.com/"
+    },
+    {
+      "site": "mail.yandex.com",
+      "login_url": "https://passport.yandex.com/auth"
+    },
+    {
+      "site": "vk.com",
+      "login_url": "https://vk.com/login"
+    },
+    {
+      "site": "ok.ru",
+      "login_url": "https://ok.ru/"
+    },
+    {
+      "site": "naver.com",
+      "login_url": "https://nid.naver.com/nidlogin.login",
+      "username": "#id",
+      "password": "#pw"
+    },
+    {
+      "site": "baidu.com",
+      "login_url": "https://passport.baidu.com/v2/?login"
+    },
+    {
+      "site": "aliexpress.com",
+      "login_url": "https://login.aliexpress.com/"
+    },
+    {
+      "site": "alibaba.com",
+      "login_url": "https://login.alibaba.com/"
+    },
+    {
+      "site": "rakuten.co.jp",
+      "login_url": "https://login.account.rakuten.com/sso/authorize"
+    },
+    {
+      "site": "walmart.com",
+      "login_url": "https://www.walmart.com/account/login"
+    },
+    {
+      "site": "target.com",
+      "login_url": "https://www.target.com/login"
+    },
+    {
+      "site": "bestbuy.com",
+      "login_url": "https://www.bestbuy.com/identity/global/signin"
+    },
+    {
+      "site": "costco.com",
+      "login_url": "https://www.costco.com/LogonForm"
+    },
+    {
+      "site": "ikea.com",
+      "login_url": "https://www.ikea.com/us/en/profile/login/"
+    },
+    {
+      "site": "zalando.com",
+      "login_url": "https://accounts.zalando.com/authenticate"
+    },
+    {
+      "site": "skroutz.gr",
+      "login_url": "https://www.skroutz.gr/account/login"
+    },
+    {
+      "site": "bbc.co.uk",
+      "login_url": "https://account.bbc.com/signin"
+    },
+    {
+      "site": "nytimes.com",
+      "login_url": "https://myaccount.nytimes.com/auth/login"
+    },
+    {
+      "site": "theguardian.com",
+      "login_url": "https://profile.theguardian.com/signin"
+    },
+    {
+      "site": "cnn.com",
+      "login_url": "https://edition.cnn.com/account/log-in"
+    },
+    {
+      "site": "washingtonpost.com",
+      "login_url": "https://www.washingtonpost.com/subscribe/signin/"
+    },
+    {
+      "site": "duolingo.com",
+      "login_url": "https://www.duolingo.com/log-in"
+    },
+    {
+      "site": "coursera.org",
+      "login_url": "https://www.coursera.org/?authMode=login"
+    },
+    {
+      "site": "udemy.com",
+      "login_url": "https://www.udemy.com/join/login-popup/"
+    },
+    {
+      "site": "khanacademy.org",
+      "login_url": "https://www.khanacademy.org/login"
+    },
+    {
+      "site": "notion.so",
+      "login_url": "https://www.notion.so/login"
+    },
+    {
+      "site": "trello.com",
+      "login_url": "https://trello.com/login"
+    },
+    {
+      "site": "asana.com",
+      "login_url": "https://app.asana.com/-/login"
+    },
+    {
+      "site": "figma.com",
+      "login_url": "https://www.figma.com/login"
+    },
+    {
+      "site": "canva.com",
+      "login_url": "https://www.canva.com/login"
+    },
+    {
+      "site": "mailchimp.com",
+      "login_url": "https://login.mailchimp.com/"
+    },
+    {
+      "site": "hubspot.com",
+      "login_url": "https://app.hubspot.com/login"
+    },
+    {
+      "site": "zendesk.com",
+      "login_url": "https://www.zendesk.com/login/"
+    },
+    {
+      "site": "evernote.com",
+      "login_url": "https://www.evernote.com/Login.action"
+    },
+    {
+      "site": "openai.com",
+      "login_url": "https://auth.openai.com/log-in"
+    },
+    {
+      "site": "claude.ai",
+      "login_url": "https://claude.ai/login"
+    },
+    {
+      "site": "uber.com",
+      "login_url": "https://auth.uber.com/"
+    },
+    {
+      "site": "lyft.com",
+      "login_url": "https://account.lyft.com/auth"
+    },
+    {
+      "site": "chase.com",
+      "login_url": "https://secure.chase.com/web/auth/dashboard"
+    },
+    {
+      "site": "bankofamerica.com",
+      "login_url": "https://www.bankofamerica.com/"
+    },
+    {
+      "site": "wellsfargo.com",
+      "login_url": "https://connect.secure.wellsfargo.com/auth/login/present"
+    },
+    {
+      "site": "revolut.com",
+      "login_url": "https://app.revolut.com/start"
+    },
+    {
+      "site": "coinbase.com",
+      "login_url": "https://login.coinbase.com/signin"
+    },
+    {
+      "site": "kraken.com",
+      "login_url": "https://www.kraken.com/sign-in"
+    }
+  ]
+}

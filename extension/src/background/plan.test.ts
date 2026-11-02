@@ -68,6 +68,27 @@ describe("planFill", () => {
     });
   });
 
+  it("copies a code split over several boxes instead of filling one", () => {
+    const boxes = [1, 2, 3].map((i) => field(i, { max_length: 1 }));
+    expect(
+      planFill(
+        boxes,
+        [
+          c("one-time-code", 0.95),
+          c("one-time-code", 0.6),
+          c("one-time-code", 0.6),
+        ],
+        ALL,
+      ),
+    ).toEqual({ copyCode: true, step: null });
+    expect(
+      planFill([field(0, { max_length: 1 })], [c("one-time-code", 0.95)], ALL),
+    ).toEqual({ copyCode: true, step: null });
+    expect(
+      planFill([field(0, { max_length: 6 })], [c("one-time-code", 0.95)], ALL),
+    ).toEqual({ code: 0, copyCode: false, step: null });
+  });
+
   it("copies the code when the login in progress expects one next", () => {
     expect(planFill([field(0, {})], [c("ignore")], ALL, "totp")).toEqual({
       copyCode: true,

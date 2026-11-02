@@ -9,7 +9,8 @@
     "noUncheckedIndexedAccess": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
-  "include": ["*.ts", "tests", "fixtures"]
+  "include": ["*.ts", "tests", "fixtures", "lib", "runner"]
 }

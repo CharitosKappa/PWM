@@ -936,3 +936,12 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Discover login pages automatically** (follow "Sign in" links): no list to keep, but it clicks around other people's sites and misses many. It may come later as a helper for curating entries.
   - **Assert classification only, without filling:** less intrusive, but it would not test the visibility checks or the fill itself, which is what users meet.
   - **A commercial top-sites list:** better data, but a licence cost and terms for a closed-source product.
+
+  Implementation notes (M4.7):
+  - **The first list is not yet checked.** It has 102 sites, but only 18 carry selectors (forms that are well known), not the 50 §2 asks for. The others use the selector-free rule.
+    - The list is marked unchecked until the first nightly runs confirm each page. Checking pages one by one in a browser was too slow for this task.
+    - Growing the selector count to 50 and the list towards 1,000 goes with M10 (Tranco order).
+  - **Split one-time codes:** a code split over several boxes, or a code field with `maxlength` under 6, is now copied, not filled (`plan.ts`). The page's own script spreads a paste; a fill into the first box would not.
+  - **An icon the page moves** is put back at once. Script moves are seen through a `MutationObserver` on the icon, stylesheet moves by a 100 ms check. For 500 ms afterwards it lets clicks through to the page, and its frame restarts its visibility wait, so a click right after the slide never reaches it.
+  - **Shared launch code:** `lib/extension.ts` holds the launch and sign-up code that the browser tests and the runner share. The single-page cases moved from `fill.spec.ts` to `fixtures.json`.
+  - **The runner** waits 1.5 s after load for pages that draw their form with script, and takes its fill targets from the D38 report builder, so the report never holds values.

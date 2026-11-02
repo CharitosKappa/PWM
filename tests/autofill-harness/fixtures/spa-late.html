@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Form drawn after load</title>
+    <style>
+      body {
+        font: 16px system-ui;
+        margin: 40px;
+      }
+      input {
+        display: block;
+        width: 280px;
+        height: 32px;
+        margin: 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Form drawn after load</h1>
+    <div id="app">Loading…</div>
+    <script>
+      setTimeout(() => {
+        document.getElementById("app").innerHTML =
+          `<form action="#" onsubmit="return false">
+      <label for="email">Email</label>
+      <input id="email" type="email" name="email" autocomplete="username" />
+      <label for="password">Password</label>
+      <input id="password" type="password" name="password" autocomplete="current-password" />
+      <button>Sign in</button>
+    </form>`;
+      }, 400);
+    </script>
+  </body>
+</html>

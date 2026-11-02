@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Icon moved under the cursor</title>
+    <style>
+      body {
+        font: 16px system-ui;
+        margin: 40px;
+      }
+      input {
+        display: block;
+        width: 280px;
+        height: 32px;
+        margin: 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Icon moved under the cursor</h1>
+    <form action="#" onsubmit="return false;">
+      <label for="email">Email</label>
+      <input id="email" type="email" name="email" autocomplete="username" />
+      <label for="password">Password</label>
+      <input
+        id="password"
+        type="password"
+        name="password"
+        autocomplete="current-password"
+      />
+      <button>Sign in</button>
+    </form>
+    <button id="decoy" style="margin-top: 200px">Claim your prize</button>
+    <script>
+      // Clickjacking: when the pointer reaches the decoy, move the
+      // extension's icon under it, hoping the click lands on the icon.
+      document.getElementById("decoy").addEventListener("mouseenter", (e) => {
+        const icon = document.querySelector("pwm-inline");
+        if (!icon) return;
+        icon.style.left = `${e.pageX - 11}px`;
+        icon.style.top = `${e.pageY - 11}px`;
+      });
+    </script>
+  </body>
+</html>

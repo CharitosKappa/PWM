@@ -33,6 +33,13 @@ autofill:
     pnpm --filter @pwm/autofill-harness exec playwright install chromium
     pnpm --filter @pwm/autofill-harness harness
 
+# the top-sites runner (D39) against real login pages; writes tests/autofill-harness/autofill-report.json. Same needs as `just autofill`
+top-sites:
+    pnpm install --frozen-lockfile
+    pnpm --filter @pwm/extension build:test
+    pnpm --filter @pwm/autofill-harness exec playwright install chromium
+    pnpm --filter @pwm/autofill-harness top-sites
+
 # run the sync server locally: docker compose (Postgres + the server image) on http://127.0.0.1:8080; needs `just secrets` once
 server:
     docker compose up --build

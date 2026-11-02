@@ -1,0 +1,174 @@
+{
+  "description": "Every fixture page and what must happen there (D39 §1). expect: fill (values reach these fields), refuse (with this reason, the listed fields stay empty), confirm (refused until confirmed, then filled), copy (the code is copied, nothing filled), no_form, or flow (a named test in fill.spec.ts or runner.spec.ts covers it). frames: the iframe path to the fields. ready: wait for this selector first. wait: milliseconds to wait first.",
+  "fixtures": [
+    {
+      "page": "plain.html",
+      "expect": "fill",
+      "values": { "#email": "username", "#password": "password" }
+    },
+    {
+      "page": "plain.html",
+      "scheme": "http",
+      "expect": "confirm",
+      "reason": "needs_confirm",
+      "values": { "#email": "username", "#password": "password" }
+    },
+    {
+      "page": "honeypot.html",
+      "expect": "fill",
+      "values": { "#email": "username", "#password": "password" },
+      "empty": ["#trap-hidden", "#trap-offscreen"]
+    },
+    { "page": "code.html", "expect": "fill", "values": { "#code": "code" } },
+    {
+      "page": "otp-split.html",
+      "expect": "copy",
+      "empty": ["#d1", "#d2", "#d3", "#d4", "#d5", "#d6"]
+    },
+    {
+      "page": "overlay.html",
+      "expect": "refuse",
+      "reason": "field_hidden",
+      "empty": ["#email", "#password"]
+    },
+    {
+      "page": "opacity.html",
+      "expect": "refuse",
+      "reason": "field_hidden",
+      "empty": ["#email", "#password"]
+    },
+    {
+      "page": "clip-path.html",
+      "expect": "refuse",
+      "reason": "field_hidden",
+      "empty": ["#email", "#password"]
+    },
+    {
+      "page": "cover-pointer-none.html",
+      "expect": "refuse",
+      "reason": "field_hidden",
+      "empty": ["#email", "#password"]
+    },
+    {
+      "page": "offscreen-after.html",
+      "wait": 300,
+      "expect": "no_form",
+      "empty": ["#email", "#password"]
+    },
+    {
+      "page": "frame-cross.html",
+      "expect": "refuse",
+      "reason": "refused",
+      "frames": ["iframe"],
+      "empty": ["#email", "#password"]
+    },
+    {
+      "page": "frame-same.html",
+      "expect": "fill",
+      "frames": ["iframe"],
+      "values": { "#email": "username", "#password": "password" }
+    },
+    {
+      "page": "frame-nested.html",
+      "expect": "fill",
+      "frames": ["iframe", "iframe"],
+      "values": { "#email": "username", "#password": "password" }
+    },
+    {
+      "page": "frame-covered.html",
+      "expect": "refuse",
+      "reason": "field_hidden",
+      "frames": ["iframe"],
+      "empty": ["#email", "#password"]
+    },
+    {
+      "page": "shadow-open.html",
+      "expect": "fill",
+      "values": { "#email": "username", "#password": "password" }
+    },
+    { "page": "shadow-closed.html", "expect": "no_form" },
+    {
+      "page": "spa-late.html",
+      "ready": "#password",
+      "expect": "fill",
+      "values": { "#email": "username", "#password": "password" }
+    },
+    {
+      "page": "spa-controlled.html",
+      "expect": "fill",
+      "values": { "#email": "username", "#password": "password" },
+      "text": { "#state": "username" }
+    },
+    { "page": "no-form.html", "expect": "no_form" },
+    {
+      "page": "frame-nested-inner.html",
+      "expect": "flow",
+      "test": "frame-nested.html"
+    },
+    {
+      "page": "multistep1.html",
+      "expect": "flow",
+      "test": "fills a multi-step login one page at a time"
+    },
+    {
+      "page": "multistep2.html",
+      "expect": "flow",
+      "test": "fills a multi-step login one page at a time"
+    },
+    {
+      "page": "attack-icon.html",
+      "expect": "flow",
+      "test": "ignores clicks on an icon the page made transparent"
+    },
+    {
+      "page": "icon-covered-later.html",
+      "expect": "flow",
+      "test": "ignores clicks on an icon covered after it appears"
+    },
+    {
+      "page": "icon-moved.html",
+      "expect": "flow",
+      "test": "ignores a click on an icon moved under the cursor"
+    },
+    { "page": "save-login.html", "expect": "flow", "test": "save offers" },
+    { "page": "save-done.html", "expect": "flow", "test": "save offers" },
+    {
+      "page": "save-failed.html",
+      "expect": "flow",
+      "test": "no offer after a failed sign-in"
+    },
+    {
+      "page": "save-spa.html",
+      "expect": "flow",
+      "test": "offers to save after a single-page sign-in"
+    },
+    {
+      "page": "change-password.html",
+      "expect": "flow",
+      "test": "a change-password form offers an update"
+    },
+    {
+      "page": "attack-card-login.html",
+      "expect": "flow",
+      "test": "ignores clicks on a card the page made transparent"
+    },
+    {
+      "page": "attack-card-done.html",
+      "expect": "flow",
+      "test": "ignores clicks on a card the page made transparent"
+    },
+    { "page": "passkey-rp.html", "expect": "flow", "test": "passkeys" },
+    {
+      "page": "report-personal.html",
+      "expect": "flow",
+      "test": "failure reports"
+    },
+    { "page": "captcha.html", "expect": "flow", "test": "runner: blocked" },
+    {
+      "page": "submit-trap.html",
+      "expect": "flow",
+      "test": "runner: never submits"
+    },
+    { "page": "trap.html", "expect": "flow", "test": "runner: never submits" }
+  ]
+}

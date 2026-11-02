@@ -64,7 +64,14 @@ export function planFill(
   if (wants.code) {
     const codes = visible.filter((c) => c.cls.class === "one-time-code");
     const sure = codes.find((c) => c.cls.confidence >= CODE_CONFIDENCE);
-    if (sure) plan.code = sure.field.index;
+    // A code split over several boxes (one digit each) is copied: the
+    // page's own script spreads a paste over them, a fill would not.
+    const split =
+      codes.length > 1 ||
+      (sure?.field.max_length !== undefined &&
+        sure.field.max_length !== null &&
+        sure.field.max_length < 6);
+    if (sure && !split) plan.code = sure.field.index;
     else if (codes.length > 0 || nextStep === "totp") plan.copyCode = true;
   }
 

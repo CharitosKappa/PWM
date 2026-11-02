@@ -1,57 +1,17 @@
-// The built extension in Chromium: filling on user action (D35 §8), what
-// must fill, warn or refuse; save and update offers (D36 §9); passkeys
-// (D37 §8); failure reports (D38 §7). The start of the M4.7 harness.
-import { chromium, expect, test } from "@playwright/test";
+// Flows with the built extension in Chromium: the inline icon (D35), save
+// and update offers (D36), passkeys (D37) and failure reports (D38). The
+// single-page fill and refuse cases are data-driven in fixtures.spec.ts.
+import { expect, test } from "@playwright/test";
 import type { BrowserContext, Frame, Page, Worker } from "@playwright/test";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { Harness } from "../lib/extension.ts";
 
-const EXTENSION = path.resolve(
-  import.meta.dirname,
-  "../../../extension/dist-test",
-);
-const SERVER = process.env.PWM_SERVER ?? "http://127.0.0.1:8080";
 const A = "https://site-a.test:8443";
 const PASSWORD = "Site-A secret 7!";
 
+let harness: Harness;
 let context: BrowserContext;
 let worker: Worker;
-let vaultId = "";
 const ids: Record<string, string> = {};
-
-/** What the test build exposes in the service worker (`build.mjs --test`). */
-interface Background {
-  handle(request: object): Promise<unknown>;
-  /** Private in TypeScript; the tests read items' history through it. */
-  core: { vaultIds(): string[]; items(vaultId: string): string[] };
-  saveItem(json: string): Promise<{ vaultId: string; itemId: string }>;
-  autofill: {
-    inlineIcon(): Promise<boolean>;
-    fillTab(
-      tabId: number,
-      vaultId: string,
-      itemId: string,
-      confirmed: boolean,
-    ): Promise<unknown>;
-  };
-}
-
-declare global {
-  var pwmTest: { ready: Promise<Background> };
-  // Only what the service worker code below uses.
-  var chrome: {
-    tabs: {
-      query(query: {
-        url?: string;
-        active?: boolean;
-        lastFocusedWindow?: boolean;
-      }): Promise<{ id?: number; url?: string }[]>;
-    };
-    scripting: { getRegisteredContentScripts(): Promise<unknown[]> };
-    runtime: { getURL(path: string): string };
-  };
-}
 
 /** Runs `fn` in the extension's service worker, next to its background. */
 function inBackground<T, A>(fn: (arg: A) => Promise<T>, arg: A): Promise<T> {
@@ -59,104 +19,29 @@ function inBackground<T, A>(fn: (arg: A) => Promise<T>, arg: A): Promise<T> {
 }
 
 test.beforeAll(async () => {
-  if (!fs.existsSync(path.join(EXTENSION, "manifest.json"))) {
-    throw new Error(
-      "no test build: pnpm --filter @pwm/extension build:test (after just wasm)",
-    );
-  }
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "pwm-harness-"));
-  context = await chromium.launchPersistentContext(profile, {
-    channel: "chromium",
-    headless: true,
-    ignoreHTTPSErrors: true,
-    args: [
-      `--disable-extensions-except=${EXTENSION}`,
-      `--load-extension=${EXTENSION}`,
-      "--host-resolver-rules=MAP *.test 127.0.0.1",
-      "--ignore-certificate-errors",
-    ],
+  harness = await Harness.start({ hostRules: "MAP *.test 127.0.0.1" });
+  context = harness.context;
+  worker = harness.worker;
+  ids.siteA = await harness.saveLogin({
+    title: "Site A",
+    username: "ada@site-a.test",
+    password: PASSWORD,
+    url: A,
+    totp: "otpauth://totp/Site%20A:ada?secret=JBSWY3DPEHPK3PXP&issuer=Site%20A",
   });
-  worker =
-    context.serviceWorkers()[0] ??
-    (await context.waitForEvent("serviceworker"));
-
-  // A fresh account on the local server, with a few logins.
-  const created = await inBackground(
-    async ({ server, email, password, items }) => {
-      const b = await globalThis.pwmTest.ready;
-      await b.handle({
-        kind: "setSettings",
-        settings: { serverUrl: server, autoLockMinutes: 60 },
-      });
-      await b.handle({ kind: "signUp", email, password });
-      const out: Record<string, string> = {};
-      let vault = "";
-      for (const [key, item] of Object.entries(items)) {
-        const now = Date.now();
-        const saved = await b.saveItem(
-          JSON.stringify({
-            id: crypto.randomUUID(),
-            v: 1,
-            type: "login",
-            title: item.title,
-            created_at: now,
-            updated_at: now,
-            login: {
-              username: item.username,
-              password: item.password,
-              urls: [{ url: item.url }],
-              totp: item.totp,
-            },
-          }),
-        );
-        out[key] = saved.itemId;
-        vault = saved.vaultId;
-      }
-      return { ids: out, vault };
-    },
-    {
-      server: SERVER,
-      email: `harness-${String(Date.now())}@example.com`,
-      password: "correct horse battery staple umbrella",
-      items: {
-        siteA: {
-          title: "Site A",
-          username: "ada@site-a.test",
-          password: PASSWORD,
-          url: A,
-          totp: "otpauth://totp/Site%20A:ada?secret=JBSWY3DPEHPK3PXP&issuer=Site%20A",
-        },
-      },
-    },
-  );
-  Object.assign(ids, created.ids);
-  vaultId = created.vault;
 });
 
 test.afterAll(async () => {
-  await context.close();
+  await harness.close();
 });
 
-/** What the shortcut or the popup's Fill does, on the tab showing `page`. */
+/** What the shortcut or the popup's Fill does: "ok" or the error code. */
 async function fill(
   page: Page,
   confirmed = false,
   item = ids.siteA ?? "",
 ): Promise<string> {
-  return inBackground(
-    async ({ url, vault, item, confirmed }) => {
-      const b = await globalThis.pwmTest.ready;
-      const [tab] = await chrome.tabs.query({ url });
-      if (tab?.id === undefined) return "no tab";
-      try {
-        await b.autofill.fillTab(tab.id, vault, item, confirmed);
-        return "ok";
-      } catch (error) {
-        return (error as { code?: string }).code ?? String(error);
-      }
-    },
-    { url: page.url(), vault: vaultId, item, confirmed },
-  );
+  return (await harness.fill(page, item, confirmed)).code;
 }
 
 /** Console output and errors per page, for failure messages. */
@@ -187,77 +72,12 @@ test("the popup lists the login with its username (the core's JSON)", async () =
   ]);
 });
 
-test("fills a plain login form", async () => {
-  const page = await open(`${A}/plain.html`);
-  expect(await fill(page)).toBe("ok");
-  await expect(page.locator("#email")).toHaveValue("ada@site-a.test");
-  await expect(page.locator("#password")).toHaveValue(PASSWORD);
-  await page.close();
-});
-
-test("never fills honeypot fields", async () => {
-  const page = await open(`${A}/honeypot.html`);
-  expect(await fill(page)).toBe("ok");
-  await expect(page.locator("#email")).toHaveValue("ada@site-a.test");
-  await expect(page.locator("#password")).toHaveValue(PASSWORD);
-  await expect(page.locator("#trap-hidden")).toHaveValue("");
-  await expect(page.locator("#trap-offscreen")).toHaveValue("");
-  await page.close();
-});
-
 test("fills a multi-step login one page at a time", async () => {
   const page = await open(`${A}/multistep1.html`);
   expect(await fill(page)).toBe("ok");
   await expect(page.locator("#email")).toHaveValue("ada@site-a.test");
   await page.goto(`${A}/multistep2.html`);
   expect(await fill(page)).toBe("ok");
-  await expect(page.locator("#password")).toHaveValue(PASSWORD);
-  await page.close();
-});
-
-test("fills a one-time code field", async () => {
-  const page = await open(`${A}/code.html`);
-  expect(await fill(page)).toBe("ok");
-  await expect(page.locator("#code")).toHaveValue(/^\d{6}$/);
-  await page.close();
-});
-
-test("refuses a field under a transparent overlay", async () => {
-  const page = await open(`${A}/overlay.html`);
-  expect(await fill(page)).toBe("field_hidden");
-  await expect(page.locator("#email")).toHaveValue("");
-  await expect(page.locator("#password")).toHaveValue("");
-  await page.close();
-});
-
-test("refuses a field with a nearly transparent ancestor", async () => {
-  const page = await open(`${A}/opacity.html`);
-  expect(await fill(page)).toBe("field_hidden");
-  await expect(page.locator("#password")).toHaveValue("");
-  await page.close();
-});
-
-test("refuses a login form in a frame from another site", async () => {
-  const page = await open(`${A}/frame-cross.html`);
-  expect(await fill(page)).toBe("refused");
-  const frame = page.frameLocator("iframe");
-  await expect(frame.locator("#password")).toHaveValue("");
-  await page.close();
-});
-
-test("fills a login form in a frame from the same site", async () => {
-  const page = await open(`${A}/frame-same.html`);
-  expect(await fill(page)).toBe("ok");
-  const frame = page.frameLocator("iframe");
-  await expect(frame.locator("#password")).toHaveValue(PASSWORD);
-  await page.close();
-});
-
-test("asks before filling on an http page", async () => {
-  const page = await open("http://site-a.test:8081/plain.html");
-  expect(await fill(page)).toBe("needs_confirm");
-  await expect(page.locator("#password")).toHaveValue("");
-  expect(await fill(page, true)).toBe("ok");
   await expect(page.locator("#password")).toHaveValue(PASSWORD);
   await page.close();
 });
@@ -319,6 +139,38 @@ test.describe("the inline icon", () => {
       throw new Error(`not filled; the menu says: ${says}`, { cause: error });
     }
     await expect(page.locator("#email")).toHaveValue("ada@site-a.test");
+    await page.close();
+  });
+
+  test("ignores clicks on an icon covered after it appears", async () => {
+    const page = await open(`${A}/icon-covered-later.html`);
+    const frame = await iconFrame(page);
+    await expect(page.locator("#cover")).toBeAttached();
+    await page.waitForTimeout(800);
+    // The cover lets the click through, but the icon is not visible.
+    await frame.locator("button.icon").click({ force: true });
+    await page.waitForTimeout(800);
+    await expect(frame.locator("body")).toHaveClass("icon");
+    await expect(page.locator("#password")).toHaveValue("");
+    await page.close();
+  });
+
+  test("ignores a click on an icon moved under the cursor", async () => {
+    const page = await open(`${A}/icon-moved.html`);
+    const frame = await iconFrame(page);
+    await page.waitForTimeout(800);
+    const decoy = await page.locator("#decoy").boundingBox();
+    if (!decoy) throw new Error("no decoy");
+    const x = decoy.x + decoy.width / 2;
+    const y = decoy.y + decoy.height / 2;
+    // Reaching the decoy makes the page slide the icon under the pointer;
+    // the click comes right after.
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.waitForTimeout(800);
+    await expect(frame.locator("body")).toHaveClass("icon");
+    await expect(page.locator("#password")).toHaveValue("");
     await page.close();
   });
 

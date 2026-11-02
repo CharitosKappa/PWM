@@ -336,14 +336,32 @@ Phase 3  Teams           months 16–24 M16–M19
     - **Tickets from reports and the public dashboard:** M4.7 / M10.
     - **Reports from the apps:** M5/M6 (the core is ready).
     - **The popup's report screen in Playwright:** the tests drive the background.
-- [ ] M4.7 Autofill harness: fixture sites incl. clickjacking/overlay attacks that must not fill; top-1,000 runner + JSON report.
+- [x] M4.7 Autofill harness: fixture sites incl. clickjacking/overlay attacks that must not fill; top-1,000 runner + JSON report.
+  - Per D39:
+    - **Fixture suite, data-driven:** `tests/autofill-harness/fixtures/fixtures.json` says what must happen on each of the 37 pages, and a test fails if a page has no entry.
+      - **New:** open shadow DOM, closed shadow DOM (no form), a form drawn after load, controlled inputs, a split one-time code (copied), nested same-site frames, a form moved off-screen, clipped, or under a cover that lets clicks through, a frame covered by its parent page, an icon covered after it appears, and an icon moved under the cursor.
+    - **Extension:** split codes are copied rather than filled, and an icon the page moves lets clicks through for 500 ms and restarts its wait.
+    - **Top-sites runner** (`runner/run.ts`, `just top-sites`, nightly CI job `autofill-top-sites`):
+      - **What it does:** fills a throwaway login on each real login page and checks which inputs got it. It never submits, clicks or gets past a challenge.
+      - **Statuses:** pass, fail, blocked (challenge or HTTP error, left out of the pass rate) and error.
+      - **The report:** `autofill-report.json` (v1), uploaded for 90 days.
+    - **Release gate:** `runner/compare.ts` fails when the pass rate drops more than 0.5 points.
+    - **The first site list:** 102 sites, 18 with selectors, unchecked until the nightly runs confirm them.
+  - **Tests:**
+    - **Fixtures:** every entry in `fixtures.json`, and two new icon attack tests.
+    - **Runner** (`runner.spec.ts`): pass with selectors, without them, and on a username-first page; fail; blocked by a challenge or a 503; error on timeout; that it never submits; the totals; the gate at 0.4 and 0.6 points.
+    - **Unit:** the split code.
+  - **Deferred:**
+    - **Tickets from user reports and the public dashboard:** M10.
+    - **Checking the site list, 50+ selectors and growing to 1,000:** M10.
+    - **The 90% / 95% targets:** measured nightly from now on, and gating the launch (M10).
 - [ ] M4.8 Builds for Chrome, Edge, Firefox, Brave, Opera; Safari via macOS app (M5).
 - [ ] M4.9 Dependency review of the `cargo deny` ignores, from M3:
   - **RUSTSEC-2026-0387:** drop it once `opaque-ke` has a stable release on `elliptic-curve` 0.14, after rerunning `opaque.json`.
   - **RUSTSEC-2026-0374:** drop it once UniFFI no longer pulls in `basic-toml`.
   - **Either way:** upgrade, or keep the ignore with its reason refreshed.
 
-**Done when:** fixture suite 100%; top-1,000 classification ≥ 90% (target 95% by launch); overlay attacks never fill.
+**Done when:** fixture suite 100%; top-1,000 classification ≥ 90% (target 95% by launch); overlay attacks never fill. Since D39, the classification target is measured each night by the top-sites runner on a growing list, and gates the launch in M10, not the end of M4.
 
 ### M5 — iOS + macOS
 - [ ] M5.1 Shared Swift package over UniFFI core; design tokens.
