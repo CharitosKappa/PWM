@@ -85,6 +85,14 @@ fn unique_suffix() -> String {
     )
 }
 
+/// A response from [`send`].
+pub struct Reply {
+    pub status: axum::http::StatusCode,
+    pub headers: axum::http::HeaderMap,
+    /// The JSON body, `Value::Null` when empty.
+    pub body: serde_json::Value,
+}
+
 /// Sends one request to the app; returns the status and the JSON body
 /// (`Value::Null` when empty).
 pub async fn call(
@@ -94,12 +102,28 @@ pub async fn call(
     bearer: Option<&str>,
     body: Option<serde_json::Value>,
 ) -> (axum::http::StatusCode, serde_json::Value) {
+    let reply = send(app, method, path, bearer, &[], body).await;
+    (reply.status, reply.body)
+}
+
+/// Like [`call`], with extra request headers, returning the response headers too.
+pub async fn send(
+    app: &axum::Router,
+    method: &str,
+    path: &str,
+    bearer: Option<&str>,
+    headers: &[(&str, &str)],
+    body: Option<serde_json::Value>,
+) -> Reply {
     use http_body_util::BodyExt;
     use tower::ServiceExt;
 
     let mut request = axum::http::Request::builder().method(method).uri(path);
     if let Some(token) = bearer {
         request = request.header("authorization", format!("Bearer {token}"));
+    }
+    for (name, value) in headers {
+        request = request.header(*name, *value);
     }
     let request = match body {
         Some(json) => request
@@ -110,13 +134,18 @@ pub async fn call(
     .unwrap();
     let response = app.clone().oneshot(request).await.unwrap();
     let status = response.status();
+    let headers = response.headers().clone();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let json = if bytes.is_empty() {
+    let body = if bytes.is_empty() {
         serde_json::Value::Null
     } else {
         serde_json::from_slice(&bytes).unwrap_or_else(|_| {
             serde_json::Value::String(String::from_utf8_lossy(&bytes).into_owned())
         })
     };
-    (status, json)
+    Reply {
+        status,
+        headers,
+        body,
+    }
 }

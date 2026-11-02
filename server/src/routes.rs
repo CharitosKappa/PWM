@@ -4,7 +4,7 @@ use axum::http::StatusCode;
 use axum::routing::get;
 
 use crate::api::AppState;
-use crate::{account, auth};
+use crate::{account, auth, items, vaults};
 
 /// The HTTP API: `/healthz` and the versioned `/v1` endpoints.
 pub fn app(state: AppState) -> Router {
@@ -12,6 +12,8 @@ pub fn app(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .merge(auth::routes())
         .merge(account::routes())
+        .merge(vaults::routes())
+        .merge(items::routes())
         .with_state(state)
 }
 

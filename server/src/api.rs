@@ -3,7 +3,8 @@
 
 use std::sync::Arc;
 
-use axum::extract::{FromRequest, Request};
+use axum::extract::{FromRequest, FromRequestParts, Path, Request};
+use axum::http::request::Parts;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router};
@@ -37,6 +38,10 @@ pub enum ApiError {
     /// Missing, malformed, expired or ended access or refresh token.
     Unauthorized,
     DeviceRevoked,
+    /// The caller may read this vault but not change it.
+    ReadOnly,
+    /// A write or delete without `If-Match` / `If-None-Match` (D27).
+    PreconditionRequired,
     Conflict(&'static str),
     NotFound,
     Internal,
@@ -49,6 +54,10 @@ impl ApiError {
             Self::InvalidCredentials => (StatusCode::UNAUTHORIZED, "invalid_credentials"),
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             Self::DeviceRevoked => (StatusCode::FORBIDDEN, "device_revoked"),
+            Self::ReadOnly => (StatusCode::FORBIDDEN, "read_only"),
+            Self::PreconditionRequired => {
+                (StatusCode::PRECONDITION_REQUIRED, "precondition_required")
+            }
             Self::Conflict(code) => (StatusCode::CONFLICT, code),
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             Self::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
@@ -96,6 +105,29 @@ impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for ApiJson<T> {
             .map_err(|_| ApiError::InvalidRequest)?;
         Ok(Self(value))
     }
+}
+
+/// `Path<T>` whose rejection is a plain `invalid_request`, like [`ApiJson`].
+pub struct ApiPath<T>(pub T);
+
+impl<S: Send + Sync, T: DeserializeOwned + Send> FromRequestParts<S> for ApiPath<T> {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let Path(value) = Path::<T>::from_request_parts(parts, state)
+            .await
+            .map_err(|_| ApiError::InvalidRequest)?;
+        Ok(Self(value))
+    }
+}
+
+/// A revision or change counter as it travels on the wire (D25): a decimal
+/// string without sign or leading zeros, so each value has one spelling.
+pub fn parse_counter(text: &str) -> Option<i64> {
+    let canonical = !text.is_empty()
+        && text.bytes().all(|b| b.is_ascii_digit())
+        && (text == "0" || !text.starts_with('0'));
+    if canonical { text.parse().ok() } else { None }
 }
 
 /// Byte fields as base64url without padding (D10).

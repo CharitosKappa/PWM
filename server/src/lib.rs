@@ -1,4 +1,4 @@
-//! PWM sync server (D25, D26): an axum API over Postgres. It stores
+//! PWM sync server (D25, D26, D27): an axum API over Postgres. It stores
 //! ciphertext, sizes, ids and times only, plus the account email.
 #![forbid(unsafe_code)]
 
@@ -9,8 +9,10 @@ mod config;
 mod db;
 mod email;
 mod error;
+mod items;
 mod routes;
 mod session;
+mod vaults;
 
 pub use api::AppState;
 pub use config::{Config, DEFAULT_LISTEN, generate_server_secrets};

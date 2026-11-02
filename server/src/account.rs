@@ -1,6 +1,6 @@
 //! `GET /v1/account` and `/v1/devices` (D26).
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::{delete, get};
 use axum::{Json, Router};
@@ -8,7 +8,7 @@ use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::api::{ApiError, ApiRouter, AppState, b64};
+use crate::api::{ApiError, ApiPath, ApiRouter, AppState, b64};
 use crate::auth::Kdf;
 use crate::session::Authenticated;
 
@@ -115,7 +115,7 @@ async fn devices(
 async fn revoke_device(
     State(state): State<AppState>,
     auth: Authenticated,
-    Path(id): Path<Uuid>,
+    ApiPath(id): ApiPath<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     let mut tx = state.pool.begin().await?;
     let found = sqlx::query(

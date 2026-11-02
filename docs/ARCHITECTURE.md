@@ -63,7 +63,7 @@ Extension ──native messaging──▶ desktop app (unlock, biometrics)   or 
 
 - Clients keep a local encrypted cache so the app works offline.
 - Server API is versioned (`/v1/...`), auth via OPAQUE (see `SECURITY.md`), JSON over HTTPS, ciphertext fields base64.
-- Sync model: each item is an encrypted blob with `(item_id, vault_id, revision, seq, updated_at)`: `revision` is per item and chosen by the client (it is in the AAD), `seq` is a per-vault change counter assigned by the server (D25). Last-writer-wins per item with revision check; conflicting edits keep both versions as item history (never silent data loss).
+- Sync model: each item is an encrypted blob with `(item_id, vault_id, revision, seq, updated_at)`: `revision` is per item and chosen by the client (it is in the AAD), `seq` is a per-vault change counter assigned by the server (D25). Every write names the revision it replaces, so the server never overwrites silently; a stale write gets 412 with the current item, and the client keeps both versions as item history (never silent data loss). Non-members of a vault get 404, viewers 403 `read_only` on writes (D27).
 
 ## Server API (v1, minimum)
 
@@ -74,10 +74,10 @@ Extension ──native messaging──▶ desktop app (unlock, biometrics)   or 
 | `POST /v1/auth/login/{start,finish}` | OPAQUE login → access + refresh tokens (D26) |
 | `POST /v1/auth/refresh` / `POST /v1/auth/logout` | New token pair (refresh token replaced on use) / end the session |
 | `GET /v1/account` | Encrypted account keyset, KDF params, salt, public keys, plan |
-| `GET /v1/vaults` / `POST /v1/vaults` | List/create vaults (encrypted vault keys) |
-| `GET /v1/vaults/{id}/items?since=seq` | Delta sync (per-vault change counter, D25) |
-| `PUT /v1/vaults/{id}/items/{item_id}` | Upsert with `If-Match: revision` |
-| `DELETE /v1/vaults/{id}/items/{item_id}` | Tombstone |
+| `GET /v1/vaults` / `POST /v1/vaults` | List the caller's vaults with their copy of each vault key and the current `seq` / create a vault (D27) |
+| `GET /v1/vaults/{id}/items?since=<seq>&limit=<n>` | Delta sync: items and tombstones after `since` in `seq` order, from one snapshot; `{changes, next, more}` (D27) |
+| `PUT /v1/vaults/{id}/items/{item_id}` | Create (`If-None-Match: *`, revision 1) or update (`If-Match: "<revision>"`, revision + 1); 412 returns the current item (D27) |
+| `DELETE /v1/vaults/{id}/items/{item_id}` | Delete with `If-Match`, leaving a tombstone; ids are never reused (D27) |
 | `POST /v1/shares` / `GET /v1/shares/{id}` | One-time encrypted share links |
 | `GET /v1/devices` / `DELETE /v1/devices/{id}` | Device list, revoke |
 
