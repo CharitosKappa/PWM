@@ -41,6 +41,11 @@ public struct PWMError: Error, Sendable, Equatable, CustomStringConvertible {
         "not_signed_in": "Sign in on this device first.",
         "storage": "The vault on this device could not be opened.",
         "keychain": "The keychain refused to store this device's keys.",
+        "invalid_email": "Enter a valid email address.",
+        "invalid_server": "Enter the server's address, starting with https://.",
+        "not_a_kit": "That's not an Emergency Kit code.",
+        "kit_too_new": "This Emergency Kit is from a newer version of the app. Update the app to scan it.",
+        "camera": "Allow camera access in Settings to scan your Emergency Kit.",
     ]
 }
 

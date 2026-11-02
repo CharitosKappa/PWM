@@ -108,6 +108,31 @@ public actor Session {
 
     public var isUnlocked: Bool { client.isUnlocked() }
 
+    /// Whether an account is signed in on this device (it may be locked).
+    public func isSignedIn() throws -> Bool { try keys.get(.secretKey) != nil }
+
+    /// Deletes the account from this device: its cache, tokens, Secret Key
+    /// and email. The device id stays. Unsent changes are lost.
+    public func signOut() throws {
+        try core { try client.signOut() }
+        for name in [KeyName.secretKey, .accessToken, .refreshToken, .email] {
+            try keys.delete(name)
+        }
+    }
+
+    /// The Emergency Kit PDF for the signed-in account, dated today.
+    public func emergencyKit(paper: EmergencyKit.Paper = .of(.current)) throws -> Redacted<Data> {
+        guard let email = try keys.get(.email),
+              let secretKey = try keys.get(.secretKey),
+              let accountId = try core({ try client.accountId() })
+        else { throw PWMError(code: "not_signed_in") }
+        let created = Date(timeIntervalSince1970: TimeInterval(now()) / 1000)
+        return try EmergencyKit.pdf(
+            email: email, secretKey: secretKey, server: server, accountId: accountId,
+            created: created, paper: paper
+        )
+    }
+
     /// The email this device signed in with, for the unlock screen.
     public func email() throws -> String? { try keys.get(.email) }
 
