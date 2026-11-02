@@ -13,90 +13,6 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D32 — Transactional email provider** · open · founder. Needed for M10.7: email verification at sign-up (so registration stops revealing which emails have accounts) and account notices. To choose: provider and region (EU hosting fits D5), and its licence and data-processing terms.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
-- **D35 — Filling on user action: permissions, inline icon, checks before filling** · proposed 2026-11-02 · Claude Code. The roadmap says "Fill on user action; inline icon in isolated iframe/closed shadow root; visibility/overlay checks before fill (`AUTOFILL.md`)". `AUTOFILL.md` gives the rules but leaves open:
-  - how the extension reaches pages with minimal permissions, given that an inline icon must already be on the page before the user acts
-  - what exactly counts as "visible and not covered"
-  - what each kind of user action fills
-  - how values travel to the page
-  - how far M4.3 goes (logins, cards, identities)
-
-  Proposal:
-  1. **Reaching the page (permissions):**
-     - **Default: `activeTab` + `scripting`.** Clicking the toolbar button or pressing the shortcut gives the extension the current tab for that moment only. Then it injects the content script into that tab's frames. There is no install warning about reading every site.
-     - **The inline icon is opt-in.** It needs the content script on pages before the user acts, so it needs host access. A setting, "Show the icon in sign-in fields", asks for `https://*/*` (and `http://*/*`) as an optional permission at that moment. Once granted, it registers the content script with `chrome.scripting.registerContentScripts`. Taking the permission back turns the icon off. Sign-up offers this setting once, as a plain choice (no repeated prompts).
-     - **Frames:** with `activeTab` alone, only frames from the tab's own origin can be filled. A login form in a frame from another origin of the same site (`login.example.com` inside `www.example.com`) needs the optional permission; the popup says so. The engine's frame rule (D33: a frame from another site is refused unless it matches the item) applies either way.
-     - **The URLs the engine judges** come from the browser (`sender.url`, `sender.origin`, the tab's URL), never from what the page or content script reports.
-  2. **What each action does:**
-     - **Toolbar popup:** the logins for the current tab come first ("For example.com"), each with a Fill button. Fill goes to the best login form on the page.
-     - **Shortcut** (`fill-login`, suggested Ctrl+Shift+L / ⌘⇧L, changeable at `chrome://extensions/shortcuts`):
-       - If there is exactly one match whose decision is `fill`, the shortcut fills it.
-       - Otherwise it opens the popup with the choices.
-       - When locked, it opens the popup to unlock. After unlocking, it does not fill on its own: the user picks again.
-     - **Inline icon:** a click opens a small menu inside our iframe listing the matching logins (title and username). Choosing one fills that login.
-     - **Engine decisions (D33):**
-       - `fill` fills.
-       - `warn` (an `http://` page, a regex-only match) shows the reason with a "Fill anyway" button.
-       - `confirm` always asks first.
-       - `refuse` never fills, and says why.
-     - **What is filled:** the username or email and the current password. The one-time code is filled only when the engine classifies a field as a code with confidence of 0.8 or more. Otherwise the code is copied (cleared after 30 s), and the popup says so.
-     - **Multi-step logins:** after a fill, the step is recorded (D33). On the next page of the same login, the same item comes first.
-  3. **The inline icon** (DEF CON 2025 extension clickjacking):
-     - **What it is:** a positioned host element with a **closed shadow root** holding an **extension iframe** (`inline.html`). The page cannot read, restyle the inside of, or script that iframe.
-     - **No fingerprinting:** `inline.html` is the only web-accessible resource, with `use_dynamic_url` so pages cannot detect the extension.
-     - **No embedding by pages:** the content script passes the iframe a one-time token. The background ignores an inline frame without a valid token, so a page cannot embed the menu itself.
-     - **Clicks:** taken only when all of these hold:
-       - the click is trusted
-       - the iframe has been on screen for at least 500 ms
-       - an `IntersectionObserver` v2 with `trackVisibility` reported it visible: not covered, transparent, filtered or transformed, in any ancestor frame
-     - **Two clicks:** opening the menu and choosing a login are separate clicks, each checked the same way.
-     - **No layout shift:** the icon appears when the field is found, not on hover, and never moves the page's layout.
-     - **Per-site switch:** "Don't show here".
-     - **CLAUDE.md:** this iframe is the single exception to "never inject clickable credential UI into page DOM", as `AUTOFILL.md` already specifies. No other UI goes into pages.
-  4. **Checks before every fill**, run in the target frame right before setting values. If any check fails, nothing is filled, and the popup says "The field is hidden or covered" and offers to copy instead:
-     - **The field itself:** in the page, enabled, not read-only, and a visible field of the expected kind (never a hidden or honeypot field, D33).
-     - **Size and viewport:** it has a size and lies inside the viewport. For a fill started from the popup or the shortcut, the field is scrolled into view once and then checked again.
-     - **Style:** `visibility: visible`, opacity 1 on the field and every ancestor, and no `filter` or `clip-path` hiding it.
-     - **Not covered:** `elementsFromPoint` at the centre and two inner corners finds the field (or its own label) on top, looking through open shadow roots.
-     - **Not covered across frames:** an `IntersectionObserver` v2 with `trackVisibility` on the field reports it visible. This also covers this frame being hidden or covered inside its parent page. Where v2 is missing (Firefox, M4.8), only fills in the top frame are allowed.
-  5. **Values in transit:**
-     - **Where values go:** the background sends values only after a user action, only to the one frame chosen, by `frameId` and `documentId`, so a navigated frame never receives them.
-     - **Checked again just before sending:** the frame's browser-reported URL still matches the item.
-     - **No lists:** content scripts never receive the vault list or other items. They send field descriptions without values (D33), and they keep no values after setting them.
-     - **How fields are filled:** values are set with the native value setter plus `input` and `change` events, so frameworks see them.
-     - **Content scripts are untrusted:** the background treats their messages as untrusted (a compromised page process could forge them). They can only ask for classification, report results and ask for a fill that a user action started.
-  6. **Scope of M4.3:**
-     - **Included:** logins and one-time codes.
-     - **Not included:** cards and identities. They need their own rules for payment frames from other sites (Stripe, Adyen) and items without URLs, and `AUTOFILL.md` requires a confirmation step for them. Proposed as their own task after M4.4.
-     - **Not included:** save prompts (M4.4) and passkeys (M4.5).
-  7. **Manifest and build check (D34):**
-     - **Permissions:** adds `activeTab` and `scripting`, and a `commands` entry.
-     - **Web-accessible resources:** exactly `inline.html` (with its script and style), `use_dynamic_url: true`.
-     - **Optional host permissions:** `https://*/*` and `http://*/*`, used only for the icon.
-     - **Still refused:** static `content_scripts`, other web-accessible resources, other permissions, and broad `host_permissions`.
-  8. **Tests:**
-     - **Vitest:**
-       - choosing the login form and fields from the classification
-       - the decision handling
-       - the shortcut rules
-       - messages to frames by `frameId`/`documentId`, and refusal of stale or mismatched frames
-       - the inline token
-       - the visibility checks, as pure functions with injected geometry and styles
-       - that content scripts never receive other items
-     - **Playwright (Apache-2.0) with the built extension in Chromium,** in a new CI job. This is the start of the M4.7 harness. Fixture pages:
-       - a plain login
-       - a multi-step login
-       - a hidden honeypot field
-       - a field covered by a transparent overlay
-       - a field with an opacity-0 ancestor
-       - an inline icon made transparent by the page
-       - a cross-site iframe
-       - an `http://` page
-       Each must fill, warn or refuse as specified. The full fixture set and the top-1,000 runner stay in M4.7.
-
-  Alternatives:
-  - **Static content scripts on `<all_urls>` from install** (what most competitors do): the inline icon works everywhere at once, but every user gets the "read and change all your data" warning, against `AUTOFILL.md`'s minimal permissions.
-  - **No inline icon at all:** simplest and safest, but it is the most used way to fill in other managers.
-  - **Checks with `elementsFromPoint` only:** they miss covering in a parent frame, which `IntersectionObserver` v2 catches.
 
 ## Settled
 
@@ -629,3 +545,87 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Build:** `scripts/build.mjs` (esbuild) bundles into `extension/dist/` and fails on any permission beyond the list, a host permission other than the hosted API, content scripts, web-accessible resources, a remote CSP source, or a remote URL in the scripts. CI uploads the build as an artifact.
   - **Parity gap:** unlocking with biometrics through the desktop app waits for that app (M5.6/M7.2); the extension unlocks with the master password only.
   Why: a background-only core with a memory-only session keeps keys off disk while the extension still survives Chrome's worker shutdowns. Sealing tokens under the account keyset and keeping the Secret Key local is the same trade-off native apps make with secure storage, scaled to what a browser offers. Keeping the signing seeds with the founder, offline, is the point of signing the rules at all.
+- **D35 — Filling on user action: permissions, inline icon, checks before filling** · settled 2026-11-02 · founder (approved as proposed). The roadmap says "Fill on user action; inline icon in isolated iframe/closed shadow root; visibility/overlay checks before fill (`AUTOFILL.md`)". `AUTOFILL.md` gives the rules but leaves open:
+  - how the extension reaches pages with minimal permissions, given that an inline icon must already be on the page before the user acts
+  - what exactly counts as "visible and not covered"
+  - what each kind of user action fills
+  - how values travel to the page
+  - how far M4.3 goes (logins, cards, identities)
+
+  Proposal:
+  1. **Reaching the page (permissions):**
+     - **Default: `activeTab` + `scripting`.** Clicking the toolbar button or pressing the shortcut gives the extension the current tab for that moment only. Then it injects the content script into that tab's frames. There is no install warning about reading every site.
+     - **The inline icon is opt-in.** It needs the content script on pages before the user acts, so it needs host access. A setting, "Show the icon in sign-in fields", asks for `https://*/*` (and `http://*/*`) as an optional permission at that moment. Once granted, it registers the content script with `chrome.scripting.registerContentScripts`. Taking the permission back turns the icon off. Sign-up offers this setting once, as a plain choice (no repeated prompts).
+     - **Frames:** with `activeTab` alone, only frames from the tab's own origin can be filled. A login form in a frame from another origin of the same site (`login.example.com` inside `www.example.com`) needs the optional permission; the popup says so. The engine's frame rule (D33: a frame from another site is refused unless it matches the item) applies either way.
+     - **The URLs the engine judges** come from the browser (`sender.url`, `sender.origin`, the tab's URL), never from what the page or content script reports.
+  2. **What each action does:**
+     - **Toolbar popup:** the logins for the current tab come first ("For example.com"), each with a Fill button. Fill goes to the best login form on the page.
+     - **Shortcut** (`fill-login`, suggested Ctrl+Shift+L / ⌘⇧L, changeable at `chrome://extensions/shortcuts`):
+       - If there is exactly one match whose decision is `fill`, the shortcut fills it.
+       - Otherwise it opens the popup with the choices.
+       - When locked, it opens the popup to unlock. After unlocking, it does not fill on its own: the user picks again.
+     - **Inline icon:** a click opens a small menu inside our iframe listing the matching logins (title and username). Choosing one fills that login.
+     - **Engine decisions (D33):**
+       - `fill` fills.
+       - `warn` (an `http://` page, a regex-only match) shows the reason with a "Fill anyway" button.
+       - `confirm` always asks first.
+       - `refuse` never fills, and says why.
+     - **What is filled:** the username or email and the current password. The one-time code is filled only when the engine classifies a field as a code with confidence of 0.8 or more. Otherwise the code is copied (cleared after 30 s), and the popup says so.
+     - **Multi-step logins:** after a fill, the step is recorded (D33). On the next page of the same login, the same item comes first.
+  3. **The inline icon** (DEF CON 2025 extension clickjacking):
+     - **What it is:** a positioned host element with a **closed shadow root** holding an **extension iframe** (`inline.html`). The page cannot read, restyle the inside of, or script that iframe.
+     - **No fingerprinting:** `inline.html` is the only web-accessible resource, with `use_dynamic_url` so pages cannot detect the extension.
+     - **No embedding by pages:** the content script passes the iframe a one-time token. The background ignores an inline frame without a valid token, so a page cannot embed the menu itself.
+     - **Clicks:** taken only when all of these hold:
+       - the click is trusted
+       - the iframe has been on screen for at least 500 ms
+       - an `IntersectionObserver` v2 with `trackVisibility` reported it visible: not covered, transparent, filtered or transformed, in any ancestor frame
+     - **Two clicks:** opening the menu and choosing a login are separate clicks, each checked the same way.
+     - **No layout shift:** the icon appears when the field is found, not on hover, and never moves the page's layout.
+     - **Per-site switch:** "Don't show here".
+     - **CLAUDE.md:** this iframe is the single exception to "never inject clickable credential UI into page DOM", as `AUTOFILL.md` already specifies. No other UI goes into pages.
+  4. **Checks before every fill**, run in the target frame right before setting values. If any check fails, nothing is filled, and the popup says "The field is hidden or covered" and offers to copy instead:
+     - **The field itself:** in the page, enabled, not read-only, and a visible field of the expected kind (never a hidden or honeypot field, D33).
+     - **Size and viewport:** it has a size and lies inside the viewport. For a fill started from the popup or the shortcut, the field is scrolled into view once and then checked again.
+     - **Style:** `visibility: visible`, opacity 1 on the field and every ancestor, and no `filter` or `clip-path` hiding it.
+     - **Not covered:** `elementsFromPoint` at the centre and two inner corners finds the field (or its own label) on top, looking through open shadow roots.
+     - **Not covered across frames:** an `IntersectionObserver` v2 with `trackVisibility` on the field reports it visible. This also covers this frame being hidden or covered inside its parent page. Where v2 is missing (Firefox, M4.8), only fills in the top frame are allowed.
+  5. **Values in transit:**
+     - **Where values go:** the background sends values only after a user action, only to the one frame chosen, by `frameId` and `documentId`, so a navigated frame never receives them.
+     - **Checked again just before sending:** the frame's browser-reported URL still matches the item.
+     - **No lists:** content scripts never receive the vault list or other items. They send field descriptions without values (D33), and they keep no values after setting them.
+     - **How fields are filled:** values are set with the native value setter plus `input` and `change` events, so frameworks see them.
+     - **Content scripts are untrusted:** the background treats their messages as untrusted (a compromised page process could forge them). They can only ask for classification, report results and ask for a fill that a user action started.
+  6. **Scope of M4.3:**
+     - **Included:** logins and one-time codes.
+     - **Not included:** cards and identities. They need their own rules for payment frames from other sites (Stripe, Adyen) and items without URLs, and `AUTOFILL.md` requires a confirmation step for them. Proposed as their own task after M4.4.
+     - **Not included:** save prompts (M4.4) and passkeys (M4.5).
+  7. **Manifest and build check (D34):**
+     - **Permissions:** adds `activeTab` and `scripting`, and a `commands` entry.
+     - **Web-accessible resources:** exactly `inline.html` (with its script and style), `use_dynamic_url: true`.
+     - **Optional host permissions:** `https://*/*` and `http://*/*`, used only for the icon.
+     - **Still refused:** static `content_scripts`, other web-accessible resources, other permissions, and broad `host_permissions`.
+  8. **Tests:**
+     - **Vitest:**
+       - choosing the login form and fields from the classification
+       - the decision handling
+       - the shortcut rules
+       - messages to frames by `frameId`/`documentId`, and refusal of stale or mismatched frames
+       - the inline token
+       - the visibility checks, as pure functions with injected geometry and styles
+       - that content scripts never receive other items
+     - **Playwright (Apache-2.0) with the built extension in Chromium,** in a new CI job. This is the start of the M4.7 harness. Fixture pages:
+       - a plain login
+       - a multi-step login
+       - a hidden honeypot field
+       - a field covered by a transparent overlay
+       - a field with an opacity-0 ancestor
+       - an inline icon made transparent by the page
+       - a cross-site iframe
+       - an `http://` page
+       Each must fill, warn or refuse as specified. The full fixture set and the top-1,000 runner stay in M4.7.
+
+  Alternatives:
+  - **Static content scripts on `<all_urls>` from install** (what most competitors do): the inline icon works everywhere at once, but every user gets the "read and change all your data" warning, against `AUTOFILL.md`'s minimal permissions.
+  - **No inline icon at all:** simplest and safest, but it is the most used way to fill in other managers.
+  - **Checks with `elementsFromPoint` only:** they miss covering in a parent frame, which `IntersectionObserver` v2 catches.
