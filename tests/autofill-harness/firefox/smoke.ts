@@ -77,7 +77,8 @@ try {
       alwaysMatch: {
         browserName: "firefox",
         "moz:firefoxOptions": {
-          args: ["-headless"],
+          // System access lets the session use the chrome context (Firefox 138+).
+          args: ["-headless", "-remote-allow-system-access"],
           prefs: {
             "extensions.webextensions.uuids": JSON.stringify({
               [GECKO_ID]: UUID,
@@ -94,9 +95,14 @@ try {
     addon: fs.readFileSync(zip).toString("base64"),
     temporary: true,
   });
-  await call("POST", `${base}/url`, {
-    url: `moz-extension://${UUID}/popup.html`,
+  // WebDriver may not navigate a tab to an extension page, so the browser's
+  // own (chrome) context opens it in the current tab, as a user would.
+  await call("POST", `${base}/moz/context`, { context: "chrome" });
+  await call("POST", `${base}/execute/sync`, {
+    script: "openTrustedLinkIn(arguments[0], 'current');",
+    args: [`moz-extension://${UUID}/popup.html`],
   });
+  await call("POST", `${base}/moz/context`, { context: "content" });
 
   const find = async (selector: string): Promise<string> => {
     const found = await call("POST", `${base}/element`, {
