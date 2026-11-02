@@ -1,15 +1,17 @@
 //! The one API the apps and the browser extension use (decision D31):
-//! account (sign-up, login, unlock, lock), vaults and items, sync, and the
-//! generator. The UniFFI (`pwm-ffi`) and WASM (`pwm-wasm`) crates only
+//! account (sign-up, login, unlock, lock), vaults and items, sync, autofill
+//! (D33) and the generator. The UniFFI (`pwm-ffi`) and WASM (`pwm-wasm`) crates only
 //! translate its types. Every server conversation is a series of steps the
 //! platform sends with its own HTTP stack.
 #![forbid(unsafe_code)]
 
 mod auth;
+mod autofill;
 mod client;
 mod error;
 
 pub use auth::id_text;
+pub use autofill::AutofillMatch;
 pub use client::{Client, Outcome, Step, new_id};
 pub use error::ClientError;
 pub use pwm_crypto::{KdfParams, Secret};

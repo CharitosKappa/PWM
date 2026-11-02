@@ -16,6 +16,10 @@ pub enum ClientError {
     NotRunning,
     #[error("an id is not a valid UUID")]
     InvalidId,
+    #[error("not a valid page URL")]
+    InvalidUrl,
+    #[error("the autofill rules file was refused")]
+    InvalidRules,
     #[error("unknown vault")]
     UnknownVault,
     #[error("no such item")]
@@ -66,6 +70,8 @@ impl ClientError {
             Self::Busy => "busy",
             Self::NotRunning => "not_running",
             Self::InvalidId => "invalid_id",
+            Self::InvalidUrl => "invalid_url",
+            Self::InvalidRules => "invalid_rules",
             Self::UnknownVault => "unknown_vault",
             Self::UnknownItem => "unknown_item",
             Self::ItemDeleted => "item_deleted",

@@ -326,3 +326,19 @@ fn decode_rejects_unknown_version_and_short_input() {
         CryptoError::Truncated
     );
 }
+
+#[test]
+fn release_keys_sign_from_a_seed_and_labels_keep_purposes_apart() {
+    let seed = pwm_crypto::Secret::new([7u8; 32]);
+    let public = pwm_crypto::public_key_from_seed(&seed);
+    let sig = pwm_crypto::sign_with_seed(&seed, SignatureContext::AutofillRules, b"rules");
+    assert!(verify_signature(&public, SignatureContext::AutofillRules, b"rules", &sig).is_ok());
+    // The same bytes are not a share signature, and a changed message fails.
+    assert!(verify_signature(&public, SignatureContext::Share, b"rules", &sig).is_err());
+    assert!(verify_signature(&public, SignatureContext::AutofillRules, b"rules!", &sig).is_err());
+    // Deterministic, as Ed25519 is.
+    assert_eq!(
+        sig,
+        pwm_crypto::sign_with_seed(&seed, SignatureContext::AutofillRules, b"rules")
+    );
+}

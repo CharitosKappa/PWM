@@ -34,5 +34,7 @@ pub use password::normalize_password;
 pub use random::random_index;
 pub use secret::Secret;
 pub use secret_key::SecretKey;
-pub use share::{SignatureContext, VaultShare, verify_signature};
+pub use share::{
+    SignatureContext, VaultShare, public_key_from_seed, sign_with_seed, verify_signature,
+};
 pub use token::{TokenKind, generate_token, token_hash};

@@ -203,3 +203,109 @@ fn error_codes_are_stable() {
         assert!(!error.to_string().is_empty());
     }
 }
+
+fn login_json(id: &str, title: &str, username: &str, url: &str) -> String {
+    let mut login = pwm_vault::Login::default();
+    login.username = username.to_owned();
+    let mut login_url = pwm_vault::LoginUrl::default();
+    login_url.url = url.to_owned();
+    login.urls = vec![login_url];
+    let item = Item::new(ItemKind::Login(login), title, T0);
+    item.to_json_with_id(&id.parse().unwrap())
+        .unwrap()
+        .expose_secret()
+        .clone()
+}
+
+#[test]
+fn autofill_through_the_client() {
+    let (store, secret_key, vault) = signed_in_store();
+    let mut client = Client::new(store);
+    assert_eq!(
+        code(client.autofill_matches("https://example.com", None)),
+        "locked"
+    );
+    client.unlock(PASSWORD, &secret_key, tokens()).unwrap();
+    let bank = new_id().unwrap();
+    client
+        .save_item(
+            &vault,
+            &login_json(&bank, "Bank", "alice", "bank.example"),
+            T0,
+        )
+        .unwrap();
+    let mail = new_id().unwrap();
+    client
+        .save_item(&vault, &login_json(&mail, "Mail", "al", "mail.other"), T0)
+        .unwrap();
+    client
+        .save_item(&vault, &note_json(&new_id().unwrap(), "a note"), T0)
+        .unwrap();
+
+    let found = client
+        .autofill_matches("https://login.bank.example/signin", None)
+        .unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(
+        (found[0].item_id.as_str(), found[0].username.as_str()),
+        (bank.as_str(), "alice")
+    );
+    assert_eq!((found[0].matched, found[0].decision), ("domain", "fill"));
+    let insecure = client
+        .autofill_matches("http://bank.example/", None)
+        .unwrap();
+    assert_eq!(insecure[0].decision, "warn_insecure");
+    let framed = client
+        .autofill_matches("https://bank.example/", Some("https://evil.example/f"))
+        .unwrap();
+    assert_eq!(framed[0].decision, "refuse_cross_site");
+    assert_eq!(
+        code(client.autofill_matches("not a url", None)),
+        "invalid_url"
+    );
+    // Trashed logins are not offered.
+    client.set_trashed(&vault, &bank, true, T0 + 1).unwrap();
+    assert!(
+        client
+            .autofill_matches("https://bank.example/", None)
+            .unwrap()
+            .is_empty()
+    );
+
+    let classes = client
+        .classify_fields(
+            r#"[{"type":"text","name":"user","visible":true},{"type":"password","visible":true}]"#,
+            "https://bank.example/",
+        )
+        .unwrap();
+    let classes: Value = serde_json::from_str(&classes).unwrap();
+    assert_eq!(classes[0]["class"], "username");
+    assert_eq!(classes[1]["class"], "current-password");
+    assert_eq!(
+        code(client.classify_fields("nope", "https://bank.example/")),
+        "invalid_item"
+    );
+
+    client
+        .autofill_record_step("tab", "https://bank.example/a", &bank, "username", T0)
+        .unwrap();
+    assert_eq!(
+        client.autofill_next_step("tab", "https://bank.example/b", T0 + 1),
+        Some((bank.clone(), "password"))
+    );
+    client.autofill_forget_tab("tab");
+    assert_eq!(
+        client.autofill_next_step("tab", "https://bank.example/b", T0 + 2),
+        None
+    );
+    assert_eq!(
+        code(client.autofill_record_step("tab", "https://bank.example/", &bank, "pin", T0)),
+        "invalid_item"
+    );
+
+    // No release key exists yet, so every downloaded file is refused.
+    assert_eq!(
+        code(client.set_autofill_rules(b"anything", T0, 0)),
+        "invalid_rules"
+    );
+}

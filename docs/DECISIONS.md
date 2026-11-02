@@ -415,3 +415,66 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The `uniffi-bindgen` tool** lives in its own crate, `core/pwm-ffi-bindgen`, so its CLI dependencies never reach the library the apps link.
   - **The `MemoryStore` snapshot** has a frozen hex fixture (`tests/fixtures/snapshot_v1.hex`) and rejects truncated, padded or out-of-range input.
   Why: one Rust API keeps the six platforms identical and testable in one place. Steps keep networking in each platform's native stack. JSON items avoid duplicating a large, versioned model in two binding languages. A snapshot store gets the extension a durable cache now without an async `Store` trait.
+- **D33 — Autofill engine: matching, field classification, signed rules, multi-step** · settled 2026-11-02 · founder (approved as proposed). The roadmap says "`pwm-autofill`: PSL origin matching, field classifier, multi-step state, rules file format + signature check", and `AUTOFILL.md` gives the behaviour. Items already carry one match mode per URL (D18: `domain`, `host`, `starts_with`, `regex`, `exact`, `never`). Open: the Public Suffix List source, the exact meaning of each mode, how fields are described and scored, the rules file format and its signing key, and what multi-step state holds. Proposal:
+  1. **One engine for every platform:**
+     - `pwm-autofill` is plain Rust with no I/O.
+     - Each platform turns its page or screen into a **field description**: the DOM in the extension, `AssistStructure` on Android, the page and app info on iOS.
+     - The core decides what matches and what each field is.
+     - `pwm-client` exposes it, so the bindings get it too (the M3.7 deferral).
+  2. **Public Suffix List:**
+     - **The list:** a copy of `public_suffix_list.dat` is vendored in the crate (MPL-2.0, data, unmodified, credited in the notices) and compiled into the binary, with its date and SHA-256 recorded next to it. It is refreshed by a script before each release and reviewed as a normal PR; the apps never download it.
+     - **Private section included:** separate customers under shared hosts (`github.io`, `blogspot.com` and so on) count as separate sites, so one user's page can't receive another's logins.
+     - **Our own matcher:** about 150 lines handling wildcards and exceptions, tested against the list's official test cases and fuzzed. That avoids a crate that bundles its own, possibly stale, copy of the list.
+  3. **URL parsing:** the `url` crate (WHATWG, MIT/Apache) normalizes the page URL and the item URLs. That includes lower-case hosts, IDN to punycode, and removing default ports.
+  4. **Match modes (only `http` and `https` pages):**
+     - **`domain` (the default):** the same registrable domain. IP addresses and single-label hosts such as `localhost` match only themselves.
+     - **`host`:** the same host, and the same port if the item gives one.
+     - **`starts_with`:** the normalized page URL starts with the normalized item URL.
+     - **`exact`:** the same URL, ignoring the `#fragment`.
+     - **`regex`:** the whole URL against the item's pattern, using the `regex` crate (linear time, no backtracking), with a size limit and a 1,000-character cap on the pattern. A pattern that doesn't compile never matches.
+     - **`never`:** never matches.
+     - **Ranking:** results come best first: `exact`, then `starts_with`, `host`, `domain`, `regex`; ties go to the most recently used item.
+  5. **Fill decisions (`AUTOFILL.md` security rules):**
+     - The core answers `fill`, `warn` or `refuse` for a page, its frame and an item.
+     - **`warn`:** an `http://` page, or a page whose only match is a `regex`.
+     - **`refuse`:**
+       - a frame from another site, unless the frame's own URL matches the item
+       - a `never` item
+       - a site the signed rules mark "never fill".
+     - **Always after an explicit user action:** cards, identities and passkeys always need a confirmation step, so the core reports them as `confirm`.
+  6. **Field classification:**
+     - **Input:** per field, the tag, `type`, `name`, `id`, `autocomplete`, label text, placeholder, ARIA label, `inputmode`, `maxlength`, whether it is visible, its form and its position. Never values.
+     - **Output:** per field, a class (`username`, `email`, `current-password`, `new-password`, `totp`, `cc-*`, `address-*`, `ignore`) and a confidence from 0 to 1.
+     - **Method: rules and weighted scores, not a learned model.**
+       - A valid `autocomplete` token decides on its own.
+       - Otherwise, points from `type`, keyword matches in name/id/label/placeholder (English, Greek, German, French, Spanish, Italian and Portuguese to start), the form's shape (one password field means login, two or three means sign-up or change), and position (the username field comes before the password).
+       - Hidden fields, and fields that look like honeypots, are `ignore`.
+       - **Why not a model:** rules are explainable, testable field by field, and fixable through the rules file without shipping a model. A learned model can be measured against them later (Phase 2), using the top-1,000 harness (M4.7).
+     - **One-time codes:** a field counts as `totp` with high confidence (0.8 or more) only with `autocomplete="one-time-code"`, a rule match, or a numeric 6–8 digit field labelled as a code. Anything less is copied to the clipboard instead (`AUTOFILL.md`).
+  7. **Signed rules file:**
+     - **What it holds:** `autofill-rules.json` (UTF-8) with `"v": 1`, a `version` that only ever goes up, `issued_at`, `expires_at` (at most 90 days later) and a list of sites. Each site has a registrable domain, optional path prefixes and field overrides. An override matches on `id`, `name` or `autocomplete` (exact, or contains), never CSS, so every platform can apply it, and sets the class. Sites can also be marked "never fill", or given multi-step hints.
+     - **Signature:** shipped as `v:u8 (= 1) || key_id:u8 || signature:64 || json`. The Ed25519 signature uses the new label `pwm/autofill-rules` (D17 style) over `key_id || json`.
+     - **Keys:** two public keys are compiled in, the current one and the next, so the key can be rotated without breaking older apps. The signing key stays offline (a hardware token used by the release owner) and never reaches CI.
+     - **Rollback and freeze protection:** a client keeps the highest `version` it has accepted and refuses anything lower. Once `expires_at` has passed, it falls back to the copy bundled with the app plus the built-in rules, rather than keep obeying an old file.
+     - **Data only:** the parser has strict limits (1 MiB, 50,000 sites) and a fuzz target.
+     - **Not yet:** downloading and updating the file is part of M4.2 and the apps. M4.1 ships the format, the check and a bundled copy.
+  8. **Multi-step logins:**
+     - **What is remembered:** per tab (the platform gives a tab key), the site's registrable domain, the chosen item id, the step reached (username sent, password sent) and when. **Never values.**
+     - **When it is forgotten:** after 5 minutes, when the tab's registrable domain changes, or when the tab closes.
+     - **What it does:** the next page of the same login is offered the same item first, and asked for the next missing field.
+  9. **Tests:**
+     - the official PSL test cases
+     - a table of match cases per mode, including IDN, ports, IP addresses, `localhost`, `http` warnings, frames from other sites, and a catastrophic regex that must still finish in linear time
+     - classifier fixtures (descriptions of real login, sign-up, password-change, multi-step and code forms), with an accuracy floor per class
+     - rules file signature, rollback, expiry, tampering and size-limit tests, with a test vector
+     - multi-step expiry and domain changes
+     - fuzz targets for the rules parser and URL matching.
+  Implementation notes (M4.1):
+  - **No production release keys yet.** `RULES_KEYS` is empty until the release owner creates the current and next keys offline (with M4.2, when downloads begin), so for now every downloaded rules file is refused and the built-in heuristics alone apply. `pwm-crypto` gains `sign_with_seed` / `public_key_from_seed` for the offline signing tool and the tests.
+  - **Item URL match modes from a newer app version** (`UrlMatch::Other`) never match.
+  - **Keyword matching folds Greek final sigma** (ς to σ) and strips accents, so keywords are written naturally.
+  - **On a keyword tie, the class listed first wins.** `type=email` always means Email.
+  - **"Last used" for ranking** is the item's `updated_at` until the apps record real use.
+  - **Fuzzing:** `autofill_rules` signs each input with a test key, so the parser behind the signature is fuzzed too; `url_match` covers every mode. Both are in CI.
+  - **`just psl`** (`scripts/update-psl.mjs`) refreshes the list and its recorded version and hash.
+  Why: keeping matching and classification in the core gives every platform the same behaviour and one place to fix it. Including the PSL private section and refusing other sites' frames closes the cross-site leaks that clickjacking and shared-hosting attacks rely on. A signed, versioned, expiring data file lets us fix sites quickly without remote code, and without letting an attacker replay old rules.

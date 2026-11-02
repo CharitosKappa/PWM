@@ -337,6 +337,85 @@ impl WasmClient {
     pub fn delete_item(&mut self, vault_id: &str, item_id: &str) -> Result<(), JsValue> {
         self.inner.delete_item(vault_id, item_id).map_err(js_error)
     }
+
+    /// The logins this page (or the frame holding the fields) may get, best
+    /// first, as a JSON array of `{vault_id, item_id, title, username,
+    /// matched, decision}` (D33).
+    #[wasm_bindgen(js_name = autofillMatches)]
+    pub fn autofill_matches(
+        &self,
+        page_url: &str,
+        frame_url: Option<String>,
+    ) -> Result<String, JsValue> {
+        let matches = self
+            .inner
+            .autofill_matches(page_url, frame_url.as_deref())
+            .map_err(js_error)?;
+        let json: Vec<serde_json::Value> = matches
+            .into_iter()
+            .map(|m| {
+                serde_json::json!({
+                    "vault_id": m.vault_id, "item_id": m.item_id, "title": m.title,
+                    "username": m.username, "matched": m.matched, "decision": m.decision,
+                })
+            })
+            .collect();
+        Ok(serde_json::Value::Array(json).to_string())
+    }
+
+    /// Field descriptions (JSON array, never values) in, `[{class, confidence}]` out.
+    #[wasm_bindgen(js_name = classifyFields)]
+    pub fn classify_fields(&self, fields_json: &str, page_url: &str) -> Result<String, JsValue> {
+        self.inner
+            .classify_fields(fields_json, page_url)
+            .map_err(js_error)
+    }
+
+    /// Accepts a signed rules file; returns its version to store.
+    #[wasm_bindgen(js_name = setAutofillRules)]
+    pub fn set_autofill_rules(
+        &mut self,
+        bytes: &[u8],
+        now_ms: f64,
+        min_version: f64,
+    ) -> Result<f64, JsValue> {
+        self.inner
+            .set_autofill_rules(bytes, ms(now_ms), min_version as u64)
+            .map(|v| v as f64)
+            .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = autofillRecordStep)]
+    pub fn autofill_record_step(
+        &mut self,
+        tab: &str,
+        page_url: &str,
+        item_id: &str,
+        step: &str,
+        now_ms: f64,
+    ) -> Result<(), JsValue> {
+        self.inner
+            .autofill_record_step(tab, page_url, item_id, step, ms(now_ms))
+            .map_err(js_error)
+    }
+
+    /// `[item_id, step]` to offer next on this tab, if any.
+    #[wasm_bindgen(js_name = autofillNextStep)]
+    pub fn autofill_next_step(
+        &mut self,
+        tab: &str,
+        page_url: &str,
+        now_ms: f64,
+    ) -> Option<Vec<String>> {
+        self.inner
+            .autofill_next_step(tab, page_url, ms(now_ms))
+            .map(|(item, step)| vec![item, step.to_owned()])
+    }
+
+    #[wasm_bindgen(js_name = autofillForgetTab)]
+    pub fn autofill_forget_tab(&mut self, tab: &str) {
+        self.inner.autofill_forget_tab(tab);
+    }
 }
 
 impl Default for WasmClient {

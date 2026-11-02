@@ -1,4 +1,4 @@
-# Fuzz targets for pwm-crypto decoders (M1.7), pwm-vault parsers and export readers. Run with `just fuzz <target>`
+# Fuzz targets for pwm-crypto decoders (M1.7), pwm-vault parsers, export readers and the autofill engine (D33). Run with `just fuzz <target>`
 # (Linux/macOS, nightly) or in Docker on Windows, see docs/DEVELOPMENT.md.
 #
 # Separate workspace on purpose: libFuzzer (Apache-2.0 WITH LLVM-exception)
@@ -18,9 +18,11 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+pwm-autofill = { path = "../../pwm-autofill" }
 pwm-crypto = { path = ".." }
 pwm-export = { path = "../../pwm-export" }
 pwm-vault = { path = "../../pwm-vault" }
+url = "2.5.8"
 
 [profile.release]
 debug = 1
@@ -77,6 +79,20 @@ bench = false
 [[bin]]
 name = "opaque_messages"
 path = "fuzz_targets/opaque_messages.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "autofill_rules"
+path = "fuzz_targets/autofill_rules.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "url_match"
+path = "fuzz_targets/url_match.rs"
 test = false
 doc = false
 bench = false
