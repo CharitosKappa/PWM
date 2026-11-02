@@ -33,7 +33,7 @@ Read these before writing code:
 - **The server never sees plaintext**: no item names, URLs, usernames, folder names or tags. Only ciphertext, sizes, ids and timestamps.
 - **Never log secrets.** No passwords, keys, vault contents or form values in logs, crash reports, analytics or test snapshots. Use the `Secret<T>` wrapper (zeroize on drop, redacted `Debug`).
 - **Closed source** (decision S6). Only add dependencies with permissive licences on the allow-list in `docs/DECISIONS.md`; `cargo deny` / `license-checker` must pass. Never copy or adapt code from GPL/AGPL projects (Bitwarden, KeePassXC, Proton Pass, KeePass) — implement from public specs.
-- **Use vetted crates only** for primitives (RustCrypto `chacha20poly1305`, `argon2`, `hkdf`, `x25519-dalek`, `ed25519-dalek`, `opaque-ke`, `zeroize`). Never hand-roll primitives.
+- **Use vetted crates only** for primitives (RustCrypto `chacha20poly1305`, `argon2`, `hkdf`, `x25519-dalek`, `ed25519-dalek`, `opaque-ke`, `zeroize`, and `p256` + `sha2` for passkeys (D37)). Never hand-roll primitives.
 - **Autofill fills only after an explicit user action** (click/tap/shortcut) by default. Never inject clickable credential UI into page DOM (see `docs/AUTOFILL.md`).
 - **No feature removal and no price change logic** without the notice rules in `docs/PRICING.md`.
 - **Export is always available on every plan**, encrypted or (with re-auth + warning) plaintext.

@@ -13,81 +13,6 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D32 — Transactional email provider** · open · founder. Needed for M10.7: email verification at sign-up (so registration stops revealing which emails have accounts) and account notices. To choose: provider and region (EU hosting fits D5), and its licence and data-processing terms.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
-- **D37 — Passkeys in the browser extension: interception, crypto, confirmation, storage** · proposed 2026-11-02 · Claude Code.
-  The roadmap says "Passkey support (WebAuthn interception where browser allows; else defer to platform provider)". `PRODUCT.md` makes passkeys P0 ("autofill incl. passkeys"). `AUTOFILL.md` requires a confirmation step for passkeys. D18 already stores passkeys in logins: credential id, relying party id, user handle, user name, PKCS#8 private key, sign counter.
-  Open:
-  - how the extension sees a site's passkey requests at all
-  - where the key generation and signing happen
-  - which crates
-  - how the user confirms
-  - what is stored and in which item
-  - how the browser's own passkeys stay usable
-
-  Proposal:
-  1. **Seeing requests** (Chromium has no passkey-provider API for extensions; `webAuthenticationProxy` is for remote desktops):
-     - **A page-world script:** a small script registered for the page's own world (`world: "MAIN"`, `runAt: "document_start"`, all frames) wraps `navigator.credentials.create` and `.get` for `publicKey` requests only. It passes the request to our isolated content script with `window.postMessage`, and the content script passes it to the background.
-     - **Site access:** this needs site access before the page loads, so passkeys get their own switch, **"Use PWM for passkeys"**. It asks for the same optional site access as D35/D36, and nothing changes until it is on.
-     - **Trust:** the page can call or spoof the wrapper, so everything in it is untrusted.
-       - **The origin** comes from the browser (`sender.url`, `sender.origin`), never from the page.
-       - **The relying party id** must be the origin's host or a registrable suffix of it (WebAuthn rules, with the PSL), checked in the core.
-       - **Only HTTPS** (and `localhost`) origins.
-     - **Frames from another site:** a request from a frame of another site needs the page to allow it (`publickey-credentials-get/create` permissions policy), which the browser enforces before our wrapper runs; we refuse it anyway unless the frame is the top-level site's.
-  2. **The browser's own passkeys stay usable:**
-     - **The choice:** every request first opens our confirmation (below), with **"Use another device or the browser"**. That hands the request back to the browser's original `navigator.credentials` call, unchanged.
-     - **No passkeys for the site:** if the vault is locked or has no passkey for the site, a `get` goes straight back to the browser without asking.
-     - **A `create` excluding one of ours:** it also goes to the browser (the site already has one of ours).
-  3. **Crypto in the core** (`pwm-passkey`, a new crate, tests and vectors first):
-     - **Keys:** ES256 only (ECDSA P-256 with SHA-256), the algorithm every relying party accepts. `create` with no ES256 in `pubKeyCredParams` goes to the browser.
-     - **Crates:** RustCrypto `p256` (features `ecdsa`, `pkcs8`) and `sha2`, both MIT/Apache-2.0. These are added to the vetted list in CLAUDE.md (the same RustCrypto family). CBOR for the attestation object and the COSE key is written by hand for the few fixed structures (a decoder is not needed), and fuzzed.
-     - **What the core builds:**
-       - `clientDataJSON` from the browser-given origin, the challenge and the type, so it cannot be shaped by the page.
-       - `authenticatorData`: the RP id hash, flags UP=1, UV=1, BE=1, BS=1, AT on create, and a sign count of 0 (synced passkeys, as iCloud Keychain does).
-       - the attestation object with `fmt: "none"`, and the assertion signature.
-     - **AAGUID:** a fixed random one for PWM, published in `SECURITY.md`.
-     - **User verification:** UV=1 means the vault is unlocked and the user confirmed in our window. A request with `userVerification: "required"` while locked asks to unlock first.
-     - **Discoverable credentials:** always (resident keys); the user handle is stored.
-  4. **Confirmation** (never in page DOM):
-     - **Where:** a small extension window (`chrome.windows.create`, type `popup`) showing the site, the account, and **Create passkey / Sign in** or **Use another device or the browser**. Clicks there cannot be clickjacked by the page.
-     - **Several passkeys for the site:** the user picks one.
-     - **`allowCredentials`:** only those listed are offered.
-     - **Timeouts:** the request's timeout is honoured (default 5 minutes). Closing the window counts as a cancel (`NotAllowedError`).
-     - **Locked vault:** the window unlocks first, with the master password.
-  5. **Storage:**
-     - **Which item:** a new passkey goes into the login for that site and username if there is one, else into a new login titled with the RP id, with its URL set to the origin.
-     - **What is stored:** credential id (16 random bytes), RP id, user handle, user name, PKCS#8 private key and created time, as D18 already defines, so nothing in the format changes. The server sees only ciphertext.
-     - **Other devices:** passkeys sync like any item. Other platforms use them when their providers land (M5.5 iOS, M6.3 Android, M5.6/M7 desktop).
-     - **Export:** unchanged. The JSON export carries passkeys (D24); CSV does not.
-  6. **Conditional UI** (`mediation: "conditional"`, passkeys offered in the username field's autofill list):
-     - **For now:** answered as "no credential" (left to the browser).
-     - **Later:** offering passkeys from the inline icon's menu is a follow-up, so nothing appears in pages beyond D35.
-  7. **Not included:**
-     - **Non-ES256 algorithms:** they go to the browser.
-     - **Hybrid / cross-device (QR) flows:** left to the browser.
-     - **Attestation other than `none`.**
-     - **Passkey management in the popup** (list and delete): shown read-only on the item for now.
-     - **Firefox and Safari:** M4.8 / M5.6.
-  8. **Tests:**
-     - **Rust:**
-       - **Vectors:** fixed keys and challenges for create and get, with the exact `clientDataJSON`, `authenticatorData` and attestation bytes.
-       - **Independent check:** the signature verified in Node with WebCrypto in `verify.mjs`.
-       - **Edge cases:** RP id rules (suffix, PSL, IP addresses, `localhost`), no ES256 offered, the excluded and allowed lists.
-       - **Fuzzing:** a fuzz target for the request parser.
-     - **Vitest:**
-       - the wrapper's message protocol and that it hands back to the browser
-       - that the origin is the browser's
-       - the window flow (confirm, cancel, timeout, locked)
-       - that page messages are never trusted
-     - **Playwright:**
-       - **The fixture:** a relying party page that verifies attestation and assertions in the page with WebCrypto.
-       - **Must work:** register, then sign in with our passkey.
-       - **Must refuse:** a spoofed RP id.
-       - **Back to the browser:** "Use another device or the browser" reaches the browser's own WebAuthn (a stub in the fixture).
-       - **Cancel:** closing the window gives `NotAllowedError`.
-
-  Alternatives:
-  - **Defer entirely to the platform** (Windows Hello, iCloud Keychain, Google Password Manager, and our own apps as OS providers later): no page-world script at all, but no passkeys in the extension before the desktop apps, against P0.
-  - **Prompt inside the page** (as some managers do): faster, but it is page DOM UI, which CLAUDE.md forbids, and it can be clickjacked.
-  - **A real sign counter:** it breaks across synced devices; 0 is what synced passkey providers use.
 
 ## Settled
 
@@ -797,3 +722,78 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The card** is shown only in the top frame, and hidden while a fill is checked, like the icons. Both stay hidden until the checks end, even when a frame report arrives meanwhile and would show them (the browser tests caught that race).
   - **One switch:** "Fill and save on sign-in pages" is the D35 icon setting renamed. Turned on, frame reports answer with the fields to read on submit.
   - **New core calls:** `save_offer`, `save_login` and `update_password` in `pwm-client`, WASM and UniFFI (`SaveOffer` enum). A new login gets the page's origin with `domain` matching, and a title from the host name without `www.`.
+- **D37 — Passkeys in the browser extension: interception, crypto, confirmation, storage** · settled 2026-11-02 · founder (approved as proposed).
+  The roadmap says "Passkey support (WebAuthn interception where browser allows; else defer to platform provider)". `PRODUCT.md` makes passkeys P0 ("autofill incl. passkeys"). `AUTOFILL.md` requires a confirmation step for passkeys. D18 already stores passkeys in logins: credential id, relying party id, user handle, user name, PKCS#8 private key, sign counter.
+  Open:
+  - how the extension sees a site's passkey requests at all
+  - where the key generation and signing happen
+  - which crates
+  - how the user confirms
+  - what is stored and in which item
+  - how the browser's own passkeys stay usable
+
+  Proposal:
+  1. **Seeing requests** (Chromium has no passkey-provider API for extensions; `webAuthenticationProxy` is for remote desktops):
+     - **A page-world script:** a small script registered for the page's own world (`world: "MAIN"`, `runAt: "document_start"`, all frames) wraps `navigator.credentials.create` and `.get` for `publicKey` requests only. It passes the request to our isolated content script with `window.postMessage`, and the content script passes it to the background.
+     - **Site access:** this needs site access before the page loads, so passkeys get their own switch, **"Use PWM for passkeys"**. It asks for the same optional site access as D35/D36, and nothing changes until it is on.
+     - **Trust:** the page can call or spoof the wrapper, so everything in it is untrusted.
+       - **The origin** comes from the browser (`sender.url`, `sender.origin`), never from the page.
+       - **The relying party id** must be the origin's host or a registrable suffix of it (WebAuthn rules, with the PSL), checked in the core.
+       - **Only HTTPS** (and `localhost`) origins.
+     - **Frames from another site:** a request from a frame of another site needs the page to allow it (`publickey-credentials-get/create` permissions policy), which the browser enforces before our wrapper runs; we refuse it anyway unless the frame is the top-level site's.
+  2. **The browser's own passkeys stay usable:**
+     - **The choice:** every request first opens our confirmation (below), with **"Use another device or the browser"**. That hands the request back to the browser's original `navigator.credentials` call, unchanged.
+     - **No passkeys for the site:** if the vault is locked or has no passkey for the site, a `get` goes straight back to the browser without asking.
+     - **A `create` excluding one of ours:** it also goes to the browser (the site already has one of ours).
+  3. **Crypto in the core** (`pwm-passkey`, a new crate, tests and vectors first):
+     - **Keys:** ES256 only (ECDSA P-256 with SHA-256), the algorithm every relying party accepts. `create` with no ES256 in `pubKeyCredParams` goes to the browser.
+     - **Crates:** RustCrypto `p256` (features `ecdsa`, `pkcs8`) and `sha2`, both MIT/Apache-2.0. These are added to the vetted list in CLAUDE.md (the same RustCrypto family). CBOR for the attestation object and the COSE key is written by hand for the few fixed structures (a decoder is not needed), and fuzzed.
+     - **What the core builds:**
+       - `clientDataJSON` from the browser-given origin, the challenge and the type, so it cannot be shaped by the page.
+       - `authenticatorData`: the RP id hash, flags UP=1, UV=1, BE=1, BS=1, AT on create, and a sign count of 0 (synced passkeys, as iCloud Keychain does).
+       - the attestation object with `fmt: "none"`, and the assertion signature.
+     - **AAGUID:** a fixed random one for PWM, published in `SECURITY.md`.
+     - **User verification:** UV=1 means the vault is unlocked and the user confirmed in our window. A request with `userVerification: "required"` while locked asks to unlock first.
+     - **Discoverable credentials:** always (resident keys); the user handle is stored.
+  4. **Confirmation** (never in page DOM):
+     - **Where:** a small extension window (`chrome.windows.create`, type `popup`) showing the site, the account, and **Create passkey / Sign in** or **Use another device or the browser**. Clicks there cannot be clickjacked by the page.
+     - **Several passkeys for the site:** the user picks one.
+     - **`allowCredentials`:** only those listed are offered.
+     - **Timeouts:** the request's timeout is honoured (default 5 minutes). Closing the window counts as a cancel (`NotAllowedError`).
+     - **Locked vault:** the window unlocks first, with the master password.
+  5. **Storage:**
+     - **Which item:** a new passkey goes into the login for that site and username if there is one, else into a new login titled with the RP id, with its URL set to the origin.
+     - **What is stored:** credential id (16 random bytes), RP id, user handle, user name, PKCS#8 private key and created time, as D18 already defines, so nothing in the format changes. The server sees only ciphertext.
+     - **Other devices:** passkeys sync like any item. Other platforms use them when their providers land (M5.5 iOS, M6.3 Android, M5.6/M7 desktop).
+     - **Export:** unchanged. The JSON export carries passkeys (D24); CSV does not.
+  6. **Conditional UI** (`mediation: "conditional"`, passkeys offered in the username field's autofill list):
+     - **For now:** answered as "no credential" (left to the browser).
+     - **Later:** offering passkeys from the inline icon's menu is a follow-up, so nothing appears in pages beyond D35.
+  7. **Not included:**
+     - **Non-ES256 algorithms:** they go to the browser.
+     - **Hybrid / cross-device (QR) flows:** left to the browser.
+     - **Attestation other than `none`.**
+     - **Passkey management in the popup** (list and delete): shown read-only on the item for now.
+     - **Firefox and Safari:** M4.8 / M5.6.
+  8. **Tests:**
+     - **Rust:**
+       - **Vectors:** fixed keys and challenges for create and get, with the exact `clientDataJSON`, `authenticatorData` and attestation bytes.
+       - **Independent check:** the signature verified in Node with WebCrypto in `verify.mjs`.
+       - **Edge cases:** RP id rules (suffix, PSL, IP addresses, `localhost`), no ES256 offered, the excluded and allowed lists.
+       - **Fuzzing:** a fuzz target for the request parser.
+     - **Vitest:**
+       - the wrapper's message protocol and that it hands back to the browser
+       - that the origin is the browser's
+       - the window flow (confirm, cancel, timeout, locked)
+       - that page messages are never trusted
+     - **Playwright:**
+       - **The fixture:** a relying party page that verifies attestation and assertions in the page with WebCrypto.
+       - **Must work:** register, then sign in with our passkey.
+       - **Must refuse:** a spoofed RP id.
+       - **Back to the browser:** "Use another device or the browser" reaches the browser's own WebAuthn (a stub in the fixture).
+       - **Cancel:** closing the window gives `NotAllowedError`.
+
+  Alternatives:
+  - **Defer entirely to the platform** (Windows Hello, iCloud Keychain, Google Password Manager, and our own apps as OS providers later): no page-world script at all, but no passkeys in the extension before the desktop apps, against P0.
+  - **Prompt inside the page** (as some managers do): faster, but it is page DOM UI, which CLAUDE.md forbids, and it can be clickjacked.
+  - **A real sign counter:** it breaks across synced devices; 0 is what synced passkey providers use.
