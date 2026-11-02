@@ -12,6 +12,7 @@ import {
   isSubmitted,
 } from "../shared/autofill.ts";
 import { isPopupMessage } from "../shared/messages.ts";
+import { isPasskeyCall, isPasskeyWindowRequest } from "../shared/passkeys.ts";
 import type { Reply } from "../shared/messages.ts";
 import { chromePlatform } from "./chrome.ts";
 import { coreFunctions } from "./functions.ts";
@@ -38,6 +39,12 @@ function fromPopup(sender: chrome.runtime.MessageSender): boolean {
   if (sender.id !== chrome.runtime.id || sender.url === undefined) return false;
   // The options page is the popup page in a tab, at #settings.
   return sender.url.split("#")[0] === chrome.runtime.getURL("popup.html");
+}
+
+/** The passkey confirmation window (D37 §4), an extension page in its own window. */
+function fromPasskeyWindow(sender: chrome.runtime.MessageSender): boolean {
+  if (sender.id !== chrome.runtime.id || sender.url === undefined) return false;
+  return sender.url.split("#")[0] === chrome.runtime.getURL("passkey.html");
 }
 
 /** The inline icon page, inside a tab (its URL is dynamic, D35 §3). */
@@ -90,6 +97,17 @@ chrome.runtime.onMessage.addListener(
         sendResponse,
       );
     }
+    if (isPasskeyCall(message)) {
+      const frame = contentFrame(sender);
+      if (!frame) return false;
+      return answer(
+        (b) => b.passkeys.onCall(frame, message.op, message.request),
+        sendResponse,
+      );
+    }
+    if (isPasskeyWindowRequest(message) && fromPasskeyWindow(sender)) {
+      return answer((b) => b.passkeys.onWindow(message), sendResponse);
+    }
     if (isSubmitted(message) || isFormGone(message)) {
       const frame = contentFrame(sender);
       if (!frame) return false;
@@ -123,6 +141,10 @@ chrome.commands.onCommand.addListener((command, tab) => {
       ? { id: tab.id, url: tab.url }
       : undefined;
   void ready.then((b) => b.autofill.onCommand(target));
+});
+
+chrome.windows.onRemoved.addListener((windowId) => {
+  void ready.then((b) => b.passkeys.onWindowClosed(windowId));
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {

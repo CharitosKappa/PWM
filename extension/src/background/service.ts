@@ -16,6 +16,7 @@ import { HOSTED_SERVER } from "../shared/config.ts";
 import { errorCode } from "./core.ts";
 import { ServiceError } from "./errors.ts";
 import { Autofill } from "./fill.ts";
+import { Passkeys } from "./passkeys.ts";
 import { Saver } from "./save.ts";
 import type { Core, CoreFunctions, CoreStep } from "./core.ts";
 import { runSteps } from "./http.ts";
@@ -84,6 +85,8 @@ export class Background {
   readonly autofill: Autofill;
   /** Save and update offers (D36). */
   readonly saver: Saver;
+  /** Passkeys (D37). */
+  readonly passkeys: Passkeys;
 
   private constructor(
     private readonly fns: CoreFunctions,
@@ -110,6 +113,21 @@ export class Background {
       touch: () => this.touch(),
     });
     this.autofill.onTopFrame = (sender) => this.saver.onTopFrame(sender);
+    this.passkeys = new Passkeys({
+      core: () => this.core,
+      platform,
+      enabled: async () =>
+        (await platform.disk.get("passkeys")) === "on" &&
+        (await platform.pages.hasSiteAccess()),
+      saved: async () => {
+        await this.persist();
+        void this.sync();
+      },
+      unlock: async (password) => {
+        await this.handle({ kind: "unlock", password });
+      },
+      touch: () => this.touch(),
+    });
   }
 
   /** Loads the cache and settings, and restores a session after a worker restart. */
@@ -251,6 +269,13 @@ export class Background {
         return this.saver.dismissFromPopup(request.never);
       case "captureNow":
         return this.saver.captureActiveTab();
+      case "passkeys":
+        return (
+          (await this.platform.disk.get("passkeys")) === "on" &&
+          (await this.platform.pages.hasSiteAccess())
+        );
+      case "setPasskeys":
+        return this.passkeys.setEnabled(request.on);
       case "activity":
         await this.touch();
         return null;

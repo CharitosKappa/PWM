@@ -112,6 +112,33 @@ export interface Core {
     password: string,
     nowMs: number,
   ): void;
+  /** Passkeys (D37): JSON `{kind, rp_id, user_name}`; origins are the browser's. */
+  passkeyCreateCheck(
+    origin: string,
+    topOrigin: string | undefined,
+    requestJson: string,
+  ): string;
+  passkeyCreate(
+    vaultId: string,
+    origin: string,
+    topOrigin: string | undefined,
+    requestJson: string,
+    nowMs: number,
+  ): string;
+  /** JSON array of `{vault_id, item_id, credential_id, user_name, title}`. */
+  passkeyCandidates(
+    origin: string,
+    topOrigin: string | undefined,
+    requestJson: string,
+  ): string;
+  passkeyGet(
+    origin: string,
+    topOrigin: string | undefined,
+    requestJson: string,
+    vaultId: string,
+    itemId: string,
+    credentialId: string,
+  ): string;
   /** Saves an item (D18 JSON with its `id`); returns the id. */
   saveItem(vaultId: string, json: string, nowMs: number): string;
 }

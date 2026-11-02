@@ -60,6 +60,9 @@ pub enum ClientError {
     Storage,
     #[error("an internal error occurred")]
     Internal,
+    /// A passkey request was refused (D37); the code says why.
+    #[error("passkey: {0}")]
+    Passkey(pwm_passkey::PasskeyError),
 }
 
 impl ClientError {
@@ -91,6 +94,13 @@ impl ClientError {
             Self::Protocol => "protocol",
             Self::Storage => "storage",
             Self::Internal => "internal",
+            Self::Passkey(e) => match e {
+                pwm_passkey::PasskeyError::InvalidRequest => "invalid_passkey_request",
+                pwm_passkey::PasskeyError::InsecureOrigin => "insecure_origin",
+                pwm_passkey::PasskeyError::InvalidRpId => "invalid_rp_id",
+                pwm_passkey::PasskeyError::UnsupportedAlgorithm => "unsupported_algorithm",
+                pwm_passkey::PasskeyError::InvalidKey => "invalid_passkey",
+            },
         }
     }
 }

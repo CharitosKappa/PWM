@@ -797,3 +797,13 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Defer entirely to the platform** (Windows Hello, iCloud Keychain, Google Password Manager, and our own apps as OS providers later): no page-world script at all, but no passkeys in the extension before the desktop apps, against P0.
   - **Prompt inside the page** (as some managers do): faster, but it is page DOM UI, which CLAUDE.md forbids, and it can be clickjacked.
   - **A real sign counter:** it breaks across synced devices; 0 is what synced passkey providers use.
+
+  Implementation notes (M4.5):
+  - **Crates:** `p256` 0.14 (features `ecdsa`, `pkcs8`, `alloc`; no `getrandom`): the core draws the 32 key bytes itself and retries the negligible invalid case. ECDSA signing is deterministic (RFC 6979), which makes the vectors in `core/test-vectors/passkey.json` exact; `verify.mjs` checks every byte layout and the signature with Node's own P-256.
+  - **Locked vault:** a `get` while locked goes to the browser, as §2 says. A `create` while locked opens the window to unlock first (§4).
+  - **An RP id that is not the page's** answers `SecurityError`, as the browser itself would. Other refusals hand the request back to the browser.
+  - **Timeouts:** the window and the request end after the page's `timeout`, kept between 30 s and 10 minutes (5 minutes when none is given). Closing the window is a cancel (`NotAllowedError`).
+  - **Which login:** a new passkey joins the site's login whose username matches (trimmed, ASCII case ignored), the same rule as D36.
+  - **One site access:** "Use PWM for passkeys" uses the same optional site access as "Fill and save". The popup gives the access back only when neither switch is on and the server is the hosted one.
+  - **The page-world wrapper** answers with objects whose own properties shadow the native prototypes' getters, so `instanceof PublicKeyCredential` and `response.getPublicKey()` both work.
+  - **Fuzzing:** the `passkey_request` fuzz target registers and signs whatever parses, for any origin.

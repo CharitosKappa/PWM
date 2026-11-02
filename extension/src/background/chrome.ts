@@ -236,6 +236,59 @@ export class ChromePages implements Pages {
     return chrome.permissions.contains({ origins: SITE_ACCESS });
   }
 
+  async setPasskeyScripts(on: boolean): Promise<void> {
+    const ids = ["passkeys-page", "passkeys-bridge"];
+    const existing = await chrome.scripting.getRegisteredContentScripts({
+      ids,
+    });
+    if (existing.length > 0) {
+      await chrome.scripting.unregisterContentScripts({
+        ids: existing.map((s) => s.id),
+      });
+    }
+    if (!on) return;
+    // Before the page's own scripts, so its first WebAuthn call is ours.
+    const common = {
+      matches: SITE_ACCESS,
+      allFrames: true,
+      runAt: "document_start" as const,
+      persistAcrossSessions: true,
+    };
+    await chrome.scripting.registerContentScripts([
+      {
+        id: "passkeys-page",
+        js: ["passkey-page.js"],
+        world: "MAIN",
+        ...common,
+      },
+      {
+        id: "passkeys-bridge",
+        js: ["passkey-bridge.js"],
+        world: "ISOLATED",
+        ...common,
+      },
+    ]);
+  }
+
+  async openWindow(path: string): Promise<number> {
+    const win = await chrome.windows.create({
+      url: chrome.runtime.getURL(path),
+      type: "popup",
+      width: 400,
+      height: 480,
+      focused: true,
+    });
+    return win?.id ?? -1;
+  }
+
+  async closeWindow(windowId: number): Promise<void> {
+    try {
+      await chrome.windows.remove(windowId);
+    } catch {
+      // Already closed.
+    }
+  }
+
   async setBadge(tabId: number, text: string): Promise<void> {
     try {
       await chrome.action.setBadgeText({ tabId, text });

@@ -103,6 +103,15 @@ A new kind of envelope gets a new label; labels are never reused.
 
 - Vault share: vault_key encrypted to the recipient's X25519 public key and signed with the sharer's Ed25519 key (decision D17, below); the recipient verifies the sharer's key fingerprint on first share (optional out-of-band check).
 
+**Passkeys (D37).** The extension (and later the apps) acts as a WebAuthn authenticator for ES256 only, through `pwm-passkey` (RustCrypto `p256`).
+
+- **Relying party id:** it must be the calling origin's host or a registrable suffix of it, never a public suffix or an IP address. Only HTTPS and `localhost` origins qualify.
+- **The origin** is the browser's report of the calling frame. `clientDataJSON` is built in the core from it, with `crossOrigin`/`topOrigin` for same-site frames. Frames of another site never get our passkeys.
+- **`authenticatorData`:** flags UP, UV, BE and BS (plus AT on create), a sign count of 0 always (synced passkeys), and AAGUID `6c9e3d41-8a27-4f0b-9d52-e17730c458a6`.
+- **Attestation:** `fmt: "none"`. The COSE key and the attestation object are hand-written deterministic CBOR.
+- **User verification** means the vault is unlocked and the user confirmed in an extension window (never page DOM).
+- **Keys:** private keys are PKCS#8 inside the login item (D18), so they are encrypted like any item, and the server sees only ciphertext.
+
 **Signatures (D17).** Ed25519 over `len(label):u8 || label || message`, verified in strict mode (rejects malleable signatures and small-order public keys). Labels are never reused; current labels: `pwm/share-sig` (vault shares) and `pwm/autofill-rules` (the signed autofill rules file, D33: `v:u8 (= 1) || key_id:u8 || signature:64 || json`, signature over `key_id || json`, release keys pinned in the apps, the signing key kept offline).
 
 **Vault share v1 (D17).**

@@ -2,6 +2,9 @@
 // code involved). Run: node core/test-vectors/verify.mjs (part of
 // `just test-vectors`).
 //
+// Passkeys (passkey.json): every byte layout and the ES256 signature are
+// checked here with Node's own P-256.
+//
 // Not covered here: Argon2id (Node has no Argon2; kdf.json is checked by the
 // Rust checker and the RFC 9106 known-answer test). The `pw_key` values from
 // account.json and export.json are taken as input. OPAQUE (opaque.json) is
@@ -309,6 +312,45 @@ for (const v of load("session")) {
     "device_tokens open",
     eq(openEnvelope(symKey, hex(v.device_secret_envelope), tokensAad), hex(v.device_secret)),
   );
+}
+
+const b64u = (t) => Buffer.from(t, "base64url");
+
+for (const v of load("passkey")) {
+  // Registration: authenticatorData layout, the COSE key, the "none" attestation.
+  const reg = v.registration.response;
+  const auth = b64u(reg.authenticatorData);
+  const rpId = JSON.parse(v.create_request).rp.id;
+  check("passkey rp id hash", eq(auth.subarray(0, 32), crypto.createHash("sha256").update(rpId).digest()));
+  check("passkey create flags", auth[32] === 0x5d);
+  check("passkey sign count 0", auth.readUInt32BE(33) === 0);
+  const idLen = auth.readUInt16BE(53);
+  check("passkey credential id", eq(auth.subarray(55, 55 + idLen), hex(v.credential_id)));
+  const cose = auth.subarray(55 + idLen);
+  check("passkey cose header", eq(cose.subarray(0, 10), hex("a5010203262001215820")));
+  const x = cose.subarray(10, 42);
+  const y = cose.subarray(45, 77);
+  const fromCose = crypto.createPublicKey({ key: { kty: "EC", crv: "P-256", x: x.toString("base64url"), y: y.toString("base64url") }, format: "jwk" });
+  const spki = crypto.createPublicKey({ key: b64u(reg.publicKey), format: "der", type: "spki" });
+  check("passkey spki matches cose", eq(spki.export({ format: "der", type: "spki" }), fromCose.export({ format: "der", type: "spki" })));
+  const priv = crypto.createPrivateKey({ key: hex(v.private_key_pkcs8), format: "der", type: "pkcs8" });
+  check("passkey private key matches", eq(crypto.createPublicKey(priv).export({ format: "der", type: "spki" }), b64u(reg.publicKey)));
+  const att = b64u(reg.attestationObject);
+  const head = Buffer.concat([Buffer.from([0xa3, 0x63]), Buffer.from("fmt"), Buffer.from([0x64]), Buffer.from("none"), Buffer.from([0x67]), Buffer.from("attStmt"), Buffer.from([0xa0, 0x68]), Buffer.from("authData"), Buffer.from([0x58, auth.length])]);
+  check("passkey attestation object", eq(att, Buffer.concat([head, auth])));
+  const created = JSON.parse(b64u(reg.clientDataJSON).toString("utf8"));
+  check("passkey create client data", created.type === "webauthn.create" && created.origin === v.origin && created.challenge === JSON.parse(v.create_request).challenge && created.crossOrigin === false);
+
+  // Assertion: the signature over authenticatorData || SHA-256(clientDataJSON).
+  const a = v.assertion.response;
+  const aAuth = b64u(a.authenticatorData);
+  check("passkey get flags", aAuth.length === 37 && aAuth[32] === 0x1d);
+  const clientData = b64u(a.clientDataJSON);
+  const signed = Buffer.concat([aAuth, crypto.createHash("sha256").update(clientData).digest()]);
+  check("passkey signature", crypto.verify("sha256", signed, { key: spki, dsaEncoding: "der" }, b64u(a.signature)));
+  check("passkey user handle", a.userHandle === JSON.parse(v.create_request).user.id);
+  const got = JSON.parse(clientData.toString("utf8"));
+  check("passkey get client data", got.type === "webauthn.get" && got.origin === v.origin);
 }
 
 // opaque.json is checked by the Rust checker only: the protocol itself is
