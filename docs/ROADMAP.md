@@ -154,7 +154,29 @@ Phase 3  Teams           months 16–24 M16–M19
 ## Phase 1 — MVP and launch
 
 ### M4 — Browser extension + autofill engine
-- [ ] M4.1 `pwm-autofill`: PSL origin matching, field classifier, multi-step state, rules file format + signature check.
+- [x] M4.1 `pwm-autofill`: PSL origin matching, field classifier, multi-step state, rules file format + signature check.
+  - Per D33:
+    - **Public Suffix List:** vendored and unmodified (version 2026-10-31, private section included), with our own matcher, and `just psl` to refresh it.
+    - **Match modes:** `domain`/`host`/`starts_with`/`exact`/`regex`/`never`, using WHATWG URL parsing and IDN. Regex runs in linear time and is size-limited.
+    - **Ranking and fill decisions:** `fill`, `warn` (`http`, regex only), `refuse` (a frame from another site, a blocked site) and `confirm`.
+    - **Field classification:** `autocomplete` tokens first, then keywords in 7 languages, form shape and position. One-time codes are filled only at 0.8 confidence or more.
+    - **Signed rules file:** Ed25519 with the label `pwm/autofill-rules`, two pinned keys, rollback and expiry checks, 1 MiB / 50,000-site limits.
+    - **Multi-step state:** per tab, no values, 5-minute expiry, forgotten when the site changes.
+    - **Exposed through `pwm-client`, UniFFI and WASM:** matches, classification, rules and steps. This closes the M3.7 deferral.
+  - **Tests:**
+    - every case in the official PSL test file
+    - a match-mode table: IDN both ways, ports, IP addresses, `localhost`, `github.io`, look-alike domains, a catastrophic regex under 500 ms
+    - classifier fixtures: login, sign-up, change-password, multi-step, codes, cards, addresses, honeypots, and other languages
+    - rules signature, key rotation, tampering, rollback, expiry, limits, and a frozen vector (`core/test-vectors/autofill_rules.json`)
+    - multi-step expiry, site change and the tab cap
+    - the client end to end, and the WASM smoke test
+    - fuzz targets `autofill_rules` and `url_match`.
+    - **Mutation checks:** without the private section, the cross-site frame check or the rollback check, a test fails.
+  - **Deferred:**
+    - Creating the release keys and the offline signing tool, and downloading and storing rules (M4.2).
+    - Equivalent domains (one login for several domains), considered with the rules file.
+    - Android app matching via Digital Asset Links (M6.3).
+    - Measuring classification against real sites (M4.7 harness).
 - [ ] M4.2 MV3 extension shell: popup (search, copy, generator), unlock (master password, or via desktop app native messaging + biometrics).
   - From M3:
     - Persist the `MemoryStore` snapshot in IndexedDB, with Vitest tests on the WASM core.

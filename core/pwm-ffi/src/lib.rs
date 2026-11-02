@@ -159,6 +159,26 @@ fn step(step: pwm_client::Step) -> Step {
     }
 }
 
+/// A login the page may get (D33), best first. `decision` is `fill`,
+/// `warn_insecure`, `warn_regex`, `refuse_cross_site`, `refuse_blocked`
+/// or `confirm`; every fill still waits for the user.
+#[derive(uniffi::Record)]
+pub struct AutofillMatch {
+    pub vault_id: String,
+    pub item_id: String,
+    pub title: String,
+    pub username: String,
+    pub matched: String,
+    pub decision: String,
+}
+
+/// The item and step (`password` or `totp`) to offer next on a tab.
+#[derive(uniffi::Record)]
+pub struct AutofillNextStep {
+    pub item_id: String,
+    pub step: String,
+}
+
 /// The app's handle on the core: one per signed-in device.
 #[derive(uniffi::Object)]
 pub struct PwmClient {
@@ -347,6 +367,79 @@ impl PwmClient {
 
     pub fn purge_trash(&self, now_ms: i64) -> Result<u64, PwmError> {
         Ok(count(self.lock_inner().purge_trash(now_ms)?))
+    }
+
+    /// The logins this page (or the frame holding the fields) may get.
+    pub fn autofill_matches(
+        &self,
+        page_url: String,
+        frame_url: Option<String>,
+    ) -> Result<Vec<AutofillMatch>, PwmError> {
+        Ok(self
+            .lock_inner()
+            .autofill_matches(&page_url, frame_url.as_deref())?
+            .into_iter()
+            .map(|m| AutofillMatch {
+                vault_id: m.vault_id,
+                item_id: m.item_id,
+                title: m.title,
+                username: m.username,
+                matched: m.matched.to_owned(),
+                decision: m.decision.to_owned(),
+            })
+            .collect())
+    }
+
+    /// Field descriptions (JSON array, never values) in, `[{class, confidence}]` out.
+    pub fn classify_fields(
+        &self,
+        fields_json: String,
+        page_url: String,
+    ) -> Result<String, PwmError> {
+        Ok(self.lock_inner().classify_fields(&fields_json, &page_url)?)
+    }
+
+    /// Accepts a signed rules file; returns its version to store.
+    pub fn set_autofill_rules(
+        &self,
+        bytes: Vec<u8>,
+        now_ms: i64,
+        min_version: u64,
+    ) -> Result<u64, PwmError> {
+        Ok(self
+            .lock_inner()
+            .set_autofill_rules(&bytes, now_ms, min_version)?)
+    }
+
+    pub fn autofill_record_step(
+        &self,
+        tab: String,
+        page_url: String,
+        item_id: String,
+        step: String,
+        now_ms: i64,
+    ) -> Result<(), PwmError> {
+        Ok(self
+            .lock_inner()
+            .autofill_record_step(&tab, &page_url, &item_id, &step, now_ms)?)
+    }
+
+    pub fn autofill_next_step(
+        &self,
+        tab: String,
+        page_url: String,
+        now_ms: i64,
+    ) -> Option<AutofillNextStep> {
+        self.lock_inner()
+            .autofill_next_step(&tab, &page_url, now_ms)
+            .map(|(item_id, step)| AutofillNextStep {
+                item_id,
+                step: step.to_owned(),
+            })
+    }
+
+    pub fn autofill_forget_tab(&self, tab: String) {
+        self.lock_inner().autofill_forget_tab(&tab);
     }
 }
 

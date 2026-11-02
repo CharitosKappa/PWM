@@ -1,11 +1,13 @@
 //! Ed25519 signatures and X25519 vault shares (decision D17,
 //! `docs/SECURITY.md` "Sharing").
 
-use ed25519_dalek::{Signature, Signer, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::account::{key_from_plaintext, random_32};
-use crate::{Aad, AccountKeyset, CryptoError, Envelope, Id, SymmetricKey, hkdf_sha256, open, seal};
+use crate::{
+    Aad, AccountKeyset, CryptoError, Envelope, Id, Secret, SymmetricKey, hkdf_sha256, open, seal,
+};
 
 const SHARE_VERSION: u8 = 1;
 const PUBLIC_KEY_LEN: usize = 32;
@@ -19,12 +21,15 @@ const SIGNATURE_LEN: usize = 64;
 pub enum SignatureContext {
     /// A vault share (`pwm/share-sig`).
     Share,
+    /// The signed autofill rules file (`pwm/autofill-rules`, D33).
+    AutofillRules,
 }
 
 impl SignatureContext {
     fn label(self) -> &'static str {
         match self {
             Self::Share => "pwm/share-sig",
+            Self::AutofillRules => "pwm/autofill-rules",
         }
     }
 
@@ -57,6 +62,27 @@ pub fn verify_signature(
         &Signature::from_bytes(signature),
     )
     .map_err(|_| CryptoError::SignatureInvalid)
+}
+
+/// The Ed25519 public key of a signing key given as its 32-byte seed. For
+/// release signing keys (the autofill rules file, D33), which are not
+/// account keys.
+pub fn public_key_from_seed(seed: &Secret<[u8; 32]>) -> [u8; 32] {
+    SigningKey::from_bytes(seed.expose_secret())
+        .verifying_key()
+        .to_bytes()
+}
+
+/// Signs `message` for `context` with the key whose seed is `seed`. The
+/// signing tool for release keys runs this offline; apps only verify.
+pub fn sign_with_seed(
+    seed: &Secret<[u8; 32]>,
+    context: SignatureContext,
+    message: &[u8],
+) -> [u8; 64] {
+    SigningKey::from_bytes(seed.expose_secret())
+        .sign(&context.signed_bytes(message))
+        .to_bytes()
 }
 
 /// A vault key encrypted to one recipient and signed by the sender, in the v1

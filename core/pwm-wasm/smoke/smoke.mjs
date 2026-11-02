@@ -61,4 +61,18 @@ const reloaded = core.WasmClient.load(snapshot);
 check(Buffer.compare(Buffer.from(reloaded.snapshot()), Buffer.from(snapshot)) === 0, 'it loads back identical');
 check(code(() => core.WasmClient.load(new Uint8Array([1, 2, 3]))) === 'storage', 'a damaged snapshot is refused');
 
+// Autofill (D33): field classification works without unlocking.
+const classes = JSON.parse(
+  client.classifyFields(
+    JSON.stringify([
+      { type: 'text', name: 'user', visible: true },
+      { type: 'password', visible: true },
+    ]),
+    'https://example.com/',
+  ),
+);
+check(classes[0].class === 'username' && classes[1].class === 'current-password', 'login fields are classified');
+check(code(() => client.autofillMatches('https://example.com/', undefined)) === 'locked', 'matching needs an unlocked vault');
+check(code(() => client.setAutofillRules(new Uint8Array([1, 2, 3]), Date.now(), 0)) === 'invalid_rules', 'unsigned rules are refused');
+
 console.log('wasm bindings: ok');

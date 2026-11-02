@@ -1707,12 +1707,24 @@ dependencies = [
 [[package]]
 name = "pwm-autofill"
 version = "0.0.0"
+dependencies = [
+ "idna",
+ "pwm-crypto",
+ "pwm-vault",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "unicode-normalization",
+ "url",
+]
 
 [[package]]
 name = "pwm-client"
 version = "0.0.0"
 dependencies = [
  "base64 0.23.1",
+ "pwm-autofill",
  "pwm-crypto",
  "pwm-generator",
  "pwm-store",
@@ -1721,6 +1733,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "url",
 ]
 
 [[package]]
@@ -1872,6 +1885,7 @@ dependencies = [
  "getrandom 0.4.3",
  "js-sys",
  "pwm-client",
+ "serde_json",
  "wasm-bindgen",
 ]
 

@@ -60,9 +60,10 @@ pub struct Client<S: Store> {
     running: Running,
     events: Vec<SyncEvent>,
     signup_params: KdfParams,
+    pub(crate) autofill: crate::autofill::AutofillState,
 }
 
-fn parse_id(text: &str) -> Result<Id, ClientError> {
+pub(crate) fn parse_id(text: &str) -> Result<Id, ClientError> {
     text.parse::<ItemId>()
         .map(|id| *id.as_bytes())
         .map_err(|_| ClientError::InvalidId)
@@ -85,6 +86,7 @@ impl<S: Store> Client<S> {
             running: Running::Idle,
             events: Vec::new(),
             signup_params: KdfParams::DEFAULT,
+            autofill: crate::autofill::AutofillState::default(),
         }
     }
 
@@ -133,7 +135,7 @@ impl<S: Store> Client<S> {
         }
     }
 
-    fn engine_ref(&self) -> Result<&SyncEngine<S>, ClientError> {
+    pub(crate) fn engine_ref(&self) -> Result<&SyncEngine<S>, ClientError> {
         match &self.state {
             State::Unlocked(engine) => Ok(engine),
             _ => Err(ClientError::Locked),

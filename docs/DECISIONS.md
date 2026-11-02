@@ -469,4 +469,12 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
      - rules file signature, rollback, expiry, tampering and size-limit tests, with a test vector
      - multi-step expiry and domain changes
      - fuzz targets for the rules parser and URL matching.
+  Implementation notes (M4.1):
+  - **No production release keys yet.** `RULES_KEYS` is empty until the release owner creates the current and next keys offline (with M4.2, when downloads begin), so for now every downloaded rules file is refused and the built-in heuristics alone apply. `pwm-crypto` gains `sign_with_seed` / `public_key_from_seed` for the offline signing tool and the tests.
+  - **Item URL match modes from a newer app version** (`UrlMatch::Other`) never match.
+  - **Keyword matching folds Greek final sigma** (ς to σ) and strips accents, so keywords are written naturally.
+  - **On a keyword tie, the class listed first wins.** `type=email` always means Email.
+  - **"Last used" for ranking** is the item's `updated_at` until the apps record real use.
+  - **Fuzzing:** `autofill_rules` signs each input with a test key, so the parser behind the signature is fuzzed too; `url_match` covers every mode. Both are in CI.
+  - **`just psl`** (`scripts/update-psl.mjs`) refreshes the list and its recorded version and hash.
   Why: keeping matching and classification in the core gives every platform the same behaviour and one place to fix it. Including the PSL private section and refusing other sites' frames closes the cross-site leaks that clickjacking and shared-hosting attacks rely on. A signed, versioned, expiring data file lets us fix sites quickly without remote code, and without letting an attacker replay old rules.

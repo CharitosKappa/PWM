@@ -87,6 +87,11 @@ notices:
     cargo about generate --all-features --fail about.hbs -o THIRD_PARTY_NOTICES/rust.html
     pnpm notices
     cp core/pwm-generator/data/NOTICE.md THIRD_PARTY_NOTICES/data.md
+    cp core/pwm-autofill/data/NOTICE.md THIRD_PARTY_NOTICES/data-autofill.md
+
+# refresh the vendored Public Suffix List (D33) before a release; review the diff
+psl:
+    node scripts/update-psl.mjs
 
 # fuzz one decoder target (nightly + cargo-fuzz, Linux/macOS; on Windows see docs/DEVELOPMENT.md)
 [working-directory('core/pwm-crypto/fuzz')]

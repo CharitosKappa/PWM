@@ -3,3 +3,6 @@
 *.png binary
 *.jpg binary
 *.pdf binary
+# Vendored data kept byte-for-byte (checked by SHA-256 in a test).
+core/pwm-autofill/data/*.dat -text
+core/pwm-autofill/data/*.txt -text

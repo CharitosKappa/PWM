@@ -76,11 +76,13 @@ just wasm          # WASM build into extension/core (gitignored) and the Node sm
 just bindings      # Swift and Kotlin bindings into target/bindings
 ```
 
+The autofill engine vendors the Public Suffix List (D33). Refresh it before a release with `just psl` (downloads the list and its tests, records the version and SHA-256) and review the diff.
+
 CI also compiles and runs small Swift and Kotlin programs against the bindings (`core/pwm-ffi/smoke/`). Locally, Swift can run in the `swift` Docker image on the Linux build of the library.
 
 ## Fuzzing
 
-Targets live in `core/pwm-crypto/fuzz/fuzz_targets/` (`envelope_decode`, `vault_share_decode`, `keyset_plaintext`, `secret_key_parse`, `password_normalize`, `totp_parse`, `export_read`, `opaque_messages`). CI runs each for 60 s on every PR and 10 minutes nightly; crash inputs are uploaded as artifacts.
+Targets live in `core/pwm-crypto/fuzz/fuzz_targets/` (`envelope_decode`, `vault_share_decode`, `keyset_plaintext`, `secret_key_parse`, `password_normalize`, `totp_parse`, `export_read`, `opaque_messages`, `autofill_rules`, `url_match`). CI runs each for 60 s on every PR and 10 minutes nightly; crash inputs are uploaded as artifacts.
 
 Linux/macOS (nightly + `cargo install cargo-fuzz`):
 
