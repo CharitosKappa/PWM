@@ -2,6 +2,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import { describe, send } from "./api.ts";
+import { InlineIconOffer } from "./InlineIcon.tsx";
 import { Field, Notice } from "./ui.tsx";
 
 const MIN_SCORE = 3;
@@ -110,6 +111,7 @@ function SignUp({ onDone }: { onDone: () => void }): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [secretKey, setSecretKey] = useState<string | null>(null);
+  const [offer, setOffer] = useState(false);
 
   useEffect(() => {
     if (password === "") {
@@ -132,9 +134,16 @@ function SignUp({ onDone }: { onDone: () => void }): JSX.Element {
     };
   }, [password, email]);
 
+  if (offer) return <InlineIconOffer onDone={onDone} />;
   if (secretKey !== null)
     return (
-      <SecretKey email={email.trim()} secretKey={secretKey} onDone={onDone} />
+      <SecretKey
+        email={email.trim()}
+        secretKey={secretKey}
+        onDone={() => {
+          setOffer(true);
+        }}
+      />
     );
 
   const strongEnough = score !== null && score >= MIN_SCORE;

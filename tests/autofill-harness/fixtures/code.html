@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>One-time code</title>
+    <style>
+      body {
+        font: 16px system-ui;
+        margin: 40px;
+      }
+      input {
+        display: block;
+        width: 280px;
+        height: 32px;
+        margin: 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>One-time code</h1>
+    <form action="#" onsubmit="return false;">
+      <label for="code">Code</label>
+      <input
+        id="code"
+        type="text"
+        name="code"
+        autocomplete="one-time-code"
+        inputmode="numeric"
+        maxlength="6"
+      />
+      <button>Verify</button>
+    </form>
+  </body>
+</html>

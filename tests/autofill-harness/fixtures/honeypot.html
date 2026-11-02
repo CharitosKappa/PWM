@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Honeypots</title>
+    <style>
+      body {
+        font: 16px system-ui;
+        margin: 40px;
+      }
+      input {
+        display: block;
+        width: 280px;
+        height: 32px;
+        margin: 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Honeypots</h1>
+    <form action="#" onsubmit="return false;">
+      <label for="email">Email</label>
+      <input id="email" type="email" name="email" autocomplete="username" />
+      <input
+        id="trap-hidden"
+        type="text"
+        name="username"
+        style="display: none"
+      />
+      <input
+        id="trap-offscreen"
+        type="text"
+        name="username"
+        style="position: absolute; left: -9999px"
+      />
+      <label for="password">Password</label>
+      <input
+        id="password"
+        type="password"
+        name="password"
+        autocomplete="current-password"
+      />
+      <button>Sign in</button>
+    </form>
+  </body>
+</html>

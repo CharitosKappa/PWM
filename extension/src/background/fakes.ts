@@ -3,7 +3,20 @@
  * tested in Rust and, through WASM, in `wasm.test.ts`.
  */
 import type { Core, CoreFunctions, CoreStep } from "./core.ts";
-import type { AlarmName, Disk, DiskKey, Platform } from "./platform.ts";
+import type {
+  ContentMessage,
+  FieldInfo,
+  FillReply,
+} from "../shared/autofill.ts";
+import type {
+  AlarmName,
+  Disk,
+  DiskKey,
+  FrameRef,
+  FrameSender,
+  Pages,
+  Platform,
+} from "./platform.ts";
 
 export const PASSWORD = "correct horse battery staple";
 export const SECRET_KEY = "A3-ABCDEF-GHJKLM-NPQRST-UVWXYZ-23456-789AB";
@@ -190,9 +203,9 @@ export class FakeCore implements Core {
   currentCode(vaultId: string, itemId: string): string[] | undefined {
     if (!this.unlocked) throw coreError("locked");
     const item = (this.items_.get(vaultId) ?? []).map(
-      (j) => JSON.parse(j) as { id: string; totp?: string },
+      (j) => JSON.parse(j) as { id: string; login?: { totp?: string } },
     );
-    return item.find((i) => i.id === itemId)?.totp
+    return item.find((i) => i.id === itemId)?.login?.totp
       ? ["287082", "1"]
       : undefined;
   }
@@ -209,9 +222,126 @@ export class FakeCore implements Core {
     return version;
   }
 
+  /** Multi-step state: tab → [itemId, step done]. */
+  steps = new Map<string, [string, string]>();
+
+  /**
+   * Matches by host name, with the engine's decisions in miniature: `http`
+   * warns, a frame on another host is refused.
+   */
+  autofillMatches(pageUrl: string, frameUrl: string | undefined): string {
+    if (!this.unlocked) throw coreError("locked");
+    const page = new URL(pageUrl);
+    const frameHost =
+      frameUrl === undefined ? undefined : new URL(frameUrl).hostname;
+    const out: Record<string, string>[] = [];
+    for (const [vaultId, list] of this.items_) {
+      for (const json of list) {
+        const item = JSON.parse(json) as {
+          id: string;
+          type?: string;
+          title?: string;
+          trashed_at?: number | null;
+          login?: { username?: string; urls?: { url: string }[] };
+        };
+        if (item.type !== "login" || item.trashed_at != null) continue;
+        const first = item.login?.urls?.[0];
+        const host = first ? new URL(first.url).hostname : "";
+        if (host !== page.hostname) continue;
+        let decision = page.protocol === "https:" ? "fill" : "warn_insecure";
+        if (frameHost !== undefined && frameHost !== host)
+          decision = "refuse_cross_site";
+        out.push({
+          vault_id: vaultId,
+          item_id: item.id,
+          title: item.title ?? "",
+          username: item.login?.username ?? "",
+          matched: "host",
+          decision,
+        });
+      }
+    }
+    return JSON.stringify(out);
+  }
+
+  /** Classifies by type and name only; the real classifier is tested in Rust. */
+  classifyFields(fieldsJson: string): string {
+    const fields = JSON.parse(fieldsJson) as FieldInfo[];
+    return JSON.stringify(
+      fields.map((f) => {
+        if (f.type === "password")
+          return {
+            class:
+              f.autocomplete === "new-password"
+                ? "new-password"
+                : "current-password",
+            confidence: 0.9,
+          };
+        if (f.autocomplete === "one-time-code")
+          return { class: "one-time-code", confidence: 0.95 };
+        if (f.name.includes("otp"))
+          return { class: "one-time-code", confidence: 0.5 };
+        if (f.type === "email" || f.name.includes("user"))
+          return { class: "username", confidence: 0.9 };
+        return { class: "ignore", confidence: 0.5 };
+      }),
+    );
+  }
+
+  autofillRecordStep(
+    tab: string,
+    _pageUrl: string,
+    itemId: string,
+    step: string,
+  ): void {
+    this.steps.set(tab, [itemId, step]);
+  }
+
+  autofillNextStep(tab: string): string[] | undefined {
+    const done = this.steps.get(tab);
+    if (!done) return undefined;
+    return [done[0], done[1] === "username" ? "password" : "totp"];
+  }
+
+  saveItem(vaultId: string, json: string): string {
+    if (!this.unlocked) throw coreError("locked");
+    const item = JSON.parse(json) as { id: string };
+    const list = (this.items_.get(vaultId) ?? []).filter(
+      (j) => (JSON.parse(j) as { id: string }).id !== item.id,
+    );
+    list.push(json);
+    this.items_.set(vaultId, list);
+    return item.id;
+  }
+
+  autofillForgetTab(tab: string): void {
+    this.steps.delete(tab);
+  }
+
+  /**
+   * Adds an item in the core's JSON shape (D18): login fields go under
+   * `login`, as `items()` lists them. Same id replaces.
+   */
   addLogin(vaultId: string, item: Record<string, unknown>): void {
-    const list = this.items_.get(vaultId) ?? [];
-    list.push(JSON.stringify(item));
+    const { id, type, title, trashed_at, username, password, totp, urls } =
+      item;
+    const json = {
+      id,
+      v: 1,
+      type: type ?? "login",
+      title: title ?? "",
+      notes: "",
+      created_at: 0,
+      updated_at: 0,
+      trashed_at: trashed_at ?? null,
+      ...((type ?? "login") === "login"
+        ? { login: { username, password, totp, urls: urls ?? [] } }
+        : {}),
+    };
+    const list = (this.items_.get(vaultId) ?? []).filter(
+      (j) => (JSON.parse(j) as { id: unknown }).id !== id,
+    );
+    list.push(JSON.stringify(json));
     this.items_.set(vaultId, list);
   }
 }
@@ -274,7 +404,102 @@ export class MemoryDisk implements Disk {
   }
 }
 
+/** A frame of the fake page: what its content script would report. */
+export interface FakeFrame {
+  frameId: number;
+  documentId: string;
+  url: string;
+  fields: FieldInfo[];
+}
+
+/** A page the fake browser shows, with scriptable answers. */
+export class FakePages implements Pages {
+  tab: { id: number; url: string } | undefined = {
+    id: 7,
+    url: "https://example.com/login",
+  };
+  frames: FakeFrame[] = [];
+  /** Wired to the background's frame report handler by the test. */
+  report: (sender: FrameSender, fields: FieldInfo[]) => Promise<unknown> = () =>
+    Promise.resolve();
+  sent: { target: FrameRef; message: ContentMessage }[] = [];
+  fillReply: FillReply = { ok: true };
+  /** Documents that navigated away since they reported. */
+  gone = new Set<string>();
+  popups = 0;
+  inlineScripts = false;
+  siteAccess = false;
+  injections = 0;
+
+  activeTab() {
+    return Promise.resolve(this.tab);
+  }
+
+  async inject(tabId: number) {
+    this.injections += 1;
+    const tab = this.tab;
+    if (!tab || tab.id !== tabId) return [];
+    for (const frame of this.frames) {
+      await this.report(
+        {
+          tabId,
+          frameId: frame.frameId,
+          documentId: frame.documentId,
+          url: frame.url,
+          tabUrl: tab.url,
+        },
+        frame.fields,
+      );
+    }
+    return this.frames.map((f) => ({
+      frameId: f.frameId,
+      documentId: f.documentId,
+    }));
+  }
+
+  send(target: FrameRef, message: ContentMessage): Promise<unknown> {
+    if (this.gone.has(target.documentId)) return Promise.resolve(undefined);
+    this.sent.push({ target, message });
+    return Promise.resolve(message.kind === "fill" ? this.fillReply : true);
+  }
+
+  openPopup() {
+    this.popups += 1;
+    return Promise.resolve();
+  }
+
+  setInlineScripts(on: boolean) {
+    this.inlineScripts = on;
+    return Promise.resolve();
+  }
+
+  hasSiteAccess() {
+    return Promise.resolve(this.siteAccess);
+  }
+}
+
+/** A field description with everything empty but what is given. */
+export function field(index: number, extra: Partial<FieldInfo>): FieldInfo {
+  return {
+    index,
+    tag: "input",
+    type: "text",
+    name: "",
+    id: "",
+    autocomplete: "",
+    label: "",
+    placeholder: "",
+    aria_label: "",
+    inputmode: "",
+    max_length: null,
+    visible: true,
+    form: 0,
+    ...extra,
+  };
+}
+
 export interface FakePlatform extends Platform {
+  pages: FakePages;
   disk: MemoryDisk;
   sessionBytes: { value: Uint8Array | undefined };
   alarmsAt: Map<AlarmName, number>;
@@ -304,6 +529,7 @@ export function fakePlatform(disk = new MemoryDisk()): FakePlatform {
   };
   return {
     disk,
+    pages: new FakePages(),
     sessionBytes,
     alarmsAt,
     clipboardText,

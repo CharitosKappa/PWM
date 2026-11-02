@@ -72,6 +72,26 @@ export interface Core {
     nowMs: number,
     minVersion: number,
   ): number;
+  /** JSON array of matches for the page (and the frame holding the fields), best first (D33). */
+  autofillMatches(pageUrl: string, frameUrl: string | undefined): string;
+  /** JSON array of field descriptions in, JSON array of `{class, confidence}` out. */
+  classifyFields(fieldsJson: string, pageUrl: string): string;
+  autofillRecordStep(
+    tab: string,
+    pageUrl: string,
+    itemId: string,
+    step: string,
+    nowMs: number,
+  ): void;
+  /** `[itemId, step]` of a login in progress on this tab. */
+  autofillNextStep(
+    tab: string,
+    pageUrl: string,
+    nowMs: number,
+  ): string[] | undefined;
+  autofillForgetTab(tab: string): void;
+  /** Saves an item (D18 JSON with its `id`); returns the id. */
+  saveItem(vaultId: string, json: string, nowMs: number): string;
 }
 
 export interface CoreFunctions {

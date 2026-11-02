@@ -197,8 +197,48 @@ Phase 3  Teams           months 16–24 M16–M19
     - **Editing items in the popup:** items come from save prompts (M4.4) and the apps.
     - **Firefox and Safari builds** (M4.8, M5.6).
     - **Store icons and the product name** wait for D1.
-- [ ] M4.3 Fill on user action; inline icon in isolated iframe/closed shadow root; visibility/overlay checks before fill (`AUTOFILL.md`).
+- [x] M4.3 Fill on user action; inline icon in isolated iframe/closed shadow root; visibility/overlay checks before fill (`AUTOFILL.md`).
+  - Per D35:
+    - **Reaching pages:** `activeTab` + `scripting`. The content script is injected only when the user clicks Fill or presses the shortcut. The inline icon is opt-in: it asks for site access when turned on, then registers the content script. Sign-up offers it once.
+    - **Popup:** the logins for the current site come first, each with Fill ("Fill anyway" under a warning).
+    - **Shortcut (Ctrl+Shift+L / ⌘⇧L):** fills the one sure match, or opens the popup.
+    - **Inline icon:**
+      - **What it is:** a closed shadow root around the extension's own frame, with a one-time token and a dynamic URL.
+      - **Clicks:** taken only when trusted and after 500 ms visible (`IntersectionObserver` v2). There are two clicks, the icon and the login.
+      - **Per site:** "Don't show here".
+    - **Checks before every fill, in the target frame:**
+      - the field is connected, enabled and writable
+      - it has a size and is in the viewport (scrolled into view once from the popup or shortcut)
+      - visibility and opacity 1 on every ancestor, no filter or clip-path
+      - nothing on top at the centre and two corners
+      - `IntersectionObserver` v2 reports it visible
+      If any check fails, nothing is filled.
+    - **Values:** sent only to the chosen frame (`frameId` + `documentId`). The engine judges the URLs the browser reports. Content scripts never get the vault list.
+    - **Codes:** filled when the engine is sure (≥ 0.8), otherwise copied and cleared after 30 s. Multi-step state is recorded after each fill.
+    - **Build check:** allows exactly `activeTab`, `scripting`, the command, the inline frame's resources and the optional site access, and still no declared content scripts.
+  - **Tests:**
+    - **Vitest (116):**
+      - the fill plan (forms, honeypots, multi-step, codes)
+      - the checks before filling
+      - the icon's click guard
+      - popup and shortcut fills
+      - decisions, frames and documents
+      - the inline token, menu, hide and turning off
+      - that content scripts never receive other items
+    - **Real WASM core:** the new core calls exist, and the field JSON classifies.
+    - **Playwright** (`tests/autofill-harness`, `just autofill`, CI job `autofill-harness`): the test build in Chromium against a local server and HTTPS fixture pages.
+      - Must fill: a plain form, honeypots, multi-step, a code field, a same-site frame, an `http` page after confirming.
+      - Must refuse: a transparent overlay, a nearly transparent ancestor, a frame from another site.
+      - Inline icon: two checked clicks fill; a page-made transparent icon takes no click.
+  - **Fixed in passing:** the background now reads login fields where the core puts them (`login`). This was an M4.2 bug: no usernames in the popup, and password copy failed.
+  - **Deferred:**
+    - **Cards and identities:** M4.10.
+    - **Firefox:** fills only in the top frame without `IntersectionObserver` v2 (M4.8).
+    - **The full fixture set and the top-1,000 runner:** M4.7.
+    - **Save prompts:** M4.4.
+    - **The popup UI:** not driven by Playwright yet (the tests call the background directly).
 - [ ] M4.4 Save/update prompts after submit.
+- [ ] M4.10 Fill cards and identities, from D35: always with a confirmation step (`AUTOFILL.md`), rules for payment frames from other sites (Stripe, Adyen) and for items without URLs. Propose the rules in `DECISIONS.md` first.
 - [ ] M4.5 Passkey support (WebAuthn interception where browser allows; else defer to platform provider).
 - [ ] M4.6 "Autofill didn't work here" report with form fingerprint (no values).
 - [ ] M4.7 Autofill harness: fixture sites incl. clickjacking/overlay attacks that must not fill; top-1,000 runner + JSON report.

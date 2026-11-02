@@ -8,10 +8,14 @@ import type {
   Clipboard,
   Disk,
   DiskKey,
+  FrameRef,
+  Pages,
   Platform,
   SessionStore,
 } from "./platform.ts";
 import { fromBase64, toBase64 } from "../shared/bytes.ts";
+import type { ContentMessage } from "../shared/autofill.ts";
+import { SITE_ACCESS } from "../shared/config.ts";
 import type { ClipboardMessage } from "../shared/messages.ts";
 
 const DB_NAME = "pwm";
@@ -155,12 +159,91 @@ export class OffscreenClipboard implements Clipboard {
   }
 }
 
+const INLINE_SCRIPT_ID = "inline-icon";
+
+/** Tabs, frames and content scripts through `chrome.tabs` and `chrome.scripting`. */
+export class ChromePages implements Pages {
+  async activeTab(): Promise<{ id: number; url: string } | undefined> {
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      lastFocusedWindow: true,
+    });
+    // The URL is there only with activeTab or site access.
+    if (tab?.id === undefined || tab.url === undefined) return undefined;
+    return { id: tab.id, url: tab.url };
+  }
+
+  async inject(
+    tabId: number,
+  ): Promise<{ frameId: number; documentId: string }[]> {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        files: ["content.js"],
+      });
+      return results.map((r) => ({
+        frameId: r.frameId,
+        documentId: r.documentId,
+      }));
+    } catch {
+      // A page the extension may not touch (the store, browser pages).
+      return [];
+    }
+  }
+
+  async send(target: FrameRef, message: ContentMessage): Promise<unknown> {
+    try {
+      return (await chrome.tabs.sendMessage(target.tabId, message, {
+        frameId: target.frameId,
+        documentId: target.documentId,
+      })) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async openPopup(): Promise<void> {
+    try {
+      await chrome.action.openPopup();
+    } catch {
+      // No focused window; the user can click the toolbar button.
+    }
+  }
+
+  async setInlineScripts(on: boolean): Promise<void> {
+    const existing = await chrome.scripting.getRegisteredContentScripts({
+      ids: [INLINE_SCRIPT_ID],
+    });
+    if (on && existing.length === 0) {
+      await chrome.scripting.registerContentScripts([
+        {
+          id: INLINE_SCRIPT_ID,
+          matches: SITE_ACCESS,
+          js: ["content.js"],
+          allFrames: true,
+          runAt: "document_idle",
+          persistAcrossSessions: true,
+        },
+      ]);
+    } else if (!on && existing.length > 0) {
+      await chrome.scripting.unregisterContentScripts({
+        ids: [INLINE_SCRIPT_ID],
+      });
+    }
+  }
+
+  hasSiteAccess(): Promise<boolean> {
+    return chrome.permissions.contains({ origins: SITE_ACCESS });
+  }
+}
+
 export function chromePlatform(): Platform {
   return {
     disk: new ChromeDisk(indexedDB, chrome.storage.local),
     session: new ChromeSession(chrome.storage.session),
     alarms: new ChromeAlarms(),
     clipboard: new OffscreenClipboard(),
+    pages: new ChromePages(),
     fetch: (url, init) => fetch(url, init),
     now: () => Date.now(),
     random: () => Math.random(),

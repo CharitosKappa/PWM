@@ -14,6 +14,8 @@ import type {
 import { fromBase64, toBase64 } from "../shared/bytes.ts";
 import { HOSTED_SERVER } from "../shared/config.ts";
 import { errorCode } from "./core.ts";
+import { ServiceError } from "./errors.ts";
+import { Autofill } from "./fill.ts";
 import type { Core, CoreFunctions, CoreStep } from "./core.ts";
 import { runSteps } from "./http.ts";
 import type { AlarmName, Platform } from "./platform.ts";
@@ -28,21 +30,34 @@ const DEFAULT_SETTINGS: Settings = {
   autoLockMinutes: 15,
 };
 
-export class ServiceError extends Error {
-  constructor(readonly code: string) {
-    super(code);
-  }
-}
+export { ServiceError };
 
+/** An item as the core lists it (D18 JSON): login fields are under `login`. */
 interface StoredItem {
   id?: unknown;
   type?: unknown;
   title?: unknown;
   trashed_at?: unknown;
-  username?: unknown;
-  password?: unknown;
-  totp?: unknown;
-  urls?: unknown;
+  login?: unknown;
+}
+
+interface LoginFields {
+  username: string;
+  password: string;
+  totp: string;
+  url: string;
+}
+
+function loginFields(item: StoredItem): LoginFields {
+  const login = (
+    typeof item.login === "object" && item.login !== null ? item.login : {}
+  ) as Record<string, unknown>;
+  return {
+    username: text(login.username),
+    password: text(login.password),
+    totp: text(login.totp),
+    url: firstUrl(login.urls),
+  };
 }
 
 function text(value: unknown): string {
@@ -64,6 +79,8 @@ export class Background {
   private syncError: string | null = null;
   private syncing: Promise<Status> | null = null;
   private queue: Promise<unknown> = Promise.resolve();
+  /** Filling on user action (D35). */
+  readonly autofill: Autofill;
 
   private constructor(
     private readonly fns: CoreFunctions,
@@ -71,6 +88,13 @@ export class Background {
     core: Core,
   ) {
     this.core = core;
+    this.autofill = new Autofill({
+      core: () => this.core,
+      platform,
+      copy: (text) => this.writeClipboard(text),
+      touch: () => this.touch(),
+      login: (vaultId, itemId) => this.login(vaultId, itemId),
+    });
   }
 
   /** Loads the cache and settings, and restores a session after a worker restart. */
@@ -187,6 +211,19 @@ export class Background {
         return this.settings;
       case "setSettings":
         return this.setSettings(request.settings);
+      case "suggestions":
+        await this.touch();
+        return this.autofill.suggestions();
+      case "fill":
+        return this.autofill.fillActiveTab(
+          request.vaultId,
+          request.itemId,
+          request.confirmed,
+        );
+      case "inlineIcon":
+        return this.autofill.inlineIcon();
+      case "setInlineIcon":
+        return this.autofill.setInlineIcon(request.on);
       case "activity":
         await this.touch();
         return null;
@@ -382,10 +419,10 @@ export class Background {
         vaultId,
         itemId: text(item.id),
         title: text(item.title),
-        username: text(item.username),
-        url: firstUrl(item.urls),
-        hasPassword: text(item.password) !== "",
-        hasCode: text(item.totp) !== "",
+        username: loginFields(item).username,
+        url: loginFields(item).url,
+        hasPassword: loginFields(item).password !== "",
+        hasCode: loginFields(item).totp !== "",
       }))
       .filter(
         (s) =>
@@ -395,6 +432,34 @@ export class Background {
           ),
       )
       .sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  /**
+   * Saves an item (D18 JSON with an `id`) into the first vault. Used by the
+   * browser tests now and by the save prompts (M4.4).
+   */
+  async saveItem(json: string): Promise<{ vaultId: string; itemId: string }> {
+    const vaultId = this.core.vaultIds()[0];
+    if (vaultId === undefined) throw new ServiceError("no_vault");
+    const itemId = this.core.saveItem(vaultId, json, this.platform.now());
+    await this.persist();
+    return { vaultId, itemId };
+  }
+
+  /** A login's fill values, for the autofill only (never sent to the popup). */
+  private login(
+    vaultId: string,
+    itemId: string,
+  ): { username: string; password: string; hasCode: boolean } | undefined {
+    const found = this.storedItems().find(
+      (s) => s.vaultId === vaultId && text(s.item.id) === itemId,
+    );
+    if (!found || text(found.item.type) !== "login") return undefined;
+    return {
+      username: loginFields(found.item).username,
+      password: loginFields(found.item).password,
+      hasCode: loginFields(found.item).totp !== "",
+    };
   }
 
   private async copy(
@@ -411,7 +476,7 @@ export class Background {
         (s) => s.vaultId === vaultId && text(s.item.id) === itemId,
       );
       if (!found) throw new ServiceError("unknown_item");
-      value = text(found.item[field]);
+      value = loginFields(found.item)[field];
     }
     await this.writeClipboard(value);
   }

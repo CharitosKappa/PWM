@@ -26,9 +26,12 @@ test-vectors:
     cargo test --workspace --all-features --locked vectors
     node core/test-vectors/verify.mjs
 
-# Playwright autofill harness against fixture sites (built in M4.7)
+# Playwright autofill harness (D35): the test build of the extension in Chromium against fixture sites; needs `just wasm` and `just server` running
 autofill:
-    @echo "autofill harness not built yet (M4.7): see tests/autofill-harness/README.md"
+    pnpm install --frozen-lockfile
+    pnpm --filter @pwm/extension build:test
+    pnpm --filter @pwm/autofill-harness exec playwright install chromium
+    pnpm --filter @pwm/autofill-harness harness
 
 # run the sync server locally: docker compose (Postgres + the server image) on http://127.0.0.1:8080; needs `just secrets` once
 server:

@@ -86,7 +86,14 @@ pnpm --filter @pwm/extension test        # unit tests with fake chrome APIs (par
 pnpm --filter @pwm/extension test:wasm   # tests over the real WASM core (part of just wasm)
 ```
 
-Load `extension/dist/` unpacked from `chrome://extensions` (developer mode). The hosted server address is a placeholder until D1. For local work, open the extension's options while signed out, choose "Self-hosted" and enter `http://localhost:8080` (run `just server`).
+The autofill harness (D35) runs the extension's test build in Chromium against fixture pages:
+
+```
+just server       # in another terminal: the sync server on http://127.0.0.1:8080
+just autofill     # test build into extension/dist-test/, Playwright's Chromium, the fixtures
+```
+
+Load `extension/dist/` unpacked from `chrome://extensions` (developer mode). The fill shortcut is Ctrl+Shift+L (⌘⇧L); change it at `chrome://extensions/shortcuts`. The hosted server address is a placeholder until D1. For local work, open the extension's options while signed out, choose "Self-hosted" and enter `http://localhost:8080` (run `just server`).
 
 **Rules signing keys (D34).** The founder creates them on an offline machine and keeps the seeds offline; only the public keys enter the repo:
 

@@ -629,3 +629,13 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Static content scripts on `<all_urls>` from install** (what most competitors do): the inline icon works everywhere at once, but every user gets the "read and change all your data" warning, against `AUTOFILL.md`'s minimal permissions.
   - **No inline icon at all:** simplest and safest, but it is the most used way to fill in other managers.
   - **Checks with `elementsFromPoint` only:** they miss covering in a parent frame, which `IntersectionObserver` v2 catches.
+
+  Implementation notes (M4.3):
+  - **Site access is not all.** Site access granted for a self-hosted server stays when the icon is turned off (the popup gives it back only on the hosted server). So the choice is stored too, and the icon shows only when it is on *and* access is granted.
+  - **Shortcut and Chrome version:** `minimum_chrome_version` is 127, for `action.openPopup` (the shortcut's fallback) and `documentId` targeting.
+  - **What pages may load:** `inline.html` loads `inline.js`, `inline.css` and `tokens.css`, so those four are the web-accessible resources, all with `use_dynamic_url`.
+  - **The icon frame's visibility:** the frame watches its own root element with `IntersectionObserver` v2. Where v2 is missing it takes no clicks at all.
+  - **Honeypots:** a field counts as visible only if it has a size above 1 px, lies inside the page (not parked at `left: -9999px`), is not `visibility: hidden` and has opacity above 0. The checks before filling are stricter still.
+  - **Fixed in passing (M4.2 bug):** the background read login fields at the top level of an item, but the core lists them under `login` (D18). So the popup showed no usernames, and copying a password failed. The test fakes now use the core's real JSON, and the browser tests read items through the real core.
+  - **`saveItem`** is on the background for the browser tests now, and for the save prompts (M4.4).
+  - **The test build** (`build.mjs --test`, `extension/dist-test/`) has site access from install and a background hook for Playwright. The release build's check fails if the hook is in it.

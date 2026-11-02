@@ -16,7 +16,7 @@ Autofill reliability is our top promise and the top complaint against every comp
 - Before filling, verify the target input is visible, not covered (`elementsFromPoint` check), opacity 1, and in the viewport.
 - Payment cards, identities and passkeys always need a confirmation step.
 - TOTP codes are copied to the clipboard (auto-clear 30s) unless the field is classified `totp` with high confidence.
-- Minimal permissions: `activeTab`, `storage`, `nativeMessaging`, `scripting`; host permissions requested on demand.
+- Minimal permissions: `activeTab`, `storage`, `nativeMessaging`, `scripting`; host permissions requested on demand. Site access is asked for only when the user turns on the inline icon (D35); without it the content script is injected only on a user action.
 - No remote code. Rules file is data only and signature-checked.
 
 ## Mobile

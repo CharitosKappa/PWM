@@ -1,3 +1,5 @@
+import type { ContentMessage } from "../shared/autofill.ts";
+
 /**
  * What the background needs from the browser, as small interfaces: the real
  * ones wrap `chrome.*` (see `chrome.ts`), the tests use fakes.
@@ -25,7 +27,9 @@ export type DiskKey =
   | "settings"
   | "rules"
   | "rulesVersion"
-  | "rulesEtag";
+  | "rulesEtag"
+  | "inlineHidden"
+  | "inlineIcon";
 
 /** Memory-only storage that survives worker restarts (`chrome.storage.session`). */
 export interface SessionStore {
@@ -47,11 +51,42 @@ export interface Clipboard {
   write(text: string): Promise<void>;
 }
 
+/** One document in a tab, as the browser identifies it (never as the page says). */
+export interface FrameRef {
+  tabId: number;
+  frameId: number;
+  documentId: string;
+}
+
+/** What the browser says about the sender of a content script message. */
+export interface FrameSender extends FrameRef {
+  /** The frame's URL. */
+  url: string;
+  /** The tab's (top page's) URL. */
+  tabUrl: string;
+}
+
+/** Tabs, frames and content scripts (D35). */
+export interface Pages {
+  /** The tab the user is looking at, if the extension may see it. */
+  activeTab(): Promise<{ id: number; url: string } | undefined>;
+  /** Runs the content script in every frame it may reach; returns those frames. */
+  inject(tabId: number): Promise<{ frameId: number; documentId: string }[]>;
+  /** Sends to exactly this document; undefined when it is gone. */
+  send(target: FrameRef, message: ContentMessage): Promise<unknown>;
+  openPopup(): Promise<void>;
+  /** Registers or removes the content script for the inline icon. */
+  setInlineScripts(on: boolean): Promise<void>;
+  /** Whether the optional site access for the inline icon is granted. */
+  hasSiteAccess(): Promise<boolean>;
+}
+
 export interface Platform {
   disk: Disk;
   session: SessionStore;
   alarms: Alarms;
   clipboard: Clipboard;
+  pages: Pages;
   fetch: (url: string, init: RequestInit) => Promise<Response>;
   now: () => number;
   /** 0 ≤ x < 1, for spreading the rules download. */

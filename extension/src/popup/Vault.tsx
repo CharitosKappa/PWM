@@ -1,6 +1,10 @@
-/** The unlocked popup: search, item list and detail, copy, generator (D34). No editing yet. */
+/**
+ * The unlocked popup: logins for this site with Fill (D35), search, item
+ * list and detail, copy, generator (D34). No editing yet.
+ */
 import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
+import type { Suggestion } from "../shared/autofill.ts";
 import type { CopyField, ItemSummary, Status } from "../shared/messages.ts";
 import { describe, describeCode, send } from "./api.ts";
 import { Notice } from "./ui.tsx";
@@ -107,18 +111,105 @@ export function Vault({
           onCopy={(field) => void copy(selected, field)}
         />
       ) : (
-        <ItemList
-          items={items}
-          query={query}
-          onSelect={setSelected}
-          onCopy={(item, field) => void copy(item, field)}
-        />
+        <>
+          {query === "" && <Suggestions onToast={setToast} />}
+          <ItemList
+            items={items}
+            query={query}
+            onSelect={setSelected}
+            onCopy={(item, field) => void copy(item, field)}
+          />
+        </>
       )}
       {/* Floats over the list, so nothing moves under the cursor. */}
       <div class="toast">
         {toast !== null && <Notice kind="info">{toast}</Notice>}
       </div>
     </main>
+  );
+}
+
+const FILL_WARNINGS: Record<string, string> = {
+  warn_insecure: "This page is not secure (http).",
+  warn_regex: "Matched by a pattern. Check the address.",
+  confirm: "Check the address before filling.",
+};
+
+/** The logins for the page the popup was opened on, each with Fill (D35 §2). */
+function Suggestions({
+  onToast,
+}: {
+  onToast: (text: string) => void;
+}): JSX.Element | null {
+  const [site, setSite] = useState("");
+  const [items, setItems] = useState<Suggestion[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    send({ kind: "suggestions" })
+      .then((value) => {
+        setSite(value.site);
+        setItems(value.items);
+      })
+      .catch(() => {
+        setItems([]);
+      });
+  }, []);
+
+  if (site === "" || items.length === 0) return null;
+
+  const fill = async (item: Suggestion): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await send({
+        kind: "fill",
+        vaultId: item.vaultId,
+        itemId: item.itemId,
+        // The button said "Fill anyway" under the warning.
+        confirmed: item.decision !== "fill",
+      });
+      if (result.copiedCode) {
+        onToast("Filled. The code was copied; it clears in 30 seconds.");
+        setTimeout(() => {
+          window.close();
+        }, 1500);
+      } else {
+        window.close();
+      }
+    } catch (err) {
+      onToast(describe(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section class="stack">
+      <h2 class="caption muted">For {site}</h2>
+      <ul class="list">
+        {items.map((item) => {
+          const warning = FILL_WARNINGS[item.decision];
+          return (
+            <li key={`${item.vaultId}/${item.itemId}`} class="row">
+              <div class="grow item-text">
+                <span class="strong">{item.title || "Untitled"}</span>
+                <span class="caption muted">{item.username}</span>
+                {warning !== undefined && (
+                  <span class="caption warning-text">{warning}</span>
+                )}
+              </div>
+              <button
+                class={warning === undefined ? "primary" : undefined}
+                disabled={busy}
+                onClick={() => void fill(item)}
+              >
+                {warning === undefined ? "Fill" : "Fill anyway"}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

@@ -40,6 +40,13 @@ const MESSAGES: Record<string, string> = {
   signed_out: "You were signed out. Sign in again.",
   invalid_server: "Enter an https:// address.",
   empty: "Nothing to copy.",
+  field_hidden:
+    "The field is hidden or covered, so nothing was filled. Copy instead.",
+  no_form: "No sign-in form found on this page.",
+  refused: "This login is not for this page or frame.",
+  page_changed: "The page changed. Try again.",
+  no_page: "Open a web page first.",
+  needs_confirm: "Check the warning, then choose Fill anyway.",
   signed_in: "Sign out to change the server.",
 };
 

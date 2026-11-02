@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build": "node scripts/build.mjs",
+    "build:test": "node scripts/build.mjs --test",
     "test:wasm": "vitest run --config vitest.wasm.config.ts"
   },
   "devDependencies": {
