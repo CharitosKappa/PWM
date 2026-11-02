@@ -30,7 +30,8 @@ export type DiskKey =
   | "rulesEtag"
   | "inlineHidden"
   | "inlineIcon"
-  | "saveNever";
+  | "saveNever"
+  | "passkeys";
 
 /** Memory-only storage that survives worker restarts (`chrome.storage.session`). */
 export interface SessionStore {
@@ -80,6 +81,11 @@ export interface Pages {
   setInlineScripts(on: boolean): Promise<void>;
   /** Whether the optional site access for the inline icon is granted. */
   hasSiteAccess(): Promise<boolean>;
+  /** Registers or removes the passkey wrapper and bridge (D37). */
+  setPasskeyScripts(on: boolean): Promise<void>;
+  /** Opens an extension page in a small window of its own; returns its id. */
+  openWindow(path: string): Promise<number>;
+  closeWindow(windowId: number): Promise<void>;
   /** The toolbar button's badge on one tab ("" clears it). */
   setBadge(tabId: number, text: string): Promise<void>;
 }

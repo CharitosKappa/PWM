@@ -40,6 +40,7 @@ await build({
     popup: "src/popup/main.tsx",
     offscreen: "src/offscreen/index.ts",
     inline: "src/inline/index.ts",
+    passkey: "src/passkeys/window.ts",
   },
   outdir: dist,
   bundle: true,
@@ -57,7 +58,11 @@ await build({
 // Injected with chrome.scripting, which runs classic scripts: one IIFE.
 await build({
   absWorkingDir: root,
-  entryPoints: { content: "src/content/index.ts" },
+  entryPoints: {
+    content: "src/content/index.ts",
+    "passkey-page": "src/passkeys/page.ts",
+    "passkey-bridge": "src/passkeys/bridge.ts",
+  },
   outdir: dist,
   bundle: true,
   format: "iife",

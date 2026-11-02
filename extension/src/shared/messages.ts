@@ -38,7 +38,9 @@ export type Request =
       username?: string;
     }
   | { kind: "dismissOffer"; never: boolean }
-  | { kind: "captureNow" };
+  | { kind: "captureNow" }
+  | { kind: "passkeys" }
+  | { kind: "setPasskeys"; on: boolean };
 
 export type Status =
   | { state: "signedOut" }
@@ -97,6 +99,8 @@ export interface Replies {
   acceptOffer: null;
   dismissOffer: null;
   captureNow: OfferView;
+  passkeys: boolean;
+  setPasskeys: boolean;
 }
 
 const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
@@ -124,6 +128,8 @@ const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "acceptOffer",
   "dismissOffer",
   "captureNow",
+  "passkeys",
+  "setPasskeys",
 ]);
 
 /** A popup message, wrapped so the background can tell it from others. */

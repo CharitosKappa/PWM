@@ -412,6 +412,114 @@ export class FakeCore implements Core {
     return out;
   }
 
+  /** Passkeys in miniature: one per (origin host, user), id `pk-<n>`. */
+  passkeysMade: {
+    vaultId: string;
+    host: string;
+    user: string;
+    id: string;
+  }[] = [];
+
+  private passkeyRequest(json: string): {
+    rp?: { id?: string };
+    rpId?: string;
+    user?: { name?: string };
+    pubKeyCredParams?: { alg: number }[];
+    excludeCredentials?: { id: string }[];
+    allowCredentials?: { id: string }[];
+  } {
+    try {
+      return JSON.parse(json) as ReturnType<FakeCore["passkeyRequest"]>;
+    } catch {
+      throw coreError("invalid_passkey_request");
+    }
+  }
+
+  private passkeyRp(origin: string, rpId: string | undefined): string {
+    const host = new URL(origin).hostname;
+    if (!origin.startsWith("https:")) throw coreError("insecure_origin");
+    if (rpId !== undefined && host !== rpId && !host.endsWith(`.${rpId}`))
+      throw coreError("invalid_rp_id");
+    return rpId ?? host;
+  }
+
+  passkeyCreateCheck(
+    origin: string,
+    _top: string | undefined,
+    json: string,
+  ): string {
+    const r = this.passkeyRequest(json);
+    const rp = this.passkeyRp(origin, r.rp?.id);
+    if (r.pubKeyCredParams && !r.pubKeyCredParams.some((p) => p.alg === -7))
+      return JSON.stringify({ kind: "unsupported" });
+    const excluded = (r.excludeCredentials ?? []).some((c) =>
+      this.passkeysMade.some((p) => p.id === c.id),
+    );
+    if (excluded) return JSON.stringify({ kind: "excluded" });
+    return JSON.stringify({
+      kind: "ready",
+      rp_id: rp,
+      user_name: r.user?.name ?? "",
+    });
+  }
+
+  passkeyCreate(
+    vaultId: string,
+    origin: string,
+    _top: string | undefined,
+    json: string,
+  ): string {
+    if (!this.unlocked) throw coreError("locked");
+    const r = this.passkeyRequest(json);
+    const host = this.passkeyRp(origin, r.rp?.id);
+    const id = `pk-${String(this.passkeysMade.length + 1)}`;
+    this.passkeysMade.push({ vaultId, host, user: r.user?.name ?? "", id });
+    return JSON.stringify({ id, rawId: id, type: "public-key", response: {} });
+  }
+
+  passkeyCandidates(
+    origin: string,
+    _top: string | undefined,
+    json: string,
+  ): string {
+    if (!this.unlocked) throw coreError("locked");
+    const r = this.passkeyRequest(json);
+    const host = this.passkeyRp(origin, r.rpId);
+    const allow = (r.allowCredentials ?? []).map((c) => c.id);
+    return JSON.stringify(
+      this.passkeysMade
+        .filter(
+          (p) =>
+            p.host === host && (allow.length === 0 || allow.includes(p.id)),
+        )
+        .map((p) => ({
+          vault_id: p.vaultId,
+          item_id: `item-${p.id}`,
+          credential_id: p.id,
+          user_name: p.user,
+          title: p.host,
+        })),
+    );
+  }
+
+  passkeyGet(
+    _origin: string,
+    _top: string | undefined,
+    _json: string,
+    _vaultId: string,
+    _itemId: string,
+    credentialId: string,
+  ): string {
+    if (!this.unlocked) throw coreError("locked");
+    if (!this.passkeysMade.some((p) => p.id === credentialId))
+      throw coreError("unknown_item");
+    return JSON.stringify({
+      id: credentialId,
+      type: "public-key",
+      response: { signature: "sig" },
+    });
+  }
+
   saveItem(vaultId: string, json: string): string {
     if (!this.unlocked) throw coreError("locked");
     const item = JSON.parse(json) as { id: string };
@@ -587,6 +695,25 @@ export class FakePages implements Pages {
 
   hasSiteAccess() {
     return Promise.resolve(this.siteAccess);
+  }
+
+  passkeyScripts = false;
+  windows: string[] = [];
+  closed: number[] = [];
+
+  setPasskeyScripts(on: boolean) {
+    this.passkeyScripts = on;
+    return Promise.resolve();
+  }
+
+  openWindow(path: string) {
+    this.windows.push(path);
+    return Promise.resolve(this.windows.length);
+  }
+
+  closeWindow(windowId: number) {
+    this.closed.push(windowId);
+    return Promise.resolve();
   }
 
   badges = new Map<number, string>();

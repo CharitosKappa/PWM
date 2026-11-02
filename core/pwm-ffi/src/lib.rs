@@ -196,6 +196,24 @@ pub enum SaveOffer {
     Update { candidates: Vec<SaveCandidate> },
 }
 
+/// What a passkey `create` gets (D37).
+#[derive(uniffi::Enum)]
+pub enum PasskeyCreateCheck {
+    Ready { rp_id: String, user_name: String },
+    Excluded,
+    Unsupported,
+}
+
+/// A stored passkey a sign-in may use (never its key).
+#[derive(uniffi::Record)]
+pub struct PasskeyCandidate {
+    pub vault_id: String,
+    pub item_id: String,
+    pub credential_id: String,
+    pub user_name: String,
+    pub title: String,
+}
+
 /// The item and step (`password` or `totp`) to offer next on a tab.
 #[derive(uniffi::Record)]
 pub struct AutofillNextStep {
@@ -412,6 +430,87 @@ impl PwmClient {
 
     pub fn purge_trash(&self, now_ms: i64) -> Result<u64, PwmError> {
         Ok(count(self.lock_inner().purge_trash(now_ms)?))
+    }
+
+    /// Checks a passkey `create` before asking the user (D37).
+    pub fn passkey_create_check(
+        &self,
+        origin: String,
+        top_origin: Option<String>,
+        request_json: String,
+    ) -> Result<PasskeyCreateCheck, PwmError> {
+        Ok(
+            match self.lock_inner().passkey_create_check(
+                &origin,
+                top_origin.as_deref(),
+                &request_json,
+            )? {
+                pwm_client::PasskeyCreateCheck::Ready { rp_id, user_name } => {
+                    PasskeyCreateCheck::Ready { rp_id, user_name }
+                }
+                pwm_client::PasskeyCreateCheck::Excluded => PasskeyCreateCheck::Excluded,
+                pwm_client::PasskeyCreateCheck::Unsupported => PasskeyCreateCheck::Unsupported,
+            },
+        )
+    }
+
+    /// Creates and stores a passkey; returns `RegistrationResponseJSON`.
+    pub fn passkey_create(
+        &self,
+        vault_id: String,
+        origin: String,
+        top_origin: Option<String>,
+        request_json: String,
+        now_ms: i64,
+    ) -> Result<String, PwmError> {
+        Ok(self.lock_inner().passkey_create(
+            &vault_id,
+            &origin,
+            top_origin.as_deref(),
+            &request_json,
+            now_ms,
+        )?)
+    }
+
+    /// The passkeys a `get` may use.
+    pub fn passkey_candidates(
+        &self,
+        origin: String,
+        top_origin: Option<String>,
+        request_json: String,
+    ) -> Result<Vec<PasskeyCandidate>, PwmError> {
+        Ok(self
+            .lock_inner()
+            .passkey_candidates(&origin, top_origin.as_deref(), &request_json)?
+            .into_iter()
+            .map(|c| PasskeyCandidate {
+                vault_id: c.vault_id,
+                item_id: c.item_id,
+                credential_id: c.credential_id,
+                user_name: c.user_name,
+                title: c.title,
+            })
+            .collect())
+    }
+
+    /// Signs a `get`; returns `AuthenticationResponseJSON`.
+    pub fn passkey_get(
+        &self,
+        origin: String,
+        top_origin: Option<String>,
+        request_json: String,
+        vault_id: String,
+        item_id: String,
+        credential_id: String,
+    ) -> Result<String, PwmError> {
+        Ok(self.lock_inner().passkey_get(
+            &origin,
+            top_origin.as_deref(),
+            &request_json,
+            &vault_id,
+            &item_id,
+            &credential_id,
+        )?)
     }
 
     /// What to offer after a sign-in on `page_url` (D36).

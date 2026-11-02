@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Passkey relying party</title>
+    <style>
+      body {
+        font: 16px system-ui;
+        margin: 40px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Passkeys</h1>
+    <p id="status">ready</p>
+    <script>
+      // A tiny relying party: registers a passkey and verifies sign-ins in
+      // the page with WebCrypto, as a server would (WebAuthn §7).
+      const rpId = location.hostname;
+      const enc = new TextEncoder();
+      const b64 = (buf) =>
+        btoa(String.fromCharCode(...new Uint8Array(buf)))
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/, "");
+      const random = (n) => crypto.getRandomValues(new Uint8Array(n));
+      const sha256 = (data) => crypto.subtle.digest("SHA-256", data);
+      const equal = (a, b) =>
+        a.byteLength === b.byteLength &&
+        new Uint8Array(a).every((v, i) => v === new Uint8Array(b)[i]);
+      const state = {};
+      window.rp = state;
+
+      function clientData(buf, type, challenge) {
+        const data = JSON.parse(new TextDecoder().decode(buf));
+        if (data.type !== type) throw new Error("type " + data.type);
+        if (data.origin !== location.origin)
+          throw new Error("origin " + data.origin);
+        if (data.challenge !== b64(challenge)) throw new Error("challenge");
+        return data;
+      }
+
+      async function checkAuthData(auth) {
+        const view = new Uint8Array(auth);
+        if (!equal(view.slice(0, 32).buffer, await sha256(enc.encode(rpId))))
+          throw new Error("rp id hash");
+        if ((view[32] & 0x05) !== 0x05) throw new Error("UP and UV");
+        return view;
+      }
+
+      // ECDSA signatures are DER in WebAuthn and raw r||s in WebCrypto.
+      function derToRaw(der) {
+        const d = new Uint8Array(der);
+        let i = 2;
+        const read = () => {
+          const len = d[i + 1];
+          let v = d.slice(i + 2, i + 2 + len);
+          i += 2 + len;
+          while (v.length > 32 && v[0] === 0) v = v.slice(1);
+          const out = new Uint8Array(32);
+          out.set(v, 32 - v.length);
+          return out;
+        };
+        const r = read();
+        const s = read();
+        const raw = new Uint8Array(64);
+        raw.set(r);
+        raw.set(s, 32);
+        return raw;
+      }
+
+      window.register = async (rpOverride) => {
+        try {
+          const challenge = random(32);
+          const cred = await navigator.credentials.create({
+            publicKey: {
+              challenge,
+              rp: { id: rpOverride ?? rpId, name: "Fixture" },
+              user: {
+                id: enc.encode("pat-1"),
+                name: "pat",
+                displayName: "Pat",
+              },
+              pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+              authenticatorSelection: {
+                residentKey: "required",
+                userVerification: "required",
+              },
+              timeout: 60000,
+            },
+          });
+          clientData(
+            cred.response.clientDataJSON,
+            "webauthn.create",
+            challenge,
+          );
+          const auth = await checkAuthData(
+            cred.response.getAuthenticatorData(),
+          );
+          state.aaguid = b64(auth.slice(37, 53).buffer);
+          state.id = cred.id;
+          state.key = await crypto.subtle.importKey(
+            "spki",
+            cred.response.getPublicKey(),
+            { name: "ECDSA", namedCurve: "P-256" },
+            false,
+            ["verify"],
+          );
+          state.registered = true;
+          return "registered";
+        } catch (e) {
+          return e.name || String(e);
+        }
+      };
+
+      window.signIn = async () => {
+        try {
+          const challenge = random(32);
+          const cred = await navigator.credentials.get({
+            publicKey: { challenge, rpId, timeout: 60000 },
+          });
+          const cd = cred.response.clientDataJSON;
+          clientData(cd, "webauthn.get", challenge);
+          const auth = await checkAuthData(cred.response.authenticatorData);
+          const signed = new Uint8Array(auth.length + 32);
+          signed.set(auth);
+          signed.set(new Uint8Array(await sha256(cd)), auth.length);
+          const ok = await crypto.subtle.verify(
+            { name: "ECDSA", hash: "SHA-256" },
+            state.key,
+            derToRaw(cred.response.signature),
+            signed,
+          );
+          if (!ok) return "bad signature";
+          if (cred.id !== state.id) return "other credential";
+          return (
+            "signed in as " + new TextDecoder().decode(cred.response.userHandle)
+          );
+        } catch (e) {
+          return e.name || String(e);
+        }
+      };
+    </script>
+  </body>
+</html>

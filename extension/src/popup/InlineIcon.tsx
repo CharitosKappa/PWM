@@ -16,13 +16,75 @@ export async function enableInlineIcon(): Promise<boolean> {
   return send({ kind: "setInlineIcon", on: true });
 }
 
-/** Gives site access back, unless a self-hosted server needs it. */
-export async function disableInlineIcon(): Promise<void> {
-  await send({ kind: "setInlineIcon", on: false });
-  const settings = await send({ kind: "settings" });
-  if (settings.serverUrl === HOSTED_SERVER) {
+/**
+ * Gives site access back once nothing uses it: neither switch is on and
+ * the server is the hosted one (a self-hosted server may need the access).
+ */
+async function releaseSiteAccess(): Promise<void> {
+  const [icon, passkeys, settings] = await Promise.all([
+    send({ kind: "inlineIcon" }),
+    send({ kind: "passkeys" }),
+    send({ kind: "settings" }),
+  ]);
+  if (!icon && !passkeys && settings.serverUrl === HOSTED_SERVER) {
     await chrome.permissions.remove({ origins: SITE_ACCESS });
   }
+}
+
+export async function disableInlineIcon(): Promise<void> {
+  await send({ kind: "setInlineIcon", on: false });
+  await releaseSiteAccess();
+}
+
+/** "Use PWM for passkeys" (D37 §1): the same site access, asked for at that moment. */
+export function PasskeysSetting(): JSX.Element {
+  const [on, setOn] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    send({ kind: "passkeys" })
+      .then(setOn)
+      .catch(() => {
+        setOn(false);
+      });
+  }, []);
+
+  const toggle = (): void => {
+    if (on === null) return;
+    if (on) {
+      void send({ kind: "setPasskeys", on: false })
+        .then(releaseSiteAccess)
+        .then(() => {
+          setOn(false);
+        });
+      return;
+    }
+    // The permission request must be the first thing the click does.
+    void chrome.permissions
+      .request({ origins: SITE_ACCESS })
+      .then((granted) =>
+        granted ? send({ kind: "setPasskeys", on: true }) : false,
+      )
+      .then(setOn);
+  };
+
+  return (
+    <label class="field">
+      <span class="row">
+        <input
+          type="checkbox"
+          checked={on === true}
+          disabled={on === null}
+          onChange={toggle}
+        />
+        <span class="label">Use PWM for passkeys</span>
+      </span>
+      <span class="caption muted">
+        Sites that ask for a passkey get one from your vault, after you confirm
+        in a PWM window. You can always use another device or the browser
+        instead.
+      </span>
+    </label>
+  );
 }
 
 /** The checkbox in Settings. */

@@ -232,7 +232,7 @@ Phase 3  Teams           months 16–24 M16–M19
       - Inline icon: two checked clicks fill; a page-made transparent icon takes no click.
   - **Fixed in passing:** the background now reads login fields where the core puts them (`login`). This was an M4.2 bug: no usernames in the popup, and password copy failed.
   - **Deferred:**
-    - **Cards and identities:** M4.10.
+    - **Cards and identities:** M14 (Phase 2, per PRODUCT.md).
     - **Firefox:** fills only in the top frame without `IntersectionObserver` v2 (M4.8).
     - **The full fixture set and the top-1,000 runner:** M4.7.
     - **Save prompts:** M4.4.
@@ -271,8 +271,42 @@ Phase 3  Teams           months 16–24 M16–M19
     - **Offering the generator on new-password fields:** a separate task.
     - **Choosing the vault for a new login:** the first vault for now. Shared vaults come in M10.
     - **Popup offers in Playwright:** driven through the background, not the popup's UI.
-- [ ] M4.10 Fill cards and identities, from D35: always with a confirmation step (`AUTOFILL.md`), rules for payment frames from other sites (Stripe, Adyen) and for items without URLs. Propose the rules in `DECISIONS.md` first.
-- [ ] M4.5 Passkey support (WebAuthn interception where browser allows; else defer to platform provider).
+- [x] M4.5 Passkey support (WebAuthn interception where browser allows; else defer to platform provider).
+  - Per D37:
+    - **`pwm-passkey` (new core crate):**
+      - the WebAuthn RP id rules (PSL, no public suffixes or IP addresses, HTTPS or `localhost`)
+      - `clientDataJSON` from the browser-given origin
+      - `authenticatorData` (UP, UV, BE, BS, sign count 0, PWM's AAGUID)
+      - hand-written CBOR for the COSE key and the `none` attestation
+      - ES256 with RustCrypto `p256`
+      - the request parser with limits
+    - **`pwm-client`:** checking a create (excluded, unsupported), storing a new passkey in the site's login for that username or in a new login, the candidates for a sign-in, and signing. All are in WASM and UniFFI, so the iOS and Android providers (M5.5, M6.3) reuse them.
+    - **Extension:**
+      - **The switch:** "Use PWM for passkeys" asks for site access and registers a page-world wrapper and an isolated bridge at `document_start`.
+      - **The window:** calls go to a confirmation window (an extension page in its own window): create, pick the passkey, unlock first, or "Use another device or the browser", which calls the browser's original WebAuthn.
+      - **Handed back without asking:** a locked vault (sign-in), no passkey for the site, no ES256, an excluded passkey, conditional UI, and frames of another site.
+  - **Tests:**
+    - **Rust:** RP id table, exact registration and assertion bytes, signature verification, refusals, request limits, CBOR against RFC 8949, frozen vectors with an independent Node check (`verify.mjs`), the client's storage, exclusion and candidate rules, and the `passkey_request` fuzz target.
+    - **Vitest (161):**
+      - what goes back to the browser
+      - the SecurityError for another site's RP id
+      - create, unlock-first, pick and sign
+      - the browser choice, closing the window, the timeout
+      - the switch
+      - the WebAuthn JSON conversion and credential objects
+      - the message guards
+    - **Playwright:**
+      - **The fixture:** a relying party page that verifies the attestation and the assertion signature with WebCrypto.
+      - register then sign in through the window (PWM's AAGUID)
+      - another site's RP id refused without a window
+      - closing the window gives `NotAllowedError`
+      - "Use another device or the browser" reaches the browser's own authenticator (a CDP virtual authenticator)
+  - **Deferred:**
+    - Passkeys in the inline icon's menu (conditional UI).
+    - Managing passkeys in the popup.
+    - Algorithms other than ES256.
+    - Firefox and Safari (M4.8, M5.6).
+    - The apps' passkey providers (M5.5, M6.3, M5.6/M7).
 - [ ] M4.6 "Autofill didn't work here" report with form fingerprint (no values).
 - [ ] M4.7 Autofill harness: fixture sites incl. clickjacking/overlay attacks that must not fill; top-1,000 runner + JSON report.
 - [ ] M4.8 Builds for Chrome, Edge, Firefox, Brave, Opera; Safari via macOS app (M5).
@@ -347,7 +381,7 @@ Phase 3  Teams           months 16–24 M16–M19
 - M11 Storage modes: self-hosted server image + docs; local encrypted file mode with iCloud/Drive/Dropbox/WebDAV/LAN sync.
 - M12 KeePass `.kdbx` live sync (read/write a user's KDBX file).
 - M13 Family plan, shared vaults, one-time share links (free tier: 1/day).
-- M14 Emergency access with time delay; attachments; cards/identities autofill.
+- M14 Emergency access with time delay; attachments; cards/identities autofill (moved here from M4.10, per PRODUCT.md: always with a confirmation step, rules for payment frames from other sites such as Stripe and Adyen, and for items without URLs; propose the rules in `DECISIONS.md` first).
 - M15 Support tooling (in-app chat for paid); native Linux polish; health report extras.
 
 ## Phase 3 — Teams (outline)

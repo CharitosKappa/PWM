@@ -14,7 +14,7 @@ Autofill reliability is our top promise and the top complaint against every comp
 
 - Default fill mode = **on user action**: toolbar click, keyboard shortcut, or our inline icon in a **closed shadow root rendered in the extension's own iframe** (`web_accessible_resources` page), never a plain DOM element the page can restyle or make invisible.
 - Before filling, verify the target input is visible, not covered (`elementsFromPoint` check), opacity 1, and in the viewport.
-- Payment cards, identities and passkeys always need a confirmation step.
+- Payment cards, identities and passkeys always need a confirmation step. Passkeys confirm in an extension window of their own, never in the page (D37).
 - TOTP codes are copied to the clipboard (auto-clear 30s) unless the field is classified `totp` with high confidence.
 - Minimal permissions: `activeTab`, `storage`, `nativeMessaging`, `scripting`; host permissions requested on demand. Site access is asked for only when the user turns on the inline icon (D35); without it the content script is injected only on a user action.
 - No remote code. Rules file is data only and signature-checked.

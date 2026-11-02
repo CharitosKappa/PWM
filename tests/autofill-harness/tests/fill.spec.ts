@@ -1,6 +1,6 @@
 // The built extension in Chromium: filling on user action (D35 §8), what
-// must fill, warn or refuse; then save and update offers (D36 §9). The
-// start of the M4.7 harness.
+// must fill, warn or refuse; save and update offers (D36 §9); passkeys
+// (D37 §8). The start of the M4.7 harness.
 import { chromium, expect, test } from "@playwright/test";
 import type { BrowserContext, Frame, Page, Worker } from "@playwright/test";
 import fs from "node:fs";
@@ -340,6 +340,7 @@ interface SavedLogin {
   username: string;
   password: string;
   history: string[];
+  passkeys: { rp_id: string; user_name: string }[];
 }
 
 /** Every login in the vault, with old passwords (via the core, test only). */
@@ -353,7 +354,11 @@ function logins(): Promise<SavedLogin[]> {
           id: string;
           type: string;
           title: string;
-          login?: { username: string; password: string };
+          login?: {
+            username: string;
+            password: string;
+            passkeys?: { rp_id: string; user_name: string }[];
+          };
           history?: { login?: { password: string } }[];
         };
         if (item.type !== "login" || !item.login) continue;
@@ -363,6 +368,10 @@ function logins(): Promise<SavedLogin[]> {
           username: item.login.username,
           password: item.login.password,
           history: (item.history ?? []).map((h) => h.login?.password ?? ""),
+          passkeys: (item.login.passkeys ?? []).map((k) => ({
+            rp_id: k.rp_id,
+            user_name: k.user_name,
+          })),
         });
       }
     }
@@ -556,6 +565,121 @@ test.describe("save offers", () => {
     await expect
       .poll(async () => (await logins()).find((l) => l.id === ids.siteA))
       .toMatchObject({ password: "Site-A new 8!", history: [PASSWORD] });
+    await page.close();
+  });
+});
+
+declare global {
+  // The fixture relying party (fixtures/passkey-rp.html).
+  var register: (rpId?: string) => Promise<string>;
+  var signIn: () => Promise<string>;
+  var rp: { aaguid?: string };
+}
+
+test.describe("passkeys", () => {
+  const P = "https://site-p.test:8443/passkey-rp.html";
+  // PWM's AAGUID (pwm-passkey), base64url.
+  const AAGUID = Buffer.from(
+    "6c9e3d418a274f0b9d52e17730c458a6",
+    "hex",
+  ).toString("base64url");
+
+  test.beforeAll(async () => {
+    const on = await inBackground(async () => {
+      const b = await globalThis.pwmTest.ready;
+      return b.handle({ kind: "setPasskeys", on: true });
+    }, null);
+    expect(on).toBe(true);
+  });
+
+  const passkeyWindow = () =>
+    context.waitForEvent("page", {
+      predicate: (p) => p.url().includes("passkey.html"),
+      timeout: 15_000,
+    });
+
+  test("registers a passkey and signs in with it, after confirming in PWM's window", async () => {
+    const page = await context.newPage();
+    await page.goto(P);
+
+    const opened = passkeyWindow();
+    const registered = page.evaluate(() => window.register());
+    const create = await opened;
+    await expect(create.locator("body")).toContainText("Create a passkey?");
+    await expect(create.locator("body")).toContainText("pat on site-p.test");
+    await create
+      .locator("button.primary", { hasText: "Create passkey" })
+      .click();
+    expect(await registered).toBe("registered");
+    expect(await page.evaluate(() => window.rp.aaguid)).toBe(AAGUID);
+    expect(
+      (await logins()).find((l) => l.title === "site-p.test"),
+    ).toMatchObject({
+      username: "pat",
+      passkeys: [{ rp_id: "site-p.test", user_name: "pat" }],
+    });
+
+    const again = passkeyWindow();
+    const signedIn = page.evaluate(() => window.signIn());
+    const pick = await again;
+    await pick.locator("button.item", { hasText: "pat" }).click();
+    expect(await signedIn).toBe("signed in as pat-1");
+    await page.close();
+  });
+
+  test("refuses an RP id of another site, without a window", async () => {
+    const page = await context.newPage();
+    await page.goto(P);
+    const before = context.pages().length;
+    expect(await page.evaluate(() => window.register("evil.test"))).toBe(
+      "SecurityError",
+    );
+    expect(context.pages().length).toBe(before);
+    await page.close();
+  });
+
+  test("closing the window cancels the sign-in", async () => {
+    const page = await context.newPage();
+    await page.goto(P);
+    // This page has not registered yet; give it the vault's passkey's key.
+    const opened = passkeyWindow();
+    const registered = page.evaluate(() => window.register());
+    await (await opened).locator("button.primary").click();
+    expect(await registered).toBe("registered");
+
+    const again = passkeyWindow();
+    const signedIn = page.evaluate(() => window.signIn());
+    await (await again).close();
+    expect(await signedIn).toBe("NotAllowedError");
+    await page.close();
+  });
+
+  test("Use another device or the browser hands the request to the browser", async () => {
+    const page = await context.newPage();
+    // The browser's own WebAuthn, answered by a virtual authenticator.
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("WebAuthn.enable");
+    await cdp.send("WebAuthn.addVirtualAuthenticator", {
+      options: {
+        protocol: "ctap2",
+        transport: "internal",
+        hasResidentKey: true,
+        hasUserVerification: true,
+        isUserVerified: true,
+        automaticPresenceSimulation: true,
+      },
+    });
+    await page.goto(P);
+    const opened = passkeyWindow();
+    const registered = page.evaluate(() => window.register());
+    await (
+      await opened
+    )
+      .locator("button", { hasText: "Use another device or the browser" })
+      .click();
+    expect(await registered).toBe("registered");
+    // Made by the browser's authenticator, not by PWM.
+    expect(await page.evaluate(() => window.rp.aaguid)).not.toBe(AAGUID);
     await page.close();
   });
 });

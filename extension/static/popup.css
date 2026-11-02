@@ -285,3 +285,14 @@ footer {
 .warning-text {
   color: var(--color-warning);
 }
+
+/* The passkey confirmation window (D37). */
+body.window {
+  width: auto;
+  min-height: 0;
+}
+
+body.window footer {
+  padding: 0;
+  justify-content: space-between;
+}

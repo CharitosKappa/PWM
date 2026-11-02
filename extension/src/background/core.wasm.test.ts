@@ -50,6 +50,10 @@ const CORE_METHODS: (keyof Core)[] = [
   "saveOffer",
   "saveLogin",
   "updatePassword",
+  "passkeyCreateCheck",
+  "passkeyCreate",
+  "passkeyCandidates",
+  "passkeyGet",
 ];
 
 describe("the WASM core", () => {

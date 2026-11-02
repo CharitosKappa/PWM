@@ -9,7 +9,8 @@
 #![forbid(unsafe_code)]
 
 use pwm_client::{
-    Client, ClientError, MemoryStore, Outcome, Platform, SaveOffer, Step, SyncEvent, Tokens,
+    Client, ClientError, MemoryStore, Outcome, PasskeyCreateCheck, Platform, SaveOffer, Step,
+    SyncEvent, Tokens,
 };
 use wasm_bindgen::prelude::*;
 
@@ -550,6 +551,99 @@ impl WasmClient {
     ) -> Result<(), JsValue> {
         self.inner
             .update_password(vault_id, item_id, password, ms(now_ms))
+            .map_err(js_error)
+    }
+
+    /// Checks a passkey `create` (D37) before asking the user: JSON
+    /// `{"kind": "ready" | "excluded" | "unsupported", "rp_id", "user_name"}`.
+    /// `origin` is the browser-given one, never the page's.
+    #[wasm_bindgen(js_name = passkeyCreateCheck)]
+    pub fn passkey_create_check(
+        &self,
+        origin: &str,
+        top_origin: Option<String>,
+        request_json: &str,
+    ) -> Result<String, JsValue> {
+        let check = self
+            .inner
+            .passkey_create_check(origin, top_origin.as_deref(), request_json)
+            .map_err(js_error)?;
+        Ok(match check {
+            PasskeyCreateCheck::Ready { rp_id, user_name } => serde_json::json!({
+                "kind": "ready", "rp_id": rp_id, "user_name": user_name,
+            }),
+            PasskeyCreateCheck::Excluded => serde_json::json!({ "kind": "excluded" }),
+            PasskeyCreateCheck::Unsupported => serde_json::json!({ "kind": "unsupported" }),
+        }
+        .to_string())
+    }
+
+    /// Creates and stores a passkey; returns `RegistrationResponseJSON`.
+    #[wasm_bindgen(js_name = passkeyCreate)]
+    pub fn passkey_create(
+        &mut self,
+        vault_id: &str,
+        origin: &str,
+        top_origin: Option<String>,
+        request_json: &str,
+        now_ms: f64,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .passkey_create(
+                vault_id,
+                origin,
+                top_origin.as_deref(),
+                request_json,
+                ms(now_ms),
+            )
+            .map_err(js_error)
+    }
+
+    /// The passkeys a `get` may use, as a JSON array of `{vault_id,
+    /// item_id, credential_id, user_name, title}` (never keys).
+    #[wasm_bindgen(js_name = passkeyCandidates)]
+    pub fn passkey_candidates(
+        &self,
+        origin: &str,
+        top_origin: Option<String>,
+        request_json: &str,
+    ) -> Result<String, JsValue> {
+        let list: Vec<serde_json::Value> = self
+            .inner
+            .passkey_candidates(origin, top_origin.as_deref(), request_json)
+            .map_err(js_error)?
+            .into_iter()
+            .map(|c| {
+                serde_json::json!({
+                    "vault_id": c.vault_id, "item_id": c.item_id,
+                    "credential_id": c.credential_id, "user_name": c.user_name,
+                    "title": c.title,
+                })
+            })
+            .collect();
+        Ok(serde_json::Value::Array(list).to_string())
+    }
+
+    /// Signs a `get` with the chosen passkey; `AuthenticationResponseJSON`.
+    #[wasm_bindgen(js_name = passkeyGet)]
+    pub fn passkey_get(
+        &self,
+        origin: &str,
+        top_origin: Option<String>,
+        request_json: &str,
+        vault_id: &str,
+        item_id: &str,
+        credential_id: &str,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .passkey_get(
+                origin,
+                top_origin.as_deref(),
+                request_json,
+                vault_id,
+                item_id,
+                credential_id,
+            )
             .map_err(js_error)
     }
 

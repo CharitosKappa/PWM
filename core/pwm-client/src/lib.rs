@@ -9,6 +9,7 @@ mod auth;
 mod autofill;
 mod client;
 mod error;
+mod passkey;
 mod save;
 mod session;
 
@@ -16,6 +17,7 @@ pub use auth::id_text;
 pub use autofill::AutofillMatch;
 pub use client::{Client, Outcome, Step, new_id};
 pub use error::ClientError;
+pub use passkey::{PasskeyCandidate, PasskeyCreateCheck};
 pub use pwm_crypto::{KdfParams, Secret};
 pub use pwm_generator::{
     PassphraseOptions, PasswordOptions, Strength, generate_passphrase, generate_password, strength,

@@ -19,6 +19,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 pwm-autofill = { path = "../../pwm-autofill" }
+pwm-passkey = { path = "../../pwm-passkey" }
 pwm-crypto = { path = ".." }
 pwm-export = { path = "../../pwm-export" }
 pwm-vault = { path = "../../pwm-vault" }
@@ -93,6 +94,13 @@ bench = false
 [[bin]]
 name = "url_match"
 path = "fuzz_targets/url_match.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "passkey_request"
+path = "fuzz_targets/passkey_request.rs"
 test = false
 doc = false
 bench = false

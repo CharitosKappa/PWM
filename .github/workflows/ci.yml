@@ -258,6 +258,7 @@ jobs:
           - opaque_messages
           - autofill_rules
           - url_match
+          - passkey_request
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
