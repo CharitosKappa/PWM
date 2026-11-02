@@ -225,3 +225,33 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
      - **Logging:** a check that tokens and OPAQUE messages never appear in errors or logs.
   Implementation note (M3.2): fuzzing showed that `opaque-ke`'s server login state holds the expected client MAC in plain form, so anyone who could read a stored login attempt during its 60 s could finish that login. The state is now sealed before it is stored, under a key derived from the server secrets (AAD `pwm/login-state`). The secrets blob's 32-byte field became `server_key`, from which both `prelogin_key` and `login_state_key` are derived with HKDF (`SECURITY.md`). Not yet merged anywhere, so no stored data changes.
   Why: OPAQUE keeps the password, and even a password-equivalent, off the server. Opaque random tokens with hashes in the database give instant revocation without a token-signing key to protect. One versioned secrets blob makes the single unrecoverable server secret explicit, so it gets backed up.
+- **D27 — Vault and item endpoints, conflicts and delta sync** · settled 2026-11-02 · founder (approved as proposed). The roadmap says "item endpoints with revision checks (`If-Match`), delta sync". D25 fixes the two numbers (per-item `revision` chosen by the client, per-vault `seq` assigned by the server) and the tables. Open: how vaults are created and who may write, the exact HTTP rules for writes, conflicts and deletes, and the shape and paging of delta sync. Proposal:
+  1. **Vaults:**
+     - `POST /v1/vaults {id, wrapped_key}` creates a vault owned by the caller. `wrapped_key` is the vault key sealed under their `sym_key` (AAD `pwm/vault-key`). The client creates its first vault right after signing up.
+     - `GET /v1/vaults` lists the vaults the caller belongs to: `{id, role, wrap, wrapped_key, shared_by, seq}`.
+     - Sharing (adding members) comes with the sharing milestone. The schema already holds it.
+  2. **Access:** a vault the caller is not a member of answers 404, the same as one that doesn't exist, so outsiders can't tell them apart. `owner` and `editor` may write; `viewer` may only read (403 `read_only`).
+  3. **Writing an item:** `PUT /v1/vaults/{id}/items/{item_id}` with body `{revision: "<n>", blob}`. `blob` is the item envelope (D18) in base64url; revisions are decimal strings on the wire.
+     - **Create:** header `If-None-Match: *`, and `revision` must be `"1"`.
+     - **Update:** header `If-Match: "<current revision>"`, and `revision` must be current + 1, because the client sealed the blob with that revision in its AAD.
+     - **No precondition header:** 428 `precondition_required`. The server never overwrites without one.
+     - **Stale write:** a wrong `If-Match`, or a create when the item already exists, gets 412 `revision_conflict` with the current `{revision, seq, blob}` in the body. The client can then merge (keep both versions in history, M3.4) without another round trip.
+     - **Deleted id:** an id that has a tombstone gets 409 `item_deleted`. Ids are never reused.
+     - **Success:** 201 (create) or 200 (update) with `{revision, seq}` and `ETag: "<revision>"`.
+  4. **Deleting an item:** `DELETE /v1/vaults/{id}/items/{item_id}` with `If-Match: "<current revision>"` (required, as for writes).
+     - It removes the item and writes a tombstone with that revision and a new `seq`, in one transaction.
+     - A stale `If-Match` gets 412 with the current item; an unknown id gets 404; a deleted id gets 409 `item_deleted`.
+  5. **Change counter:** every write or delete bumps `vaults.seq` while holding that vault's row lock, in the same transaction. Within one vault, changes therefore commit in `seq` order, and a reader never sees a later change without the earlier ones.
+  6. **Delta sync:** `GET /v1/vaults/{id}/items?since=<seq>&limit=<n>` (`since` defaults to 0; `limit` defaults to 500, at most 1000).
+     - Answer: `{changes: [...], next: "<seq>", more: bool}`.
+     - **`changes`:** items and tombstones mixed, in `seq` order. Each is `{id, revision, seq, blob}` for an item or `{id, revision, seq, deleted: true}` for a tombstone.
+     - **`next`:** the `since` to use next time: the last `seq` returned, or the vault's current `seq` once nothing more is left.
+     - It reads one snapshot, so a page never mixes before and after a concurrent write.
+  7. **Validation:** ids are UUIDs and blobs must parse as v1 envelopes. Size limits come in M3.5. Errors follow D26 (`{"error": code}`, never input values).
+  8. **Tests (real Postgres):**
+     - Create, update, delete and sync, as owner and as viewer.
+     - Every precondition case: missing, stale, already exists, deleted id.
+     - Paging over items and tombstones.
+     - Non-members get 404.
+     - `seq` has no gaps and no repeats under concurrent writers to one vault, and concurrent writes with the same `If-Match` give exactly one winner.
+  Why: per-item optimistic concurrency with standard HTTP preconditions makes silent overwrites impossible. Returning the current item on a conflict lets the client keep both versions at once, as the roadmap requires. A per-vault counter under the vault's row lock gives an order a client can resume from exactly.
