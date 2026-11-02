@@ -663,3 +663,18 @@ fn requests_and_responses_never_print_secrets() {
     let response = HttpResponse::new(200, Vec::new(), br#"{"refresh_token":"pwmr_x"}"#.to_vec());
     assert!(!format!("{response:?}").contains("pwmr_x"));
 }
+
+#[test]
+fn an_item_too_large_to_sync_is_refused_when_saved() {
+    let mut server = FakeServer::new();
+    let mut device = Account::new().device(&mut server);
+    let vault = create_vault(&mut device, &mut server);
+    let mut item = note("big", T0);
+    item.notes = "n".repeat(pwm_vault::MAX_SEALED_ITEM_BYTES);
+    let id = ItemId::generate().unwrap();
+    assert!(matches!(
+        device.save_item(&vault, &id, &item),
+        Err(pwm_sync::SyncError::Vault(pwm_vault::VaultError::TooLarge))
+    ));
+    assert_eq!(state(&device, &vault, &id), None);
+}

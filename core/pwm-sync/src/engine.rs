@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use pwm_crypto::{AccountKeyset, Envelope, Id, SymmetricKey};
 use pwm_store::{Store, SyncState, VaultRecord};
-use pwm_vault::{Item, ItemId, decrypt_item, encrypt_item};
+use pwm_vault::{Item, ItemId, decrypt_item, encrypt_item_fitting};
 
 use crate::SyncError;
 use crate::apply::{apply_change, merge, move_to_copy, put, reseal, reupload_missing};
@@ -218,7 +218,7 @@ impl<S: Store> SyncEngine<S> {
                 SyncState::Deleted => return Err(SyncError::ItemDeleted),
             },
         };
-        let envelope = encrypt_item(key, vault_id, item_id, revision, item)?;
+        let envelope = encrypt_item_fitting(key, vault_id, item_id, revision, &mut item.clone())?;
         put(
             &mut self.store,
             vault_id,

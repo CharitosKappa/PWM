@@ -2,8 +2,8 @@
 
 use pwm_crypto::{Id, Secret, SymmetricKey};
 use pwm_vault::{
-    HISTORY_LIMIT, Item, ItemId, ItemKind, Login, TRASH_RETENTION_MS, VaultError, decrypt_item,
-    encrypt_item, trash_folder,
+    HISTORY_LIMIT, Item, ItemId, ItemKind, Login, MAX_SEALED_ITEM_BYTES, TRASH_RETENTION_MS,
+    VaultError, decrypt_item, encrypt_item, encrypt_item_fitting, trash_folder,
 };
 
 const VAULT: Id = [0xB1; 16];
@@ -287,5 +287,41 @@ fn trashing_a_folder_moves_its_items_out() {
     assert!(matches!(
         trash_folder(&mut not_a_folder, &folder_id, &mut items, T0),
         Err(VaultError::Invalid(_))
+    ));
+}
+
+// --- Size limit (D29) ---
+
+#[test]
+fn sealing_drops_the_oldest_versions_until_the_item_fits() {
+    let key = SymmetricKey::generate().unwrap();
+    let id = ItemId::generate().unwrap();
+    // Eleven 30 KiB versions are about 330 KiB: too big together.
+    let mut item = login("v0");
+    item.notes = "n".repeat(30 * 1024);
+    for n in 1..=HISTORY_LIMIT as i64 {
+        let mut next = edited(&item, &format!("v{n}"));
+        next.notes = format!("{n}{}", "n".repeat(30 * 1024));
+        item.apply_edit(next, T0 + n).unwrap();
+    }
+    assert_eq!(item.history().len(), HISTORY_LIMIT);
+    let envelope = encrypt_item_fitting(&key, &VAULT, &id, 1, &mut item).unwrap();
+    assert!(envelope.to_bytes().len() <= MAX_SEALED_ITEM_BYTES);
+    let kept = item.history().len();
+    assert!((1..HISTORY_LIMIT).contains(&kept), "{kept} versions kept");
+    // The newest versions are the ones kept.
+    assert_eq!(
+        password(&item.history()[0].item),
+        format!("v{}", HISTORY_LIMIT - 1)
+    );
+    let opened = decrypt_item(&key, &VAULT, &id, 1, &envelope).unwrap();
+    assert_eq!(opened, item);
+
+    // Content alone over the limit is refused.
+    let mut huge = login("x");
+    huge.notes = "n".repeat(MAX_SEALED_ITEM_BYTES);
+    assert!(matches!(
+        encrypt_item_fitting(&key, &VAULT, &id, 1, &mut huge),
+        Err(VaultError::TooLarge)
     ));
 }

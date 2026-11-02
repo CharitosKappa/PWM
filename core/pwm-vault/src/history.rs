@@ -78,6 +78,11 @@ impl Item {
         Ok(())
     }
 
+    /// Drops the oldest version; `false` if there was none.
+    pub(crate) fn drop_oldest_version(&mut self) -> bool {
+        self.history.pop().is_some()
+    }
+
     /// Makes history entry `index` the current content again. The current
     /// content goes into history first, so nothing is lost.
     pub fn restore_version(&mut self, index: usize, now_ms: i64) -> Result<(), VaultError> {

@@ -1,6 +1,7 @@
 //! `pwm-server`: reads its settings from the environment (`PWM_DATABASE_URL`,
-//! `PWM_SERVER_SECRETS`, `PWM_LISTEN`, `PWM_LOG`), applies pending migrations
-//! and serves the API until Ctrl-C or SIGTERM.
+//! `PWM_SERVER_SECRETS`, `PWM_LISTEN`, `PWM_TRUSTED_PROXIES`, `PWM_LOG`,
+//! `PWM_LOG_FORMAT`), applies pending migrations and serves the API until
+//! Ctrl-C or SIGTERM.
 //!
 //! `pwm-server keygen` prints new server secrets for `PWM_SERVER_SECRETS`.
 //! Keep them in a secret manager with a backup: losing them locks every
@@ -8,25 +9,29 @@
 #![forbid(unsafe_code)]
 
 use std::io::IsTerminal;
+use std::net::SocketAddr;
 use std::process::ExitCode;
 
-use pwm_server::{AppState, Config, ServerError, app, connect, generate_server_secrets, migrate};
+use pwm_server::{
+    AppState, Config, LogFormat, ServerError, app, connect, generate_server_secrets,
+    install_panic_hook, log_subscriber, migrate,
+};
 use tokio::net::TcpListener;
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> ExitCode {
     if std::env::args().nth(1).as_deref() == Some("keygen") {
         return keygen();
     }
-    // sqlx logs statements at debug and slow ones at warn; requests are not
-    // logged until the scrubber lands (M3.5).
-    let filter =
-        EnvFilter::try_from_env("PWM_LOG").unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn"));
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_ansi(std::io::stdout().is_terminal())
-        .init();
+    // sqlx logs statements at debug and slow ones at warn. Every line goes
+    // through the scrubber (D29).
+    let filter = std::env::var("PWM_LOG").unwrap_or_else(|_| "info,sqlx=warn".to_owned());
+    let format = LogFormat::from_env(std::io::stdout().is_terminal());
+    let subscriber = log_subscriber(format, &filter, std::io::stdout);
+    if tracing::subscriber::set_global_default(subscriber).is_err() {
+        eprintln!("logging was already set up");
+    }
+    install_panic_hook();
     match run().await {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
@@ -61,9 +66,12 @@ async fn run() -> Result<(), ServerError> {
         env!("CARGO_PKG_VERSION"),
         listener.local_addr()?
     );
+    let state = AppState::new(pool.clone(), config.server_secrets)
+        .with_trusted_proxies(config.trusted_proxies);
+    // The peer address is needed for per-IP rate limits.
     axum::serve(
         listener,
-        app(AppState::new(pool.clone(), config.server_secrets)),
+        app(state).into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(shutdown())
     .await?;

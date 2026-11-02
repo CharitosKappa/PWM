@@ -85,7 +85,19 @@ Phase 3  Teams           months 16–24 M16–M19
   - **Known edge cases** (no data lost):
     - A vault create whose answer is lost and is then retried makes a second, empty vault.
     - Deleting an item whose first upload's answer was lost brings it back on the next pull.
-- [ ] M3.5 Rate limiting, request size limits, structured logs with no secrets (log scrubber test).
+- [x] M3.5 Rate limiting, request size limits, structured logs with no secrets (log scrubber test).
+  - Per D29:
+    - **Sizes:** bodies up to 16 KiB, item writes up to 384 KiB, blobs up to 256 KiB (413 `too_large`).
+    - **Counts:** at most 100 vaults per account and 50,000 live items per vault (403 `limit_reached`), counted under a lock so racing requests can't pass.
+    - **Rates:** exact GCRA buckets per IP for registration, login and refresh, and per account for everything else (429 with `Retry-After`). The client IP comes from `PWM_TRUSTED_PROXIES` rules; IPv6 counts per /64.
+    - **Logs:** JSON lines (`PWM_LOG_FORMAT`), one per request: request id (also `x-request-id`), method, route template, status and duration. No path, IP or ids. Panics log only where they happened.
+    - **Scrubber:** removes tokens, emails and long base64 runs from every line.
+    - **Core:** `encrypt_item_fitting` drops the oldest history versions until an item fits, otherwise "item too large". `pwm-sync` uses it for saves, merges and copies.
+  - **Tests:** sizes at the limit and one byte over, both count caps, every rate class with a fake clock, trusted proxies and forged headers, request ids, scrubber unit tests, and the log test rewritten for the full flow through the real pipeline. Mutation checks: with the scrubber off, or the raw path logged instead of the route, the log test fails.
+  - **Deferred:**
+    - Shared limits across several server instances (M10).
+    - Per-plan caps (M9).
+    - A general per-IP limit on authenticated endpoints, for floods of invalid tokens (with M10 operations).
 - [ ] M3.6 `docker compose` for local dev; same image is the future self-host image.
 - [ ] M3.7 FFI (`pwm-ffi` via UniFFI) and WASM (`pwm-wasm`) builds of core exposing account, vault, sync, generator, autofill APIs.
 

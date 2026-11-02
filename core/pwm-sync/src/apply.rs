@@ -5,7 +5,7 @@
 
 use pwm_crypto::{Envelope, Id, SymmetricKey};
 use pwm_store::{ItemRecord, Store, SyncState};
-use pwm_vault::{Item, ItemId, decrypt_item, encrypt_item};
+use pwm_vault::{Item, ItemId, decrypt_item, encrypt_item, encrypt_item_fitting};
 
 use crate::SyncError;
 
@@ -69,7 +69,7 @@ pub(crate) fn save_copy<S: Store>(
     item: &Item,
 ) -> Result<ItemId, SyncError> {
     let id = ItemId::generate()?;
-    let envelope = encrypt_item(key, vault_id, &id, 1, item)?;
+    let envelope = encrypt_item_fitting(key, vault_id, &id, 1, &mut item.clone())?;
     put(store, vault_id, &id, 1, envelope, SyncState::Modified)?;
     Ok(id)
 }
@@ -115,7 +115,8 @@ pub(crate) fn merge<S: Store>(
             };
             winner.keep_conflicting(loser, now_ms)?;
             let revision = server_revision + 1;
-            let envelope = encrypt_item(key, &vault_id, &item_id, revision, &winner)?;
+            // The loser's versions can push it over the limit (D29).
+            let envelope = encrypt_item_fitting(key, &vault_id, &item_id, revision, &mut winner)?;
             put(
                 store,
                 &vault_id,

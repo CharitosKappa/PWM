@@ -9,6 +9,7 @@ use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
 use crate::api::{ApiError, AppState};
+use crate::limits::{Class, Key};
 
 pub const ACCESS_TTL_SECS: i64 = 15 * 60;
 pub const REFRESH_TTL_SECS: i64 = 90 * 24 * 60 * 60;
@@ -178,9 +179,13 @@ impl FromRequestParts<AppState> for Authenticated {
         if row.get::<bool, _>(3) {
             return Err(ApiError::DeviceRevoked);
         }
+        let account_id: Uuid = row.get(1);
+        state
+            .limiter
+            .check(Class::Account, Key::Account(account_id))?;
         Ok(Self {
             session_id: row.get(0),
-            account_id: row.get(1),
+            account_id,
             device_id: row.get(2),
         })
     }

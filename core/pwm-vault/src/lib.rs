@@ -9,7 +9,7 @@ mod item;
 mod string_enum;
 mod totp;
 
-pub use codec::{decrypt_item, encrypt_item};
+pub use codec::{MAX_SEALED_ITEM_BYTES, decrypt_item, encrypt_item, encrypt_item_fitting};
 pub use error::VaultError;
 pub use history::{HISTORY_LIMIT, ItemVersion, TRASH_RETENTION_MS, trash_folder};
 pub use id::{ItemId, ParseIdError};

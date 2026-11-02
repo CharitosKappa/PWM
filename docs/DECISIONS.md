@@ -306,3 +306,94 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The cursor skips our own writes.** When a write's `seq` is exactly the cursor + 1, the cursor moves to it, because nothing can be missing in between (D27 commits in `seq` order). The next pull then doesn't download our own change again.
   - **History merge:** `Item::keep_conflicting` (`pwm-vault`) keeps the losing version and every version in its history that the winner lacks. History stays newest first and at most 10 long (D19), so edits made offline on the losing device survive as well.
   Why: keeping the network out of the core is the only design that works the same on native and WASM, and it makes every failure reproducible in tests. Reusing the cache states keeps the queue durable without a new format. "Later edit wins, the other goes to history" never loses content and needs no user prompt during autofill. Alternatives: a CRDT per field (merges more automatically, but much more complex and it leaks nothing more useful), or asking the user on every conflict (simple, but it interrupts and fails in background sync).
+- **D29 — Server limits, rate limits and log scrubbing** · settled 2026-11-02 · founder (approved as proposed). The roadmap says "rate limiting, request size limits, structured logs with no secrets (log scrubber test)". D27 left size limits to M3.5, D25 held back request logging until a scrubber exists, and D28 already treats a refused item as "couldn't sync, stays queued". Open: the numbers, what is limited per IP or per account, what a log line holds, and what the scrubber removes. Proposal:
+  1. **Sizes:**
+     - **Request bodies:** at most 16 KiB, except item writes, which may be up to 384 KiB.
+     - **Item blob:** at most 256 KiB once decoded. That is room for a large item with its 10 history versions (D19).
+     - **Errors:** anything larger gets 413 `too_large` before the body is read.
+     - **The core checks first:** if a saved or merged item would seal above the limit, its oldest history versions are dropped until it fits. If it still doesn't fit, the save is refused with "item too large". A device therefore never queues an item the server will refuse.
+  2. **Counts, until plans arrive (M9):** at most 100 vaults per account and 50,000 live items per vault (tombstones not counted). Above that, the server answers 403 `limit_reached`, which the engine treats as "couldn't sync".
+  3. **Rate limits:** token buckets in server memory, per IP for unauthenticated endpoints and per account for the rest. Over the limit gets 429 with `Retry-After`, which the engine already respects.
+     - `register/*`: 5 per hour per IP.
+     - `prelogin` and `login/*`: 30 per minute per IP.
+     - `refresh`: 10 per minute per IP.
+     - Everything else: 600 per minute per account.
+     - **No per-account login lockout.** The OPAQUE input includes the 128-bit Secret Key (D13), so guessing passwords online is hopeless anyway. A lockout would only let a stranger lock someone else out.
+     - **Client IP:** the connection's address, or the last `X-Forwarded-For` entry only when the connection comes from an address in `PWM_TRUSTED_PROXIES` (empty by default).
+     - **Per-instance limits:** the counters live in each server process. That is fine for one instance; revisit before running several (M10).
+     - **No new dependency:** a small token bucket with an injectable clock instead of a crate, so it can be tested exactly.
+  4. **Logs:**
+     - **Format:** JSON lines (`PWM_LOG_FORMAT=json`, the default outside a terminal), using `tracing-subscriber`'s `json` feature (MIT).
+     - **One line per request:** a random request id (also returned as `x-request-id`), the method, the route template (for example `/v1/vaults/{vault_id}/items/{item_id}`, never the real path or query), status and duration.
+     - **Never logged:** IP addresses, account or device ids, headers or bodies. Ids would let someone with the logs link activity to an account; the request id is enough to match a support report.
+     - **Panics:** a panic hook logs only where the panic happened, never its message, since that can quote values.
+  5. **Scrubber:** as a second line of defence, every log line passes through a writer that replaces three kinds of text with `[REDACTED]`:
+     - tokens (`pwma_`/`pwmr_` + 43 characters)
+     - email addresses
+     - runs of 40 or more base64url characters, which covers blobs, keys and OPAQUE messages.
+     UUIDs are kept, so the session id in the refresh-reuse warning (D26) still helps operators.
+  6. **Tests:**
+     - limits at their edges (exactly at the limit and one byte or one item over)
+     - token buckets with a fake clock, and `Retry-After` values
+     - trusted and untrusted proxies
+     - an item that is too large being trimmed and then refused in the core
+     - scrubber unit tests
+     - the log test extended to a full register → login → vault → item → sync run at TRACE level, checking that no token, email, blob or key appears in the output and that every request line has the expected fields.
+  Implementation notes (M3.5):
+  - **Exact limits:** buckets use GCRA (one "theoretical arrival time" per key) in whole nanoseconds, so limits and `Retry-After` values are exact rather than off by floating-point rounding.
+  - **Registration counts requests, not sign-ups:** both `register/start` and `register/finish` count, so the limit is 10 requests an hour, which is 5 sign-ups.
+  - **IPv6 addresses count per /64,** the block one subscriber usually holds whole.
+  - **Requests without a peer address** share one bucket. Only in-process tests send those; their shared setup uses `Limits::unlimited()`, and the limit tests pass a peer address.
+  - **Scrubber detail:** `=` counts only as trailing padding on a run, so `key=` labels stay readable.
+  - **New dependency:** `tracing-serde` (MIT), pulled in by the `json` feature. axum gains its `matched-path` feature for route templates.
+  - **The 256 KiB item limit** is `pwm_vault::MAX_SEALED_ITEM_BYTES` in the core and `MAX_ITEM_BLOB_BYTES` on the server. A test keeps the two equal.
+  Why: limits protect the service without changing what a well-behaved client sees, because D28 already handles 413, 403 and 429. Keeping ids and IPs out of logs means a log leak reveals nothing about users. The scrubber catches what a future careless log line would leak.
+- **D30 — Server image, local compose, Postgres TLS and restore detection** · settled 2026-11-02 · founder (approved as proposed). The roadmap says "`docker compose` for local dev; same image is the future self-host image". D25 moved Postgres TLS and the reverse-proxy notes here, and D28 left one open risk for M3.6: devices can't detect a restored server once it has handed out new seqs. Open: what goes into the image, how TLS and secrets are set up, and how a restore is signalled. Proposal:
+  1. **Image:**
+     - **Build:** a multi-stage `Dockerfile` that builds a static `x86_64-unknown-linux-musl` binary. arm64 comes with the release pipeline (M10.1).
+     - **Final stage:** `FROM scratch`, holding only the binary, the Mozilla CA bundle (MPL-2.0, used unmodified) and a passwd entry for a non-root user (uid 10001).
+     - **Nothing else:** no shell and no package manager. That means no GPL software is shipped in the image (S6) and almost nothing to attack.
+     - **Health check:** the image can't contain curl, so a `pwm-server healthcheck` subcommand calls `/healthz` on itself.
+  2. **Postgres TLS:**
+     - `sqlx` with rustls and the system CA bundle (`rustls-native-certs` reading the image's bundle), as D25 planned. `webpki-roots` stays out (CDLA licence).
+     - Remote databases should use `sslmode=verify-full`.
+     - The compose setup talks to its own Postgres over the private compose network without TLS.
+     - `cargo deny` must pass the new crates (the crypto provider is `ring`, Apache-2.0 AND ISC).
+  3. **`compose.yaml`:**
+     - **Postgres:** `postgres:17-alpine` with a named volume and a health check.
+     - **Server:** built from the `Dockerfile`, starts once Postgres is healthy, published on `127.0.0.1:8080` only, read-only root filesystem, all capabilities dropped, `no-new-privileges`.
+     - **Secrets:** read from a gitignored `.env`. A new `just secrets` recipe writes it once using `pwm-server keygen`.
+     - **Commands:** `just server` becomes `docker compose up --build`. `just db` stays as the throwaway database for tests.
+  4. **Reverse proxy:** the server speaks plain HTTP. A short `docs/DEPLOYMENT.md` says what the TLS proxy in front must do (HTTPS only, HSTS, pass `X-Forwarded-For`, list itself in `PWM_TRUSTED_PROXIES`) and includes a Caddy example. Full self-hosting docs remain M11.
+  5. **Restore detection (closes the D28 open risk):**
+     - **Server:** migration 0003 adds a one-row `server_meta` table holding a random `epoch`. `pwm-server mark-restored` replaces it, and the backup/restore notes in `DEPLOYMENT.md` make that command a required step. `GET /v1/vaults` returns the epoch in a `pwm-epoch` header, so D27's JSON doesn't change.
+     - **Client:** the cache stores the epoch it last saw (cache schema v2: a nullable `server_epoch` on the account row, with a migration, a frozen v1→v2 fixture and a migration test). When the epoch changes, the engine pulls every vault again from 0 and uploads what the server lost (the D28 §9 path).
+  6. **CI:** a new job builds the image, starts compose, waits until it is healthy, checks `/healthz`, and runs the registration flow once against it. The image is not pushed anywhere yet; the registry and signing come with M10.1.
+  Why: a scratch image is the smallest and safest thing to ship, and it is the self-host image too. Reading CA roots from a file keeps TLS within the licence allow-list. A server epoch closes the one restore case that change numbers alone can't catch.
+- **D31 — Core bindings for apps (UniFFI) and the extension (WASM)** · settled 2026-11-02 · founder (approved as proposed). The roadmap says "FFI (`pwm-ffi` via UniFFI) and WASM (`pwm-wasm`) builds of core exposing account, vault, sync, generator, autofill APIs". Open: the shape of that API, how sign-up and login (which need server round trips) are exposed, how items cross the boundary, where the extension keeps its cache (the `Store` trait is synchronous but IndexedDB is not), and how bindings are tested. Proposal:
+  1. **One API, two thin wrappers:**
+     - A new crate, `core/pwm-client`, is the only API apps and the extension see. `pwm-ffi` (UniFFI proc-macros; MPL-2.0, used unmodified) and `pwm-wasm` (`wasm-bindgen`, MIT/Apache-2.0) only translate types and errors. All logic, and its tests, stay in plain Rust.
+     - **Autofill** is not exposed yet, because `pwm-autofill` is still empty. M4.1 adds it to this API.
+  2. **Every server conversation works like sync:** sign-up, login, unlock (fetching the keyset) and sync all use the D28 pattern. The platform gets `Step::Send(request)`, sends it, and hands back the answer. Apps write one HTTP loop and never touch OPAQUE messages or tokens.
+     - **Sign-up:** returns the Secret Key for the Emergency Kit once and starts the session.
+     - **Login:** takes the email, master password and Secret Key, and runs pre-login, both OPAQUE steps and the keyset fetch.
+     - **Lock:** drops every key from memory. Unlocking again on the same device needs the master password (biometric unlock comes in M5/M6).
+  3. **Items cross as D18 JSON** with their id (`Item::to_json_with_id`), so neither binding mirrors the item model. The format is already versioned and keeps unknown fields. Generator and strength take and return plain options and values.
+  4. **Secrets at the boundary:** the master password, Secret Key and revealed item fields become platform strings that the core can't wipe. The core wipes its own copies. `SECURITY.md` will say this plainly, and the apps keep such strings short-lived (M5/M6).
+  5. **Caches:**
+     - **Native:** `SqliteStore` at a path the app chooses.
+     - **WASM:** a new `MemoryStore` in `pwm-store` (no feature flag), plus `snapshot()` / `load(snapshot)`. The snapshot is a versioned byte format (`v:1`, ciphertext and ids only, the same contents D20 allows), with a fixture and a round-trip test.
+     - **Extension:** writes the snapshot to IndexedDB after each change and loads it at startup. The IndexedDB code itself comes with the extension shell (M4.2).
+  6. **WASM build:**
+     - `wasm32-unknown-unknown` with `getrandom`'s `wasm_js` backend, plus the `js` feature of `getrandom` 0.2 for OPAQUE (the M3.2 deferral).
+     - `wasm-bindgen-cli` generates the package and TypeScript types into `extension/core/` (generated, not committed).
+     - New recipes: `just wasm` builds it and `just bindings` generates Swift and Kotlin.
+  7. **Errors:** one error enum with stable string codes (for example `wrong_password`, `item_too_large`, `signed_out`). Swift and Kotlin get typed errors; JS gets an `Error` carrying `code`. Messages never contain values.
+  8. **Tests:**
+     - **`pwm-client`:** flows against the in-memory fake server, and end to end against the real server (sign-up → login on a second device → item → sync).
+     - **Bindings, in CI:**
+       - **WASM:** built and exercised in Node (Vitest): create an account offline, generate passwords, save an item, snapshot and load.
+       - **Kotlin:** bindings generated, compiled and run on Linux with JNA.
+       - **Swift:** bindings generated and run in a tiny Swift package on a macOS runner. Each run costs about 10 minutes of macOS time.
+     - All three bindings jobs block merging.
+  Why: one Rust API keeps the six platforms identical and testable in one place. Steps keep networking in each platform's native stack. JSON items avoid duplicating a large, versioned model in two binding languages. A snapshot store gets the extension a durable cache now without an async `Store` trait.

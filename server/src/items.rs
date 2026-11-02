@@ -4,7 +4,7 @@
 //! lock, in the same transaction, so a vault's changes commit in `seq` order
 //! and a reader never sees a later change without the earlier ones.
 
-use axum::extract::{RawQuery, State};
+use axum::extract::{DefaultBodyLimit, RawQuery, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, put};
@@ -17,6 +17,13 @@ use uuid::Uuid;
 use crate::api::{ApiError, ApiJson, ApiPath, ApiRouter, AppState, b64, parse_counter};
 use crate::session::Authenticated;
 
+/// The largest item blob, decoded (D29); `pwm_vault::MAX_SEALED_ITEM_BYTES`.
+pub const MAX_ITEM_BLOB_BYTES: usize = 256 * 1024;
+/// Item write bodies: the blob in base64url plus the JSON around it.
+const MAX_ITEM_BODY_BYTES: usize = 384 * 1024;
+/// Live items per vault until plans set their own caps (M9).
+pub const MAX_ITEMS_PER_VAULT: i64 = 50_000;
+
 const DEFAULT_LIMIT: i64 = 500;
 const MAX_LIMIT: i64 = 1000;
 
@@ -25,7 +32,9 @@ pub fn routes() -> ApiRouter {
         .route("/v1/vaults/{vault_id}/items", get(changes))
         .route(
             "/v1/vaults/{vault_id}/items/{item_id}",
-            put(write).delete(remove),
+            put(write)
+                .delete(remove)
+                .layer(DefaultBodyLimit::max(MAX_ITEM_BODY_BYTES)),
         )
 }
 
@@ -222,6 +231,9 @@ async fn write(
     if revision != expected {
         return Err(ApiError::InvalidRequest.into());
     }
+    if body.blob.len() > MAX_ITEM_BLOB_BYTES {
+        return Err(ApiError::TooLarge.into());
+    }
     Envelope::from_bytes(&body.blob).map_err(|_| ApiError::InvalidRequest)?;
 
     let mut tx = state.pool.begin().await?;
@@ -229,6 +241,14 @@ async fn write(
     refuse_deleted(&mut tx, &path).await?;
     let status = match (precondition, current_item(&mut tx, &path).await?) {
         (Precondition::Create, None) => {
+            // Counted under the vault lock, so racing creates cannot pass it.
+            let live: i64 = sqlx::query_scalar("SELECT count(*) FROM items WHERE vault_id = $1")
+                .bind(path.vault_id)
+                .fetch_one(&mut *tx)
+                .await?;
+            if live >= MAX_ITEMS_PER_VAULT {
+                return Err(ApiError::LimitReached.into());
+            }
             sqlx::query(
                 "INSERT INTO items (vault_id, id, revision, seq, blob) VALUES ($1, $2, $3, $4, $5)",
             )

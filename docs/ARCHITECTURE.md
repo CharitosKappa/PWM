@@ -82,4 +82,10 @@ Extension ──native messaging──▶ desktop app (unlock, biometrics)   or 
 | `POST /v1/shares` / `GET /v1/shares/{id}` | One-time encrypted share links |
 | `GET /v1/devices` / `DELETE /v1/devices/{id}` | Device list, revoke |
 
+Limits (D29):
+- **Sizes:** bodies up to 16 KiB; item writes up to 384 KiB, with the blob at most 256 KiB once decoded. Larger gets 413 `too_large`.
+- **Counts:** at most 100 vaults per account and 50,000 live items per vault. More gets 403 `limit_reached`.
+- **Rates:** per IP for registration, login and refresh; per account for everything else. Over the limit gets 429 `rate_limited` with `Retry-After`.
+- **Request ids:** every response carries an `x-request-id` that matches its log line.
+
 Export is client-side only (decrypt locally, write file); the server has no export endpoint.

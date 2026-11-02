@@ -115,10 +115,27 @@ pub async fn send(
     headers: &[(&str, &str)],
     body: Option<serde_json::Value>,
 ) -> Reply {
+    send_from(app, None, method, path, bearer, headers, body).await
+}
+
+/// Like [`send`], as if the connection came from `peer` (what
+/// `into_make_service_with_connect_info` provides in production).
+pub async fn send_from(
+    app: &axum::Router,
+    peer: Option<std::net::SocketAddr>,
+    method: &str,
+    path: &str,
+    bearer: Option<&str>,
+    headers: &[(&str, &str)],
+    body: Option<serde_json::Value>,
+) -> Reply {
     use http_body_util::BodyExt;
     use tower::ServiceExt;
 
     let mut request = axum::http::Request::builder().method(method).uri(path);
+    if let Some(peer) = peer {
+        request = request.extension(axum::extract::ConnectInfo(peer));
+    }
     if let Some(token) = bearer {
         request = request.header("authorization", format!("Bearer {token}"));
     }
