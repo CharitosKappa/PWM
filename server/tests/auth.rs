@@ -322,7 +322,8 @@ async fn a_revoked_device_is_locked_out() {
         StatusCode::NOT_FOUND
     );
 
-    // The phone revokes the laptop: its tokens stop working at once.
+    // The phone revokes the laptop: its tokens stop working at once, and it
+    // is told why, so it can clear its cache.
     let (status, _) = call(
         &app,
         "DELETE",
@@ -332,11 +333,12 @@ async fn a_revoked_device_is_locked_out() {
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
+    let revoked = (StatusCode::FORBIDDEN, json!({ "error": "device_revoked" }));
     assert_eq!(
-        get_account(&app, account.access()).await,
-        StatusCode::UNAUTHORIZED
+        call(&app, "GET", "/v1/account", Some(account.access()), None).await,
+        revoked
     );
-    assert_eq!(refresh(&app, account.refresh()).await, unauthorized());
+    assert_eq!(refresh(&app, account.refresh()).await, revoked);
     // The revoked id cannot log in again; a new id can.
     assert_eq!(
         login(&app, &account, &account.device).await,

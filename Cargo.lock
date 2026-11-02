@@ -1554,6 +1554,9 @@ dependencies = [
  "base64 0.23.1",
  "http-body-util",
  "pwm-crypto",
+ "pwm-store",
+ "pwm-sync",
+ "pwm-vault",
  "serde",
  "serde_json",
  "sqlx",
@@ -1578,6 +1581,16 @@ dependencies = [
 [[package]]
 name = "pwm-sync"
 version = "0.0.0"
+dependencies = [
+ "base64 0.23.1",
+ "pwm-crypto",
+ "pwm-store",
+ "pwm-vault",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "zeroize",
+]
 
 [[package]]
 name = "pwm-vault"

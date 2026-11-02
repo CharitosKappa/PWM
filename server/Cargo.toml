@@ -26,3 +26,7 @@ uuid = { version = "1", features = ["serde"] }
 [dev-dependencies]
 http-body-util = "0.1"
 tower = { version = "0.5", default-features = false, features = ["util"] }
+# The sync client, end to end against this server (D28).
+pwm-store = { path = "../core/pwm-store" }
+pwm-sync = { path = "../core/pwm-sync" }
+pwm-vault = { path = "../core/pwm-vault" }

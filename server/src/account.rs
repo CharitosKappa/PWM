@@ -111,7 +111,9 @@ async fn devices(
     ))
 }
 
-/// Revokes one of the account's devices and ends its session at once.
+/// Revokes one of the account's devices. Its session stops working at once;
+/// the row stays so the device is told `device_revoked` (and clears its
+/// cache, D28) rather than a plain 401.
 async fn revoke_device(
     State(state): State<AppState>,
     auth: Authenticated,
@@ -129,10 +131,6 @@ async fn revoke_device(
     if found.is_none() {
         return Err(ApiError::NotFound);
     }
-    sqlx::query("DELETE FROM sessions WHERE device_id = $1")
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

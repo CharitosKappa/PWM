@@ -112,6 +112,16 @@ pub async fn refresh_session(state: &AppState, refresh_token: &str) -> Result<To
     .fetch_optional(&mut *tx)
     .await?;
     let Some(row) = updated else {
+        let revoked = sqlx::query(
+            "SELECT 1 FROM sessions s JOIN devices d ON d.id = s.device_id \
+             WHERE s.refresh_hash = $1 AND d.revoked_at IS NOT NULL",
+        )
+        .bind(&hash[..])
+        .fetch_optional(&mut *tx)
+        .await?;
+        if revoked.is_some() {
+            return Err(ApiError::DeviceRevoked);
+        }
         let ended = sqlx::query("DELETE FROM sessions WHERE prev_refresh_hash = $1 RETURNING id")
             .bind(&hash[..])
             .fetch_optional(&mut *tx)
@@ -156,14 +166,18 @@ impl FromRequestParts<AppState> for Authenticated {
             .ok_or(ApiError::Unauthorized)?;
         let hash = token_hash(TokenKind::Access, token).ok_or(ApiError::Unauthorized)?;
         let row = sqlx::query(
-            "SELECT s.id, s.account_id, s.device_id FROM sessions s \
+            "SELECT s.id, s.account_id, s.device_id, d.revoked_at IS NOT NULL FROM sessions s \
              JOIN devices d ON d.id = s.device_id \
-             WHERE s.access_hash = $1 AND s.access_expires_at > now() AND d.revoked_at IS NULL",
+             WHERE s.access_hash = $1 AND s.access_expires_at > now()",
         )
         .bind(&hash[..])
         .fetch_optional(&state.pool)
         .await?
         .ok_or(ApiError::Unauthorized)?;
+        // A revoked device is told so, and its app clears its cache (D28).
+        if row.get::<bool, _>(3) {
+            return Err(ApiError::DeviceRevoked);
+        }
         Ok(Self {
             session_id: row.get(0),
             account_id: row.get(1),

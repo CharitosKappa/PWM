@@ -17,7 +17,7 @@ pwm/
     pwm-crypto/             # primitives wrappers, KDF, key hierarchy, Secret<T>
     pwm-vault/              # item model, vault/account structs, versioned formats
     pwm-store/              # local encrypted cache (SQLite, ciphertext only) behind a Store trait (D20)
-    pwm-sync/               # sync engine (CRDT-lite, see below), conflict resolution
+    pwm-sync/               # sans-IO sync engine: offline queue, retries, conflict merge (D28)
     pwm-autofill/           # URL matching, field classification, site overrides
     pwm-export/             # our own export formats: .pwmx (encrypted), JSON, CSV, behind re-auth (D24)
     pwm-import/             # importers (Bitwarden, 1Password, Keeper, NordPass, Proton Pass, Dashlane, KeePass, LastPass, CSV)
@@ -64,6 +64,7 @@ Extension ──native messaging──▶ desktop app (unlock, biometrics)   or 
 - Clients keep a local encrypted cache so the app works offline.
 - Server API is versioned (`/v1/...`), auth via OPAQUE (see `SECURITY.md`), JSON over HTTPS, ciphertext fields base64.
 - Sync model: each item is an encrypted blob with `(item_id, vault_id, revision, seq, updated_at)`: `revision` is per item and chosen by the client (it is in the AAD), `seq` is a per-vault change counter assigned by the server (D25). Every write names the revision it replaces, so the server never overwrites silently; a stale write gets 412 with the current item, and the client keeps both versions as item history (never silent data loss). Non-members of a vault get 404, viewers 403 `read_only` on writes (D27).
+- Sync client (D28): `pwm-sync` does no I/O. It hands the platform one `HttpRequest` at a time and takes back the `HttpResponse`, so native apps and the WASM extension run the same engine. Unsent changes are the cache's `Modified`/`Deleted` records. A run lists vaults, pulls each vault, then pushes. Conflicts keep the later edit current and the other in history; versions that cannot be merged, and edits of items deleted elsewhere, become new items.
 
 ## Server API (v1, minimum)
 

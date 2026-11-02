@@ -62,7 +62,29 @@ Phase 3  Teams           months 16–24 M16–M19
   - Per D26. `pwm-crypto`: OPAQUE client and server (`opaque-ke` 4.0.1, ristretto255, 3DH, KSF Identity), `ServerSecrets` (versioned blob, D12 fake pre-login answers), session tokens (`pwma_`/`pwmr_`, SHA-256 hashes), device names sealed under `sym_key` (`pwm/device-name`), login state sealed at rest (`pwm/login-state`, found by fuzzing). Vectors: `device_name.json` (Rust + Node), `opaque.json` (Rust only: replays the server steps and logs in with the frozen record). Server: `/v1/auth/{prelogin,register,login,refresh,logout}`, `GET /v1/account`, `GET/DELETE /v1/devices`; migration 0002 (`sessions`, `login_attempts`, `opaque_record` NOT NULL) with a v1-data migration test; `pwm-server keygen`. New fuzz target `opaque_messages`. Deferred: email verification (registration answers 409 for a taken email, so it reveals which emails have accounts; fixed when an email provider lands); approving a new device from an existing one (later milestone); purging expired sessions in the background (expired rows are refused, not yet deleted); rate limits (M3.5); `getrandom` 0.2 `js` backend for OPAQUE on WASM (M3.7). `cargo deny` ignores RUSTSEC-2026-0387 (crypto-bigint 0.5 via opaque-ke 4.0, not reachable from the ristretto255 suite) until opaque-ke ships a stable release on elliptic-curve 0.14; recheck at M3.7.
 - [x] M3.3 Item endpoints with revision checks (`If-Match`), delta sync `since=rev`.
   - Per D27. `POST/GET /v1/vaults`; `PUT/DELETE /v1/vaults/{id}/items/{item_id}` with `If-None-Match: *` / `If-Match: "<revision>"` (428 without, 412 with the current item, 409 `item_deleted` for a tombstoned id); `GET /v1/vaults/{id}/items?since=&limit=` reads one REPEATABLE READ snapshot. `seq` is bumped under the vault row lock. Revisions and seqs are decimal strings on the wire (canonical, no leading zeros). Path, query and body errors are plain `invalid_request` (`/v1/devices/{id}` too). Tests on Postgres cover every precondition case, viewers, editors and outsiders, paging over items and tombstones, and concurrency (gapless seqs, one winner per revision, a reader never sees a gap); removing the lock or the snapshot fails them. Deferred: adding members (sharing milestone); size limits and per-plan vault limits (M3.5); a client whose `since` is ahead of the server (e.g. after a restore) gets a lower `next` and must resync from 0, which `pwm-sync` handles in M3.4; tombstone compaction.
-- [ ] M3.4 `pwm-sync` client: offline queue, retry with backoff, conflict → keep both in history.
+- [x] M3.4 `pwm-sync` client: offline queue, retry with backoff, conflict → keep both in history.
+  - Per D28. A sans-IO `SyncEngine` over the `Store` trait:
+    - **API:** `start_sync` / `start_create_vault` → `Step::Send` / `Wait` / `Done`; `receive` and `network_failed` feed answers back.
+    - **Local changes:** `save_item` / `delete_item` follow the revision rules, and `purge_trash` wires up the M2.2 purge.
+    - **Retries and tokens:** backoff with full jitter that respects `Retry-After`; one token refresh per request; signed out and revoked outcomes.
+    - **Recovery:** detects its own write coming back by comparing ciphertext, and resyncs when the server is behind.
+    - **Requests and responses** wipe on drop and print no headers or bodies.
+    - **`pwm-vault`:** `Item::keep_conflicting` merges the loser's history.
+    - **Server:** revoked devices get 403 `device_revoked` (implementation note in D28).
+  - **Tests:**
+    - 19 rule tests against an in-memory D27 server with fault injection.
+    - A randomized 3-device test over 40 seeds that checks convergence and that no edit is lost.
+    - The engine against the real server on Postgres.
+    - Mutation checks: no history union, no own-write check, delete beating a newer edit, and a tie going to the local version each fail a test.
+  - **Deferred:**
+    - FFI/WASM bindings for the engine (M3.7 for WASM, M4/M5 for the apps).
+    - Pulling while locked, and push notifications.
+    - Shared vaults and the read-only role in the cache (sharing milestone).
+    - A per-vault restore epoch, so devices can detect a restored server that has already handed out new seqs (M3.6 runbook).
+    - Purging session rows of revoked devices with other expired sessions.
+  - **Known edge cases** (no data lost):
+    - A vault create whose answer is lost and is then retried makes a second, empty vault.
+    - Deleting an item whose first upload's answer was lost brings it back on the next pull.
 - [ ] M3.5 Rate limiting, request size limits, structured logs with no secrets (log scrubber test).
 - [ ] M3.6 `docker compose` for local dev; same image is the future self-host image.
 - [ ] M3.7 FFI (`pwm-ffi` via UniFFI) and WASM (`pwm-wasm`) builds of core exposing account, vault, sync, generator, autofill APIs.

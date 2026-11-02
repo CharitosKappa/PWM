@@ -110,6 +110,53 @@ fn conflicting_version_is_kept_in_history() {
 }
 
 #[test]
+fn a_conflict_keeps_the_losers_offline_versions_newest_first() {
+    // Both devices start from "base"; the loser edited twice offline.
+    let base = login("base");
+    let mut winner = base.clone();
+    winner
+        .apply_edit(edited(&winner, "winner"), T0 + 30)
+        .unwrap();
+    let mut loser = base;
+    loser
+        .apply_edit(edited(&loser, "loser 1"), T0 + 10)
+        .unwrap();
+    loser
+        .apply_edit(edited(&loser, "loser 2"), T0 + 20)
+        .unwrap();
+
+    winner.keep_conflicting(loser, T0 + 40).unwrap();
+    let versions: Vec<(&str, i64)> = winner
+        .history()
+        .iter()
+        .map(|v| (password(&v.item), v.saved_at))
+        .collect();
+    // "base" appears once; the loser's current and earlier edits are kept.
+    assert_eq!(
+        versions,
+        [
+            ("loser 2", T0 + 40),
+            ("base", T0 + 30),
+            ("loser 1", T0 + 20)
+        ]
+    );
+    assert_eq!(password(&winner), "winner");
+
+    // Still capped at ten.
+    let mut big = login("v0");
+    for n in 1..=HISTORY_LIMIT as i64 {
+        big.apply_edit(edited(&big, &format!("v{n}")), T0 + n)
+            .unwrap();
+    }
+    let mut other = login("x");
+    other.apply_edit(edited(&other, "y"), T0 + 100).unwrap();
+    big.keep_conflicting(other, T0 + 200).unwrap();
+    assert_eq!(big.history().len(), HISTORY_LIMIT);
+    assert_eq!(password(&big.history()[0].item), "y");
+    assert_eq!(password(&big.history()[1].item), "x");
+}
+
+#[test]
 fn restoring_a_version_keeps_the_current_one() {
     let mut item = login("first");
     item.apply_edit(edited(&item, "second"), T0 + 1000).unwrap();

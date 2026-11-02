@@ -17,7 +17,8 @@ pub struct VaultRecord {
     pub vault_id: Id,
     /// Vault key wrapped under the account `sym_key`.
     pub wrapped_key: Envelope,
-    /// Highest server revision already pulled for this vault.
+    /// The vault's change counter (`seq`, D27) pulled up to: every change
+    /// at or below it is in the cache.
     pub sync_cursor: u64,
 }
 
