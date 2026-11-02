@@ -129,10 +129,24 @@ jobs:
             extension/dist/*.zip
           retention-days: 14
 
-  # The core for the apps (D31): UniFFI bindings, compiled and run on Linux.
+  # The core for the apps (D31): UniFFI bindings, compiled and run on Linux,
+  # then the Swift package (D41) tested against them and a sync server.
   bindings:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pwm
+          POSTGRES_PASSWORD: pwm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pwm"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -160,6 +174,71 @@ jobs:
           kotlinc target/bindings/kotlin/uniffi/pwm_ffi/pwm_ffi.kt core/pwm-ffi/smoke/kotlin/Smoke.kt \
             -cp target/jna.jar -include-runtime -d target/kotlin-smoke.jar
           java -Djna.library.path=target/debug -cp target/kotlin-smoke.jar:target/jna.jar SmokeKt
+      - run: bash apps/apple/PWMKit/generate.sh linux
+      - run: node scripts/tokens-swift.mjs --check
+      - run: cargo build --locked -p pwm-server
+      - name: Start the sync server
+        env:
+          PWM_DATABASE_URL: postgres://pwm:pwm@localhost:5432/postgres
+        run: |
+          export PWM_SERVER_SECRETS="$(target/debug/pwm-server keygen)"
+          nohup target/debug/pwm-server > target/pwm-server.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if target/debug/pwm-server healthcheck; then exit 0; fi
+            sleep 1
+          done
+          cat target/pwm-server.log
+          exit 1
+      - name: Swift package tests (Linux)
+        working-directory: apps/apple/PWMKit
+        env:
+          PWM_TEST_SERVER: http://127.0.0.1:8080
+          LD_LIBRARY_PATH: ${{ github.workspace }}/target/debug
+        run: swift test -Xlinker -L${{ github.workspace }}/target/debug
+      - if: failure()
+        run: cat target/pwm-server.log || true
+
+  # Whether the Apple job needs to run: only for changes to the Swift package
+  # or the core, so other PRs spend no macOS minutes (D41 §6).
+  apple-changes:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.diff.outputs.run }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if git diff --name-only "$BASE" HEAD | grep -qE '^(apps/apple/|core/|Cargo\.(toml|lock)$|design/tokens\.json$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The Swift package on Apple platforms (D41): the core as an XCFramework,
+  # the tests on macOS and a build for the iOS simulator.
+  apple:
+    needs: apple-changes
+    if: needs.apple-changes.outputs.run == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - run: bash apps/apple/PWMKit/generate.sh apple
+      - name: Swift package tests (macOS)
+        working-directory: apps/apple/PWMKit
+        run: swift test
+      - name: Build for the iOS simulator
+        working-directory: apps/apple/PWMKit
+        run: xcodebuild build -scheme PWMKit-Package -destination 'generic/platform=iOS Simulator' -quiet
 
   # The server image and compose stack (D30): build, start, smoke test.
   image:

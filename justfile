@@ -14,6 +14,7 @@ check:
     pnpm format:check
     pnpm lint
     pnpm typecheck
+    node scripts/tokens-swift.mjs --check
 
 # all unit tests (core, server, extension)
 test:
@@ -82,6 +83,15 @@ rules-keygen seed:
     cargo run -q --locked -p pwm-rules-sign -- keygen {{seed}}
 
 ffi_lib := if os() == "windows" { "target/debug/pwm_ffi.dll" } else if os() == "macos" { "target/debug/libpwm_ffi.dylib" } else { "target/debug/libpwm_ffi.so" }
+
+# the Swift package (D41) on a Mac: the core as an XCFramework, then its tests
+apple:
+    bash apps/apple/PWMKit/generate.sh apple
+    cd apps/apple/PWMKit && swift test
+
+# design tokens into apps/apple/PWMKit/Sources/PWMDesign/Tokens.swift (D41); `just check` fails when it is stale
+tokens:
+    node scripts/tokens-swift.mjs
 
 # Swift and Kotlin bindings over the native library (D31) into target/bindings
 bindings:
