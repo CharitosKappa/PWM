@@ -26,6 +26,13 @@ type Ask =
   | { kind: "unlock" };
 
 async function ask(request: Ask): Promise<InlineMenu | null> {
+  const reply = await send(request);
+  return reply?.ok ? reply.value : null;
+}
+
+async function send(
+  request: Ask,
+): Promise<Reply<InlineMenu | null> | undefined> {
   const message: InlineRequest = {
     target: "background",
     from: "inline",
@@ -37,7 +44,34 @@ async function ask(request: Ask): Promise<InlineMenu | null> {
     InlineRequest,
     Reply<InlineMenu | null> | undefined
   >(message);
-  return reply?.ok ? reply.value : null;
+  return reply;
+}
+
+const FAILURES: Record<string, string> = {
+  field_hidden: "The field is hidden or covered, so nothing was filled.",
+  no_form: "No sign-in form found here.",
+  refused: "This login is not for this page.",
+  page_changed: "The page changed. Try again.",
+};
+
+async function fill(s: Suggestion): Promise<void> {
+  const reply = await send({
+    kind: "fill",
+    vaultId: s.vaultId,
+    itemId: s.itemId,
+  });
+  if (reply?.ok) {
+    showIcon();
+    return;
+  }
+  const code = reply?.error ?? "internal";
+  render(
+    el("p", {
+      class: "warning",
+      text: FAILURES[code] ?? "Something went wrong. Try again.",
+    }),
+    button({ class: "link", text: "Close" }, () => void close()),
+  );
 }
 
 const WARNINGS: Record<string, string> = {
@@ -115,10 +149,7 @@ function item(s: Suggestion): HTMLElement {
     {},
     button(
       { class: "item" },
-      () =>
-        void ask({ kind: "fill", vaultId: s.vaultId, itemId: s.itemId }).then(
-          showIcon,
-        ),
+      () => void fill(s),
       el("span", { class: "title", text: s.title || "Untitled" }),
       el("span", { class: "muted", text: s.username }),
       ...(warning === undefined

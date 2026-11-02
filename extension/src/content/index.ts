@@ -223,19 +223,24 @@ class Content {
     }));
     if (targets.some((t) => t.el === undefined))
       return { ok: false, reason: "gone" };
-    // Check every field first: fill all of them or none.
-    for (const { el } of targets) {
-      if (!el) return { ok: false, reason: "gone" };
-      let problem = fieldProblem(await measure(el));
-      if (problem === "off_screen" && scroll) {
-        el.scrollIntoView({ block: "center", inline: "nearest" });
-        await new Promise((r) => requestAnimationFrame(r));
-        problem = fieldProblem(await measure(el));
+    const restoreIcons = this.icons.hideWhile();
+    try {
+      // Check every field first: fill all of them or none.
+      for (const { el } of targets) {
+        if (!el) return { ok: false, reason: "gone" };
+        let problem = fieldProblem(await measure(el));
+        if (problem === "off_screen" && scroll) {
+          el.scrollIntoView({ block: "center", inline: "nearest" });
+          await new Promise((r) => requestAnimationFrame(r));
+          problem = fieldProblem(await measure(el));
+        }
+        if (problem !== null) return { ok: false, reason: problem };
       }
-      if (problem !== null) return { ok: false, reason: problem };
+      for (const { el, value } of targets) if (el) setValue(el, value);
+      return { ok: true };
+    } finally {
+      restoreIcons();
     }
-    for (const { el, value } of targets) if (el) setValue(el, value);
-    return { ok: true };
   }
 
   handle(message: ContentMessage, respond: (reply: unknown) => void): boolean {

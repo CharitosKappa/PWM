@@ -52,6 +52,18 @@ export class InlineIcons {
     this.place();
   }
 
+  /**
+   * Takes the icons off the page until the returned function puts them
+   * back. Our own icon overlaps its field, and the visibility checks would
+   * count it as covering the field.
+   */
+  hideWhile(): () => void {
+    for (const icon of this.icons) icon.host.style.display = "none";
+    return () => {
+      this.place();
+    };
+  }
+
   removeAll(): void {
     for (const icon of this.icons) icon.host.remove();
     this.icons = [];

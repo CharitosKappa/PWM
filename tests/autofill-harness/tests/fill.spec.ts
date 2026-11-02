@@ -298,7 +298,13 @@ test.describe("the inline icon", () => {
     await expect(frame.locator("body")).toHaveClass("menu");
     await page.waitForTimeout(800);
     await frame.locator("button.item", { hasText: "Site A" }).click();
-    await expect(page.locator("#password")).toHaveValue(PASSWORD);
+    try {
+      await expect(page.locator("#password")).toHaveValue(PASSWORD);
+    } catch (error) {
+      // The menu says why it did not fill.
+      const says = await frame.locator("body").innerText();
+      throw new Error(`not filled; the menu says: ${says}`, { cause: error });
+    }
     await expect(page.locator("#email")).toHaveValue("ada@site-a.test");
     await page.close();
   });
