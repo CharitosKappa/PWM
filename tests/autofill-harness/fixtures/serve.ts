@@ -35,6 +35,18 @@ function handler(req: http.IncomingMessage, res: http.ServerResponse): void {
     res.writeHead(200).end("ok");
     return;
   }
+  // For the runner's own tests (D39 §5): a server error and a page that
+  // never answers in time.
+  if (url.pathname === "/status-503") {
+    res
+      .writeHead(503, { "content-type": "text/html" })
+      .end("<h1>Unavailable</h1>");
+    return;
+  }
+  if (url.pathname === "/slow") {
+    setTimeout(() => res.writeHead(200).end("late"), 30_000);
+    return;
+  }
   const name = path.basename(url.pathname);
   const file = path.join(dir, name);
   if (!name.endsWith(".html") || !fs.existsSync(file)) {

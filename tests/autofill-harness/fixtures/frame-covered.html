@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>A frame covered by its page</title>
+    <style>
+      body {
+        font: 16px system-ui;
+        margin: 40px;
+      }
+      input {
+        display: block;
+        width: 280px;
+        height: 32px;
+        margin: 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>A frame covered by its page</h1>
+    <iframe
+      src="https://login.site-a.test:8443/plain.html"
+      width="500"
+      height="400"
+    ></iframe>
+    <!-- Clickjacking from the parent: a nearly invisible layer over the frame. -->
+    <div
+      style="
+        position: fixed;
+        inset: 0;
+        background: white;
+        opacity: 0.01;
+        z-index: 10;
+        pointer-events: none;
+      "
+    ></div>
+  </body>
+</html>

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Icon covered after it appears</title>
+    <style>
+      body {
+        font: 16px system-ui;
+        margin: 40px;
+      }
+      input {
+        display: block;
+        width: 280px;
+        height: 32px;
+        margin: 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Icon covered after it appears</h1>
+    <form action="#" onsubmit="return false;">
+      <label for="email">Email</label>
+      <input id="email" type="email" name="email" autocomplete="username" />
+      <label for="password">Password</label>
+      <input
+        id="password"
+        type="password"
+        name="password"
+        autocomplete="current-password"
+      />
+      <button>Sign in</button>
+    </form>
+    <script>
+      // Clickjacking: once the extension's icon shows, lay a nearly
+      // invisible layer over it that lets clicks through.
+      new MutationObserver(() => {
+        const icon = document.querySelector("pwm-inline");
+        if (!icon || document.getElementById("cover")) return;
+        const r = icon.getBoundingClientRect();
+        const cover = document.createElement("div");
+        cover.id = "cover";
+        cover.style.cssText = `position: fixed; left: ${r.left - 10}px; top: ${r.top - 10}px; width: ${r.width + 20}px; height: ${r.height + 20}px; background: white; opacity: 0.01; z-index: 2147483647; pointer-events: none`;
+        document.documentElement.append(cover);
+      }).observe(document.documentElement, { childList: true });
+    </script>
+  </body>
+</html>

@@ -292,6 +292,14 @@ async function showOffer(): Promise<void> {
   render(...parts);
 }
 
+// The content script says the page moved this frame: wait again before
+// taking a click. Anyone can post this; it can only delay clicks.
+window.addEventListener("message", (event: MessageEvent) => {
+  if ((event.data as { pwm?: unknown } | null)?.pwm === "moved") {
+    guard.viewChanged();
+  }
+});
+
 window.addEventListener("blur", () => {
   if (document.body.className === "menu") void close();
 });

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Controlled inputs</title>
+    <style>
+      body {
+        font: 16px system-ui;
+        margin: 40px;
+      }
+      input {
+        display: block;
+        width: 280px;
+        height: 32px;
+        margin: 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Controlled inputs</h1>
+    <form action="#" onsubmit="return false;">
+      <label for="email">Email</label>
+      <input id="email" type="email" name="email" autocomplete="username" />
+      <label for="password">Password</label>
+      <input
+        id="password"
+        type="password"
+        name="password"
+        autocomplete="current-password"
+      />
+      <button>Sign in</button>
+    </form>
+    <p>Signed in as: <span id="state"></span></p>
+    <script>
+      // Like a framework's controlled inputs: the page keeps the values in
+      // its own state, sees changes only through input events, and writes
+      // the state back to the fields.
+      const state = { email: "", password: "" };
+      for (const name of ["email", "password"]) {
+        const el = document.getElementById(name);
+        el.addEventListener("input", () => {
+          state[name] = el.value;
+          el.value = state[name];
+          document.getElementById("state").textContent = state.email;
+        });
+      }
+    </script>
+  </body>
+</html>

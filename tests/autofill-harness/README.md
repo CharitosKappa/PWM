@@ -1,29 +1,40 @@
 # Autofill harness
 
-Playwright runs the extension's test build in Chromium against fixture pages and checks what must fill, warn or refuse (D35). It started with M4.3. M4.7 adds the full fixture set (shadow DOM, SPA re-renders, more overlay attacks) and the top-1,000 site runner.
+Playwright runs the extension's test build in Chromium (D35, D39).
+
+- **The fixture suite** (`tests/`) runs on every extension PR. It checks what must fill, warn or refuse.
+- **The top-sites runner** (`runner/`) runs nightly against real login pages.
 
 ```
-just wasm      # the core for the extension
-just server    # the sync server on http://127.0.0.1:8080 (another terminal)
-just autofill  # test build, Chromium, the fixtures
+just wasm       # the core for the extension
+just server     # the sync server on http://127.0.0.1:8080 (another terminal)
+just autofill   # the fixture suite
+just top-sites  # the runner, against real sites (network)
 ```
 
-- **Test build** (`pnpm --filter @pwm/extension build:test`, into `extension/dist-test/`):
-  - It has site access from install, because Playwright cannot click the toolbar button or answer a permission prompt.
-  - It has a hook on the background (`globalThis.pwmTest`) that the tests drive from the service worker.
-  - The release build's check fails if that hook is ever in it.
-- **Fixture pages** (`fixtures/`) are served by `fixtures/serve.ts`:
-  - over HTTPS on port 8443 (a throwaway self-signed certificate made with `openssl`)
-  - and over HTTP on 8081
-  - for any `*.test` host name; Chromium maps those to 127.0.0.1.
-- **What is checked:**
-  - a plain form
-  - honeypots
-  - a multi-step login
-  - a code field
-  - a transparent overlay
-  - a nearly transparent ancestor
-  - a frame from another site
-  - a frame from the same site
-  - an `http` page
-  - the inline icon: two checked clicks, and a page that makes the icon transparent
+## Fixtures
+
+- **What each page expects:** every page in `fixtures/` has an entry in `fixtures/fixtures.json`. It says one of:
+  - **fill:** the fields and their values
+  - **refuse:** and the reason
+  - **confirm:** refused until confirmed
+  - **copy:** the code is copied
+  - **no_form**
+  - **flow:** a named test covers it
+- **The data-driven run:** `tests/fixtures.spec.ts` runs the entries, and fails if a page has none.
+- **The named tests:** `tests/fill.spec.ts` holds the flows: the inline icon and its attacks, save offers, passkeys and failure reports.
+- **The server:** `fixtures/serve.ts` serves them over HTTPS (8443, a throwaway self-signed certificate) and HTTP (8081) for any `*.test` host, which Chromium maps to 127.0.0.1.
+
+## The runner
+
+- **What it does:** `runner/run.ts` takes `sites/sites.json`. For each site it saves a throwaway login (`pwm-check-user@example.invalid` / `pwm-check-password`), opens the login page, fills through the extension, and checks which inputs got the values.
+- **What it never does:** submit, click, solve a challenge or use a real account.
+- **Results:**
+  - **pass**
+  - **fail**
+  - **blocked:** a challenge page or an HTTP error, left out of the pass rate
+  - **error**
+- **The report:** `autofill-report.json` (v1), with fill targets as D38 report fields, never values.
+- **Release gate:** `node runner/compare.ts previous.json candidate.json` fails when the pass rate drops more than 0.5 points.
+- **Adding a site:** check its login page, then add `{site, login_url}` and, if you are sure of them, the CSS selectors of the username and password inputs.
+- **Its own tests:** `tests/runner.spec.ts` checks the runner against local pages.

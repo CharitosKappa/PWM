@@ -2,7 +2,10 @@
  * The inline icon (D35 §3): a positioned host with a closed shadow root
  * holding the extension's own frame (`inline.html`). The page cannot read
  * or script that frame; the frame checks its own visibility before taking
- * a click. Positioned absolutely, so the page's layout never moves.
+ * a click. Positioned absolutely, so the page's layout never moves. If
+ * the page moves an icon (by script or by CSS), it is put back and its
+ * frame restarts the wait before it takes a click (D39: a page must not
+ * slide the icon under the cursor).
  */
 
 const ICON = 22;
@@ -14,7 +17,15 @@ interface Icon {
   host: HTMLElement;
   frame: HTMLIFrameElement;
   open: boolean;
+  /** Where we put it, in page coordinates. */
+  placed: { left: number; top: number } | null;
+  stunned: ReturnType<typeof setTimeout> | undefined;
 }
+
+/** How often the icons are checked for moves the page made by CSS. */
+const WATCH_MS = 100;
+/** How long a moved icon lets clicks through to the page. */
+const STUN_MS = 500;
 
 export class InlineIcons {
   private icons: Icon[] = [];
@@ -43,7 +54,23 @@ export class InlineIcons {
         "all: initial; display: block; width: 100%; height: 100%; border: 0; color-scheme: normal;";
       shadow.append(frame);
       document.documentElement.append(host);
-      this.icons.push({ index, host, frame, open: false });
+      const icon: Icon = {
+        index,
+        host,
+        frame,
+        open: false,
+        placed: null,
+        stunned: undefined,
+      };
+      this.icons.push(icon);
+      // A script that moves the icon is seen at once (a microtask after its
+      // change, before the next click); stylesheet moves by the poll.
+      new MutationObserver(() => {
+        this.watch();
+      }).observe(host, {
+        attributes: true,
+        attributeFilter: ["style", "class"],
+      });
     }
     this.listen();
     this.place();
@@ -86,6 +113,9 @@ export class InlineIcons {
     };
     window.addEventListener("scroll", later, { passive: true, capture: true });
     window.addEventListener("resize", later, { passive: true });
+    setInterval(() => {
+      this.watch();
+    }, WATCH_MS);
     // A click anywhere else closes an open menu.
     document.addEventListener(
       "mousedown",
@@ -94,6 +124,43 @@ export class InlineIcons {
           this.setOpen(-1, false);
       },
       { capture: true, passive: true },
+    );
+  }
+
+  /** Puts back an icon the page moved, and tells its frame to wait again. */
+  private watch(): void {
+    if (this.suspended > 0) return;
+    let moved = false;
+    for (const icon of this.icons) {
+      if (icon.placed === null || icon.host.style.display === "none") continue;
+      const rect = icon.host.getBoundingClientRect();
+      const left = rect.left + window.scrollX;
+      const top = rect.top + window.scrollY;
+      if (
+        Math.abs(left - icon.placed.left) > 1 ||
+        Math.abs(top - icon.placed.top) > 1
+      ) {
+        moved = true;
+        this.stun(icon);
+      }
+    }
+    if (moved) this.place();
+  }
+
+  /**
+   * After a move we did not make, the icon lets clicks through for a while
+   * (a click right after it slid under the cursor reaches the page, not
+   * us), and its frame restarts its visibility wait.
+   */
+  private stun(icon: Icon): void {
+    icon.host.style.pointerEvents = "none";
+    clearTimeout(icon.stunned);
+    icon.stunned = setTimeout(() => {
+      icon.host.style.pointerEvents = "";
+    }, STUN_MS);
+    icon.frame.contentWindow?.postMessage(
+      { pwm: "moved" },
+      new URL(icon.frame.src).origin,
     );
   }
 
@@ -119,6 +186,7 @@ export class InlineIcons {
         (menuOpen && !icon.open)
       ) {
         icon.host.style.display = "none";
+        icon.placed = null;
         continue;
       }
       const x = window.scrollX;
@@ -140,6 +208,8 @@ export class InlineIcons {
         style.width = `${String(ICON)}px`;
         style.height = `${String(ICON)}px`;
       }
+      const placed = icon.host.getBoundingClientRect();
+      icon.placed = { left: placed.left + x, top: placed.top + y };
     }
   }
 }
