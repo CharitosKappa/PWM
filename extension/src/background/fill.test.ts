@@ -329,7 +329,7 @@ describe("the inline icon", () => {
 
   it("is off until turned on with site access", async () => {
     const { background, pages } = await setup();
-    const none: FrameReply = { token: null, icons: [] };
+    const none: FrameReply = { token: null, icons: [], watch: null };
     expect(await background.autofill.onFrameReport(sender, LOGIN_FORM)).toEqual(
       none,
     );

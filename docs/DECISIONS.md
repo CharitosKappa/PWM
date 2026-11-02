@@ -713,3 +713,12 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **OS notifications** (`notifications` permission): outside the page, so they cannot be clickjacked, but they are intrusive, and people turn them off.
   - **Only the toolbar badge, no card:** the least intrusive, but easy to miss. Users without site access get exactly this.
   - **Building the item in TypeScript:** less work now, but the apps' save flows would need the same logic again, and item format code belongs in the core.
+
+  Implementation notes (M4.4):
+  - **Usernames** are compared trimmed and without ASCII case (`Ada@x.com` is `ada@x.com`), so a different case does not offer a second login.
+  - **Multi-step logins:** a username submitted without a password (a multi-step login's first page) is kept, in memory, as a hint for the same site's next page in that tab.
+  - **"Worked" by navigation** compares the last two host labels, enough for `accounts.example.com` → `www.example.com`. The core's matching still decides what is offered.
+  - **Message order:** the submitting document is recorded, so the next page reporting before the submit message arrives still counts as navigation.
+  - **The card** is shown only in the top frame, and hidden while a fill is checked, like the icons.
+  - **One switch:** "Fill and save on sign-in pages" is the D35 icon setting renamed. Turned on, frame reports answer with the fields to read on submit.
+  - **New core calls:** `save_offer`, `save_login` and `update_password` in `pwm-client`, WASM and UniFFI (`SaveOffer` enum). A new login gets the page's origin with `domain` matching, and a title from the host name without `www.`.

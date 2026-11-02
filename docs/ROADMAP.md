@@ -237,7 +237,40 @@ Phase 3  Teams           months 16–24 M16–M19
     - **The full fixture set and the top-1,000 runner:** M4.7.
     - **Save prompts:** M4.4.
     - **The popup UI:** not driven by Playwright yet (the tests call the background directly).
-- [ ] M4.4 Save/update prompts after submit.
+- [x] M4.4 Save/update prompts after submit.
+  - Per D36:
+    - **Seeing submits:** with "Fill and save on sign-in pages" on (the D35 icon setting renamed), the content script reads the username, current-password and new-password fields when the user submits: a submit event, Enter in a field, or a click on the form's button (single-page apps). Nothing is read before a submit or from hidden fields, and two new passwords must agree.
+    - **Where captures live:** in background memory only, for 5 minutes, per tab. They are gone on lock or when the tab closes.
+    - **No wrong passwords:** an offer comes only if the tab moved to another page of the site or the password field went away within 10 s.
+    - **The core decides** (`save_offer`): nothing, save, or update (same username, or the old password on a change-password form). It also writes the result (`save_login`, `update_password`, history kept). Frames from another site and blocked sites get no offer.
+    - **The card:**
+      - **Where:** fixed top right, in the extension's own frame in a closed shadow root.
+      - **What it shows:** the site and username, never the password.
+      - **Actions:** Save or Update (a pick when several logins match), Not now, Never for this site.
+      - **Clicks:** taken only when trusted and visible for 500 ms.
+    - **Toolbar:** a badge while an offer is pending, and the popup shows the offer. There the title and username can be edited before saving.
+    - **"Save login from this page"** in the popup reads the typed fields with `activeTab`, without site access.
+  - **Tests:**
+    - **Rust:** the offer decision (new site, saved as is, new password, other username, change-password by old password, sign-up form, several candidates, frames, non-web pages, a `never_fill` site), save (origin, title, `domain` match), update (history kept, nothing else changed), and errors.
+    - **Vitest (141):**
+      - save after navigation, and the popup's edits
+      - update and a wrong candidate
+      - form gone (single-page apps), the multi-step username
+      - no offer when the login failed, the user went to another site, the login is already saved, the switch is off, the site is marked Never, after 5 minutes, after lock
+      - captures never in storage, a sign-in while locked, the card's token and actions
+      - the manual save, the watched fields, message order
+      - reading typed values
+    - **Playwright:**
+      - save after a sign-in that works, and the login fills next time
+      - no card after a failed sign-in, or when already saved
+      - a single-page sign-in
+      - a card the page made transparent takes no click
+      - the popup's manual save
+      - a change-password form updates, with history
+  - **Deferred:**
+    - **Offering the generator on new-password fields:** a separate task.
+    - **Choosing the vault for a new login:** the first vault for now. Shared vaults come in M10.
+    - **Popup offers in Playwright:** driven through the background, not the popup's UI.
 - [ ] M4.10 Fill cards and identities, from D35: always with a confirmation step (`AUTOFILL.md`), rules for payment frames from other sites (Stripe, Adyen) and for items without URLs. Propose the rules in `DECISIONS.md` first.
 - [ ] M4.5 Passkey support (WebAuthn interception where browser allows; else defer to platform provider).
 - [ ] M4.6 "Autofill didn't work here" report with form fingerprint (no values).

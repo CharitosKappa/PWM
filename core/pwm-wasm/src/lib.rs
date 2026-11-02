@@ -8,7 +8,9 @@
 //! `ClientError::code` (for example `wrong_password`).
 #![forbid(unsafe_code)]
 
-use pwm_client::{Client, ClientError, MemoryStore, Outcome, Platform, Step, SyncEvent, Tokens};
+use pwm_client::{
+    Client, ClientError, MemoryStore, Outcome, Platform, SaveOffer, Step, SyncEvent, Tokens,
+};
 use wasm_bindgen::prelude::*;
 
 fn js_error(err: ClientError) -> JsValue {
@@ -480,6 +482,75 @@ impl WasmClient {
     #[wasm_bindgen(js_name = accountId)]
     pub fn account_id(&self) -> Result<Option<String>, JsValue> {
         self.inner.account_id().map_err(js_error)
+    }
+
+    /// What to offer after a sign-in (D36), as JSON: `{"kind": "nothing" |
+    /// "save" | "update", "candidates": [{vault_id, item_id, title,
+    /// username}]}`. The password stays here; it is not in the answer.
+    #[wasm_bindgen(js_name = saveOffer)]
+    pub fn save_offer(
+        &self,
+        page_url: &str,
+        frame_url: Option<String>,
+        username: &str,
+        password: &str,
+        new_password: Option<String>,
+    ) -> Result<String, JsValue> {
+        let offer = self
+            .inner
+            .save_offer(
+                page_url,
+                frame_url.as_deref(),
+                username,
+                password,
+                new_password.as_deref(),
+            )
+            .map_err(js_error)?;
+        let (kind, candidates) = match offer {
+            SaveOffer::Nothing => ("nothing", Vec::new()),
+            SaveOffer::Save => ("save", Vec::new()),
+            SaveOffer::Update(list) => ("update", list),
+        };
+        let candidates: Vec<serde_json::Value> = candidates
+            .into_iter()
+            .map(|c| {
+                serde_json::json!({
+                    "vault_id": c.vault_id, "item_id": c.item_id,
+                    "title": c.title, "username": c.username,
+                })
+            })
+            .collect();
+        Ok(serde_json::json!({ "kind": kind, "candidates": candidates }).to_string())
+    }
+
+    /// Saves a new login for the site of `page_url`; returns its id.
+    #[wasm_bindgen(js_name = saveLogin)]
+    pub fn save_login(
+        &mut self,
+        vault_id: &str,
+        page_url: &str,
+        title: &str,
+        username: &str,
+        password: &str,
+        now_ms: f64,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .save_login(vault_id, page_url, title, username, password, ms(now_ms))
+            .map_err(js_error)
+    }
+
+    /// Replaces a login's password; the old one goes to history.
+    #[wasm_bindgen(js_name = updatePassword)]
+    pub fn update_password(
+        &mut self,
+        vault_id: &str,
+        item_id: &str,
+        password: &str,
+        now_ms: f64,
+    ) -> Result<(), JsValue> {
+        self.inner
+            .update_password(vault_id, item_id, password, ms(now_ms))
+            .map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = autofillForgetTab)]

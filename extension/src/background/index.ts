@@ -5,7 +5,12 @@
  * frames (untrusted, checked by what the browser says about them).
  */
 import init, * as wasm from "pwm-core";
-import { isFrameReport, isInlineRequest } from "../shared/autofill.ts";
+import {
+  isFormGone,
+  isFrameReport,
+  isInlineRequest,
+  isSubmitted,
+} from "../shared/autofill.ts";
 import { isPopupMessage } from "../shared/messages.ts";
 import type { Reply } from "../shared/messages.ts";
 import { chromePlatform } from "./chrome.ts";
@@ -85,10 +90,27 @@ chrome.runtime.onMessage.addListener(
         sendResponse,
       );
     }
+    if (isSubmitted(message) || isFormGone(message)) {
+      const frame = contentFrame(sender);
+      if (!frame) return false;
+      return answer(
+        (b) =>
+          isSubmitted(message)
+            ? b.saver.onSubmitted(frame, message.typed)
+            : b.saver.onFormGone(frame),
+        sendResponse,
+      );
+    }
     if (isInlineRequest(message)) {
       const tabId = inlineTab(sender);
       if (tabId === undefined) return false;
-      return answer((b) => b.autofill.onInline(message, tabId), sendResponse);
+      return answer(
+        (b) =>
+          b.saver.owns(message.token)
+            ? b.saver.onInline(message, tabId)
+            : b.autofill.onInline(message, tabId),
+        sendResponse,
+      );
     }
     return false;
   },
@@ -106,6 +128,7 @@ chrome.commands.onCommand.addListener((command, tab) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   void ready.then((b) => {
     b.autofill.onTabRemoved(tabId);
+    b.saver.onTabRemoved(tabId);
   });
 });
 

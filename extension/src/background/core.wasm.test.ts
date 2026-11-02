@@ -47,6 +47,9 @@ const CORE_METHODS: (keyof Core)[] = [
   "autofillNextStep",
   "autofillForgetTab",
   "saveItem",
+  "saveOffer",
+  "saveLogin",
+  "updatePassword",
 ];
 
 describe("the WASM core", () => {

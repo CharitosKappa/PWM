@@ -16,6 +16,7 @@ import { HOSTED_SERVER } from "../shared/config.ts";
 import { errorCode } from "./core.ts";
 import { ServiceError } from "./errors.ts";
 import { Autofill } from "./fill.ts";
+import { Saver } from "./save.ts";
 import type { Core, CoreFunctions, CoreStep } from "./core.ts";
 import { runSteps } from "./http.ts";
 import type { AlarmName, Platform } from "./platform.ts";
@@ -81,6 +82,8 @@ export class Background {
   private queue: Promise<unknown> = Promise.resolve();
   /** Filling on user action (D35). */
   readonly autofill: Autofill;
+  /** Save and update offers (D36). */
+  readonly saver: Saver;
 
   private constructor(
     private readonly fns: CoreFunctions,
@@ -95,6 +98,18 @@ export class Background {
       touch: () => this.touch(),
       login: (vaultId, itemId) => this.login(vaultId, itemId),
     });
+    this.saver = new Saver({
+      core: () => this.core,
+      platform,
+      autofill: this.autofill,
+      enabled: () => this.autofill.inlineIcon(),
+      saved: async () => {
+        await this.persist();
+        void this.sync();
+      },
+      touch: () => this.touch(),
+    });
+    this.autofill.onTopFrame = (sender) => this.saver.onTopFrame(sender);
   }
 
   /** Loads the cache and settings, and restores a session after a worker restart. */
@@ -224,6 +239,18 @@ export class Background {
         return this.autofill.inlineIcon();
       case "setInlineIcon":
         return this.autofill.setInlineIcon(request.on);
+      case "saveOffer":
+        return this.saver.popupOffer();
+      case "acceptOffer": {
+        const edits: { title?: string; username?: string } = {};
+        if (request.title !== undefined) edits.title = request.title;
+        if (request.username !== undefined) edits.username = request.username;
+        return this.saver.acceptFromPopup(request.itemId, edits);
+      }
+      case "dismissOffer":
+        return this.saver.dismissFromPopup(request.never);
+      case "captureNow":
+        return this.saver.captureActiveTab();
       case "activity":
         await this.touch();
         return null;
@@ -377,6 +404,7 @@ export class Background {
 
   async lock(): Promise<void> {
     this.core.lock();
+    await this.saver.clear();
     await this.platform.session.clear();
     await this.platform.alarms.clear("autolock");
   }

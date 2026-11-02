@@ -90,6 +90,28 @@ export interface Core {
     nowMs: number,
   ): string[] | undefined;
   autofillForgetTab(tab: string): void;
+  /** What to offer after a sign-in (D36), as JSON `{kind, candidates}`. */
+  saveOffer(
+    pageUrl: string,
+    frameUrl: string | undefined,
+    username: string,
+    password: string,
+    newPassword: string | undefined,
+  ): string;
+  saveLogin(
+    vaultId: string,
+    pageUrl: string,
+    title: string,
+    username: string,
+    password: string,
+    nowMs: number,
+  ): string;
+  updatePassword(
+    vaultId: string,
+    itemId: string,
+    password: string,
+    nowMs: number,
+  ): void;
   /** Saves an item (D18 JSON with its `id`); returns the id. */
   saveItem(vaultId: string, json: string, nowMs: number): string;
 }

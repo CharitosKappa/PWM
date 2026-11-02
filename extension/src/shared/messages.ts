@@ -5,7 +5,7 @@
  * Secret Key, once, right after sign-up, to show on the Emergency Kit.
  */
 
-import type { Suggestion } from "./autofill.ts";
+import type { OfferView, Suggestion } from "./autofill.ts";
 
 export type CopyField = "username" | "password" | "code";
 
@@ -29,7 +29,16 @@ export type Request =
   | { kind: "suggestions" }
   | { kind: "fill"; vaultId: string; itemId: string; confirmed: boolean }
   | { kind: "inlineIcon" }
-  | { kind: "setInlineIcon"; on: boolean };
+  | { kind: "setInlineIcon"; on: boolean }
+  | { kind: "saveOffer" }
+  | {
+      kind: "acceptOffer";
+      itemId: string | null;
+      title?: string;
+      username?: string;
+    }
+  | { kind: "dismissOffer"; never: boolean }
+  | { kind: "captureNow" };
 
 export type Status =
   | { state: "signedOut" }
@@ -84,6 +93,10 @@ export interface Replies {
   fill: { copiedCode: boolean };
   inlineIcon: boolean;
   setInlineIcon: boolean;
+  saveOffer: OfferView | null;
+  acceptOffer: null;
+  dismissOffer: null;
+  captureNow: OfferView;
 }
 
 const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
@@ -107,6 +120,10 @@ const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "fill",
   "inlineIcon",
   "setInlineIcon",
+  "saveOffer",
+  "acceptOffer",
+  "dismissOffer",
+  "captureNow",
 ]);
 
 /** A popup message, wrapped so the background can tell it from others. */
