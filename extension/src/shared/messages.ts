@@ -1,8 +1,9 @@
 /**
  * Messages between the popup and the background service worker (D34).
  * The popup never receives keys, passwords or one-time codes: copying goes
- * through the background's clipboard. The only secret it ever gets is the
- * Secret Key, once, right after sign-up, to show on the Emergency Kit.
+ * through the background's clipboard. The only secrets it ever gets are the
+ * Secret Key, once, right after sign-up, and the Emergency Kit PDF made from
+ * it (D42), to save.
  */
 
 import type { OfferView, Suggestion } from "./autofill.ts";
@@ -19,6 +20,7 @@ export type Request =
   | { kind: "items"; query: string }
   | { kind: "copy"; vaultId: string; itemId: string; field: CopyField }
   | { kind: "copySecretKey" }
+  | { kind: "emergencyKit" }
   | { kind: "copyText"; text: string }
   | { kind: "generate"; mode: "password" | "passphrase" }
   | { kind: "score"; password: string; email: string }
@@ -104,6 +106,8 @@ export interface Replies {
   items: ItemSummary[];
   copy: null;
   copySecretKey: null;
+  /** The PDF as base64: runtime messages carry only JSON. */
+  emergencyKit: { pdf: string };
   copyText: null;
   generate: string;
   score: number;
@@ -135,6 +139,7 @@ const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "items",
   "copy",
   "copySecretKey",
+  "emergencyKit",
   "copyText",
   "generate",
   "score",

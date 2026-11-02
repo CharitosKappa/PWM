@@ -15,6 +15,7 @@ base64 = "0.23.1"
 pwm-autofill = { path = "../pwm-autofill" }
 pwm-crypto = { path = "../pwm-crypto" }
 pwm-generator = { path = "../pwm-generator" }
+pwm-kit = { path = "../pwm-kit" }
 pwm-passkey = { path = "../pwm-passkey" }
 # The client needs only the `Store` trait and `MemoryStore`; native wrappers
 # turn on SQLite.

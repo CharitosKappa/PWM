@@ -1913,6 +1913,7 @@ dependencies = [
  "pwm-autofill",
  "pwm-crypto",
  "pwm-generator",
+ "pwm-kit",
  "pwm-passkey",
  "pwm-store",
  "pwm-sync",

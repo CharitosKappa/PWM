@@ -158,6 +158,15 @@ export interface CoreFunctions {
   generatePassword(length: number): string;
   generatePassphrase(words: number): string;
   passwordScore(password: string, context: string[]): number;
+  /** The Emergency Kit PDF (D42); `server` only when self-hosted. */
+  emergencyKit(
+    email: string,
+    secretKey: string,
+    server: string | undefined,
+    accountId: string,
+    created: string,
+    paper: "a4" | "letter",
+  ): Uint8Array;
 }
 
 /** The `code` a core error carries (D31), or `internal`. */

@@ -63,6 +63,9 @@ pub enum ClientError {
     /// A passkey request was refused (D37); the code says why.
     #[error("passkey: {0}")]
     Passkey(pwm_passkey::PasskeyError),
+    /// The Emergency Kit or a scanned kit code was refused (D42); the code says why.
+    #[error("emergency kit: {0}")]
+    Kit(pwm_kit::KitError),
 }
 
 impl ClientError {
@@ -100,6 +103,16 @@ impl ClientError {
                 pwm_passkey::PasskeyError::InvalidRpId => "invalid_rp_id",
                 pwm_passkey::PasskeyError::UnsupportedAlgorithm => "unsupported_algorithm",
                 pwm_passkey::PasskeyError::InvalidKey => "invalid_passkey",
+            },
+            Self::Kit(e) => match e {
+                pwm_kit::KitError::InvalidEmail => "invalid_email",
+                pwm_kit::KitError::InvalidServer => "invalid_server",
+                pwm_kit::KitError::InvalidAccountId => "invalid_id",
+                pwm_kit::KitError::InvalidDate => "invalid_date",
+                pwm_kit::KitError::InvalidSecretKey => "invalid_secret_key",
+                pwm_kit::KitError::NotAKit => "not_a_kit",
+                pwm_kit::KitError::UnsupportedVersion => "kit_too_new",
+                pwm_kit::KitError::Qr => "internal",
             },
         }
     }

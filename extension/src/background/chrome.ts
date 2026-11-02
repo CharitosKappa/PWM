@@ -340,6 +340,7 @@ export function chromePlatform(): Platform {
     pages: new ChromePages(),
     fetch: (url, init) => fetch(url, init),
     now: () => Date.now(),
+    locale: navigator.language,
     browser: browserName(navigator.userAgent),
     random: () => Math.random(),
   };

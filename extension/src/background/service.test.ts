@@ -14,6 +14,7 @@ import {
   wait,
 } from "./fakes.ts";
 import type { FakePlatform } from "./fakes.ts";
+import { localDate } from "./kit.ts";
 import { Background, RULES_PATH, ServiceError } from "./service.ts";
 
 const MINUTE = 60_000;
@@ -338,6 +339,22 @@ describe("clipboard", () => {
     expect(platform.clipboardText.value).toBe(SECRET_KEY);
     expect(platform.alarmsAt.get("clipboard")).toBe(
       platform.clock.now + 30_000,
+    );
+  });
+
+  it("makes the Emergency Kit PDF for the signed-in account (D42)", async () => {
+    const { background, platform, core } = await signedUp();
+    const { pdf } = await background.handle({ kind: "emergencyKit" });
+    // The hosted server is not printed, and en-GB prints on A4.
+    expect(new TextDecoder().decode(fromBase64(pdf))).toBe(
+      `%PDF-fake ada@example.com ${SECRET_KEY} hosted ${String(core().accountId())} ${localDate(platform.clock.now)} a4`,
+    );
+  });
+
+  it("has no Emergency Kit when signed out", async () => {
+    const { background } = await started();
+    expect(await errorOf(background.handle({ kind: "emergencyKit" }))).toBe(
+      "signed_out",
     );
   });
 });

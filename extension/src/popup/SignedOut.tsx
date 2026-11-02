@@ -6,6 +6,7 @@ import {
   askServerAccess,
   useServerOrigin,
 } from "./access.ts";
+import { fromBase64 } from "../shared/bytes.ts";
 import { describe, describeCode, send } from "./api.ts";
 import { InlineIconOffer } from "./InlineIcon.tsx";
 import { Field, Notice } from "./ui.tsx";
@@ -150,7 +151,6 @@ function SignUp({ onDone }: { onDone: () => void }): JSX.Element {
   if (secretKey !== null)
     return (
       <SecretKey
-        email={email.trim()}
         secretKey={secretKey}
         onDone={() => {
           setOffer(true);
@@ -255,33 +255,24 @@ function ServerAccessNote(): JSX.Element | null {
 
 /** Shown once: the Secret Key and the Emergency Kit. */
 function SecretKey({
-  email,
   secretKey,
   onDone,
 }: {
-  email: string;
   secretKey: string;
   onDone: () => void;
 }): JSX.Element {
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const download = (): void => {
-    const kit = [
-      "EMERGENCY KIT",
-      "",
-      `Email: ${email}`,
-      `Secret Key: ${secretKey}`,
-      "Master password: ______________________ (write it here, by hand, if you print this)",
-      "",
-      "You need all three to sign in on a new device.",
-      "Keep this file somewhere safe and offline. Nobody can recover it for you.",
-      "",
-    ].join("\n");
-    const url = URL.createObjectURL(new Blob([kit], { type: "text/plain" }));
+  /** The same PDF kit as every other platform, drawn by the core (D42). */
+  const download = async (): Promise<void> => {
+    const { pdf } = await send({ kind: "emergencyKit" });
+    const url = URL.createObjectURL(
+      new Blob([fromBase64(pdf)], { type: "application/pdf" }),
+    );
     const link = document.createElement("a");
     link.href = url;
-    link.download = "Emergency Kit.txt";
+    link.download = "Emergency Kit.pdf";
     link.click();
     URL.revokeObjectURL(url);
     setSaved(true);
@@ -301,7 +292,7 @@ function SecretKey({
       </p>
       <code class="secret">{secretKey}</code>
       <div class="row">
-        <button onClick={download}>Download Emergency Kit</button>
+        <button onClick={() => void download()}>Download Emergency Kit</button>
         <button onClick={() => void copy()}>
           {copied ? "Copied" : "Copy"}
         </button>

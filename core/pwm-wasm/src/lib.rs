@@ -727,3 +727,31 @@ pub fn password_score(password: &str, context: Vec<String>) -> u8 {
     let context: Vec<&str> = context.iter().map(String::as_str).collect();
     pwm_client::strength(password, &context).score
 }
+
+/// The Emergency Kit as PDF bytes (D42). `paper` is `a4` or `letter`;
+/// `server` is a self-hosted address, or undefined for the hosted service.
+#[wasm_bindgen(js_name = emergencyKit)]
+pub fn emergency_kit(
+    email: &str,
+    secret_key: &str,
+    server: Option<String>,
+    account_id: &str,
+    created: &str,
+    paper: &str,
+) -> Result<Vec<u8>, JsValue> {
+    let paper = match paper {
+        "a4" => pwm_client::Paper::A4,
+        "letter" => pwm_client::Paper::Letter,
+        _ => return Err(js_error(ClientError::Internal)),
+    };
+    let pdf = pwm_client::emergency_kit(
+        email,
+        secret_key,
+        server.as_deref(),
+        account_id,
+        created,
+        paper,
+    )
+    .map_err(js_error)?;
+    Ok(pdf.expose_secret().clone())
+}

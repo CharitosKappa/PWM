@@ -5,6 +5,6 @@ export function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-export function fromBase64(text: string): Uint8Array {
+export function fromBase64(text: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 }

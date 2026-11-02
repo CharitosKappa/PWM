@@ -9,6 +9,7 @@ mod auth;
 mod autofill;
 mod client;
 mod error;
+mod kit;
 mod passkey;
 mod save;
 mod session;
@@ -17,11 +18,13 @@ pub use auth::id_text;
 pub use autofill::AutofillMatch;
 pub use client::{Client, Outcome, Step, new_id};
 pub use error::ClientError;
+pub use kit::{ScannedKit, emergency_kit, scan_kit};
 pub use passkey::{PasskeyCandidate, PasskeyCreateCheck};
 pub use pwm_crypto::{KdfParams, Secret};
 pub use pwm_generator::{
     PassphraseOptions, PasswordOptions, Strength, generate_passphrase, generate_password, strength,
 };
+pub use pwm_kit::Paper;
 pub use pwm_store::{MemoryStore, SNAPSHOT_VERSION, Store};
 pub use pwm_sync::{HttpRequest, HttpResponse, Method, SyncEvent, SyncReport, Tokens};
 pub use save::{SaveCandidate, SaveOffer};

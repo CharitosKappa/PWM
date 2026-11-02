@@ -150,6 +150,24 @@ describe("the WASM core", () => {
     expect(await background.status()).toEqual({ state: "signedOut" });
   });
 
+  it("draws the Emergency Kit PDF", () => {
+    const pdf = fns.emergencyKit(
+      "ada@example.com",
+      "A1-014D2P-F2DBSQ-QZXQ5T-K1V58C-GGA",
+      undefined,
+      "0f8e2f4c-3a1b-4d5e-9f60-7a8b9c0d1e2f",
+      "2026-11-02",
+      "letter",
+    );
+    const text = new TextDecoder("latin1").decode(pdf);
+    expect(text.startsWith("%PDF-1.4")).toBe(true);
+    expect(text).toContain("/MediaBox [0 0 612 792]");
+    expect(text).toContain("(A1-014D2P-F2DBSQ-QZXQ5T-K1V58C-GGA)");
+    expect(() =>
+      fns.emergencyKit("", "A1-NOPE", undefined, "x", "today", "a4"),
+    ).toThrow(expect.objectContaining({ code: "invalid_secret_key" }) as Error);
+  });
+
   it("generates and scores with the core", async () => {
     const background = await Background.start(fns, fakePlatform());
     const password = await background.handle({

@@ -14,6 +14,7 @@ import type {
 import { fromBase64, toBase64 } from "../shared/bytes.ts";
 import { HOSTED_SERVER } from "../shared/config.ts";
 import { errorCode } from "./core.ts";
+import { localDate, paperFor } from "./kit.ts";
 import { ServiceError } from "./errors.ts";
 import { Autofill } from "./fill.ts";
 import { Passkeys } from "./passkeys.ts";
@@ -235,6 +236,8 @@ export class Background {
         await this.writeClipboard(secretKey);
         return null;
       }
+      case "emergencyKit":
+        return { pdf: toBase64(await this.emergencyKit()) };
       case "copyText":
         await this.touch();
         await this.writeClipboard(request.text);
@@ -406,6 +409,31 @@ export class Background {
     );
     if (done.outcome !== "logged_in") throw new ServiceError("internal");
     await this.signedIn(email, secretKey);
+  }
+
+  /** The Emergency Kit for the signed-in account, on this browser's paper size. */
+  private async emergencyKit(): Promise<Uint8Array> {
+    const email = await this.platform.disk.get("email");
+    const secretKey = await this.platform.disk.get("secretKey");
+    const accountId = this.core.accountId();
+    if (
+      email === undefined ||
+      secretKey === undefined ||
+      accountId === undefined
+    )
+      throw new ServiceError("signed_out");
+    const server =
+      this.settings.serverUrl === HOSTED_SERVER
+        ? undefined
+        : this.settings.serverUrl;
+    return this.fns.emergencyKit(
+      email,
+      secretKey,
+      server,
+      accountId,
+      localDate(this.platform.now()),
+      paperFor(this.platform.locale),
+    );
   }
 
   /** After sign-up or sign-in: remember the account, keep the session, make sure a vault exists. */
