@@ -1008,7 +1008,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **What it does:** installs the zip as a temporary add-on with a fixed UUID, opens the popup and scores a password. The score is the background's WASM core answering.
     - **Not covered yet:** signing up and filling. Firefox asks for host access in a prompt that WebDriver cannot answer, so they wait for a test-only grant.
   - **`web-ext lint`** runs pinned (`web-ext@8.3.0`) through `npx` in CI only; it is not a dependency. It reports no errors and one warning: the `innerHTML` assignment in Preact's `dangerouslySetInnerHTML` support, which the popup never uses.
-  - **The smoke test opens the popup from the browser's chrome context** (`-remote-allow-system-access`), because WebDriver may not navigate a tab to an extension page.
+  - **The smoke test opens the popup from the browser's chrome context** (geckodriver's `--allow-system-access`), because WebDriver may not navigate a tab to an extension page.
   - **Deferred to M10 (store submission):**
     - **AMO:** the source zip for reviewers, and the `data_collection_permissions` declaration that AMO asks of new add-ons.
     - **Chromium:** loading the store zip itself in a browser test; the harness loads the test build.

@@ -33,9 +33,15 @@ const geckodriver =
   process.env.GECKOWEBDRIVER === undefined
     ? "geckodriver"
     : path.join(process.env.GECKOWEBDRIVER, "geckodriver");
-const driver = spawn(geckodriver, [`--port=${String(PORT)}`], {
-  stdio: "ignore",
-});
+// System access lets the session use the chrome context (Firefox 138+).
+const driver = spawn(
+  geckodriver,
+  [`--port=${String(PORT)}`, "--allow-system-access"],
+  {
+    // geckodriver's errors go to the CI log.
+    stdio: ["ignore", "ignore", "inherit"],
+  },
+);
 
 type Json = Record<string, unknown>;
 
@@ -77,8 +83,7 @@ try {
       alwaysMatch: {
         browserName: "firefox",
         "moz:firefoxOptions": {
-          // System access lets the session use the chrome context (Firefox 138+).
-          args: ["-headless", "-remote-allow-system-access"],
+          args: ["-headless"],
           prefs: {
             "extensions.webextensions.uuids": JSON.stringify({
               [GECKO_ID]: UUID,
