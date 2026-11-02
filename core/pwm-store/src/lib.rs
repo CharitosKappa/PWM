@@ -6,11 +6,13 @@
 #![forbid(unsafe_code)]
 
 mod error;
+mod memory;
 mod record;
 #[cfg(feature = "sqlite")]
 mod sqlite;
 
 pub use error::StoreError;
+pub use memory::{MemoryStore, SNAPSHOT_VERSION};
 pub use record::{AccountRecord, ItemRecord, SyncState, VaultRecord};
 #[cfg(feature = "sqlite")]
 pub use sqlite::{SCHEMA_VERSION, SqliteStore};
@@ -19,7 +21,8 @@ use pwm_crypto::Id;
 use pwm_vault::ItemId;
 
 /// Persistent storage for one signed-in account. Native platforms use
-/// [`SqliteStore`]; the extension gets a browser backend later.
+/// `SqliteStore`; the extension uses [`MemoryStore`] and persists its
+/// snapshots (D31).
 pub trait Store {
     fn account(&self) -> Result<Option<AccountRecord>, StoreError>;
 

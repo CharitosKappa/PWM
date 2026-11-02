@@ -1,0 +1,18 @@
+[package]
+name = "pwm-ffi-bindgen"
+description = "uniffi-bindgen for pwm-ffi: generates the Swift and Kotlin bindings (D31). A build tool; never shipped."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+uniffi = { version = "0.32.2", features = ["cli"] }

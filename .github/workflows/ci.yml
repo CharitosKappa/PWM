@@ -92,6 +92,59 @@ jobs:
       - run: until docker exec pwm-test-tls psql -U pwm -h 127.0.0.1 -tAc "select 1"; do sleep 1; done
       - run: cargo test -p pwm-server --locked
 
+  # The core in the browser (D31): WASM build, then the Node smoke test.
+  wasm:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          # Only Node is needed here; without this it looks for pnpm.
+          package-manager-cache: false
+      # Must match the wasm-bindgen version in Cargo.lock.
+      - run: cargo install wasm-bindgen-cli --version 0.2.130 --locked
+      - run: cargo build --locked --release -p pwm-wasm --target wasm32-unknown-unknown
+      - run: wasm-bindgen --target nodejs --out-dir target/wasm/node target/wasm32-unknown-unknown/release/pwm_wasm.wasm
+      - run: node core/pwm-wasm/smoke/smoke.mjs target/wasm/node/pwm_wasm.js
+
+  # The core for the apps (D31): UniFFI bindings, compiled and run on Linux.
+  bindings:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked -p pwm-ffi
+      - run: |
+          for lang in swift kotlin; do
+            cargo run --locked -q -p pwm-ffi-bindgen -- generate --library target/debug/libpwm_ffi.so \
+              --language "$lang" --out-dir "target/bindings/$lang" --no-format
+          done
+      - name: Swift
+        run: |
+          swiftc -module-name pwm_ffi -I target/bindings/swift \
+            -Xcc -fmodule-map-file=target/bindings/swift/pwm_ffiFFI.modulemap \
+            target/bindings/swift/pwm_ffi.swift core/pwm-ffi/smoke/swift/main.swift \
+            -L target/debug -lpwm_ffi -o target/swift-smoke
+          LD_LIBRARY_PATH=target/debug target/swift-smoke
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Kotlin
+        run: |
+          curl -fsSL -o target/jna.jar https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.17.0/jna-5.17.0.jar
+          kotlinc target/bindings/kotlin/uniffi/pwm_ffi/pwm_ffi.kt core/pwm-ffi/smoke/kotlin/Smoke.kt \
+            -cp target/jna.jar -include-runtime -d target/kotlin-smoke.jar
+          java -Djna.library.path=target/debug -cp target/kotlin-smoke.jar:target/jna.jar SmokeKt
+
   # The server image and compose stack (D30): build, start, smoke test.
   image:
     if: github.event_name != 'schedule'

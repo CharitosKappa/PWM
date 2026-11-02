@@ -405,4 +405,12 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
        - **Kotlin:** bindings generated, compiled and run on Linux with JNA.
        - **Swift:** bindings generated and run in a tiny Swift package on a macOS runner. Each run costs about 10 minutes of macOS time.
      - All three bindings jobs block merging.
+  Implementation notes (M3.7):
+  - **Bindings tests run on Linux, not macOS:** Swift (`swiftc`) and Kotlin (JVM + JNA) both run on an ubuntu runner. That uses no macOS minutes and tests the same generated code. iOS and macOS builds come with M5.
+  - **The WASM test is a Node script,** `core/pwm-wasm/smoke/smoke.mjs`, run by `just wasm` and CI. Vitest takes over when the extension shell uses the core (M4.2).
+  - **Sign-up stops after registering.** Its outcome carries the Secret Key, and the app then calls `start_create_vault` for the first vault (D27). One step at a time, so a failure is clear about what exists.
+  - **A new device's name:** it has no keyset before login finishes, so it can't seal its name yet. The name is sent at its next login; a rename endpoint can come with the apps.
+  - **The platform keeps the device id** (`new_id()` once per install) and passes it to sign-up and login. A revoked id is refused (D26).
+  - **The `uniffi-bindgen` tool** lives in its own crate, `core/pwm-ffi-bindgen`, so its CLI dependencies never reach the library the apps link.
+  - **The `MemoryStore` snapshot** has a frozen hex fixture (`tests/fixtures/snapshot_v1.hex`) and rejects truncated, padded or out-of-range input.
   Why: one Rust API keeps the six platforms identical and testable in one place. Steps keep networking in each platform's native stack. JSON items avoid duplicating a large, versioned model in two binding languages. A snapshot store gets the extension a durable cache now without an async `Store` trait.

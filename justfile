@@ -54,6 +54,21 @@ db:
 test-server $PWM_TEST_DATABASE_URL="postgres://pwm:pwm@127.0.0.1:54329/postgres" $PWM_REQUIRE_DB="1":
     cargo test -p pwm-server --locked
 
+# WASM build of the core (D31): extension/core for the extension, target/wasm/node for the Node smoke test
+wasm:
+    cargo build --locked --release -p pwm-wasm --target wasm32-unknown-unknown
+    wasm-bindgen --target web --out-dir extension/core target/wasm32-unknown-unknown/release/pwm_wasm.wasm
+    wasm-bindgen --target nodejs --out-dir target/wasm/node target/wasm32-unknown-unknown/release/pwm_wasm.wasm
+    node core/pwm-wasm/smoke/smoke.mjs target/wasm/node/pwm_wasm.js
+
+ffi_lib := if os() == "windows" { "target/debug/pwm_ffi.dll" } else if os() == "macos" { "target/debug/libpwm_ffi.dylib" } else { "target/debug/libpwm_ffi.so" }
+
+# Swift and Kotlin bindings over the native library (D31) into target/bindings
+bindings:
+    cargo build --locked -p pwm-ffi
+    cargo run --locked -q -p pwm-ffi-bindgen -- generate --library {{ffi_lib}} --language swift --out-dir target/bindings/swift --no-format
+    cargo run --locked -q -p pwm-ffi-bindgen -- generate --library {{ffi_lib}} --language kotlin --out-dir target/bindings/kotlin --no-format
+
 # apply formatters
 fmt:
     cargo fmt --all

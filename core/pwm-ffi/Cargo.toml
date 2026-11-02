@@ -1,6 +1,6 @@
 [package]
 name = "pwm-ffi"
-description = "UniFFI bindings (Swift, Kotlin) and C ABI over the core."
+description = "UniFFI bindings (Swift, Kotlin) over pwm-client (D31)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,3 +14,8 @@ crate-type = ["lib", "staticlib", "cdylib"]
 workspace = true
 
 [dependencies]
+pwm-client = { path = "../pwm-client" }
+# Native apps keep their cache in SQLite (D20).
+pwm-store = { path = "../pwm-store" }
+thiserror = "2.0.21"
+uniffi = "0.32.2"
