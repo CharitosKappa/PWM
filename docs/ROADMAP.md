@@ -139,6 +139,14 @@ Phase 3  Teams           months 16–24 M16–M19
     - `cargo deny` ignores RUSTSEC-2026-0374 (`basic-toml` unmaintained). It is pulled in only by the never-shipped `pwm-ffi-bindgen` tool, through UniFFI's templates; the library the apps link does not contain it.
     - RUSTSEC-2026-0387 was rechecked: `opaque-ke` still has only a 4.1 pre-release, so its ignore stays; recheck at M4.
 
+**M3 leftovers, now scheduled:**
+- M4.2: create the first vault only if there is none.
+- M4.9: dependency advisories.
+- M5.3: device rename.
+- M5.8 / M6.5: background sync and push, and the delete edge case.
+- M10.7: email verification.
+- M10.8: housekeeping and automatic restore.
+
 **Gate — Private beta:** create account on macOS app (M5 skeleton) and extension, items sync both ways.
 
 ---
@@ -148,12 +156,19 @@ Phase 3  Teams           months 16–24 M16–M19
 ### M4 — Browser extension + autofill engine
 - [ ] M4.1 `pwm-autofill`: PSL origin matching, field classifier, multi-step state, rules file format + signature check.
 - [ ] M4.2 MV3 extension shell: popup (search, copy, generator), unlock (master password, or via desktop app native messaging + biometrics).
+  - From M3:
+    - Persist the `MemoryStore` snapshot in IndexedDB, with Vitest tests on the WASM core.
+    - Onboarding creates the first vault only if the account has none. Today, a retried vault create whose answer was lost leaves an extra empty vault. The fix belongs in `pwm-client`, so every platform gets it.
 - [ ] M4.3 Fill on user action; inline icon in isolated iframe/closed shadow root; visibility/overlay checks before fill (`AUTOFILL.md`).
 - [ ] M4.4 Save/update prompts after submit.
 - [ ] M4.5 Passkey support (WebAuthn interception where browser allows; else defer to platform provider).
 - [ ] M4.6 "Autofill didn't work here" report with form fingerprint (no values).
 - [ ] M4.7 Autofill harness: fixture sites incl. clickjacking/overlay attacks that must not fill; top-1,000 runner + JSON report.
 - [ ] M4.8 Builds for Chrome, Edge, Firefox, Brave, Opera; Safari via macOS app (M5).
+- [ ] M4.9 Dependency review of the `cargo deny` ignores, from M3:
+  - **RUSTSEC-2026-0387:** drop it once `opaque-ke` has a stable release on `elliptic-curve` 0.14, after rerunning `opaque.json`.
+  - **RUSTSEC-2026-0374:** drop it once UniFFI no longer pulls in `basic-toml`.
+  - **Either way:** upgrade, or keep the ignore with its reason refreshed.
 
 **Done when:** fixture suite 100%; top-1,000 classification ≥ 90% (target 95% by launch); overlay attacks never fill.
 
@@ -161,16 +176,25 @@ Phase 3  Teams           months 16–24 M16–M19
 - [ ] M5.1 Shared Swift package over UniFFI core; design tokens.
 - [ ] M5.2 Onboarding: create account, Emergency Kit PDF, sign in on new device (password + Secret Key, or approve from existing device).
 - [ ] M5.3 Vault list, search, item detail/edit, generator, health report, settings, lock timeout.
+  - From M3: the device list in settings, with rename and revoke.
+    - **Rename needs a new endpoint** (`PATCH /v1/devices/{id}` with a sealed name, D26 format).
+    - **A newly signed-in device** sets its name right after login, because today it has none until its next login.
 - [ ] M5.4 Face ID / Touch ID unlock via Secure Enclave-wrapped key.
 - [ ] M5.5 iOS AutoFill Credential Provider + passkeys + QuickType identity sync.
 - [ ] M5.6 macOS app + Safari Web Extension; native-messaging host for other browsers' biometric unlock.
 - [ ] M5.7 Screenshot/screen-recording protection on unlock and revealed secrets.
+- [ ] M5.8 Background sync, from M3:
+  - **Pulling while locked:** store new ciphertext in the cache without keys, and merge conflicts at the next unlock. This keeps the AutoFill extension's data fresh.
+  - **Background refresh:** iOS background refresh, and a timer on macOS.
+  - **Server push:** a content-free "your vault changed" notification over APNs, which triggers a sync.
+  - **Edge case in `pwm-sync`:** deleting an item whose first upload's answer was lost should not bring it back on the next pull. Keep a pending delete instead of dropping the record.
 
 ### M6 — Android
 - [ ] M6.1 Compose app over UniFFI core, same screens as M5.3.
 - [ ] M6.2 BiometricPrompt + Keystore-wrapped key.
 - [ ] M6.3 AutofillService + Credential Manager provider (passwords + passkeys), inline suggestions.
 - [ ] M6.4 FLAG_SECURE on sensitive screens.
+- [ ] M6.5 Background sync and push (FCM) for Android, the same as M5.8 (WorkManager for periodic refresh).
 
 ### M7 — Windows + Linux desktop
 - [ ] M7.1 Tauri app (pending D3) with same screens; Windows Hello unlock; Linux unlock via password (+ polkit/fprintd later).
@@ -194,6 +218,14 @@ Phase 3  Teams           months 16–24 M16–M19
 - [ ] M10.4 Public autofill compatibility dashboard (static site fed by nightly JSON).
 - [ ] M10.5 Bug bounty live; external audit fixes closed; audit reports published.
 - [ ] M10.6 Private beta with ≥ 1,000 users; fix top issues.
+- [ ] M10.7 Transactional email, from M3. It needs the provider decision in D32.
+  - **Verify the email at sign-up.**
+  - **Stop revealing existing accounts.** Today registration answers 409 for an email that already has an account. Instead, answer the same either way, and email the owner of an existing account.
+  - **Account notices:** use email for these too, such as a new device signing in.
+- [ ] M10.8 Server operations, from M3:
+  - **Scheduled clean-up:** delete expired sessions and login attempts, and the session rows of revoked devices. They are already refused, just not deleted.
+  - **Tombstone compaction:** decide the horizon first. A device whose cursor is older than the horizon must resync from 0.
+  - **Backups with a tested restore:** the restore script runs `pwm-server mark-restored` automatically.
 
 **Gate — Public launch:** audit published, top-1,000 autofill ≥ 95%, crash-free ≥ 99.5% on all platforms.
 
