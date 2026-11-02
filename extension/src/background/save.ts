@@ -238,7 +238,8 @@ export class Saver {
     capture.token = crypto.randomUUID();
     await this.platform.pages.setBadge(capture.ref.tabId, "1");
     const top = this.host.autofill.topFrame(capture.ref.tabId);
-    if (top) {
+    // Without the card's click guard (Firefox, D40 §2): the badge and the popup only.
+    if (top && this.platform.capabilities.inlineUi) {
       await this.platform.pages.send(top, {
         target: "content",
         kind: "showOffer",

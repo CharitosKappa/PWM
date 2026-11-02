@@ -15,6 +15,7 @@ import type {
 } from "./platform.ts";
 import { fromBase64, toBase64 } from "../shared/bytes.ts";
 import type { ContentMessage } from "../shared/autofill.ts";
+import { writeClipboard } from "../shared/clipboard.ts";
 import { SITE_ACCESS } from "../shared/config.ts";
 import type { ClipboardMessage } from "../shared/messages.ts";
 
@@ -122,6 +123,14 @@ export class ChromeAlarms implements Alarms {
 
   async clear(name: AlarmName): Promise<void> {
     await chrome.alarms.clear(name);
+  }
+}
+
+/** Firefox's background is a page (D40): it writes the clipboard itself. */
+export class PageClipboard implements Clipboard {
+  write(text: string): Promise<void> {
+    writeClipboard(document, text);
+    return Promise.resolve();
   }
 }
 
@@ -325,7 +334,9 @@ export function chromePlatform(): Platform {
     disk: new ChromeDisk(indexedDB, chrome.storage.local),
     session: new ChromeSession(chrome.storage.session),
     alarms: new ChromeAlarms(),
-    clipboard: new OffscreenClipboard(),
+    clipboard:
+      PWM_TARGET === "firefox" ? new PageClipboard() : new OffscreenClipboard(),
+    capabilities: { inlineUi: PWM_TARGET === "chromium" },
     pages: new ChromePages(),
     fetch: (url, init) => fetch(url, init),
     now: () => Date.now(),

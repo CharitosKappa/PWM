@@ -300,8 +300,14 @@ export class Passkeys {
   /** "Use PWM for passkeys" (D37 §1): on only with site access. */
   async setEnabled(on: boolean): Promise<boolean> {
     const allowed = on && (await this.host.platform.pages.hasSiteAccess());
+    try {
+      await this.host.platform.pages.setPasskeyScripts(allowed);
+    } catch {
+      // A browser without page-world content scripts (D40 §2).
+      await this.host.platform.disk.set("passkeys", "off");
+      throw new ServiceError("passkeys_unsupported");
+    }
     await this.host.platform.disk.set("passkeys", allowed ? "on" : "off");
-    await this.host.platform.pages.setPasskeyScripts(allowed);
     return allowed;
   }
 }

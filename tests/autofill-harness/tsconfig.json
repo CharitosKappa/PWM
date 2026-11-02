@@ -12,5 +12,5 @@
     "noEmit": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["*.ts", "tests", "fixtures", "lib", "runner"]
+  "include": ["*.ts", "tests", "fixtures", "lib", "runner", "firefox"]
 }

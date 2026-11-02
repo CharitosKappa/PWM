@@ -22,6 +22,7 @@ Most one-star reviews in this market come from broken updates. Release safety is
 | `core-test` + `test-vectors` | every PR | yes |
 | `server-test` | PRs touching server/core | yes |
 | `extension-test` + autofill fixtures | PRs touching extension/core | yes |
+| `wasm`: both extension builds, `web-ext lint`, Firefox smoke (D40) | PRs touching extension/core | yes |
 | `ios-build`, `android-build`, `desktop-build` | PRs touching that app/core | yes |
 | `audit` (cargo audit/deny, npm audit) | every PR + nightly | high severity |
 | `autofill-top-sites` (D39) | nightly + release candidates | release only (`runner/compare.ts`) |
@@ -34,6 +35,18 @@ Most one-star reviews in this market come from broken updates. Release safety is
 4. Automatic halt if, vs previous release: crash-free sessions drop > 0.2 pts, autofill failure reports rise > 25%, or sync error rate doubles.
 5. Rollback: extension re-publishes previous version; server feature flags; apps use phased-release pause.
 6. Every release note lists fixes and any changed behavior in plain language.
+
+### Extension smoke checklist (D40)
+
+Edge, Brave and Opera get the same Chromium zip as Chrome and have no automated run. For each release candidate, in each of them:
+
+1. Load the candidate's `pwm-chromium-<version>.zip` (unpacked) and open the popup.
+2. Sign in to a test account, unlock and lock.
+3. Fill a login from the popup and with the shortcut, then copy a password and check that the clipboard clears.
+4. Turn on "Fill and save on sign-in pages": the icon fills, and a new login is offered after signing in.
+5. Turn on passkeys: create one on a WebAuthn test page and sign in with it.
+
+Firefox: the same steps with `pwm-firefox-<version>.zip` from `about:debugging`. Step 4 offers saves on the toolbar button only, with no icon or card.
 
 ## Success metrics
 

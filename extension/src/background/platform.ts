@@ -90,12 +90,22 @@ export interface Pages {
   setBadge(tabId: number, text: string): Promise<void>;
 }
 
+/** What this browser can do (D40); the code asks this, never the browser's name. */
+export interface Capabilities {
+  /**
+   * The inline icon and the save card: their click guard needs
+   * IntersectionObserver v2, which Firefox lacks (D35 §3, D40 §2).
+   */
+  inlineUi: boolean;
+}
+
 export interface Platform {
   disk: Disk;
   session: SessionStore;
   alarms: Alarms;
   clipboard: Clipboard;
   pages: Pages;
+  capabilities: Capabilities;
   fetch: (url: string, init: RequestInit) => Promise<Response>;
   now: () => number;
   /** The browser's name and major version, such as "Chrome 140" (for reports). */

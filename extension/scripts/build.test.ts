@@ -3,21 +3,61 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { EXTENSION_VERSION } from "../src/version.ts";
 import { HOSTED_SERVER } from "../src/shared/config.ts";
-import { HOSTED_ORIGIN, checkManifest, remoteUrls } from "./check.mjs";
+import {
+  GECKO_ID,
+  HOSTED_ORIGIN,
+  TARGETS,
+  checkManifest,
+  remoteUrls,
+} from "./check.mjs";
 import { tokensCss } from "./tokens.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const read = (file: string): string =>
   fs.readFileSync(path.join(root, file), "utf8");
-const manifest = JSON.parse(read("static/manifest.json")) as Record<
-  string,
-  unknown
->;
+type Manifest = Record<string, unknown>;
+const manifestOf = (target: string): Manifest =>
+  JSON.parse(read(`manifests/${target}.json`)) as Manifest;
+const manifest = manifestOf("chromium");
+const firefox = manifestOf("firefox");
 const pkg = JSON.parse(read("package.json")) as { version: string };
 
 describe("manifest", () => {
-  it("passes the build check", () => {
-    expect(checkManifest(manifest, pkg.version)).toEqual([]);
+  it.each(TARGETS)("%s passes the build check", (target) => {
+    expect(checkManifest(manifestOf(target), pkg.version, target)).toEqual([]);
+  });
+
+  it("differs between targets only where D40 says", () => {
+    const strip = (m: Manifest, keys: string[]) =>
+      Object.fromEntries(Object.entries(m).filter(([k]) => !keys.includes(k)));
+    const differ = [
+      "background",
+      "permissions",
+      "web_accessible_resources",
+      "minimum_chrome_version",
+      "browser_specific_settings",
+    ];
+    expect(strip(firefox, differ)).toEqual(strip(manifest, differ));
+  });
+
+  it("refuses a Firefox manifest with Chromium's parts or no add-on id", () => {
+    const changed = (patch: Record<string, unknown>) =>
+      checkManifest({ ...firefox, ...patch }, pkg.version, "firefox");
+    expect(changed({ permissions: manifest.permissions })).not.toEqual([]);
+    expect(changed({ background: manifest.background })).not.toEqual([]);
+    expect(
+      changed({ web_accessible_resources: manifest.web_accessible_resources }),
+    ).not.toEqual([]);
+    expect(changed({ browser_specific_settings: undefined })).not.toEqual([]);
+    expect(
+      changed({
+        browser_specific_settings: {
+          gecko: { id: GECKO_ID, strict_min_version: "115.0" },
+        },
+      }),
+    ).not.toEqual([]);
+    // And the Chromium check refuses Firefox's manifest.
+    expect(checkManifest(firefox, pkg.version, "chromium")).not.toEqual([]);
   });
 
   it("agrees with the code on version and hosted server", () => {

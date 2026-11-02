@@ -1,7 +1,12 @@
 /** Sign in, create an account, and the one-time Secret Key screen (D34). */
 import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
-import { describe, send } from "./api.ts";
+import {
+  ASKS_SERVER_ACCESS,
+  askServerAccess,
+  useServerOrigin,
+} from "./access.ts";
+import { describe, describeCode, send } from "./api.ts";
 import { InlineIconOffer } from "./InlineIcon.tsx";
 import { Field, Notice } from "./ui.tsx";
 
@@ -48,9 +53,14 @@ function SignIn({ onDone }: { onDone: () => void }): JSX.Element {
   const [secretKey, setSecretKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const origin = useServerOrigin();
 
   const submit = async (event: Event): Promise<void> => {
     event.preventDefault();
+    if (!(await askServerAccess(origin))) {
+      setError(describeCode("no_server_access"));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -92,6 +102,7 @@ function SignIn({ onDone }: { onDone: () => void }): JSX.Element {
         mono
         hint="On your Emergency Kit."
       />
+      <ServerAccessNote />
       <div class="slot">{error && <Notice kind="danger">{error}</Notice>}</div>
       <button
         class="primary"
@@ -112,6 +123,7 @@ function SignUp({ onDone }: { onDone: () => void }): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [secretKey, setSecretKey] = useState<string | null>(null);
   const [offer, setOffer] = useState(false);
+  const origin = useServerOrigin();
 
   useEffect(() => {
     if (password === "") {
@@ -151,6 +163,10 @@ function SignUp({ onDone }: { onDone: () => void }): JSX.Element {
 
   const submit = async (event: Event): Promise<void> => {
     event.preventDefault();
+    if (!(await askServerAccess(origin))) {
+      setError(describeCode("no_server_access"));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -214,6 +230,7 @@ function SignUp({ onDone }: { onDone: () => void }): JSX.Element {
         Nobody can reset your master password, not even us. Choose one you will
         remember.
       </p>
+      <ServerAccessNote />
       <div class="slot">{error && <Notice kind="danger">{error}</Notice>}</div>
       <button
         class="primary"
@@ -222,6 +239,17 @@ function SignUp({ onDone }: { onDone: () => void }): JSX.Element {
         {busy ? "Creating account…" : "Create account"}
       </button>
     </form>
+  );
+}
+
+/** Says why Firefox asks for access when the form is sent (D40 §1). */
+function ServerAccessNote(): JSX.Element | null {
+  if (!ASKS_SERVER_ACCESS) return null;
+  return (
+    <p class="caption muted">
+      Firefox will ask to let PWM reach its server. It needs that to sign you in
+      and sync your vault.
+    </p>
   );
 }
 

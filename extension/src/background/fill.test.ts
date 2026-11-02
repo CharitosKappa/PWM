@@ -354,6 +354,22 @@ describe("the inline icon", () => {
     expect(again.token).not.toBe(reply.token);
   });
 
+  it("never shows without its click guard (Firefox, D40), but still watches for sign-ins", async () => {
+    const env = await setup();
+    env.platform.capabilities.inlineUi = false;
+    env.pages.siteAccess = true;
+    expect(
+      await env.background.handle({ kind: "setInlineIcon", on: true }),
+    ).toBe(true);
+    const reply = await env.background.autofill.onFrameReport(
+      sender,
+      LOGIN_FORM,
+    );
+    expect(reply.icons).toEqual([]);
+    expect(reply.token).toBeNull();
+    expect(reply.watch).not.toBeNull();
+  });
+
   it("lists titles and usernames only, and opens the menu", async () => {
     const { background, token, pages } = await withIcon();
     const menu = await background.autofill.onInline(

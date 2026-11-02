@@ -737,7 +737,12 @@ export class FakePages implements Pages {
   windows: string[] = [];
   closed: number[] = [];
 
+  /** Set to make registering the page-world scripts fail, as on old browsers. */
+  passkeyScriptsFail = false;
+
   setPasskeyScripts(on: boolean) {
+    if (on && this.passkeyScriptsFail)
+      return Promise.reject(new Error("world MAIN"));
     this.passkeyScripts = on;
     return Promise.resolve();
   }
@@ -812,6 +817,7 @@ export function fakePlatform(disk = new MemoryDisk()): FakePlatform {
   return {
     disk,
     pages: new FakePages(),
+    capabilities: { inlineUi: true },
     sessionBytes,
     alarmsAt,
     clipboardText,
