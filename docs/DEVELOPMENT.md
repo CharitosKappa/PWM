@@ -81,7 +81,7 @@ The autofill engine vendors the Public Suffix List (D33). Refresh it before a re
 ## Browser extension
 
 ```
-just extension     # just wasm, then build extension/dist/ (checks the manifest and that no remote code is bundled)
+just extension     # just wasm, then build extension/dist/chromium/ and dist/firefox/ with a zip of each (checks each manifest and that no remote code is bundled)
 pnpm --filter @pwm/extension test        # unit tests with fake chrome APIs (part of just test)
 pnpm --filter @pwm/extension test:wasm   # tests over the real WASM core (part of just wasm)
 ```
@@ -93,7 +93,7 @@ just server       # in another terminal: the sync server on http://127.0.0.1:808
 just autofill     # test build into extension/dist-test/, Playwright's Chromium, the fixtures
 ```
 
-Load `extension/dist/` unpacked from `chrome://extensions` (developer mode). The fill shortcut is Ctrl+Shift+L (⌘⇧L); change it at `chrome://extensions/shortcuts`. The hosted server address is a placeholder until D1. For local work, open the extension's options while signed out, choose "Self-hosted" and enter `http://localhost:8080` (run `just server`).
+Load `extension/dist/chromium/` unpacked from `chrome://extensions` (developer mode); the same folder loads in Edge (`edge://extensions`), Brave and Opera. In Firefox, open `about:debugging#/runtime/this-firefox`, choose "Load Temporary Add-on" and pick `extension/dist/firefox/manifest.json`; Firefox asks for server access when you sign in. The Firefox smoke test needs geckodriver: `pnpm --filter @pwm/autofill-harness firefox-smoke extension/dist/pwm-firefox-<version>.zip`. The fill shortcut is Ctrl+Shift+L (⌘⇧L); change it at `chrome://extensions/shortcuts`. The hosted server address is a placeholder until D1. For local work, open the extension's options while signed out, choose "Self-hosted" and enter `http://localhost:8080` (run `just server`).
 
 **Rules signing keys (D34).** The founder creates them on an offline machine and keeps the seeds offline; only the public keys enter the repo:
 

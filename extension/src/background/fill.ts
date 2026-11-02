@@ -151,6 +151,8 @@ export class Autofill {
     const watch = watchFields(fields, classes);
     if ((await this.hiddenSites()).includes(hostname(sender.tabUrl)))
       return { ...none, watch };
+    // No icon where its click guard cannot work (Firefox, D40 §2).
+    if (!this.platform.capabilities.inlineUi) return { ...none, watch };
     const icons = iconFields(fields, classes);
     if (icons.length === 0) return { ...none, watch };
     const token = crypto.randomUUID();

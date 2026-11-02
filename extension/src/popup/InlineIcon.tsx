@@ -7,7 +7,14 @@
 import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import { HOSTED_SERVER, SITE_ACCESS } from "../shared/config.ts";
-import { send } from "./api.ts";
+import { describe, send } from "./api.ts";
+import { Notice } from "./ui.tsx";
+
+/**
+ * The inline icon and the save card (D40 §2). Without them, as on Firefox,
+ * the switch only turns on save offers, shown on the toolbar button.
+ */
+const INLINE_UI = PWM_TARGET === "chromium";
 
 export async function enableInlineIcon(): Promise<boolean> {
   if (!(await chrome.permissions.request({ origins: SITE_ACCESS }))) {
@@ -39,6 +46,7 @@ export async function disableInlineIcon(): Promise<void> {
 /** "Use PWM for passkeys" (D37 §1): the same site access, asked for at that moment. */
 export function PasskeysSetting(): JSX.Element {
   const [on, setOn] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     send({ kind: "passkeys" })
@@ -59,12 +67,19 @@ export function PasskeysSetting(): JSX.Element {
       return;
     }
     // The permission request must be the first thing the click does.
+    setError(null);
     void chrome.permissions
       .request({ origins: SITE_ACCESS })
       .then((granted) =>
         granted ? send({ kind: "setPasskeys", on: true }) : false,
       )
-      .then(setOn);
+      .then(setOn)
+      .catch(async (err: unknown) => {
+        // A browser that cannot run the page script (D40 §2).
+        setError(describe(err));
+        setOn(false);
+        await releaseSiteAccess();
+      });
   };
 
   return (
@@ -83,6 +98,7 @@ export function PasskeysSetting(): JSX.Element {
         in a PWM window. You can always use another device or the browser
         instead.
       </span>
+      {error && <Notice kind="warning">{error}</Notice>}
     </label>
   );
 }
@@ -119,12 +135,18 @@ export function InlineIconSetting(): JSX.Element {
           disabled={on === null}
           onChange={toggle}
         />
-        <span class="label">Fill and save on sign-in pages</span>
+        <span class="label">
+          {INLINE_UI
+            ? "Fill and save on sign-in pages"
+            : "Save logins when you sign in"}
+        </span>
       </span>
       <span class="caption muted">
-        Shows the icon in sign-in fields, and offers to save a login after you
-        sign in. The browser will ask to let PWM read sites. It reads what you
-        type only when you sign in.
+        {INLINE_UI
+          ? "Shows the icon in sign-in fields, and offers to save a login after you sign in."
+          : "Offers to save a login after you sign in, on the toolbar button."}{" "}
+        The browser will ask to let PWM read sites. It reads what you type only
+        when you sign in.
       </span>
     </label>
   );
@@ -138,9 +160,15 @@ export function InlineIconOffer({
 }): JSX.Element {
   return (
     <div class="stack">
-      <h2>Fill and save on sign-in pages?</h2>
+      <h2>
+        {INLINE_UI
+          ? "Fill and save on sign-in pages?"
+          : "Save logins when you sign in?"}
+      </h2>
       <p>
-        Fill with one click on the icon, and save new logins when you sign in.
+        {INLINE_UI
+          ? "Fill with one click on the icon, and save new logins when you sign in."
+          : "PWM offers to save new logins when you sign in."}{" "}
         The browser will ask to let PWM read sites. You can change this in
         Settings.
       </p>

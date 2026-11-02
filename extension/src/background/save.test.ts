@@ -210,6 +210,23 @@ describe("after a sign-in that worked", () => {
   });
 });
 
+describe("without the card (Firefox, D40)", () => {
+  it("offers on the toolbar badge and in the popup only", async () => {
+    const env = await setup();
+    env.platform.capabilities.inlineUi = false;
+    await signIn(env, typed("ada@new.example", "fresh-secret"));
+
+    expect(env.pages.badges.get(7)).toBe("1");
+    expect(env.pages.sent.some((s) => s.message.kind === "showOffer")).toBe(
+      false,
+    );
+    expect(await env.background.handle({ kind: "saveOffer" })).toMatchObject({
+      site: "new.example",
+      action: "save",
+    });
+  });
+});
+
 describe("no offer", () => {
   it("after a failed sign-in (the same page stays)", async () => {
     const env = await setup();

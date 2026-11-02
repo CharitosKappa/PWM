@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "format:check": "prettier --check .",
     "top-sites": "node runner/run.ts --sites sites/sites.json --out autofill-report.json",
-    "compare": "node runner/compare.ts"
+    "compare": "node runner/compare.ts",
+    "firefox-smoke": "node firefox/smoke.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

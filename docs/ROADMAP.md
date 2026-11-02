@@ -355,7 +355,27 @@ Phase 3  Teams           months 16–24 M16–M19
     - **Tickets from user reports and the public dashboard:** M10.
     - **Checking the site list, 50+ selectors and growing to 1,000:** M10.
     - **The 90% / 95% targets:** measured nightly from now on, and gating the launch (M10).
-- [ ] M4.8 Builds for Chrome, Edge, Firefox, Brave, Opera; Safari via macOS app (M5).
+- [x] M4.8 Builds for Chrome, Edge, Firefox, Brave, Opera; Safari via macOS app (M5).
+  - Per D40:
+    - **Two builds from one tree:** `node scripts/build.mjs` builds `dist/chromium/` (Chrome, Edge, Brave and Opera) and `dist/firefox/`, with a zip of each. `--target` builds one.
+    - **Firefox:**
+      - an event page, and the clipboard written from it (no offscreen document)
+      - add-on id `pwm@pwm.invalid` until D1, Firefox 128+
+      - not minified, for review
+      - server access asked for at sign-in
+      - no inline icon or save card (no `IntersectionObserver` v2): saves are offered on the toolbar button, and fills happen only in the top frame
+      - passkeys where the page script registers, and a clear message where it does not
+    - **Build check per target:** exact permissions, background, web-accessible resources and gecko settings.
+  - **Tests:**
+    - **Unit:** both manifests pass and are refused when changed; no icon without the inline UI, while sign-ins are still watched; the save offer goes on the badge only; passkeys unsupported.
+    - **CI:** both builds, `web-ext lint`, and a Firefox smoke test (install, popup, a score from the background's core). The zips are uploaded.
+    - **Edge, Brave and Opera:** a manual checklist for release candidates in `docs/QUALITY.md`.
+  - **Deferred:**
+    - **The Firefox smoke test:** signing up and filling, which need a host-access grant that WebDriver cannot give.
+    - **Store listings, signing, the AMO source zip and data-collection declaration:** M10.
+    - **Safari:** M5.6.
+    - **Firefox for Android:** later.
+  - **Parity gaps (D40):** on Firefox, the inline icon, the save card and filling in frames.
 - [ ] M4.9 Dependency review of the `cargo deny` ignores, from M3:
   - **RUSTSEC-2026-0387:** drop it once `opaque-ke` has a stable release on `elliptic-curve` 0.14, after rerunning `opaque.json`.
   - **RUSTSEC-2026-0374:** drop it once UniFFI no longer pulls in `basic-toml`.

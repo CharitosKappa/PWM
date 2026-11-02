@@ -73,7 +73,7 @@ wasm:
     pnpm install --frozen-lockfile
     pnpm --filter @pwm/extension test:wasm
 
-# the browser extension (D34) into extension/dist: load it unpacked from chrome://extensions
+# the browser extension (D34, D40) into extension/dist/chromium and dist/firefox, with a zip of each
 extension: wasm
     pnpm --filter @pwm/extension build
 

@@ -1,15 +1,33 @@
-// Checks on the built extension (D34, D35): only the listed permissions,
-// no remote code, nothing the store review would flag.
+// Checks on the built extension (D34, D35, D40): only the listed
+// permissions for each target, no remote code, nothing the store review
+// would flag.
 
-export const PERMISSIONS = [
-  "storage",
-  "alarms",
-  "idle",
-  "offscreen",
-  "clipboardWrite",
-  "activeTab",
-  "scripting",
-];
+/** The builds (D40): one for Chrome, Edge, Brave and Opera, one for Firefox. */
+export const TARGETS = ["chromium", "firefox"];
+
+/** Firefox has no offscreen documents; its background page writes the clipboard. */
+export const PERMISSIONS = {
+  chromium: [
+    "storage",
+    "alarms",
+    "idle",
+    "offscreen",
+    "clipboardWrite",
+    "activeTab",
+    "scripting",
+  ],
+  firefox: [
+    "storage",
+    "alarms",
+    "idle",
+    "clipboardWrite",
+    "activeTab",
+    "scripting",
+  ],
+};
+
+/** The Firefox add-on id, a placeholder until D1 names the product. */
+export const GECKO_ID = "pwm@pwm.invalid";
 
 /** Site access, only as optional permissions for the inline icon (D35 §1). */
 export const OPTIONAL_HOSTS = ["https://*/*", "http://*/*"];
@@ -37,22 +55,25 @@ const ALLOWED_URLS = [
 /**
  * @param {any} manifest the parsed manifest.json
  * @param {string} version the package version
+ * @param {"chromium" | "firefox"} target
  * @returns {string[]} problems, empty when fine
  */
-export function checkManifest(manifest, version) {
+export function checkManifest(manifest, version, target = "chromium") {
   const problems = [];
   const same = (/** @type {unknown} */ a, /** @type {unknown} */ b) =>
     JSON.stringify(a) === JSON.stringify(b);
   if (manifest.manifest_version !== 3) problems.push("not Manifest V3");
   if (manifest.version !== version)
     problems.push(`version ${String(manifest.version)} is not ${version}`);
-  if (!same(manifest.permissions, PERMISSIONS))
+  if (!same(manifest.permissions, PERMISSIONS[target]))
     problems.push(`permissions are ${JSON.stringify(manifest.permissions)}`);
   if (!same(manifest.host_permissions, [`${HOSTED_ORIGIN}/*`]))
     problems.push("host permissions beyond the hosted API");
   if (!same(manifest.optional_host_permissions, OPTIONAL_HOSTS))
     problems.push("optional host permissions");
-  if (!same(manifest.web_accessible_resources, WEB_ACCESSIBLE))
+  // Firefox has no inline icon or save card (D40 §2): pages load nothing.
+  const accessible = target === "chromium" ? WEB_ACCESSIBLE : undefined;
+  if (!same(manifest.web_accessible_resources, accessible))
     problems.push("web-accessible resources beyond the inline icon");
   // Content scripts are only injected on user action or registered at run
   // time after the user grants site access, never declared.
@@ -64,13 +85,19 @@ export function checkManifest(manifest, version) {
   ]) {
     if (key in manifest) problems.push(`unexpected ${key}`);
   }
-  if (
-    !same(manifest.background, {
-      service_worker: "background.js",
-      type: "module",
-    })
-  )
-    problems.push("background");
+  const background =
+    target === "chromium"
+      ? { service_worker: "background.js", type: "module" }
+      : { scripts: ["background.js"], type: "module" };
+  if (!same(manifest.background, background)) problems.push("background");
+  if (target === "firefox") {
+    const gecko = manifest.browser_specific_settings?.gecko;
+    if (gecko?.id !== GECKO_ID) problems.push("gecko id");
+    if (gecko?.strict_min_version !== "128.0")
+      problems.push("gecko strict_min_version");
+  } else if (manifest.minimum_chrome_version !== "127") {
+    problems.push("minimum_chrome_version");
+  }
   const csp = manifest.content_security_policy?.extension_pages ?? "";
   if (!csp.includes("script-src 'self' 'wasm-unsafe-eval';"))
     problems.push("CSP script-src");

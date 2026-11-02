@@ -311,4 +311,15 @@ describe("the switch", () => {
     ).toBe(false);
     expect(env.pages.passkeyScripts).toBe(false);
   });
+
+  it("says so, and stays off, when the browser refuses the page script", async () => {
+    const env = await setup({ enabled: false });
+    env.pages.siteAccess = true;
+    env.pages.passkeyScriptsFail = true;
+    await expect(
+      env.background.handle({ kind: "setPasskeys", on: true }),
+    ).rejects.toMatchObject({ code: "passkeys_unsupported" });
+    expect(env.pages.passkeyScripts).toBe(false);
+    expect(await env.background.handle({ kind: "passkeys" })).toBe(false);
+  });
 });

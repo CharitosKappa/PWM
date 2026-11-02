@@ -994,3 +994,21 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **One manifest for both** (both `background.scripts` and `service_worker`): Chrome now accepts that, but the build check and the permissions would blur. Two small manifests are clearer.
   - **A weaker click guard on Firefox** (`elementsFromPoint` plus timing): an inline icon for Firefox users, but it is exactly the DEF CON 2025 class of attack D35 closes. Off until v2 exists.
   - **Skip Firefox until it has v2:** simplest, but Firefox users would get no extension at all, and popup filling works fine there.
+
+  Implementation notes (M4.8):
+  - **Where the targets differ:**
+    - **Manifests:** `extension/manifests/chromium.json` and `firefox.json`, not `static/manifest.<target>.json`.
+    - **No `src/background/targets/` module:** the build defines `PWM_TARGET`, and `chrome.ts` picks the clipboard (offscreen document or the background page) and the capabilities from it.
+    - **Capabilities:** a single flag, `inlineUi`, for the icon and the save card. The offscreen document and the service worker are settled by the target's manifest. `IntersectionObserver` v2 is still checked at run time in the content script, which already filled only in the top frame without it.
+  - **Firefox build:** syntax is folded (so the test hook is dropped), but names and whitespace are kept for AMO review. `offscreen.html` and the inline icon files are left out.
+  - **The switch on Firefox** is relabelled "Save logins when you sign in", rather than hidden. The sign-up offer says the same.
+  - **Passkeys:** if registering the page script fails, the switch stays off and says "This browser cannot pass passkey requests to PWM yet."
+  - **Server access on Firefox:** asked for when the user signs in or creates an account, with a line in the form that says why. A refusal stops there with a message.
+  - **The Firefox smoke test** (`tests/autofill-harness/firefox/smoke.ts`) talks W3C WebDriver to geckodriver over HTTP, with no Selenium and no `web-ext run`, so it adds no dependency.
+    - **What it does:** installs the zip as a temporary add-on with a fixed UUID, opens the popup and scores a password. The score is the background's WASM core answering.
+    - **Not covered yet:** signing up and filling. Firefox asks for host access in a prompt that WebDriver cannot answer, so they wait for a test-only grant.
+  - **`web-ext lint`** runs pinned (`web-ext@8.3.0`) through `npx` in CI only; it is not a dependency.
+  - **Deferred to M10 (store submission):**
+    - **AMO:** the source zip for reviewers, and the `data_collection_permissions` declaration that AMO asks of new add-ons.
+    - **Chromium:** loading the store zip itself in a browser test; the harness loads the test build.
+  - **Parity gaps logged:** on Firefox, the inline icon, the save card and filling in frames. Revisit when Firefox ships `IntersectionObserver` v2.
