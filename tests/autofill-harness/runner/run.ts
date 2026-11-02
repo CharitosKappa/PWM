@@ -97,6 +97,17 @@ function inspect(frame: Frame) {
     .catch(() => ({ user: false, password: false, passwordField: false }));
 }
 
+/**
+ * The value of the first input matching `selector`, or "" when there is
+ * none. Never waits for an element to appear: a selector that no longer
+ * matches would otherwise hang until the run's timeout.
+ */
+async function valueOf(page: Page, selector: string): Promise<string> {
+  const field = page.locator(selector).first();
+  if ((await field.count()) === 0) return "";
+  return field.inputValue({ timeout: 2_000 }).catch(() => "");
+}
+
 /** Runs one site; never throws. */
 export async function runSite(
   harness: Harness,
@@ -161,19 +172,11 @@ export async function runSite(
 
     let ok: boolean;
     if (entry.username !== undefined) {
-      const user = await page
-        .locator(entry.username)
-        .first()
-        .inputValue()
-        .catch(() => "");
+      const user = await valueOf(page, entry.username);
       const password =
         entry.password === undefined
           ? CHECK_PASSWORD
-          : await page
-              .locator(entry.password)
-              .first()
-              .inputValue()
-              .catch(() => "");
+          : await valueOf(page, entry.password);
       ok = user === CHECK_USER && password === CHECK_PASSWORD;
     } else {
       const frames = await Promise.all(page.frames().map(inspect));
@@ -188,7 +191,9 @@ export async function runSite(
     if (!ok)
       extra.reason = outcome.code === "ok" ? "wrong_inputs" : outcome.code;
     return done(ok ? "pass" : "fail", extra);
-  } catch {
+  } catch (error) {
+    // The runner's own failure: say what it was, so the report explains it.
+    console.warn(`runner error on ${entry.site}: ${String(error)}`);
     return done("error", { reason: "runner" });
   } finally {
     await page?.close().catch(() => undefined);
