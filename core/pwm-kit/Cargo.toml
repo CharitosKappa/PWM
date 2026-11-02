@@ -1,0 +1,21 @@
+[package]
+name = "pwm-kit"
+description = "The Emergency Kit: its PDF and the QR code that fills in a new device's sign-in (D42)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+pwm-crypto = { path = "../pwm-crypto" }
+qrcode = { version = "0.14.1", default-features = false }
+thiserror = "2.0.21"
+zeroize = "1.9.1"
+
+[dev-dependencies]
+# Decodes the QR code drawn in the PDF, to check the drawing (tests only).
+rqrr = { version = "0.11.0", default-features = false }

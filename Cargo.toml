@@ -15,6 +15,7 @@ members = [
     "core/pwm-generator",
     "core/pwm-health",
     "core/pwm-export",
+    "core/pwm-kit",
     "core/pwm-ffi",
     "core/pwm-ffi-bindgen",
     "core/pwm-rules-sign",
