@@ -678,3 +678,42 @@ fn an_item_too_large_to_sync_is_refused_when_saved() {
     ));
     assert_eq!(state(&device, &vault, &id), None);
 }
+
+#[test]
+fn a_restore_the_seqs_cannot_show_is_caught_by_the_epoch() {
+    let mut server = FakeServer::new();
+    let account = Account::new();
+    let mut laptop = account.device(&mut server);
+    let vault = create_vault(&mut laptop, &mut server);
+    add(&mut laptop, &vault, "in the backup", T0);
+    sync(&mut laptop, &mut server, T0);
+    let epoch = laptop.store().server_epoch().unwrap();
+    assert_eq!(epoch, Some(server.epoch), "the first epoch is recorded");
+    let backup = server.vaults.clone();
+    let lost = add(&mut laptop, &vault, "after the backup", T0);
+    sync(&mut laptop, &mut server, T0);
+    assert_eq!(laptop.store().vaults().unwrap()[0].sync_cursor, 2);
+
+    // Restored, marked, and then another device writes past seq 2 before
+    // the laptop syncs again: next >= since, so seqs alone look normal.
+    server.vaults = backup;
+    server.mark_restored();
+    let mut phone = account.device(&mut server);
+    sync(&mut phone, &mut server, T0);
+    add(&mut phone, &vault, "phone 1", T0);
+    add(&mut phone, &vault, "phone 2", T0);
+    sync(&mut phone, &mut server, T0);
+    assert_eq!(server.vault(&vault).seq, 3);
+
+    let report = sync(&mut laptop, &mut server, T0);
+    assert!(report.resynced);
+    assert_eq!(laptop.store().server_epoch().unwrap(), Some(server.epoch));
+    assert_eq!(state(&laptop, &vault, &lost), Some((1, SyncState::Synced)));
+    let all = ["after the backup", "in the backup", "phone 1", "phone 2"];
+    assert_eq!(titles(&laptop, &vault), all);
+    sync(&mut phone, &mut server, T0);
+    assert_eq!(titles(&phone, &vault), all);
+
+    // The next sync is an ordinary one.
+    assert!(!sync(&mut laptop, &mut server, T0).resynced);
+}

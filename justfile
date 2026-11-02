@@ -30,9 +30,21 @@ test-vectors:
 autofill:
     @echo "autofill harness not built yet (M4.7): see tests/autofill-harness/README.md"
 
-# run the sync server locally against the `just db` container (docker compose arrives in M3.6)
-server $PWM_DATABASE_URL="postgres://pwm:pwm@127.0.0.1:54329/pwm":
-    cargo run -p pwm-server
+# run the sync server locally: docker compose (Postgres + the server image) on http://127.0.0.1:8080; needs `just secrets` once
+server:
+    docker compose up --build
+
+# write .env with new server secrets for `just server` (an existing .env is kept)
+secrets:
+    cargo run -q -p pwm-server -- keygen --env .env
+
+# register, log in and read the account against a running server (default: `just server`)
+smoke url="http://127.0.0.1:8080":
+    cargo run -q -p pwm-server --example smoke -- {{url}}
+
+# Postgres 17 with TLS on (self-signed certificate) for the TLS test: PWM_TEST_TLS_DATABASE_URL=postgres://pwm:pwm@127.0.0.1:54330/postgres
+db-tls:
+    docker run --rm -d --name pwm-test-tls -p 127.0.0.1:54330:5432 -e POSTGRES_USER=pwm -e POSTGRES_PASSWORD=pwm postgres:17 -c ssl=on -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
 
 # disposable Postgres 17 for the server's database tests (`docker stop pwm-test-db` removes it)
 db:

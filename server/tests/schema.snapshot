@@ -67,6 +67,13 @@ table login_attempts
   index CREATE INDEX login_attempts_expires_at ON public.login_attempts USING btree (expires_at)
   index CREATE UNIQUE INDEX login_attempts_pkey ON public.login_attempts USING btree (id)
 
+table server_meta
+  column singleton boolean not null default true
+  column epoch uuid not null default gen_random_uuid()
+  constraint server_meta_pkey: PRIMARY KEY (singleton)
+  constraint server_meta_singleton_check: CHECK (singleton)
+  index CREATE UNIQUE INDEX server_meta_pkey ON public.server_meta USING btree (singleton)
+
 table sessions
   column id uuid not null default gen_random_uuid()
   column account_id uuid not null

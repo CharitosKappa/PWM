@@ -11,7 +11,10 @@ use crate::{AccountRecord, ItemRecord, Store, StoreError, SyncState, VaultRecord
 
 /// Migration `n` (0-based) takes the schema from version `n` to `n + 1`.
 /// Shipped entries are never edited.
-const MIGRATIONS: &[&str] = &[include_str!("migrations/v1.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("migrations/v1.sql"),
+    include_str!("migrations/v2.sql"),
+];
 
 /// Schema version this build writes and the newest it can open.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
@@ -257,6 +260,23 @@ impl Store for SqliteStore {
         Ok(())
     }
 
+    fn server_epoch(&self) -> Result<Option<Id>, StoreError> {
+        let epoch: Option<Vec<u8>> = self
+            .conn
+            .query_row("SELECT server_epoch FROM sync_meta", [], |r| r.get(0))
+            .optional()?;
+        epoch.map(id).transpose()
+    }
+
+    fn set_server_epoch(&mut self, epoch: &Id) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT INTO sync_meta (singleton, server_epoch) VALUES (1, ?1) \
+             ON CONFLICT (singleton) DO UPDATE SET server_epoch = excluded.server_epoch",
+            [&epoch[..]],
+        )?;
+        Ok(())
+    }
+
     fn pending_items(&self) -> Result<Vec<ItemRecord>, StoreError> {
         self.query_items(
             &format!("SELECT {ITEM_COLUMNS} FROM items WHERE state <> 0"),
@@ -266,7 +286,9 @@ impl Store for SqliteStore {
 
     fn clear(&mut self) -> Result<(), StoreError> {
         let tx = self.conn.transaction()?;
-        tx.execute_batch("DELETE FROM items; DELETE FROM vaults; DELETE FROM account;")?;
+        tx.execute_batch(
+            "DELETE FROM items; DELETE FROM vaults; DELETE FROM account; DELETE FROM sync_meta;",
+        )?;
         tx.commit()?;
         Ok(())
     }

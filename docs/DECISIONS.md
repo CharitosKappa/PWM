@@ -369,6 +369,15 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
      - **Server:** migration 0003 adds a one-row `server_meta` table holding a random `epoch`. `pwm-server mark-restored` replaces it, and the backup/restore notes in `DEPLOYMENT.md` make that command a required step. `GET /v1/vaults` returns the epoch in a `pwm-epoch` header, so D27's JSON doesn't change.
      - **Client:** the cache stores the epoch it last saw (cache schema v2: a nullable `server_epoch` on the account row, with a migration, a frozen v1→v2 fixture and a migration test). When the epoch changes, the engine pulls every vault again from 0 and uploads what the server lost (the D28 §9 path).
   6. **CI:** a new job builds the image, starts compose, waits until it is healthy, checks `/healthz`, and runs the registration flow once against it. The image is not pushed anywhere yet; the registry and signing come with M10.1.
+  Implementation notes (M3.6):
+  - **Where the cache keeps the epoch:** a one-row `sync_meta` table (cache schema v2), not a column on the account row. The engine also runs with no account row, for example on a device that has only synced so far.
+  - **When the epoch is recorded:** only once every vault has been pulled. A run cut short by a crash therefore resyncs again next time.
+  - **The first epoch** a device sees is just recorded, without a resync.
+  - **Health check:** `pwm-server healthcheck` speaks HTTP/1.1 over a socket to loopback, so the scratch image needs no curl.
+  - **`keygen --env <file>`** creates the file (mode 0600 on Unix) and never overwrites an existing one.
+  - **TLS test:** it uses a second Postgres started with `-c ssl=on` and the image's self-signed "snakeoil" certificate. `sslmode=require` must connect encrypted, and `verify-full` must refuse the certificate.
+  - **Smoke test:** a plain-socket example client (`server/examples/smoke.rs`, no HTTP client crate) runs against the compose stack in CI before and after `mark-restored`.
+  - **New crates for TLS:** rustls, ring, rustls-native-certs and their dependencies (`sqlx` feature `tls-rustls-ring-native-roots`). All pass `cargo deny`.
   Why: a scratch image is the smallest and safest thing to ship, and it is the self-host image too. Reading CA roots from a file keeps TLS within the licence allow-list. A server epoch closes the one restore case that change numbers alone can't catch.
 - **D31 — Core bindings for apps (UniFFI) and the extension (WASM)** · settled 2026-11-02 · founder (approved as proposed). The roadmap says "FFI (`pwm-ffi` via UniFFI) and WASM (`pwm-wasm`) builds of core exposing account, vault, sync, generator, autofill APIs". Open: the shape of that API, how sign-up and login (which need server round trips) are exposed, how items cross the boundary, where the extension keeps its cache (the `Store` trait is synchronous but IndexedDB is not), and how bindings are tested. Proposal:
   1. **One API, two thin wrappers:**

@@ -98,7 +98,25 @@ Phase 3  Teams           months 16–24 M16–M19
     - Shared limits across several server instances (M10).
     - Per-plan caps (M9).
     - A general per-IP limit on authenticated endpoints, for floods of invalid tokens (with M10 operations).
-- [ ] M3.6 `docker compose` for local dev; same image is the future self-host image.
+- [x] M3.6 `docker compose` for local dev; same image is the future self-host image.
+  - Per D30:
+    - **Image:** a `Dockerfile` building a static musl binary on `scratch`, with the CA bundle and a non-root user. No shell, so no GPL software ships.
+    - **`compose.yaml`:** Postgres 17 plus the server on `127.0.0.1:8080`, read-only, all capabilities dropped, `no-new-privileges`, secrets from a gitignored `.env`.
+    - **New `just` recipes:** `secrets`, `server`, `smoke` and `db-tls`.
+    - **Postgres TLS:** rustls with the system roots (`verify-full` for remote databases), tested against a TLS Postgres in CI.
+    - **Restore detection:** migration 0003 adds `server_meta.epoch`, `pwm-server mark-restored` replaces it, and `GET /v1/vaults` sends it as `pwm-epoch`. The cache moves to schema v2 (`sync_meta`, frozen fixture and migration test), and the engine pulls every vault again when the epoch changes. This closes the D28 open risk.
+    - **`pwm-server healthcheck`** and **`keygen --env`**.
+    - **`docs/DEPLOYMENT.md`:** settings, the TLS proxy (with a Caddy example), backups, and the required `mark-restored` step.
+  - **Tests:**
+    - cache v1→v2 and the v2 fixture
+    - epoch round trip and `clear`
+    - an engine test where the restored server has already handed out new seqs, so only the epoch reveals the restore (it fails with epoch detection off)
+    - server epoch and health check tests, and the TLS test
+    - a new CI `image` job: compose build, a check that the image has no shell, compose up and wait, then the smoke test before and after `mark-restored`.
+  - **Deferred:**
+    - An arm64 image, pushing to a registry, and signing (M10.1).
+    - Full self-hosting docs (M11).
+    - Running `mark-restored` automatically from restore tooling.
 - [ ] M3.7 FFI (`pwm-ffi` via UniFFI) and WASM (`pwm-wasm`) builds of core exposing account, vault, sync, generator, autofill APIs.
 
 **Gate — Private beta:** create account on macOS app (M5 skeleton) and extension, items sync both ways.

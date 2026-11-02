@@ -11,6 +11,7 @@ use pwm_store::{
 use pwm_vault::{Item, ItemId, ItemKind, Login, encrypt_item};
 
 const FIXTURE_V1: &str = include_str!("fixtures/store_v1.sql");
+const FIXTURE_V2: &str = include_str!("fixtures/store_v2.sql");
 
 /// A database file under the system temp dir, removed on drop.
 struct TempDb(PathBuf);
@@ -89,6 +90,18 @@ fn a_new_store_is_empty() {
     assert_eq!(store.account().unwrap(), None);
     assert!(store.vaults().unwrap().is_empty());
     assert!(store.pending_items().unwrap().is_empty());
+    assert_eq!(store.server_epoch().unwrap(), None);
+}
+
+#[test]
+fn server_epoch_round_trip_and_clear() {
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    store.set_server_epoch(&[7; 16]).unwrap();
+    assert_eq!(store.server_epoch().unwrap(), Some([7; 16]));
+    store.set_server_epoch(&[8; 16]).unwrap();
+    assert_eq!(store.server_epoch().unwrap(), Some([8; 16]));
+    store.clear().unwrap();
+    assert_eq!(store.server_epoch().unwrap(), None);
 }
 
 #[test]
@@ -335,7 +348,7 @@ fn deleted_ciphertext_is_overwritten() {
 
 #[test]
 fn a_new_file_gets_the_current_schema() {
-    assert_eq!(SCHEMA_VERSION, 1);
+    assert_eq!(SCHEMA_VERSION, 2);
     let db = TempDb::new();
     SqliteStore::open(db.path()).unwrap();
     let conn = rusqlite::Connection::open(db.path()).unwrap();
@@ -349,17 +362,29 @@ fn a_new_file_gets_the_current_schema() {
     assert_eq!(app_id, 0x5057_4D31, "\"PWM1\"");
 }
 
-/// The schema the migrations build must match the frozen v1 fixture exactly,
-/// so a shipped migration can never be edited by accident.
+/// The schema the migrations build must match the frozen fixture of the
+/// current version exactly, so a shipped migration can never be edited by
+/// accident; a v1 file migrated to v2 must end up the same.
 #[test]
-fn migrations_build_the_frozen_v1_schema() {
+fn migrations_build_the_frozen_v2_schema() {
     let db = TempDb::new();
     SqliteStore::open(db.path()).unwrap();
     let migrated = schema_of(&rusqlite::Connection::open(db.path()).unwrap());
 
     let frozen = rusqlite::Connection::open_in_memory().unwrap();
-    frozen.execute_batch(FIXTURE_V1).unwrap();
+    frozen.execute_batch(FIXTURE_V2).unwrap();
     assert_eq!(migrated, schema_of(&frozen));
+
+    let old = TempDb::new();
+    rusqlite::Connection::open(old.path())
+        .unwrap()
+        .execute_batch(FIXTURE_V1)
+        .unwrap();
+    SqliteStore::open(old.path()).unwrap();
+    assert_eq!(
+        schema_of(&rusqlite::Connection::open(old.path()).unwrap()),
+        migrated
+    );
 }
 
 fn schema_of(conn: &rusqlite::Connection) -> Vec<(String, String)> {
@@ -413,6 +438,30 @@ fn a_v1_file_opens_and_reads() {
         [(7, SyncState::Synced), (8, SyncState::Modified)]
     );
     assert_eq!(store.pending_items().unwrap().len(), 1);
+    // v1 had no server epoch: the next sync records one without a resync.
+    assert_eq!(store.server_epoch().unwrap(), None);
+}
+
+#[test]
+fn a_v2_file_opens_and_reads() {
+    let db = TempDb::new();
+    rusqlite::Connection::open(db.path())
+        .unwrap()
+        .execute_batch(FIXTURE_V2)
+        .unwrap();
+    let store = SqliteStore::open(db.path()).unwrap();
+    assert_eq!(store.account().unwrap(), None);
+    let vaults = store.vaults().unwrap();
+    assert_eq!(vaults[0].sync_cursor, 9);
+    let items = store.items(&vaults[0].vault_id).unwrap();
+    assert_eq!((items[0].revision, items[0].state), (3, SyncState::Synced));
+    assert_eq!(
+        store.server_epoch().unwrap(),
+        Some([
+            0xE0, 0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xEB, 0xEC, 0xED,
+            0xEE, 0xEF
+        ])
+    );
 }
 
 #[test]

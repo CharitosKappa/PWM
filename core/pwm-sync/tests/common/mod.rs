@@ -58,6 +58,8 @@ pub struct FakeServer {
     faults: Vec<(String, Fault)>,
     /// Every request that reached the server: "METHOD /path [precondition]".
     pub log: Vec<String>,
+    /// Sent as `pwm-epoch` with the vault list (D30).
+    pub epoch: Id,
 }
 
 fn json_response(status: u16, body: Value) -> HttpResponse {
@@ -85,7 +87,15 @@ fn counter(text: &str) -> Option<u64> {
 
 impl FakeServer {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            epoch: *ItemId::generate().unwrap().as_bytes(),
+            ..Self::default()
+        }
+    }
+
+    /// What `pwm-server mark-restored` does after a restore.
+    pub fn mark_restored(&mut self) {
+        self.epoch = *ItemId::generate().unwrap().as_bytes();
     }
 
     /// A token pair for a new device.
@@ -221,7 +231,11 @@ impl FakeServer {
                         "seq": v.seq.to_string() })
             })
             .collect();
-        json_response(200, Value::Array(list))
+        let mut response = json_response(200, Value::Array(list));
+        response
+            .headers
+            .push(("pwm-epoch".to_owned(), id_string(&self.epoch)));
+        response
     }
 
     fn create_vault(&mut self, body: &Value) -> HttpResponse {
