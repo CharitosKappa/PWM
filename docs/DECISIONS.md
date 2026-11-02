@@ -1071,3 +1071,24 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **A separate Swift package per app:** duplicates the session and item code that the app and its AutoFill extension must share.
   - **Generate Swift types for items from the Rust model:** D31 chose JSON so bindings don't mirror the item model; hand-written `Codable` with a round-trip test is enough.
   - **macOS CI only:** simpler, but every PR touching the core would pay macOS minutes; the Linux job catches most breakage first.
+
+  Implementation notes (M5.1):
+  - **Names:** the XCFramework is `pwm_ffiFFI.xcframework`, named after the C module the UniFFI Swift file imports, not `PWMCoreFFI`. SwiftPM ties a binary target's name to its module.
+  - **Generated files:** `apps/apple/PWMKit/generate.sh` (`apple` from `just apple`, `linux` in CI) writes them to `Generated/`:
+    - `PWMCore/pwm_ffi.swift`
+    - on Linux, `linux/` (the header and a module map that links `libpwm_ffi`)
+    - on a Mac, the XCFramework
+  - **Swift 6 language mode**, with strict concurrency, for `PWMKit` and `PWMDesign`. The generated `PWMCore` builds in Swift 5 mode and is imported with `@preconcurrency`.
+  - **Items:** rather than `Codable` structs, `Item`, `Login` and `LoginURL` wrap the item's JSON object, with typed accessors that read and write it in place.
+    - Unknown fields at any depth are kept exactly, with no merge step.
+    - Items of a newer schema or of an unknown type are read-only (`isEditable`), and `Session.save` refuses them.
+    - `Item`, `Login` and `JSONValue` print as redacted.
+  - **`Session` keeps four things in the `KeyStore`:** the Secret Key, the tokens, the device id and the email.
+    - `signUp` also creates the first vault.
+    - `logIn` syncs at once.
+    - A `Wait` step ends a sync as `.retry(afterMs:)`.
+    - The core's own requests and the transport carry only `Sendable` copies (`HTTPRequest`, `HTTPResponse`).
+  - **Text styles** scale with Dynamic Type relative to the nearest system text style (`@ScaledMetric`). The token sizes are the starting point.
+  - **The Linux job** runs `pwm-server` from cargo with a Postgres service, rather than the compose image, to save the image build.
+  - **The macOS job** is skipped on the nightly schedule. On PRs and pushes, a small Linux job (`apple-changes`) decides from the changed paths whether it runs.
+  - **Not verified on this machine:** it has no Swift toolchain, so the package's first compile and test runs are in CI.

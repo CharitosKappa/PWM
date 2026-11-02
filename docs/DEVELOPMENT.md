@@ -104,6 +104,22 @@ cargo run -p pwm-rules-sign -- sign <seed> <key-id> rules.json autofill-rules.bi
 
 CI also compiles and runs small Swift and Kotlin programs against the bindings (`core/pwm-ffi/smoke/`). Locally, Swift can run in the `swift` Docker image on the Linux build of the library.
 
+## Apple: the shared Swift package
+
+`apps/apple/PWMKit` (D41) is the Swift package that the iOS app, its AutoFill extension and the macOS app share. On a Mac with Xcode and Apple Silicon:
+
+```
+just apple     # the core as an XCFramework into apps/apple/PWMKit/Generated/, then swift test
+just tokens    # regenerate Sources/PWMDesign/Tokens.swift after changing design/tokens.json
+```
+
+- **Before Xcode opens the package:** run `just apple` first, after every core change. The package does not resolve without `Generated/`.
+- **The server tests** run when `PWM_TEST_SERVER=http://127.0.0.1:8080` is set (run `just server`), and are skipped otherwise.
+- **On Linux** (as in CI):
+  1. `bash apps/apple/PWMKit/generate.sh linux`
+  2. In `apps/apple/PWMKit`, run `swift test -Xlinker -L$PWD/../../../target/debug`, with `LD_LIBRARY_PATH` set to the same folder.
+- **On Windows:** the package does not build there; CI runs it.
+
 ## Fuzzing
 
 Targets live in `core/pwm-crypto/fuzz/fuzz_targets/` (`envelope_decode`, `vault_share_decode`, `keyset_plaintext`, `secret_key_parse`, `password_normalize`, `totp_parse`, `export_read`, `opaque_messages`, `autofill_rules`, `url_match`). CI runs each for 60 s on every PR and 10 minutes nightly; crash inputs are uploaded as artifacts.

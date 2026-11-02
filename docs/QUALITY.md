@@ -23,6 +23,8 @@ Most one-star reviews in this market come from broken updates. Release safety is
 | `server-test` | PRs touching server/core | yes |
 | `extension-test` + autofill fixtures | PRs touching extension/core | yes |
 | `wasm`: both extension builds, `web-ext lint`, Firefox smoke (D40) | PRs touching extension/core | yes |
+| `bindings`: Swift/Kotlin smoke, the Swift package on Linux against a server (D41) | every PR | yes |
+| `apple`: the Swift package on macOS and an iOS simulator build (D41) | PRs touching `apps/apple`, `core/` or the tokens | yes |
 | `ios-build`, `android-build`, `desktop-build` | PRs touching that app/core | yes |
 | `audit` (cargo audit/deny, npm audit) | every PR + nightly | high severity |
 | `autofill-top-sites` (D39) | nightly + release candidates | release only (`runner/compare.ts`) |
