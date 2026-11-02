@@ -13,78 +13,6 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D32 — Transactional email provider** · open · founder. Needed for M10.7: email verification at sign-up (so registration stops revealing which emails have accounts) and account notices. To choose: provider and region (EU hosting fits D5), and its licence and data-processing terms.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
-- **D36 — Save and update prompts: detection, where the offer appears, what is saved** · proposed 2026-11-02 · Claude Code.
-  The roadmap says "Save/update prompts after submit". `AUTOFILL.md` says "detect submit + navigation; offer save only when credentials changed". `PRODUCT.md` promises no nag prompts and no UI moving under the cursor, and CLAUDE.md forbids clickable credential UI in page DOM.
-  Open:
-  - how the extension sees a submit at all, since D35 keeps it off pages by default
-  - what counts as a submit, and when a login "worked"
-  - where the offer appears
-  - what "changed" means
-  - what an offer may hold, and for how long
-  - which part lives in the core
-
-  Proposal:
-  1. **Seeing submits** (permissions as in D35):
-     - **Automatic offers need site access.** The content script must be on the page before the user submits, so offers use the same optional site access as the inline icon. The setting "Show the icon in sign-in fields" becomes **"Fill and save on sign-in pages"**, one switch for both. The icon and the offer can each be turned off on a site.
-     - **Without site access:** the popup gets **"Save login from this page"**. Clicking it injects the content script (`activeTab`), reads the sign-in fields the user has typed into, and shows the same offer in the popup.
-  2. **What counts as a submit:**
-     - **Events:** a form's `submit` event, Enter in a password field, or a trusted click on the form's submit-like button (`type=submit`, or a button in the form). This also covers single-page apps that never submit a form.
-     - **What is read at that moment:** only the fields the engine classified (D33) as username or email, current password and new password (first and confirm).
-     - **Kept out:** values are never read before a submit. Nothing is read from hidden fields, or when the password is empty or the two new passwords differ.
-     - **The capture:** the content script sends the background `{username, password, newPassword}` and forgets them. The background keeps the capture **in memory only** (not session storage, not disk), per tab. It expires after 5 minutes, or when the tab closes or the vault locks.
-  3. **When a login "worked"**, so a wrong password is not offered: the offer appears when either of these happens within 10 seconds of the submit:
-     - **Navigation:** the tab navigates to another page of the same site.
-     - **The form goes away:** the password field is no longer in the page or no longer visible.
-     If the same form is still there with the field (a failed login usually stays), there is no offer. The capture stays in the popup until it expires, in case the site behaves differently.
-  4. **What "changed" means** (decided by the core, so the apps' save flows in M5/M6 reuse it):
-     - **No matching login for the site** (D33 matching) → **Save**.
-     - **A matching login with the same username but another password** → **Update password**. On a change-password form, the new password is compared and offered as the update.
-     - **Already saved as is** → no offer.
-     - **Several logins match with that username** → **Update**, after the user picks which.
-     - **Refused or blocked sites** (rules `never_fill`, a frame from another site, D33) → no offer.
-  5. **Where the offer appears:**
-     - **Card:** a small card fixed at the **top right of the page**, inside the same kind of frame as the inline icon: a closed shadow root around the extension's own `inline.html` with a one-time token. It shows the site and username (never the password), with **Save** (or **Update**), **Not now** and **Never for this site**.
-     - **Checked clicks:** clicks count only as in D35: trusted, and after 500 ms visible according to `IntersectionObserver` v2. A page that hides or covers the card cannot make the user save.
-     - **No layout shift:** the card is fixed and never moves the page. It appears at most once per submit and closes on navigation. It never appears while the user is filling or typing.
-     - **"Never for this site"** is stored per host, like "Don't show here".
-     - **Toolbar:** the button gets a badge while an offer is pending, and the popup shows the offer at the top. This is also how users without site access, and users who closed the card, still see it.
-     - **Locked vault:** the card says "Unlock to save" and opens the popup; after unlocking, the offer is there.
-  6. **What is saved:**
-     - **Save:** a login with title = the site's host name, the username, the password, and the page's origin as URL (default `domain` matching), in the first vault. The popup's offer lets the user edit the title and username before saving; the card does not.
-     - **Update:** the password changes and the previous version goes to history (D19). Nothing else changes.
-     - **`http` pages:** the offer shows "This page is not secure", but saving is allowed.
-  7. **Core (`pwm-client`, Rust, tested first), exposed in WASM and UniFFI:**
-     - `save_offer(page_url, username, password, new_password)` → `none` | `save` | `update {item_ids}`, using the D33 matching.
-     - `save_login(vault_id, page_url, title, username, password)` → the new item id.
-     - `update_password(vault_id, item_id, password)`: history kept.
-     - **No item JSON built in TypeScript:** the extension never builds item JSON itself. The test-only `saveItem` stays for the harness.
-  8. **Not included:**
-     - **Offering the generator on new-password fields:** a separate task.
-     - **Saving cards and identities:** M4.10.
-     - **Passkeys:** M4.5.
-     - **Importing what the browser itself saved:** M8.
-  9. **Tests:**
-     - **Rust:** the offer decision (new site, same credentials, new password, change-password form, several matches, refused frame, blocked site), save and update (history kept, other fields untouched), and the URL saved from a page URL.
-     - **Vitest:**
-       - which fields are read, and that hidden ones and mismatched new passwords are not
-       - that captures expire and stay out of storage
-       - the navigation and form-gone rules
-       - the badge, the card token and "never for this site"
-       - that the card's messages and the popup never carry the password
-     - **Playwright (harness):**
-       - a successful login that navigates → card → Save → the login exists and fills next time
-       - a failed login (the form stays) → no card
-       - the same credentials again → no card
-       - a change-password form → Update → history holds the old password
-       - a single-page login without a submit → card
-       - a page that makes the card transparent → clicks ignored
-       - the popup's manual save
-
-  Alternatives:
-  - **Offer at once on submit**, like some managers: simpler, but it offers wrong passwords after failed logins.
-  - **OS notifications** (`notifications` permission): outside the page, so they cannot be clickjacked, but they are intrusive, and people turn them off.
-  - **Only the toolbar badge, no card:** the least intrusive, but easy to miss. Users without site access get exactly this.
-  - **Building the item in TypeScript:** less work now, but the apps' save flows would need the same logic again, and item format code belongs in the core.
 
 ## Settled
 
@@ -713,3 +641,75 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Fixed in passing (M4.2 bug):** the background read login fields at the top level of an item, but the core lists them under `login` (D18). So the popup showed no usernames, and copying a password failed. The test fakes now use the core's real JSON, and the browser tests read items through the real core.
   - **`saveItem`** is on the background for the browser tests now, and for the save prompts (M4.4).
   - **The test build** (`build.mjs --test`, `extension/dist-test/`) has site access from install and a background hook for Playwright. The release build's check fails if the hook is in it.
+- **D36 — Save and update prompts: detection, where the offer appears, what is saved** · settled 2026-11-02 · founder (approved as proposed).
+  The roadmap says "Save/update prompts after submit". `AUTOFILL.md` says "detect submit + navigation; offer save only when credentials changed". `PRODUCT.md` promises no nag prompts and no UI moving under the cursor, and CLAUDE.md forbids clickable credential UI in page DOM.
+  Open:
+  - how the extension sees a submit at all, since D35 keeps it off pages by default
+  - what counts as a submit, and when a login "worked"
+  - where the offer appears
+  - what "changed" means
+  - what an offer may hold, and for how long
+  - which part lives in the core
+
+  Proposal:
+  1. **Seeing submits** (permissions as in D35):
+     - **Automatic offers need site access.** The content script must be on the page before the user submits, so offers use the same optional site access as the inline icon. The setting "Show the icon in sign-in fields" becomes **"Fill and save on sign-in pages"**, one switch for both. The icon and the offer can each be turned off on a site.
+     - **Without site access:** the popup gets **"Save login from this page"**. Clicking it injects the content script (`activeTab`), reads the sign-in fields the user has typed into, and shows the same offer in the popup.
+  2. **What counts as a submit:**
+     - **Events:** a form's `submit` event, Enter in a password field, or a trusted click on the form's submit-like button (`type=submit`, or a button in the form). This also covers single-page apps that never submit a form.
+     - **What is read at that moment:** only the fields the engine classified (D33) as username or email, current password and new password (first and confirm).
+     - **Kept out:** values are never read before a submit. Nothing is read from hidden fields, or when the password is empty or the two new passwords differ.
+     - **The capture:** the content script sends the background `{username, password, newPassword}` and forgets them. The background keeps the capture **in memory only** (not session storage, not disk), per tab. It expires after 5 minutes, or when the tab closes or the vault locks.
+  3. **When a login "worked"**, so a wrong password is not offered: the offer appears when either of these happens within 10 seconds of the submit:
+     - **Navigation:** the tab navigates to another page of the same site.
+     - **The form goes away:** the password field is no longer in the page or no longer visible.
+     If the same form is still there with the field (a failed login usually stays), there is no offer. The capture stays in the popup until it expires, in case the site behaves differently.
+  4. **What "changed" means** (decided by the core, so the apps' save flows in M5/M6 reuse it):
+     - **No matching login for the site** (D33 matching) → **Save**.
+     - **A matching login with the same username but another password** → **Update password**. On a change-password form, the new password is compared and offered as the update.
+     - **Already saved as is** → no offer.
+     - **Several logins match with that username** → **Update**, after the user picks which.
+     - **Refused or blocked sites** (rules `never_fill`, a frame from another site, D33) → no offer.
+  5. **Where the offer appears:**
+     - **Card:** a small card fixed at the **top right of the page**, inside the same kind of frame as the inline icon: a closed shadow root around the extension's own `inline.html` with a one-time token. It shows the site and username (never the password), with **Save** (or **Update**), **Not now** and **Never for this site**.
+     - **Checked clicks:** clicks count only as in D35: trusted, and after 500 ms visible according to `IntersectionObserver` v2. A page that hides or covers the card cannot make the user save.
+     - **No layout shift:** the card is fixed and never moves the page. It appears at most once per submit and closes on navigation. It never appears while the user is filling or typing.
+     - **"Never for this site"** is stored per host, like "Don't show here".
+     - **Toolbar:** the button gets a badge while an offer is pending, and the popup shows the offer at the top. This is also how users without site access, and users who closed the card, still see it.
+     - **Locked vault:** the card says "Unlock to save" and opens the popup; after unlocking, the offer is there.
+  6. **What is saved:**
+     - **Save:** a login with title = the site's host name, the username, the password, and the page's origin as URL (default `domain` matching), in the first vault. The popup's offer lets the user edit the title and username before saving; the card does not.
+     - **Update:** the password changes and the previous version goes to history (D19). Nothing else changes.
+     - **`http` pages:** the offer shows "This page is not secure", but saving is allowed.
+  7. **Core (`pwm-client`, Rust, tested first), exposed in WASM and UniFFI:**
+     - `save_offer(page_url, username, password, new_password)` → `none` | `save` | `update {item_ids}`, using the D33 matching.
+     - `save_login(vault_id, page_url, title, username, password)` → the new item id.
+     - `update_password(vault_id, item_id, password)`: history kept.
+     - **No item JSON built in TypeScript:** the extension never builds item JSON itself. The test-only `saveItem` stays for the harness.
+  8. **Not included:**
+     - **Offering the generator on new-password fields:** a separate task.
+     - **Saving cards and identities:** M4.10.
+     - **Passkeys:** M4.5.
+     - **Importing what the browser itself saved:** M8.
+  9. **Tests:**
+     - **Rust:** the offer decision (new site, same credentials, new password, change-password form, several matches, refused frame, blocked site), save and update (history kept, other fields untouched), and the URL saved from a page URL.
+     - **Vitest:**
+       - which fields are read, and that hidden ones and mismatched new passwords are not
+       - that captures expire and stay out of storage
+       - the navigation and form-gone rules
+       - the badge, the card token and "never for this site"
+       - that the card's messages and the popup never carry the password
+     - **Playwright (harness):**
+       - a successful login that navigates → card → Save → the login exists and fills next time
+       - a failed login (the form stays) → no card
+       - the same credentials again → no card
+       - a change-password form → Update → history holds the old password
+       - a single-page login without a submit → card
+       - a page that makes the card transparent → clicks ignored
+       - the popup's manual save
+
+  Alternatives:
+  - **Offer at once on submit**, like some managers: simpler, but it offers wrong passwords after failed logins.
+  - **OS notifications** (`notifications` permission): outside the page, so they cannot be clickjacked, but they are intrusive, and people turn them off.
+  - **Only the toolbar badge, no card:** the least intrusive, but easy to miss. Users without site access get exactly this.
+  - **Building the item in TypeScript:** less work now, but the apps' save flows would need the same logic again, and item format code belongs in the core.
