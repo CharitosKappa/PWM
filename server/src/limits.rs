@@ -47,6 +47,8 @@ pub struct Limits {
     pub refresh: Rate,
     /// Every authenticated request, per account.
     pub account: Rate,
+    /// Anonymous autofill reports (D38), per IP: 10 an hour.
+    pub report: Rate,
 }
 
 impl Default for Limits {
@@ -56,6 +58,7 @@ impl Default for Limits {
             login: Rate::new(30, MINUTE),
             refresh: Rate::new(10, MINUTE),
             account: Rate::new(600, MINUTE),
+            report: Rate::new(10, HOUR),
         }
     }
 }
@@ -69,6 +72,7 @@ impl Limits {
             login: rate,
             refresh: rate,
             account: rate,
+            report: rate,
         }
     }
 }
@@ -113,6 +117,7 @@ pub(crate) enum Class {
     Login,
     Refresh,
     Account,
+    Report,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -150,6 +155,7 @@ impl RateLimiter {
             Class::Login => self.limits.login,
             Class::Refresh => self.limits.refresh,
             Class::Account => self.limits.account,
+            Class::Report => self.limits.report,
         }
     }
 
@@ -268,11 +274,12 @@ fn class_of(path: &str) -> Option<Class> {
             Some(Class::Login)
         }
         "/v1/auth/refresh" => Some(Class::Refresh),
+        "/v1/reports/autofill" => Some(Class::Report),
         _ => None,
     }
 }
 
-/// Per-IP limits for the unauthenticated auth endpoints. Authenticated
+/// Per-IP limits for the unauthenticated endpoints (auth and reports). Authenticated
 /// requests are limited per account in the `Authenticated` extractor.
 pub(crate) async fn by_ip(State(state): State<AppState>, request: Request, next: Next) -> Response {
     if let Some(class) = class_of(request.uri().path()) {

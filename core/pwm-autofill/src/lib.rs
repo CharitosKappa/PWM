@@ -8,6 +8,7 @@ mod classify;
 mod matching;
 mod multistep;
 mod psl;
+mod report;
 mod rules;
 
 pub use classify::{Class, Field, FieldClass, classify};
@@ -16,6 +17,10 @@ pub use matching::{
 };
 pub use multistep::{MultiStep, NextStep, StepDone};
 pub use psl::{PSL_VERSION, registrable_domain};
+pub use report::{
+    FrameRelation, MAX_REPORT_BYTES, Problem, REPORT_VERSION, ReportError, ReportFrame,
+    ReportInput, build_report, clean_text,
+};
 pub use rules::{Attr, FieldRule, RULES_KEYS, Rules, RulesError, SiteRules, verify_rules};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

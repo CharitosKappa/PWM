@@ -32,5 +32,5 @@ Autofill reliability is our top promise and the top complaint against every comp
 
 ## Failure reports
 
-- In-extension "Autofill didn't work here" button: captures URL origin and a **form-structure fingerprint** (tag, type, attributes, label text of inputs — never values), user confirms before sending.
+- In-extension "Autofill didn't work here" button: captures URL origin and a **form-structure fingerprint** (tag, type, attributes, label text of inputs — never values), user confirms before sending. Per D38: anonymous, to the hosted service only, label text cleaned in the core, kept 90 days.
 - Reports create tickets automatically; fix SLA: 7 days for top-1,000 sites, published on the dashboard.

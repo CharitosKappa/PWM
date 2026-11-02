@@ -296,3 +296,17 @@ body.window footer {
   padding: 0;
   justify-content: space-between;
 }
+
+/* The exact report JSON before sending (D38). */
+.report-json {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-family: var(--font-mono);
+  font-size: var(--type-caption-size);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

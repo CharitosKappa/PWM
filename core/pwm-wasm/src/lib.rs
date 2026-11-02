@@ -647,6 +647,22 @@ impl WasmClient {
             .map_err(js_error)
     }
 
+    /// An "Autofill didn't work here" report (D38), as JSON, for the user
+    /// to look at before sending. Never holds values.
+    #[wasm_bindgen(js_name = autofillReport)]
+    pub fn autofill_report(
+        &self,
+        page_url: &str,
+        problem: &str,
+        frames_json: &str,
+        extension_version: &str,
+        browser: &str,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .autofill_report(page_url, problem, frames_json, extension_version, browser)
+            .map_err(js_error)
+    }
+
     #[wasm_bindgen(js_name = autofillForgetTab)]
     pub fn autofill_forget_tab(&mut self, tab: &str) {
         self.inner.autofill_forget_tab(tab);

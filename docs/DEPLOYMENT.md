@@ -71,3 +71,13 @@ This gives the server a new epoch. Every device notices it on its next sync, pul
   - never paths, IPs, account ids, tokens or contents.
 
   Every line passes through a scrubber that removes anything shaped like a token, an email address or base64 data (D29).
+
+## Autofill failure reports
+
+Users can send an "Autofill didn't work here" report from the extension (D38). They go to the hosted service only, anonymously: no account, device or IP address is stored. They are kept 90 days and deleted as new ones arrive. For triage:
+
+```
+docker compose exec -T server /pwm-server reports export --since 2026-11-01 > reports.jsonl
+```
+
+Each line is `{received_at, site, report}`. A self-hosted server accepts reports too, but the extension never sends it any: they always go to the hosted service.

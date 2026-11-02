@@ -98,6 +98,8 @@ export interface Platform {
   pages: Pages;
   fetch: (url: string, init: RequestInit) => Promise<Response>;
   now: () => number;
+  /** The browser's name and major version, such as "Chrome 140" (for reports). */
+  browser: string;
   /** 0 ≤ x < 1, for spreading the rules download. */
   random: () => number;
 }

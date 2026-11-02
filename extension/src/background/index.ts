@@ -151,6 +151,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   void ready.then((b) => {
     b.autofill.onTabRemoved(tabId);
     b.saver.onTabRemoved(tabId);
+    b.reporter.onTabRemoved(tabId);
   });
 });
 

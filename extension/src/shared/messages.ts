@@ -40,7 +40,27 @@ export type Request =
   | { kind: "dismissOffer"; never: boolean }
   | { kind: "captureNow" }
   | { kind: "passkeys" }
-  | { kind: "setPasskeys"; on: boolean };
+  | { kind: "setPasskeys"; on: boolean }
+  | { kind: "reportPreview"; problem: ReportProblem }
+  | { kind: "reportSend" };
+
+/** What the user says went wrong (D38 §3); no free text. */
+export type ReportProblem =
+  | "nothing_filled"
+  | "wrong_field"
+  | "no_save_offer"
+  | "icon_in_the_way"
+  | "other";
+
+/** What the popup shows before sending: a summary and the exact JSON. */
+export interface ReportPreview {
+  site: string;
+  forms: number;
+  fields: number;
+  /** The field kinds the engine saw. */
+  kinds: string[];
+  json: string;
+}
 
 export type Status =
   | { state: "signedOut" }
@@ -101,6 +121,8 @@ export interface Replies {
   captureNow: OfferView;
   passkeys: boolean;
   setPasskeys: boolean;
+  reportPreview: ReportPreview;
+  reportSend: null;
 }
 
 const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
@@ -130,6 +152,8 @@ const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "captureNow",
   "passkeys",
   "setPasskeys",
+  "reportPreview",
+  "reportSend",
 ]);
 
 /** A popup message, wrapped so the background can tell it from others. */

@@ -25,6 +25,17 @@ table accounts
   index CREATE UNIQUE INDEX accounts_email_key ON public.accounts USING btree (email)
   index CREATE UNIQUE INDEX accounts_pkey ON public.accounts USING btree (id)
 
+table autofill_reports
+  column id bigint not null
+  column received_at timestamp with time zone not null default now()
+  column site text not null
+  column report jsonb not null
+  constraint autofill_reports_pkey: PRIMARY KEY (id)
+  constraint autofill_reports_report_check: CHECK ((pg_column_size(report) <= 65536))
+  constraint autofill_reports_site_check: CHECK ((length(site) <= 300))
+  index CREATE UNIQUE INDEX autofill_reports_pkey ON public.autofill_reports USING btree (id)
+  index CREATE INDEX autofill_reports_received_at ON public.autofill_reports USING btree (received_at)
+
 table devices
   column id uuid not null
   column account_id uuid not null

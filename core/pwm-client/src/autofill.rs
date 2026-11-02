@@ -3,8 +3,9 @@
 //! `pwm-autofill`; this only feeds it the unlocked vault.
 
 use pwm_autofill::{
-    Decision, Field, Match, MultiStep, NextStep, RULES_KEYS, RefuseReason, Rules, StepDone,
-    WarnReason, classify, rank, verify_rules,
+    Decision, Field, FrameRelation, Match, MultiStep, NextStep, Problem, RULES_KEYS, RefuseReason,
+    ReportFrame, ReportInput, Rules, StepDone, WarnReason, build_report, classify, rank,
+    verify_rules,
 };
 use pwm_store::Store;
 use pwm_vault::ItemKind;
@@ -195,5 +196,70 @@ impl<S: Store> Client<S> {
     /// The tab closed.
     pub fn autofill_forget_tab(&mut self, tab: &str) {
         self.autofill.steps.forget(tab);
+    }
+
+    /// An "Autofill didn't work here" report (D38) for the user to look at
+    /// and maybe send. `frames_json` is a JSON array of `{relation: "top" |
+    /// "same_site" | "other_site", fields: [field descriptions], fill:
+    /// [indexes]}`; the core classifies the fields itself. Whether a saved
+    /// login matched is included only while unlocked.
+    pub fn autofill_report(
+        &self,
+        page_url: &str,
+        problem: &str,
+        frames_json: &str,
+        extension_version: &str,
+        browser: &str,
+    ) -> Result<String, ClientError> {
+        #[derive(serde::Deserialize)]
+        struct FrameJson {
+            relation: String,
+            #[serde(default)]
+            fields: Vec<Field>,
+            #[serde(default)]
+            fill: Vec<usize>,
+        }
+        let problem = Problem::parse(problem).ok_or(ClientError::InvalidItem)?;
+        let raw: Vec<FrameJson> =
+            serde_json::from_str(frames_json).map_err(|_| ClientError::InvalidItem)?;
+        let url = url::Url::parse(page_url).map_err(|_| ClientError::InvalidUrl)?;
+        let site = self.autofill.rules.site_for(&url);
+        let frames = raw
+            .into_iter()
+            .map(|f| {
+                let relation = match f.relation.as_str() {
+                    "top" => FrameRelation::Top,
+                    "same_site" => FrameRelation::SameSite,
+                    "other_site" => FrameRelation::OtherSite,
+                    _ => return Err(ClientError::InvalidItem),
+                };
+                let classes = classify(&f.fields, site);
+                Ok(ReportFrame {
+                    relation,
+                    fields: f.fields,
+                    classes,
+                    fill: f.fill,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let matched = if self.is_unlocked() {
+            Some(
+                self.autofill_matches(page_url, None)?
+                    .iter()
+                    .any(|m| !m.decision.starts_with("refuse")),
+            )
+        } else {
+            None
+        };
+        build_report(&ReportInput {
+            page_url: page_url.to_owned(),
+            problem,
+            frames,
+            extension_version: extension_version.to_owned(),
+            rules_version: self.autofill.rules.version(),
+            browser: browser.to_owned(),
+            matched,
+        })
+        .map_err(|_| ClientError::InvalidUrl)
     }
 }

@@ -574,6 +574,24 @@ impl PwmClient {
             .update_password(&vault_id, &item_id, &password, now_ms)?)
     }
 
+    /// An "Autofill didn't work here" report (D38), as JSON.
+    pub fn autofill_report(
+        &self,
+        page_url: String,
+        problem: String,
+        frames_json: String,
+        app_version: String,
+        browser: String,
+    ) -> Result<String, PwmError> {
+        Ok(self.lock_inner().autofill_report(
+            &page_url,
+            &problem,
+            &frames_json,
+            &app_version,
+            &browser,
+        )?)
+    }
+
     /// The logins this page (or the frame holding the fields) may get.
     pub fn autofill_matches(
         &self,

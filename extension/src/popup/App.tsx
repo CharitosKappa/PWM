@@ -3,6 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import type { Status } from "../shared/messages.ts";
 import { describe, send } from "./api.ts";
+import { Report, ReportLink } from "./Report.tsx";
 import { Settings } from "./Settings.tsx";
 import { SignedOut } from "./SignedOut.tsx";
 import { Field, Notice } from "./ui.tsx";
@@ -15,6 +16,10 @@ export function App({
 }): JSX.Element {
   const [status, setStatus] = useState<Status | null>(null);
   const [settings, setSettings] = useState(startInSettings);
+  const [report, setReport] = useState(false);
+  const openReport = (): void => {
+    setReport(true);
+  };
 
   const refresh = (): void => {
     send({ kind: "status" })
@@ -27,6 +32,15 @@ export function App({
   useEffect(refresh, []);
 
   if (status === null) return <main class="stack" aria-busy="true" />;
+  if (report) {
+    return (
+      <Report
+        onDone={() => {
+          setReport(false);
+        }}
+      />
+    );
+  }
   if (settings) {
     return (
       <Settings
@@ -56,7 +70,9 @@ export function App({
         </>
       );
     case "locked":
-      return <Unlock email={status.email} onDone={refresh} />;
+      return (
+        <Unlock email={status.email} onDone={refresh} onReport={openReport} />
+      );
     case "unlocked":
       return (
         <Vault
@@ -65,6 +81,7 @@ export function App({
           onSettings={() => {
             setSettings(true);
           }}
+          onReport={openReport}
         />
       );
   }
@@ -73,9 +90,11 @@ export function App({
 function Unlock({
   email,
   onDone,
+  onReport,
 }: {
   email: string;
   onDone: () => void;
+  onReport: () => void;
 }): JSX.Element {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -115,6 +134,7 @@ function Unlock({
           {busy ? "Unlocking…" : "Unlock"}
         </button>
       </form>
+      <ReportLink onOpen={onReport} />
     </main>
   );
 }
