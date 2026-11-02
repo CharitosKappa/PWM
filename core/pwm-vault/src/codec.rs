@@ -10,6 +10,10 @@ use crate::{Item, ItemId, VaultError};
 const RECORD_VERSION: u8 = 1;
 const PAD_BLOCK: usize = 256;
 
+/// The largest sealed item the server stores (D29): room for a large item
+/// with its full history.
+pub const MAX_SEALED_ITEM_BYTES: usize = 256 * 1024;
+
 /// Encrypts an item for storage under `revision`. Read-only items (newer
 /// schema or unknown type) and invalid items are refused.
 pub fn encrypt_item(
@@ -33,6 +37,28 @@ pub fn encrypt_item(
     result?;
     let aad = Aad::item(RECORD_VERSION, vault_id, item_id.as_bytes(), revision);
     Ok(seal(vault_key, plaintext.expose_secret(), &aad)?)
+}
+
+/// Like [`encrypt_item`], but keeps the result within
+/// [`MAX_SEALED_ITEM_BYTES`] by dropping `item`'s oldest history versions
+/// (D29). Fails with [`VaultError::TooLarge`] if even the item alone is too
+/// large; `item` is then left without history.
+pub fn encrypt_item_fitting(
+    vault_key: &SymmetricKey,
+    vault_id: &Id,
+    item_id: &ItemId,
+    revision: u64,
+    item: &mut Item,
+) -> Result<Envelope, VaultError> {
+    loop {
+        let envelope = encrypt_item(vault_key, vault_id, item_id, revision, item)?;
+        if envelope.to_bytes().len() <= MAX_SEALED_ITEM_BYTES {
+            return Ok(envelope);
+        }
+        if !item.drop_oldest_version() {
+            return Err(VaultError::TooLarge);
+        }
+    }
 }
 
 /// Decrypts and parses an item stored under `revision`.

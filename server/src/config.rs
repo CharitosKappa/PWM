@@ -5,6 +5,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use pwm_crypto::{Secret, ServerSecrets};
 
 use crate::ServerError;
+use crate::limits::TrustedProxies;
 
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:8080";
 
@@ -15,6 +16,8 @@ pub struct Config {
     pub database_url: Secret<String>,
     pub listen: SocketAddr,
     pub server_secrets: ServerSecrets,
+    /// Proxies whose `X-Forwarded-For` gives the client IP (D29).
+    pub trusted_proxies: TrustedProxies,
 }
 
 impl Config {
@@ -22,8 +25,9 @@ impl Config {
         Self::from_vars(|name| std::env::var(name).ok())
     }
 
-    /// Reads `PWM_DATABASE_URL` and `PWM_SERVER_SECRETS` (both required) and
-    /// `PWM_LISTEN` (default [`DEFAULT_LISTEN`]) through `var`.
+    /// Reads `PWM_DATABASE_URL` and `PWM_SERVER_SECRETS` (both required),
+    /// `PWM_LISTEN` (default [`DEFAULT_LISTEN`]) and `PWM_TRUSTED_PROXIES`
+    /// (addresses and CIDR ranges, default none) through `var`.
     pub fn from_vars(var: impl Fn(&str) -> Option<String>) -> Result<Self, ServerError> {
         let database_url = var("PWM_DATABASE_URL")
             .filter(|url| !url.is_empty())
@@ -39,10 +43,17 @@ impl Config {
                     "PWM_SERVER_SECRETS is not set (create one with `pwm-server keygen`)",
                 ))?;
         let server_secrets = decode_server_secrets(&secrets)?;
+        let trusted_proxies = TrustedProxies::parse(
+            &var("PWM_TRUSTED_PROXIES").unwrap_or_default(),
+        )
+        .map_err(|_| {
+            ServerError::Config("PWM_TRUSTED_PROXIES is not a list like 10.0.0.0/8, 192.0.2.1")
+        })?;
         Ok(Self {
             database_url: Secret::new(database_url),
             listen,
             server_secrets,
+            trusted_proxies,
         })
     }
 }
@@ -100,6 +111,29 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(config.listen, "0.0.0.0:9000".parse().unwrap());
+    }
+
+    #[test]
+    fn reads_trusted_proxies() {
+        let secrets = secrets();
+        let base = [
+            ("PWM_DATABASE_URL", URL),
+            ("PWM_SERVER_SECRETS", secrets.as_str()),
+        ];
+        assert_eq!(
+            config(&base).unwrap().trusted_proxies,
+            TrustedProxies::default()
+        );
+        let with = |value| {
+            let mut vars = base.to_vec();
+            vars.push(("PWM_TRUSTED_PROXIES", value));
+            config(&vars)
+        };
+        assert_eq!(
+            with("10.0.0.0/8, 192.0.2.1").unwrap().trusted_proxies,
+            TrustedProxies::parse("10.0.0.0/8,192.0.2.1").unwrap()
+        );
+        assert!(matches!(with("10.0.0.0/40"), Err(ServerError::Config(_))));
     }
 
     #[test]

@@ -14,6 +14,10 @@ pub enum VaultError {
     ReadOnly,
     #[error("invalid item: {0}")]
     Invalid(&'static str),
+    /// Sealed, the item is over [`MAX_SEALED_ITEM_BYTES`](crate::MAX_SEALED_ITEM_BYTES)
+    /// even without history (D29).
+    #[error("item is too large")]
+    TooLarge,
     /// Valid data this app version cannot use yet (kept unchanged).
     #[error("not supported: {0}")]
     Unsupported(&'static str),

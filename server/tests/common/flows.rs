@@ -27,13 +27,13 @@ pub fn new_id() -> Uuid {
     Uuid::from_bytes(generate_id().unwrap())
 }
 
+/// A migrated database and the app without rate limits, so tests that are
+/// not about limits can make as many requests as they like.
 pub async fn setup() -> Option<(TestDb, Router)> {
     let db = migrated_db().await?;
-    let router = app(AppState::new(
-        db.pool.clone(),
-        ServerSecrets::generate().unwrap(),
-    ));
-    Some((db, router))
+    let state = AppState::new(db.pool.clone(), ServerSecrets::generate().unwrap())
+        .with_limits(pwm_server::Limits::unlimited(), pwm_server::system_clock());
+    Some((db, app(state)))
 }
 
 pub struct Account {

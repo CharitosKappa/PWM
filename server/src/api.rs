@@ -12,18 +12,35 @@ use pwm_crypto::ServerSecrets;
 use serde::de::DeserializeOwned;
 use sqlx::PgPool;
 
+use crate::limits::{Clock, Limits, RateLimiter, TrustedProxies, system_clock};
+
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
     pub secrets: Arc<ServerSecrets>,
+    pub(crate) limiter: Arc<RateLimiter>,
+    pub(crate) trusted_proxies: Arc<TrustedProxies>,
 }
 
 impl AppState {
+    /// The default limits (D29) and no trusted proxies.
     pub fn new(pool: PgPool, secrets: ServerSecrets) -> Self {
         Self {
             pool,
             secrets: Arc::new(secrets),
+            limiter: Arc::new(RateLimiter::new(Limits::default(), system_clock())),
+            trusted_proxies: Arc::new(TrustedProxies::default()),
         }
+    }
+
+    pub fn with_limits(mut self, limits: Limits, clock: Arc<dyn Clock>) -> Self {
+        self.limiter = Arc::new(RateLimiter::new(limits, clock));
+        self
+    }
+
+    pub fn with_trusted_proxies(mut self, proxies: TrustedProxies) -> Self {
+        self.trusted_proxies = Arc::new(proxies);
+        self
     }
 }
 
@@ -38,6 +55,12 @@ pub enum ApiError {
     /// Missing, malformed, expired or ended access or refresh token.
     Unauthorized,
     DeviceRevoked,
+    /// A body or blob over its size limit (D29).
+    TooLarge,
+    /// A vault or item count cap (D29).
+    LimitReached,
+    /// Over a rate limit; retry after this many seconds (D29).
+    RateLimited(u64),
     /// The caller may read this vault but not change it.
     ReadOnly,
     /// A write or delete without `If-Match` / `If-None-Match` (D27).
@@ -54,6 +77,9 @@ impl ApiError {
             Self::InvalidCredentials => (StatusCode::UNAUTHORIZED, "invalid_credentials"),
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             Self::DeviceRevoked => (StatusCode::FORBIDDEN, "device_revoked"),
+            Self::TooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "too_large"),
+            Self::LimitReached => (StatusCode::FORBIDDEN, "limit_reached"),
+            Self::RateLimited(_) => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
             Self::ReadOnly => (StatusCode::FORBIDDEN, "read_only"),
             Self::PreconditionRequired => {
                 (StatusCode::PRECONDITION_REQUIRED, "precondition_required")
@@ -74,6 +100,11 @@ impl IntoResponse for ApiError {
                 .headers_mut()
                 .insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
         }
+        if let Self::RateLimited(secs) = self {
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from(secs));
+        }
         response
     }
 }
@@ -92,8 +123,8 @@ pub fn is_unique_violation(err: &sqlx::Error) -> bool {
         .is_some_and(|e| e.is_unique_violation())
 }
 
-/// `Json<T>` whose rejection is a plain `invalid_request`: axum's default
-/// message can quote the request body.
+/// `Json<T>` whose rejection is a plain `invalid_request` (or `too_large`
+/// over the body limit): axum's default message can quote the request body.
 pub struct ApiJson<T>(pub T);
 
 impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for ApiJson<T> {
@@ -102,7 +133,13 @@ impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for ApiJson<T> {
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
         let Json(value) = Json::<T>::from_request(req, state)
             .await
-            .map_err(|_| ApiError::InvalidRequest)?;
+            .map_err(|rejection| {
+                if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                    ApiError::TooLarge
+                } else {
+                    ApiError::InvalidRequest
+                }
+            })?;
         Ok(Self(value))
     }
 }

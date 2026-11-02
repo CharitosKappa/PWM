@@ -12,6 +12,9 @@ use uuid::Uuid;
 use crate::api::{ApiError, ApiJson, ApiRouter, AppState, b64, is_unique_violation};
 use crate::session::Authenticated;
 
+/// Vaults one account may own until plans set their own caps (M9).
+pub const MAX_VAULTS_PER_ACCOUNT: i64 = 100;
+
 pub fn routes() -> ApiRouter {
     Router::new().route("/v1/vaults", get(list).post(create))
 }
@@ -46,6 +49,18 @@ async fn create(
 ) -> Result<(StatusCode, Json<VaultEntry>), ApiError> {
     Envelope::from_bytes(&body.wrapped_key).map_err(|_| ApiError::InvalidRequest)?;
     let mut tx = state.pool.begin().await?;
+    // Counted under the account's row lock, so racing creates cannot pass it.
+    sqlx::query("SELECT 1 FROM accounts WHERE id = $1 FOR UPDATE")
+        .bind(auth.account_id)
+        .execute(&mut *tx)
+        .await?;
+    let owned: i64 = sqlx::query_scalar("SELECT count(*) FROM vaults WHERE owner_id = $1")
+        .bind(auth.account_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if owned >= MAX_VAULTS_PER_ACCOUNT {
+        return Err(ApiError::LimitReached);
+    }
     let inserted = sqlx::query("INSERT INTO vaults (id, owner_id) VALUES ($1, $2)")
         .bind(body.id)
         .bind(auth.account_id)

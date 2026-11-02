@@ -339,6 +339,14 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
      - an item that is too large being trimmed and then refused in the core
      - scrubber unit tests
      - the log test extended to a full register → login → vault → item → sync run at TRACE level, checking that no token, email, blob or key appears in the output and that every request line has the expected fields.
+  Implementation notes (M3.5):
+  - **Exact limits:** buckets use GCRA (one "theoretical arrival time" per key) in whole nanoseconds, so limits and `Retry-After` values are exact rather than off by floating-point rounding.
+  - **Registration counts requests, not sign-ups:** both `register/start` and `register/finish` count, so the limit is 10 requests an hour, which is 5 sign-ups.
+  - **IPv6 addresses count per /64,** the block one subscriber usually holds whole.
+  - **Requests without a peer address** share one bucket. Only in-process tests send those; their shared setup uses `Limits::unlimited()`, and the limit tests pass a peer address.
+  - **Scrubber detail:** `=` counts only as trailing padding on a run, so `key=` labels stay readable.
+  - **New dependency:** `tracing-serde` (MIT), pulled in by the `json` feature. axum gains its `matched-path` feature for route templates.
+  - **The 256 KiB item limit** is `pwm_vault::MAX_SEALED_ITEM_BYTES` in the core and `MAX_ITEM_BLOB_BYTES` on the server. A test keeps the two equal.
   Why: limits protect the service without changing what a well-behaved client sees, because D28 already handles 413, 403 and 429. Keeping ids and IPs out of logs means a log leak reveals nothing about users. The scrubber catches what a future careless log line would leak.
 - **D30 — Server image, local compose, Postgres TLS and restore detection** · settled 2026-11-02 · founder (approved as proposed). The roadmap says "`docker compose` for local dev; same image is the future self-host image". D25 moved Postgres TLS and the reverse-proxy notes here, and D28 left one open risk for M3.6: devices can't detect a restored server once it has handed out new seqs. Open: what goes into the image, how TLS and secrets are set up, and how a restore is signalled. Proposal:
   1. **Image:**
