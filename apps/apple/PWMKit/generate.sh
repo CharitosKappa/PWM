@@ -40,6 +40,9 @@ EOF
 apple)
     targets=(aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin x86_64-apple-darwin)
     rustup target add "${targets[@]}"
+    # The package's minimums (Package.swift), so C code such as the bundled
+    # SQLite is not built for the runner's newer OS.
+    export MACOSX_DEPLOYMENT_TARGET=14.0 IPHONEOS_DEPLOYMENT_TARGET=17.0
     for target in "${targets[@]}"; do
         # Static libraries keep the symbols the app links against; drop debug info only.
         CARGO_PROFILE_RELEASE_STRIP=debuginfo cargo build --locked --release -p pwm-ffi --target "$target"
