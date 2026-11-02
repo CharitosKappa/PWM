@@ -13,64 +13,6 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D32 — Transactional email provider** · open · founder. Needed for M10.7: email verification at sign-up (so registration stops revealing which emails have accounts) and account notices. To choose: provider and region (EU hosting fits D5), and its licence and data-processing terms.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
-- **D34 — Browser extension shell: structure, session, storage, rules download** · proposed 2026-11-02 · Claude Code. The roadmap says "MV3 extension shell: popup (search, copy, generator), unlock (master password, or via desktop app native messaging + biometrics)". M3 and M4.1 left these here too: IndexedDB persistence of the `MemoryStore` snapshot, creating the first vault only if there is none, and downloading the rules file with release keys. Open: how the extension is built, how it stays unlocked when Chrome stops its service worker, where the Secret Key and tokens live, auto-lock, the server address, clipboard clearing, and the rules keys and download. Proposal:
-  1. **Structure:**
-     - **Background:** the MV3 service worker owns the WASM core (`pwm-wasm`, `--target web`), the cache and every server conversation. The manifest's CSP adds `'wasm-unsafe-eval'`, the only change MV3 allows for WebAssembly. No remote code.
-     - **Popup:** asks the background for everything over `chrome.runtime` messages, and never holds keys.
-     - **UI:** Preact (MIT, about 4 KB) with TypeScript strict and the design tokens from `design/tokens.json`.
-     - **Bundling:** esbuild (MIT) bundles into `extension/dist/`.
-     - **Content scripts** come with filling (M4.3); M4.2 has none.
-  2. **Staying unlocked** (Chrome stops an idle service worker and wipes its memory):
-     - **Session blob:** when unlocked, the core gives the extension a session blob: the account keyset sealed under a fresh random key (a new AAD label `pwm/session`, versioned). The blob and its key go into `chrome.storage.session`.
-     - **Why that store:** it is memory-only, cleared when the browser closes, and readable only by the extension's own pages (not by content scripts, which is Chrome's default and is kept).
-     - **When the worker restarts:** it restores the session from the blob without asking for the password.
-     - **Exposure:** this is the same as keeping the worker alive, and nothing reaches disk.
-     - **Alternative:** re-entering the master password after every idle stop, roughly every 30 seconds to 5 minutes, which is too disruptive.
-  3. **What is stored on disk** (`chrome.storage.local`, the extension's private storage):
-     - **The cache snapshot** (ciphertext and ids only, D31). It is written after each change and loaded at startup. IndexedDB holds the bytes; `chrome.storage.local` holds small settings.
-     - **The Secret Key, as is.** It is designed to live on the device: an attacker still needs the master password (D13), and the browser has no secure store. The same as the 1Password extension.
-     - **The refresh token, sealed** under a key derived from the account keyset (new label `pwm/device-tokens`). It can be used only after unlock, and a copied disk alone reveals no usable token.
-     - **Never:** the master password, the keyset or any unlocked key.
-  4. **Auto-lock:**
-     - **Timer:** 15 minutes idle by default; 1, 5, 15, 60 minutes or 8 hours can be chosen, but not "never". It uses `chrome.alarms`.
-     - **Lock at once** when the computer locks (`chrome.idle` reports "locked").
-     - **Browser close:** closing the browser clears session storage, so the next start asks for the master password.
-     - **Lock button** in the popup.
-  5. **Server:**
-     - **Hosted by default.** The address is a placeholder until D1 names the product.
-     - **Self-hosting:** an options page accepts an `https://` address and asks for permission to that host only at that moment.
-     - **Requests:** made with `fetch` from the service worker; the core's steps (D28) do the rest.
-  6. **Clipboard:**
-     - Copying a password, code or card number writes it through an offscreen document (MV3 has no clipboard in a service worker) and clears it **30 seconds later** with an alarm.
-     - The clear empties the clipboard whatever is in it. Checking first would need the `clipboardRead` permission, which shows a frightening install warning. The popup says it will clear.
-  7. **Permissions:** `storage`, `alarms`, `idle`, `offscreen` and `clipboardWrite`, plus the hosted API's origin.
-     - **Later:** `activeTab` and `scripting` with filling (M4.3), and `nativeMessaging` with the desktop app (M5.6/M7.2).
-     - **No broad host permissions.**
-  8. **Popup features for M4.2:**
-     - **Signed out:** sign up (email, password with a strength meter at least 3, the Secret Key shown once with copy and a text Emergency Kit download, then the first vault), or sign in (email, password, Secret Key).
-     - **Signed in:** search, the item list and detail, copy (username, password, current code), the generator, sync status and the lock button.
-     - **No editing yet.** Items are created by save prompts (M4.4) and the apps.
-     - **Unlock:** the master password only. Biometric unlock through the desktop app waits for that app (M5.6/M7.2) and is logged as a parity gap.
-     - **New core calls:**
-       - `session_export` / `session_restore`
-       - sealing and opening the refresh token
-       - the current code for an item
-       - "create the first vault only if there is none" (the M3 leftover).
-  9. **Rules file:**
-     - **Download:** fetched from the hosted origin (placeholder until D1) at startup and every 24 hours with random spread, using a conditional GET. A failure keeps the current rules, and the accepted version is stored as the next `min_version`.
-     - **Release keys:** a new offline tool, `pwm-rules-sign`, has `keygen` (writes a seed file, prints the public key) and `sign`. **The founder** runs `keygen` twice (the current and the next key) on an offline machine and keeps the seeds on hardware tokens or offline backups. Only the two public keys come into `RULES_KEYS` through a PR, and **I never see the seeds**. Until then, downloads are refused as they are today.
-  10. **Browsers:** one Chromium build (Chrome, Edge, Brave, Opera) now. Firefox (its MV3 differences) and Safari come in M4.8 and M5.6.
-  11. **Tests:**
-      - **Rust:** session export and restore (bound to the account, wrong key refused, versioned), token sealing, first-vault-if-none, and the current code.
-      - **Vitest** with fake `chrome.*` APIs and fake timers:
-        - the message routing and that the popup never receives keys
-        - the auto-lock timer, lock on screen lock, and restoring after a worker restart
-        - clearing the clipboard after 30 s
-        - storage adapters (snapshot and token), and the rules download schedule and rollback refusal
-        - the WASM core in Vitest (snapshot persistence round trip, the M3.7 deferral).
-      - **A build check** that the bundled extension has a valid manifest with only the listed permissions and no remote URLs in its scripts.
-      - Loading it in a real browser comes with the M4.7 Playwright harness.
-  Why: a background-only core with a memory-only session keeps keys off disk while the extension still survives Chrome's worker shutdowns. Sealing tokens under the account keyset and keeping the Secret Key local is the same trade-off native apps make with secure storage, scaled to what a browser offers. Keeping the signing seeds with the founder, offline, is the point of signing the rules at all.
 
 ## Settled
 
@@ -536,3 +478,61 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Fuzzing:** `autofill_rules` signs each input with a test key, so the parser behind the signature is fuzzed too; `url_match` covers every mode. Both are in CI.
   - **`just psl`** (`scripts/update-psl.mjs`) refreshes the list and its recorded version and hash.
   Why: keeping matching and classification in the core gives every platform the same behaviour and one place to fix it. Including the PSL private section and refusing other sites' frames closes the cross-site leaks that clickjacking and shared-hosting attacks rely on. A signed, versioned, expiring data file lets us fix sites quickly without remote code, and without letting an attacker replay old rules.
+- **D34 — Browser extension shell: structure, session, storage, rules download** · settled 2026-11-02 · founder (approved as proposed). The roadmap says "MV3 extension shell: popup (search, copy, generator), unlock (master password, or via desktop app native messaging + biometrics)". M3 and M4.1 left these here too: IndexedDB persistence of the `MemoryStore` snapshot, creating the first vault only if there is none, and downloading the rules file with release keys. Open: how the extension is built, how it stays unlocked when Chrome stops its service worker, where the Secret Key and tokens live, auto-lock, the server address, clipboard clearing, and the rules keys and download. Proposal:
+  1. **Structure:**
+     - **Background:** the MV3 service worker owns the WASM core (`pwm-wasm`, `--target web`), the cache and every server conversation. The manifest's CSP adds `'wasm-unsafe-eval'`, the only change MV3 allows for WebAssembly. No remote code.
+     - **Popup:** asks the background for everything over `chrome.runtime` messages, and never holds keys.
+     - **UI:** Preact (MIT, about 4 KB) with TypeScript strict and the design tokens from `design/tokens.json`.
+     - **Bundling:** esbuild (MIT) bundles into `extension/dist/`.
+     - **Content scripts** come with filling (M4.3); M4.2 has none.
+  2. **Staying unlocked** (Chrome stops an idle service worker and wipes its memory):
+     - **Session blob:** when unlocked, the core gives the extension a session blob: the account keyset sealed under a fresh random key (a new AAD label `pwm/session`, versioned). The blob and its key go into `chrome.storage.session`.
+     - **Why that store:** it is memory-only, cleared when the browser closes, and readable only by the extension's own pages (not by content scripts, which is Chrome's default and is kept).
+     - **When the worker restarts:** it restores the session from the blob without asking for the password.
+     - **Exposure:** this is the same as keeping the worker alive, and nothing reaches disk.
+     - **Alternative:** re-entering the master password after every idle stop, roughly every 30 seconds to 5 minutes, which is too disruptive.
+  3. **What is stored on disk** (`chrome.storage.local`, the extension's private storage):
+     - **The cache snapshot** (ciphertext and ids only, D31). It is written after each change and loaded at startup. IndexedDB holds the bytes; `chrome.storage.local` holds small settings.
+     - **The Secret Key, as is.** It is designed to live on the device: an attacker still needs the master password (D13), and the browser has no secure store. The same as the 1Password extension.
+     - **The refresh token, sealed** under a key derived from the account keyset (new label `pwm/device-tokens`). It can be used only after unlock, and a copied disk alone reveals no usable token.
+     - **Never:** the master password, the keyset or any unlocked key.
+  4. **Auto-lock:**
+     - **Timer:** 15 minutes idle by default; 1, 5, 15, 60 minutes or 8 hours can be chosen, but not "never". It uses `chrome.alarms`.
+     - **Lock at once** when the computer locks (`chrome.idle` reports "locked").
+     - **Browser close:** closing the browser clears session storage, so the next start asks for the master password.
+     - **Lock button** in the popup.
+  5. **Server:**
+     - **Hosted by default.** The address is a placeholder until D1 names the product.
+     - **Self-hosting:** an options page accepts an `https://` address and asks for permission to that host only at that moment.
+     - **Requests:** made with `fetch` from the service worker; the core's steps (D28) do the rest.
+  6. **Clipboard:**
+     - Copying a password, code or card number writes it through an offscreen document (MV3 has no clipboard in a service worker) and clears it **30 seconds later** with an alarm.
+     - The clear empties the clipboard whatever is in it. Checking first would need the `clipboardRead` permission, which shows a frightening install warning. The popup says it will clear.
+  7. **Permissions:** `storage`, `alarms`, `idle`, `offscreen` and `clipboardWrite`, plus the hosted API's origin.
+     - **Later:** `activeTab` and `scripting` with filling (M4.3), and `nativeMessaging` with the desktop app (M5.6/M7.2).
+     - **No broad host permissions.**
+  8. **Popup features for M4.2:**
+     - **Signed out:** sign up (email, password with a strength meter at least 3, the Secret Key shown once with copy and a text Emergency Kit download, then the first vault), or sign in (email, password, Secret Key).
+     - **Signed in:** search, the item list and detail, copy (username, password, current code), the generator, sync status and the lock button.
+     - **No editing yet.** Items are created by save prompts (M4.4) and the apps.
+     - **Unlock:** the master password only. Biometric unlock through the desktop app waits for that app (M5.6/M7.2) and is logged as a parity gap.
+     - **New core calls:**
+       - `session_export` / `session_restore`
+       - sealing and opening the refresh token
+       - the current code for an item
+       - "create the first vault only if there is none" (the M3 leftover).
+  9. **Rules file:**
+     - **Download:** fetched from the hosted origin (placeholder until D1) at startup and every 24 hours with random spread, using a conditional GET. A failure keeps the current rules, and the accepted version is stored as the next `min_version`.
+     - **Release keys:** a new offline tool, `pwm-rules-sign`, has `keygen` (writes a seed file, prints the public key) and `sign`. **The founder** runs `keygen` twice (the current and the next key) on an offline machine and keeps the seeds on hardware tokens or offline backups. Only the two public keys come into `RULES_KEYS` through a PR, and **I never see the seeds**. Until then, downloads are refused as they are today.
+  10. **Browsers:** one Chromium build (Chrome, Edge, Brave, Opera) now. Firefox (its MV3 differences) and Safari come in M4.8 and M5.6.
+  11. **Tests:**
+      - **Rust:** session export and restore (bound to the account, wrong key refused, versioned), token sealing, first-vault-if-none, and the current code.
+      - **Vitest** with fake `chrome.*` APIs and fake timers:
+        - the message routing and that the popup never receives keys
+        - the auto-lock timer, lock on screen lock, and restoring after a worker restart
+        - clearing the clipboard after 30 s
+        - storage adapters (snapshot and token), and the rules download schedule and rollback refusal
+        - the WASM core in Vitest (snapshot persistence round trip, the M3.7 deferral).
+      - **A build check** that the bundled extension has a valid manifest with only the listed permissions and no remote URLs in its scripts.
+      - Loading it in a real browser comes with the M4.7 Playwright harness.
+  Why: a background-only core with a memory-only session keeps keys off disk while the extension still survives Chrome's worker shutdowns. Sealing tokens under the account keyset and keeping the Secret Key local is the same trade-off native apps make with secure storage, scaled to what a browser offers. Keeping the signing seeds with the founder, offline, is the point of signing the rules at all.
