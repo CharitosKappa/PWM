@@ -406,7 +406,12 @@ test.describe("save offers", () => {
     await page.waitForTimeout(3000);
     for (const frame of page.frames()) {
       if (!frame.url().includes("inline.html")) continue;
-      expect(await frame.locator("body.offer").count()).toBe(0);
+      // Quote the card, so a failure says what it offered.
+      const says =
+        (await frame.locator("body.offer").count()) > 0
+          ? await frame.locator("body").innerText()
+          : "";
+      expect(says).toBe("");
     }
   }
 

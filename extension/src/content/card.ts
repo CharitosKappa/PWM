@@ -8,11 +8,12 @@ const HEIGHT = 168;
 
 export class OfferCard {
   private host: HTMLElement | null = null;
+  private suspended = 0;
 
   show(token: string): void {
     this.hide();
     const host = document.createElement("pwm-offer");
-    host.style.cssText = `all: initial; position: fixed; top: 16px; right: 16px; width: ${String(WIDTH)}px; height: ${String(HEIGHT)}px; z-index: 2147483647; display: block;`;
+    host.style.cssText = `all: initial; position: fixed; top: 16px; right: 16px; width: ${String(WIDTH)}px; height: ${String(HEIGHT)}px; z-index: 2147483647; display: ${this.suspended > 0 ? "none" : "block"};`;
     const shadow = host.attachShadow({ mode: "closed" });
     const frame = document.createElement("iframe");
     frame.src = `${chrome.runtime.getURL("inline.html")}#offer:${encodeURIComponent(token)}`;
@@ -30,11 +31,11 @@ export class OfferCard {
 
   /** Off the page while a fill is checked, like the icons; back afterwards. */
   hideWhile(): () => void {
-    const host = this.host;
-    if (!host) return () => undefined;
-    host.style.display = "none";
+    this.suspended += 1;
+    if (this.host) this.host.style.display = "none";
     return () => {
-      host.style.display = "block";
+      this.suspended -= 1;
+      if (this.host && this.suspended === 0) this.host.style.display = "block";
     };
   }
 }

@@ -719,6 +719,6 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Multi-step logins:** a username submitted without a password (a multi-step login's first page) is kept, in memory, as a hint for the same site's next page in that tab.
   - **"Worked" by navigation** compares the last two host labels, enough for `accounts.example.com` → `www.example.com`. The core's matching still decides what is offered.
   - **Message order:** the submitting document is recorded, so the next page reporting before the submit message arrives still counts as navigation.
-  - **The card** is shown only in the top frame, and hidden while a fill is checked, like the icons.
+  - **The card** is shown only in the top frame, and hidden while a fill is checked, like the icons. Both stay hidden until the checks end, even when a frame report arrives meanwhile and would show them (the browser tests caught that race).
   - **One switch:** "Fill and save on sign-in pages" is the D35 icon setting renamed. Turned on, frame reports answer with the fields to read on submit.
   - **New core calls:** `save_offer`, `save_login` and `update_password` in `pwm-client`, WASM and UniFFI (`SaveOffer` enum). A new login gets the page's origin with `domain` matching, and a title from the host name without `www.`.
