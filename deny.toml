@@ -12,9 +12,14 @@ ignore = [
     # elliptic-curve 0.13, which opaque-ke 4.0 always pulls in. Not reachable:
     # our OPAQUE suite is ristretto255 (curve25519-dalek arithmetic) and uses only
     # elliptic-curve's hash-based expand_message_xmd; no NIST curve is built.
-    # Remove when opaque-ke ships a stable release on elliptic-curve 0.14 (M3.7 at
-    # the latest, recheck when WASM builds land).
+    # Remove when opaque-ke ships a stable release on elliptic-curve 0.14.
+    # Rechecked at M3.7 (2026-11-02): only 4.1.0-pre.2 exists; recheck at M4.
     { id = "RUSTSEC-2026-0387", reason = "crypto-bigint not reachable from the ristretto255 OPAQUE suite" },
+    # basic-toml is unmaintained (not vulnerable). It comes in only through
+    # uniffi_bindgen's askama templates, in pwm-ffi-bindgen: a build tool that
+    # reads our own uniffi config and is never shipped. The library the apps
+    # link (pwm-ffi) does not contain it. Remove when uniffi drops it.
+    { id = "RUSTSEC-2026-0374", reason = "build-time only (uniffi-bindgen tool), never shipped, reads only our own config" },
 ]
 
 [bans]

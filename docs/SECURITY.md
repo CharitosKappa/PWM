@@ -81,6 +81,8 @@ A new kind of envelope gets a new label; labels are never reused.
 
 **Session tokens (D26).** 32 random bytes, base64url with a `pwma_` (access, 15 minutes) or `pwmr_` (refresh, 90 days unused, replaced on every use) prefix. The server stores only SHA-256 hashes. Presenting a replaced refresh token ends that session. One session per device; revoking a device ends its session at once: its access and refresh tokens are then answered with 403 `device_revoked`, and the sync engine clears the local cache (D28).
 
+**Secrets at the binding boundary (D31).** The master password, Secret Key, tokens and revealed item fields cross into Swift, Kotlin and JavaScript as platform strings, which the core cannot wipe. The core wipes its own copies (`Secret<T>`). Apps must keep such strings short-lived, never log them, and store the Secret Key and tokens only in secure storage (Keychain, Keystore, Windows Hello/TPM, or for the extension the encrypted session store). Requests the core hands out can carry an access or refresh token, so the platform's HTTP code must not log headers or bodies.
+
 **Device name (D26).** The UTF-8 name (at most 63 bytes, no control characters) padded to exactly 64 bytes (ISO/IEC 7816-4), sealed under `sym_key` with AAD `pwm/device-name` (version 1, account_id, device_id), so every sealed name has the same size.
 
 **Secret Key text (D14).** `A1-` prefix (format version), then the 128-bit key as 26 Crockford base32 characters (most significant bit first, top two bits zero) plus one Crockford mod-37 check character, grouped `A1-XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXX`. Input is case-insensitive, ignores `-` and spaces, and maps `O`→`0`, `I`/`L`→`1`. The account id is printed separately on the Emergency Kit.

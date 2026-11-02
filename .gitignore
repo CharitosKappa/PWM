@@ -1,6 +1,9 @@
 # Rust
 /target/
 
+# Generated WASM build of the core (`just wasm`)
+/extension/core/
+
 # Node
 node_modules/
 dist/

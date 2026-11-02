@@ -117,7 +117,27 @@ Phase 3  Teams           months 16–24 M16–M19
     - An arm64 image, pushing to a registry, and signing (M10.1).
     - Full self-hosting docs (M11).
     - Running `mark-restored` automatically from restore tooling.
-- [ ] M3.7 FFI (`pwm-ffi` via UniFFI) and WASM (`pwm-wasm`) builds of core exposing account, vault, sync, generator, autofill APIs.
+- [x] M3.7 FFI (`pwm-ffi` via UniFFI) and WASM (`pwm-wasm`) builds of core exposing account, vault, sync, generator, autofill APIs.
+  - Per D31:
+    - **New `pwm-client`:** sign-up, login (pre-login → OPAQUE → keyset), offline unlock and lock, items as D18 JSON (save with history, trash, delete, purge), sync and vault creation as steps, the generator and strength, and stable error codes.
+    - **`pwm-store`:** `MemoryStore` with a versioned `PWMS` snapshot (frozen fixture).
+    - **`pwm-ffi`:** UniFFI 0.32 proc-macros over a SQLite-backed client, with `pwm-ffi-bindgen` for generating the bindings.
+    - **`pwm-wasm`:** wasm-bindgen over a `MemoryStore` client, with errors as JS `Error`s carrying `code`. `getrandom` uses `wasm_js` / `js` in every version in the tree, which closes the M3.2 deferral.
+    - **New `just` recipes:** `wasm` and `bindings`.
+  - **Tests:**
+    - offline client tests
+    - an end-to-end test against the real server: sign-up → first vault → item → sync, login on a second device, every login failure answering `invalid_credentials`, lock/unlock, and a snapshot reloaded offline
+    - `MemoryStore` parity with SQLite, snapshot round trip and damage tests
+    - **New CI jobs:** `wasm` (Node smoke test: generator, `zxcvbn` on wasm32 — the M2.4 deferral — sign-up with Argon2id in WASM, snapshots) and `bindings` (Swift and Kotlin smoke programs on Linux).
+  - **Deferred:**
+    - Autofill in the API (M4.1, when `pwm-autofill` has an engine).
+    - The extension's IndexedDB persistence and its Vitest tests (M4.2).
+    - Biometric unlock (M5/M6).
+    - Device rename.
+    - iOS/macOS and Android builds of the library (M5/M6).
+  - **Audit:**
+    - `cargo deny` ignores RUSTSEC-2026-0374 (`basic-toml` unmaintained). It is pulled in only by the never-shipped `pwm-ffi-bindgen` tool, through UniFFI's templates; the library the apps link does not contain it.
+    - RUSTSEC-2026-0387 was rechecked: `opaque-ke` still has only a 4.1 pre-release, so its ignore stays; recheck at M4.
 
 **Gate — Private beta:** create account on macOS app (M5 skeleton) and extension, items sync both ways.
 

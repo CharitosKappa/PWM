@@ -1,0 +1,129 @@
+use pwm_crypto::CryptoError;
+use pwm_store::StoreError;
+use pwm_sync::SyncError;
+use pwm_vault::VaultError;
+use thiserror::Error;
+
+/// Client errors. Each has a stable [`code`](Self::code) that the bindings
+/// pass on (D31). Messages never contain values.
+#[derive(Debug, Error)]
+pub enum ClientError {
+    #[error("the vault is locked")]
+    Locked,
+    #[error("another operation is in progress")]
+    Busy,
+    #[error("no operation is waiting for a response")]
+    NotRunning,
+    #[error("an id is not a valid UUID")]
+    InvalidId,
+    #[error("unknown vault")]
+    UnknownVault,
+    #[error("no such item")]
+    UnknownItem,
+    #[error("the item is deleted")]
+    ItemDeleted,
+    #[error("the item is too large")]
+    ItemTooLarge,
+    #[error("the item is not valid")]
+    InvalidItem,
+    #[error("the item is read-only in this app version")]
+    ReadOnlyItem,
+    #[error("the master password is too weak")]
+    WeakPassword,
+    #[error("the Secret Key is not valid")]
+    InvalidSecretKey,
+    /// Unlocking on this device: the password or Secret Key is wrong.
+    #[error("wrong master password or Secret Key")]
+    WrongPassword,
+    /// Login: the server refused the credentials (the same for every cause).
+    #[error("wrong email, master password or Secret Key")]
+    InvalidCredentials,
+    #[error("an account with this email exists")]
+    AccountExists,
+    #[error("too many requests; retry after {0} s")]
+    RateLimited(u64),
+    #[error("this device was revoked")]
+    DeviceRevoked,
+    #[error("signed out; log in again")]
+    SignedOut,
+    #[error("the server could not be reached")]
+    Network,
+    #[error("the server answered {0}")]
+    Server(u16),
+    #[error("the server's answer was not understood")]
+    Protocol,
+    #[error("local storage failed")]
+    Storage,
+    #[error("an internal error occurred")]
+    Internal,
+}
+
+impl ClientError {
+    /// A stable code for the bindings and the UI.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Locked => "locked",
+            Self::Busy => "busy",
+            Self::NotRunning => "not_running",
+            Self::InvalidId => "invalid_id",
+            Self::UnknownVault => "unknown_vault",
+            Self::UnknownItem => "unknown_item",
+            Self::ItemDeleted => "item_deleted",
+            Self::ItemTooLarge => "item_too_large",
+            Self::InvalidItem => "invalid_item",
+            Self::ReadOnlyItem => "read_only_item",
+            Self::WeakPassword => "weak_password",
+            Self::InvalidSecretKey => "invalid_secret_key",
+            Self::WrongPassword => "wrong_password",
+            Self::InvalidCredentials => "invalid_credentials",
+            Self::AccountExists => "account_exists",
+            Self::RateLimited(_) => "rate_limited",
+            Self::DeviceRevoked => "device_revoked",
+            Self::SignedOut => "signed_out",
+            Self::Network => "network",
+            Self::Server(_) => "server",
+            Self::Protocol => "protocol",
+            Self::Storage => "storage",
+            Self::Internal => "internal",
+        }
+    }
+}
+
+impl From<VaultError> for ClientError {
+    fn from(err: VaultError) -> Self {
+        match err {
+            VaultError::TooLarge => Self::ItemTooLarge,
+            VaultError::ReadOnly => Self::ReadOnlyItem,
+            VaultError::InvalidItem | VaultError::Invalid(_) | VaultError::Unsupported(_) => {
+                Self::InvalidItem
+            }
+            VaultError::Crypto(_) => Self::Internal,
+        }
+    }
+}
+
+impl From<StoreError> for ClientError {
+    fn from(_: StoreError) -> Self {
+        Self::Storage
+    }
+}
+
+impl From<CryptoError> for ClientError {
+    fn from(_: CryptoError) -> Self {
+        Self::Internal
+    }
+}
+
+impl From<SyncError> for ClientError {
+    fn from(err: SyncError) -> Self {
+        match err {
+            SyncError::Busy => Self::Busy,
+            SyncError::NotRunning => Self::NotRunning,
+            SyncError::UnknownVault => Self::UnknownVault,
+            SyncError::ItemDeleted => Self::ItemDeleted,
+            SyncError::Store(e) => e.into(),
+            SyncError::Vault(e) => e.into(),
+            SyncError::Crypto(e) => e.into(),
+        }
+    }
+}

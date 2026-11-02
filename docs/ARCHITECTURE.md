@@ -18,13 +18,15 @@ pwm/
     pwm-vault/              # item model, vault/account structs, versioned formats
     pwm-store/              # local encrypted cache (SQLite, ciphertext only) behind a Store trait (D20)
     pwm-sync/               # sans-IO sync engine: offline queue, retries, conflict merge (D28)
+    pwm-client/             # the one API apps and the extension use: account, items, sync, generator (D31)
     pwm-autofill/           # URL matching, field classification, site overrides
     pwm-export/             # our own export formats: .pwmx (encrypted), JSON, CSV, behind re-auth (D24)
     pwm-import/             # importers (Bitwarden, 1Password, Keeper, NordPass, Proton Pass, Dashlane, KeePass, LastPass, CSV)
     pwm-generator/          # password/passphrase generator, strength estimation (zxcvbn)
     pwm-health/             # weak/reused/breached checks (HIBP k-anonymity)
-    pwm-ffi/                # UniFFI bindings (Swift, Kotlin) + C ABI
-    pwm-wasm/               # wasm-bindgen build for the extension
+    pwm-ffi/                # UniFFI bindings (Swift, Kotlin) over pwm-client
+    pwm-ffi-bindgen/        # uniffi-bindgen tool for `just bindings` (never shipped)
+    pwm-wasm/               # wasm-bindgen build of pwm-client for the extension (MemoryStore + snapshots)
     test-vectors/           # JSON vectors for every crypto/format operation
   server/                   # Rust (axum) sync API, PostgreSQL, same binary for hosted + self-hosted
   apps/

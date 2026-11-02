@@ -11,6 +11,8 @@
 | cargo-deny | 0.20+ | `just audit` |
 | cargo-about | 0.9+ (install with `--features cli`) | `just notices` |
 | Docker | any recent | `just db` (Postgres for server tests and `just server`) |
+| wasm32 target | `rustup target add wasm32-unknown-unknown` | `just wasm` |
+| wasm-bindgen-cli | the version in `Cargo.lock` (`cargo install wasm-bindgen-cli --version 0.2.130 --locked`) | `just wasm` |
 
 ## Windows
 
@@ -64,6 +66,17 @@ just smoke         # in another terminal: register, log in and read the account 
 Server settings: `PWM_DATABASE_URL` and `PWM_SERVER_SECRETS` (both required), `PWM_LISTEN` (default `127.0.0.1:8080`), `PWM_TRUSTED_PROXIES` (proxies whose `X-Forwarded-For` gives the client IP for rate limits, such as `10.0.0.0/8`; default none), `PWM_LOG` (log filter, default `info,sqlx=warn`) and `PWM_LOG_FORMAT` (`json` or `text`; JSON unless writing to a terminal). Every log line goes through the scrubber (D29).
 
 `PWM_SERVER_SECRETS` holds the OPAQUE server setup and the pre-login key (D26). Create it once with `just secrets` (or `cargo run -p pwm-server -- keygen`) and keep it: accounts registered under one value cannot log in under another. In production it lives in a secret manager with a backup; losing it locks every account out.
+
+## Core bindings
+
+Apps and the extension use the core through `pwm-client` (D31): every server conversation is a series of steps the platform sends with its own HTTP stack.
+
+```
+just wasm          # WASM build into extension/core (gitignored) and the Node smoke test
+just bindings      # Swift and Kotlin bindings into target/bindings
+```
+
+CI also compiles and runs small Swift and Kotlin programs against the bindings (`core/pwm-ffi/smoke/`). Locally, Swift can run in the `swift` Docker image on the Linux build of the library.
 
 ## Fuzzing
 
