@@ -633,6 +633,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   Implementation notes (M4.3):
   - **Site access is not all.** Site access granted for a self-hosted server stays when the icon is turned off (the popup gives it back only on the hosted server). So the choice is stored too, and the icon shows only when it is on *and* access is granted.
   - **Shortcut and Chrome version:** `minimum_chrome_version` is 127, for `action.openPopup` (the shortcut's fallback) and `documentId` targeting.
+  - **No `frame-ancestors` in the extension CSP:** the M4.2 manifest had `frame-ancestors 'none'`, which also blocked the icon frame (the browser tests caught it). Web pages cannot frame extension pages that are not web-accessible anyway, so the directive is gone and `inline.html` is the only page they can frame.
   - **What pages may load:** `inline.html` loads `inline.js`, `inline.css` and `tokens.css`, so those four are the web-accessible resources, all with `use_dynamic_url`.
   - **The icon frame's visibility:** the frame watches its own root element with `IntersectionObserver` v2. Where v2 is missing it takes no clicks at all.
   - **Honeypots:** a field counts as visible only if it has a size above 1 px, lies inside the page (not parked at `left: -9999px`), is not `visibility: hidden` and has opacity above 0. The checks before filling are stricter still.

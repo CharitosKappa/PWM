@@ -44,6 +44,6 @@
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; base-uri 'none'; form-action 'none'"
   }
 }
