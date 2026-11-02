@@ -1094,6 +1094,7 @@ dependencies = [
  "pwm-autofill",
  "pwm-crypto",
  "pwm-export",
+ "pwm-kit",
  "pwm-passkey",
  "pwm-vault",
  "url",
@@ -1123,6 +1124,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pwm-kit"
+version = "0.0.0"
+dependencies = [
+ "pwm-crypto",
+ "qrcode",
+ "thiserror",
+ "zeroize",
+]
+
+[[package]]
 name = "pwm-passkey"
 version = "0.0.0"
 dependencies = [
@@ -1149,6 +1160,12 @@ dependencies = [
  "thiserror",
  "zeroize",
 ]
+
+[[package]]
+name = "qrcode"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
 
 [[package]]
 name = "quote"

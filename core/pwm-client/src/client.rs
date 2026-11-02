@@ -228,6 +228,18 @@ impl<S: Store> Client<S> {
         }
     }
 
+    /// Locks and deletes the cached account, its vaults and items, so the
+    /// device keeps nothing of it. The platform deletes its stored tokens and
+    /// Secret Key; the device id stays.
+    pub fn sign_out(&mut self) -> Result<(), ClientError> {
+        self.lock();
+        let State::Locked(store) = &mut self.state else {
+            unreachable!("locked just now");
+        };
+        store.clear()?;
+        Ok(())
+    }
+
     /// Unlocks with an already opened keyset (session restore, D34).
     pub(crate) fn open_unlocked(
         &mut self,

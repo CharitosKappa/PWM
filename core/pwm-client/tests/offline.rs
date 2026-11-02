@@ -440,3 +440,21 @@ fn an_autofill_report_through_the_client() {
         "invalid_url"
     );
 }
+
+#[test]
+fn signing_out_wipes_the_cache() {
+    let (store, secret_key, _) = signed_in_store();
+    let mut client = Client::new(store);
+    client.unlock(PASSWORD, &secret_key, tokens()).unwrap();
+    client.sign_out().unwrap();
+    assert!(!client.is_unlocked());
+    assert_eq!(client.account_id().unwrap(), None);
+    assert!(client.store().account().unwrap().is_none());
+    // Nothing is left to unlock.
+    assert_eq!(
+        code(client.unlock(PASSWORD, &secret_key, tokens())),
+        "wrong_password"
+    );
+    // Signing out twice is harmless.
+    client.sign_out().unwrap();
+}

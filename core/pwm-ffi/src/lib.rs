@@ -306,6 +306,12 @@ impl PwmClient {
         self.lock_inner().is_unlocked()
     }
 
+    /// Locks and deletes this account's cache; delete the stored tokens and
+    /// Secret Key too.
+    pub fn sign_out(&self) -> Result<(), PwmError> {
+        Ok(self.lock_inner().sign_out()?)
+    }
+
     pub fn account_id(&self) -> Result<Option<String>, PwmError> {
         Ok(self.lock_inner().account_id()?)
     }
