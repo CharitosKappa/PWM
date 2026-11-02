@@ -416,3 +416,54 @@ fn vectors_opaque() {
         assert_eq!(salt, arr(&v["prelogin_fake_salt"]));
     }
 }
+
+#[test]
+fn vectors_session() {
+    for v in load(include_str!("../../test-vectors/session.json")) {
+        let account: Id = arr(&v["account_id"]);
+        assert_eq!(
+            Aad::session(1, &account).as_bytes(),
+            bytes(&v["session_aad"])
+        );
+        assert_eq!(
+            Aad::device_tokens(1, &account).as_bytes(),
+            bytes(&v["device_tokens_aad"])
+        );
+        let session_key: [u8; 32] = arr(&v["session_key"]);
+        let blob = bytes(&v["session_blob"]);
+        let plaintext = open(
+            &SymmetricKey::from_secret(Secret::new(session_key)),
+            &Envelope::from_bytes(&blob).unwrap(),
+            &Aad::session(1, &account),
+        )
+        .unwrap();
+        assert_eq!(
+            plaintext.expose_secret().as_slice(),
+            bytes(&v["keyset_plaintext"])
+        );
+        let original = keyset(&v);
+        assert_tamper_evident(&blob, |b| {
+            Envelope::from_bytes(b)
+                .and_then(|env| {
+                    AccountKeyset::import_session(&env, &Secret::new(session_key), &account)
+                })
+                .is_ok_and(|k| k.x25519_public() == original.x25519_public())
+        });
+        let sealed = bytes(&v["device_secret_envelope"]);
+        let secret = open(
+            &key(&v["sym_key"]),
+            &Envelope::from_bytes(&sealed).unwrap(),
+            &Aad::device_tokens(1, &account),
+        )
+        .unwrap();
+        assert_eq!(
+            secret.expose_secret().as_slice(),
+            bytes(&v["device_secret"])
+        );
+        assert_tamper_evident(&sealed, |b| {
+            Envelope::from_bytes(b)
+                .and_then(|env| original.open_device_secret(&env, &account))
+                .is_ok_and(|s| s.expose_secret().as_slice() == bytes(&v["device_secret"]))
+        });
+    }
+}

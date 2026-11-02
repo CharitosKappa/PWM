@@ -31,7 +31,7 @@ type Generator = (&'static str, &'static str, fn() -> Vec<Value>);
 
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../test-vectors");
-    let files: [Generator; 13] = [
+    let files: [Generator; 14] = [
         ("aad", "AAD byte layouts (D11, D17)", aad),
         ("aead", "XChaCha20-Poly1305 v1 envelopes (D10)", aead),
         ("hkdf", "HKDF-SHA256, 32-byte output (D13)", hkdf),
@@ -68,6 +68,11 @@ fn main() {
             "opaque",
             "OPAQUE registration and login transcript with seeded randomness (D26)",
             opaque,
+        ),
+        (
+            "session",
+            "Extension session blob and sealed device secret v1 (D34)",
+            session,
         ),
     ];
     for (name, description, generate) in files {
@@ -385,6 +390,24 @@ fn device_name() -> Vec<Value> {
                     "padded": h(&padded), "envelope": h(&envelope.to_bytes()) })
         })
         .collect()
+}
+
+/// The session blob (keyset under a random session key, `pwm/session`) and
+/// a device secret under `sym_key` (`pwm/device-tokens`).
+fn session() -> Vec<Value> {
+    let auk = key(0x44);
+    let (keyset, sealed, plaintext) = known_keyset(&auk, &ACCOUNT_A, 0x45, 0x46, 0x47);
+    let (blob, session_key) = keyset.export_session(&ACCOUNT_A).unwrap();
+    let secret = b"pwmr_example-refresh-token";
+    let sealed_secret = keyset.seal_device_secret(&ACCOUNT_A, secret).unwrap();
+    vec![json!({
+        "auk": h(&[0x44; 32]), "account_id": h(&ACCOUNT_A), "sealed_keyset": h(&sealed),
+        "keyset_plaintext": h(&plaintext), "session_key": h(session_key.expose_secret()),
+        "session_aad": h(Aad::session(1, &ACCOUNT_A).as_bytes()), "session_blob": h(&blob.to_bytes()),
+        "sym_key": h(&plaintext[1..33]), "device_secret": h(secret),
+        "device_tokens_aad": h(Aad::device_tokens(1, &ACCOUNT_A).as_bytes()),
+        "device_secret_envelope": h(&sealed_secret.to_bytes()),
+    })]
 }
 
 /// One registration and login with seeded randomness. The checker replays

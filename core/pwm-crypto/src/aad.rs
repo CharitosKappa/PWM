@@ -92,6 +92,24 @@ impl Aad {
         aad
     }
 
+    /// Unlocked keyset in the extension's memory-only session store,
+    /// under a random session key (decision D34).
+    pub fn session(version: u8, account_id: &Id) -> Self {
+        let mut aad = Self::labelled("pwm/session");
+        aad.0.push(version);
+        aad.0.extend_from_slice(account_id);
+        aad
+    }
+
+    /// A secret the device keeps on disk (the refresh token), under the
+    /// account `sym_key` (decision D34).
+    pub fn device_tokens(version: u8, account_id: &Id) -> Self {
+        let mut aad = Self::labelled("pwm/device-tokens");
+        aad.0.push(version);
+        aad.0.extend_from_slice(account_id);
+        aad
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }

@@ -1,0 +1,280 @@
+/** Sign in, create an account, and the one-time Secret Key screen (D34). */
+import { useEffect, useState } from "preact/hooks";
+import type { JSX } from "preact";
+import { describe, send } from "./api.ts";
+import { Field, Notice } from "./ui.tsx";
+
+const MIN_SCORE = 3;
+const SCORE_WORDS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
+
+export function SignedOut({ onDone }: { onDone: () => void }): JSX.Element {
+  const [mode, setMode] = useState<"signIn" | "signUp">("signIn");
+  return (
+    <main class="stack">
+      <h1>Password manager</h1>
+      <div class="tabs" role="tablist">
+        <button
+          role="tab"
+          aria-selected={mode === "signIn"}
+          onClick={() => {
+            setMode("signIn");
+          }}
+        >
+          Sign in
+        </button>
+        <button
+          role="tab"
+          aria-selected={mode === "signUp"}
+          onClick={() => {
+            setMode("signUp");
+          }}
+        >
+          Create account
+        </button>
+      </div>
+      {mode === "signIn" ? (
+        <SignIn onDone={onDone} />
+      ) : (
+        <SignUp onDone={onDone} />
+      )}
+    </main>
+  );
+}
+
+function SignIn({ onDone }: { onDone: () => void }): JSX.Element {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [secretKey, setSecretKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (event: Event): Promise<void> => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await send({
+        kind: "signIn",
+        email: email.trim(),
+        password,
+        secretKey: secretKey.trim(),
+      });
+      setPassword("");
+      onDone();
+    } catch (err) {
+      setError(describe(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form class="stack" onSubmit={(e) => void submit(e)}>
+      <Field
+        label="Email"
+        type="email"
+        value={email}
+        onInput={setEmail}
+        autoComplete="username"
+      />
+      <Field
+        label="Master password"
+        type="password"
+        value={password}
+        onInput={setPassword}
+        autoComplete="current-password"
+      />
+      <Field
+        label="Secret Key"
+        value={secretKey}
+        onInput={setSecretKey}
+        mono
+        hint="On your Emergency Kit."
+      />
+      <div class="slot">{error && <Notice kind="danger">{error}</Notice>}</div>
+      <button
+        class="primary"
+        disabled={busy || !email || !password || !secretKey}
+      >
+        {busy ? "Signing in…" : "Sign in"}
+      </button>
+    </form>
+  );
+}
+
+function SignUp({ onDone }: { onDone: () => void }): JSX.Element {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [score, setScore] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [secretKey, setSecretKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (password === "") {
+      setScore(null);
+      return;
+    }
+    let current = true;
+    const timer = setTimeout(() => {
+      send({ kind: "score", password, email })
+        .then((value) => {
+          if (current) setScore(value);
+        })
+        .catch(() => {
+          if (current) setScore(null);
+        });
+    }, 150);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [password, email]);
+
+  if (secretKey !== null)
+    return (
+      <SecretKey email={email.trim()} secretKey={secretKey} onDone={onDone} />
+    );
+
+  const strongEnough = score !== null && score >= MIN_SCORE;
+  const matches = password === confirm;
+
+  const submit = async (event: Event): Promise<void> => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const reply = await send({
+        kind: "signUp",
+        email: email.trim(),
+        password,
+      });
+      setPassword("");
+      setConfirm("");
+      setSecretKey(reply.secretKey);
+    } catch (err) {
+      setError(describe(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form class="stack" onSubmit={(e) => void submit(e)}>
+      <Field
+        label="Email"
+        type="email"
+        value={email}
+        onInput={setEmail}
+        autoComplete="username"
+      />
+      <Field
+        label="Master password"
+        type="password"
+        value={password}
+        onInput={setPassword}
+        autoComplete="new-password"
+      />
+      <div class="meter" data-score={score ?? ""} aria-live="polite">
+        <div class="meter-track">
+          <div
+            class="meter-bar"
+            style={{
+              width: score === null ? "0%" : `${String((score + 1) * 20)}%`,
+            }}
+          />
+        </div>
+        <span class="caption">
+          {score === null ? " " : (SCORE_WORDS[score] ?? "")}
+        </span>
+      </div>
+      <Field
+        label="Confirm master password"
+        type="password"
+        value={confirm}
+        onInput={setConfirm}
+        autoComplete="new-password"
+      />
+      <div class="slot">
+        {confirm !== "" && !matches && (
+          <Notice kind="warning">The passwords don't match.</Notice>
+        )}
+      </div>
+      <p class="caption muted">
+        Nobody can reset your master password, not even us. Choose one you will
+        remember.
+      </p>
+      <div class="slot">{error && <Notice kind="danger">{error}</Notice>}</div>
+      <button
+        class="primary"
+        disabled={busy || !email || !strongEnough || !matches}
+      >
+        {busy ? "Creating account…" : "Create account"}
+      </button>
+    </form>
+  );
+}
+
+/** Shown once: the Secret Key and the Emergency Kit. */
+function SecretKey({
+  email,
+  secretKey,
+  onDone,
+}: {
+  email: string;
+  secretKey: string;
+  onDone: () => void;
+}): JSX.Element {
+  const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const download = (): void => {
+    const kit = [
+      "EMERGENCY KIT",
+      "",
+      `Email: ${email}`,
+      `Secret Key: ${secretKey}`,
+      "Master password: ______________________ (write it here, by hand, if you print this)",
+      "",
+      "You need all three to sign in on a new device.",
+      "Keep this file somewhere safe and offline. Nobody can recover it for you.",
+      "",
+    ].join("\n");
+    const url = URL.createObjectURL(new Blob([kit], { type: "text/plain" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "Emergency Kit.txt";
+    link.click();
+    URL.revokeObjectURL(url);
+    setSaved(true);
+  };
+
+  const copy = async (): Promise<void> => {
+    await send({ kind: "copySecretKey" });
+    setCopied(true);
+  };
+
+  return (
+    <div class="stack">
+      <h2>Save your Secret Key</h2>
+      <p>
+        You need it with your master password to sign in on a new device. It is
+        shown only now.
+      </p>
+      <code class="secret">{secretKey}</code>
+      <div class="row">
+        <button onClick={download}>Download Emergency Kit</button>
+        <button onClick={() => void copy()}>
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <p class="caption muted">
+        {copied ? "The clipboard clears in 30 seconds." : " "}
+      </p>
+      <button class="primary" disabled={!saved && !copied} onClick={onDone}>
+        I saved it
+      </button>
+    </div>
+  );
+}

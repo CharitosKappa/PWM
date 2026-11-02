@@ -1,0 +1,271 @@
+/* Popup styles. Values come from tokens.css (generated from design/tokens.json). */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+}
+
+body {
+  width: 360px;
+  min-height: 480px;
+}
+
+main {
+  padding: var(--space-4);
+}
+
+h1 {
+  margin: 0;
+  font-size: var(--type-headline-size);
+  line-height: var(--type-headline-line);
+  font-weight: var(--font-semibold);
+}
+
+h2 {
+  margin: 0;
+  font-size: var(--type-title-size);
+  line-height: var(--type-title-line);
+  font-weight: var(--font-semibold);
+}
+
+p {
+  margin: 0;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.caption {
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+
+.strong {
+  font-weight: var(--font-semibold);
+}
+
+.mono,
+.secret {
+  font-family: var(--font-mono);
+}
+
+.secret {
+  display: block;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: var(--type-secret-size);
+  line-height: var(--type-secret-line);
+  word-break: break-all;
+  user-select: all;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.label {
+  font-weight: var(--font-semibold);
+}
+
+input,
+select {
+  font: inherit;
+  color: inherit;
+  background: var(--color-bg);
+  border: 1px solid var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+}
+
+input[type="radio"] {
+  padding: 0;
+}
+
+fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+button {
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+button.primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+button.danger {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: transparent;
+}
+
+button.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--color-accent);
+  align-self: flex-start;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.tabs [role="tab"] {
+  flex: 1;
+}
+
+.tabs [aria-selected="true"] {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-weight: var(--font-semibold);
+}
+
+.search {
+  flex: 1;
+  min-width: 0;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  border: 0;
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+}
+
+.item span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card {
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.notice {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  border-left: 3px solid var(--color-accent);
+}
+
+.notice.danger {
+  border-left-color: var(--color-danger);
+}
+
+.notice.warning {
+  border-left-color: var(--color-warning);
+}
+
+/* Reserved space for a message, so nothing moves when one appears. */
+.slot {
+  min-height: calc(var(--type-body-line) * 1em + 2 * var(--space-2));
+}
+
+.toast {
+  position: fixed;
+  left: var(--space-4);
+  right: var(--space-4);
+  bottom: var(--space-4);
+  pointer-events: none;
+}
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.meter-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+}
+
+.meter-bar {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--color-danger);
+}
+
+.meter[data-score="2"] .meter-bar {
+  background: var(--color-warning);
+}
+
+.meter[data-score="3"] .meter-bar,
+.meter[data-score="4"] .meter-bar {
+  background: var(--color-success);
+}
+
+footer {
+  padding: 0 var(--space-4) var(--space-4);
+}

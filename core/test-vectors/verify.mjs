@@ -293,6 +293,24 @@ for (const v of load("device_name")) {
   check("device_name open", eq(openEnvelope(symKey, hex(v.envelope), aad), padded));
 }
 
+for (const v of load("session")) {
+  const account = hex(v.account_id);
+  const keyset = openKeyset(v);
+  check("session keyset", eq(keyset, hex(v.keyset_plaintext)));
+  const sessionAad = labelled("pwm/session", Buffer.from([1]), account);
+  check("session aad", eq(sessionAad, hex(v.session_aad)));
+  // The envelope; pwm-client prefixes it with v (= 1) || account_id.
+  check("session open", eq(openEnvelope(hex(v.session_key), hex(v.session_blob), sessionAad), keyset));
+  const symKey = keyset.subarray(1, 33);
+  check("session sym_key", eq(symKey, hex(v.sym_key)));
+  const tokensAad = labelled("pwm/device-tokens", Buffer.from([1]), account);
+  check("device_tokens aad", eq(tokensAad, hex(v.device_tokens_aad)));
+  check(
+    "device_tokens open",
+    eq(openEnvelope(symKey, hex(v.device_secret_envelope), tokensAad), hex(v.device_secret)),
+  );
+}
+
 // opaque.json is checked by the Rust checker only: the protocol itself is
 // covered by the RFC 9807 vectors in opaque-ke.
 

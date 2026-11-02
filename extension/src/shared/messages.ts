@@ -1,0 +1,134 @@
+/**
+ * Messages between the popup and the background service worker (D34).
+ * The popup never receives keys, passwords or one-time codes: copying goes
+ * through the background's clipboard. The only secret it ever gets is the
+ * Secret Key, once, right after sign-up, to show on the Emergency Kit.
+ */
+
+export type CopyField = "username" | "password" | "code";
+
+export type Request =
+  | { kind: "status" }
+  | { kind: "signUp"; email: string; password: string }
+  | { kind: "signIn"; email: string; password: string; secretKey: string }
+  | { kind: "unlock"; password: string }
+  | { kind: "lock" }
+  | { kind: "signOut" }
+  | { kind: "items"; query: string }
+  | { kind: "copy"; vaultId: string; itemId: string; field: CopyField }
+  | { kind: "copySecretKey" }
+  | { kind: "copyText"; text: string }
+  | { kind: "generate"; mode: "password" | "passphrase" }
+  | { kind: "score"; password: string; email: string }
+  | { kind: "sync" }
+  | { kind: "settings" }
+  | { kind: "setSettings"; settings: Settings }
+  | { kind: "activity" };
+
+export type Status =
+  | { state: "signedOut" }
+  | { state: "locked"; email: string }
+  | {
+      state: "unlocked";
+      email: string;
+      syncedAt: number | null;
+      syncError: string | null;
+    };
+
+export interface ItemSummary {
+  vaultId: string;
+  itemId: string;
+  title: string;
+  username: string;
+  url: string;
+  hasPassword: boolean;
+  hasCode: boolean;
+}
+
+export interface Settings {
+  /** The sync server; the hosted one unless self-hosting. */
+  serverUrl: string;
+  /** 1, 5, 15, 60 or 480 minutes (D34: never "never"). */
+  autoLockMinutes: number;
+}
+
+export const AUTO_LOCK_CHOICES = [1, 5, 15, 60, 480] as const;
+
+export type Reply<T> = { ok: true; value: T } | { ok: false; error: string };
+
+/** What each request answers with. */
+export interface Replies {
+  status: Status;
+  signUp: { secretKey: string };
+  signIn: null;
+  unlock: null;
+  lock: null;
+  signOut: null;
+  items: ItemSummary[];
+  copy: null;
+  copySecretKey: null;
+  copyText: null;
+  generate: string;
+  score: number;
+  sync: Status;
+  settings: Settings;
+  setSettings: Settings;
+  activity: null;
+}
+
+const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
+  "status",
+  "signUp",
+  "signIn",
+  "unlock",
+  "lock",
+  "signOut",
+  "items",
+  "copy",
+  "copySecretKey",
+  "copyText",
+  "generate",
+  "score",
+  "sync",
+  "settings",
+  "setSettings",
+  "activity",
+]);
+
+/** A popup message, wrapped so the background can tell it from others. */
+export interface PopupMessage {
+  target: "background";
+  request: Request;
+}
+
+/** Only checks the kind: the sender is already known to be the popup. */
+export function isPopupMessage(value: unknown): value is PopupMessage {
+  if (typeof value !== "object" || value === null) return false;
+  const message = value as { target?: unknown; request?: unknown };
+  if (
+    message.target !== "background" ||
+    typeof message.request !== "object" ||
+    message.request === null
+  ) {
+    return false;
+  }
+  const kind = (message.request as { kind?: unknown }).kind;
+  return typeof kind === "string" && KINDS.has(kind);
+}
+
+/** Message from the background to the offscreen document. */
+export interface ClipboardMessage {
+  target: "offscreen";
+  kind: "clipboard";
+  text: string;
+}
+
+export function isClipboardMessage(value: unknown): value is ClipboardMessage {
+  if (typeof value !== "object" || value === null) return false;
+  const message = value as Partial<ClipboardMessage>;
+  return (
+    message.target === "offscreen" &&
+    message.kind === "clipboard" &&
+    typeof message.text === "string"
+  );
+}

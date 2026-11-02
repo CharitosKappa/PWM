@@ -9,6 +9,7 @@ mod auth;
 mod autofill;
 mod client;
 mod error;
+mod session;
 
 pub use auth::id_text;
 pub use autofill::AutofillMatch;
@@ -20,6 +21,7 @@ pub use pwm_generator::{
 };
 pub use pwm_store::{MemoryStore, SNAPSHOT_VERSION, Store};
 pub use pwm_sync::{HttpRequest, HttpResponse, Method, SyncEvent, SyncReport, Tokens};
+pub use session::SessionExport;
 
 /// The platforms a device can be (D26).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

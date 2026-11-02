@@ -1818,6 +1818,14 @@ name = "pwm-import"
 version = "0.0.0"
 
 [[package]]
+name = "pwm-rules-sign"
+version = "0.0.0"
+dependencies = [
+ "pwm-autofill",
+ "pwm-crypto",
+]
+
+[[package]]
 name = "pwm-server"
 version = "0.0.0"
 dependencies = [

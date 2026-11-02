@@ -1,6 +1,6 @@
 {
   "name": "@pwm/extension",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -8,15 +8,22 @@
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build": "node scripts/build.mjs",
+    "test:wasm": "vitest run --config vitest.wasm.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/chrome": "^0.3.7",
     "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
     "prettier": "^3.9.10",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.72.1",
     "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "preact": "^10.29.8"
   }
 }

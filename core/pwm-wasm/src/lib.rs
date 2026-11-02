@@ -412,6 +412,76 @@ impl WasmClient {
             .map(|(item, step)| vec![item, step.to_owned()])
     }
 
+    /// The unlocked session for `chrome.storage.session` (memory only, D34):
+    /// a 32-byte key followed by the sealed blob. Never write it to disk.
+    #[wasm_bindgen(js_name = exportSession)]
+    pub fn export_session(&self) -> Result<Vec<u8>, JsValue> {
+        let session = self.inner.export_session().map_err(js_error)?;
+        let mut out = session.key.expose_secret().to_vec();
+        out.extend_from_slice(&session.blob);
+        Ok(out)
+    }
+
+    /// Unlocks from `exportSession` output after the worker restarted.
+    #[wasm_bindgen(js_name = restoreSession)]
+    pub fn restore_session(
+        &mut self,
+        session: &[u8],
+        sealed_tokens: Option<Vec<u8>>,
+    ) -> Result<(), JsValue> {
+        if session.len() < 32 {
+            return Err(js_error(ClientError::WrongPassword));
+        }
+        let (key, blob) = session.split_at(32);
+        self.inner
+            .restore_session(blob, key, sealed_tokens.as_deref())
+            .map_err(js_error)
+    }
+
+    /// Tokens sealed under the account keyset, for `chrome.storage.local`.
+    #[wasm_bindgen(js_name = sealTokens)]
+    pub fn seal_tokens(&self, access: &str, refresh: &str) -> Result<Vec<u8>, JsValue> {
+        self.inner.seal_tokens(access, refresh).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = unlockWithSealedTokens)]
+    pub fn unlock_with_sealed_tokens(
+        &mut self,
+        password: &str,
+        secret_key: &str,
+        sealed_tokens: Option<Vec<u8>>,
+    ) -> Result<(), JsValue> {
+        self.inner
+            .unlock_with_sealed_tokens(password, secret_key, sealed_tokens.as_deref())
+            .map_err(js_error)
+    }
+
+    /// `[code, secondsLeft]` for a login with a one-time code.
+    #[wasm_bindgen(js_name = currentCode)]
+    pub fn current_code(
+        &self,
+        vault_id: &str,
+        item_id: &str,
+        now_ms: f64,
+    ) -> Result<Option<Vec<String>>, JsValue> {
+        Ok(self
+            .inner
+            .current_code(vault_id, item_id, ms(now_ms))
+            .map_err(js_error)?
+            .map(|(code, left)| vec![code.expose_secret().clone(), left.to_string()]))
+    }
+
+    /// Sync, then create a vault only if the account has none.
+    #[wasm_bindgen(js_name = startEnsureVault)]
+    pub fn start_ensure_vault(&mut self) -> Result<WasmStep, JsValue> {
+        self.inner.start_ensure_vault().map(step).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = accountId)]
+    pub fn account_id(&self) -> Result<Option<String>, JsValue> {
+        self.inner.account_id().map_err(js_error)
+    }
+
     #[wasm_bindgen(js_name = autofillForgetTab)]
     pub fn autofill_forget_tab(&mut self, tab: &str) {
         self.inner.autofill_forget_tab(tab);

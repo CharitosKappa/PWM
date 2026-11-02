@@ -1,0 +1,15 @@
+[package]
+name = "pwm-rules-sign"
+description = "Offline tool for the autofill rules release keys (D33, D34): keygen and sign. Never shipped."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+pwm-autofill = { path = "../pwm-autofill" }
+pwm-crypto = { path = "../pwm-crypto" }

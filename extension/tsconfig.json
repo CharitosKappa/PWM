@@ -4,8 +4,11 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
-    "lib": ["ES2022", "DOM"],
-    "types": ["node"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "chrome"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "paths": { "pwm-core": ["./src/pwm-core.d.ts"] },
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -16,5 +19,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "*.ts"]
+  "include": ["src", "scripts", "*.ts"]
 }

@@ -535,4 +535,13 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
         - the WASM core in Vitest (snapshot persistence round trip, the M3.7 deferral).
       - **A build check** that the bundled extension has a valid manifest with only the listed permissions and no remote URLs in its scripts.
       - Loading it in a real browser comes with the M4.7 Playwright harness.
+  Implementation notes (M4.2):
+  - **Core:** `pwm-crypto` gains `export_session` / `import_session` and `seal_device_secret` / `open_device_secret` (`SECURITY.md`, with test vectors in `core/test-vectors/session.json`). `pwm-client` gains `export_session` / `restore_session`, `seal_tokens` / `unlock_with_sealed_tokens`, `current_code` and `start_ensure_vault` (sync, then create a vault only if there is none). All are in WASM; `start_ensure_vault` and `current_code` are in UniFFI too.
+  - **Tokens:** the access and the refresh token are sealed together, so a restarted worker can sync at once without a refresh round trip.
+  - **Rules:** the last accepted rules file is kept on disk with its version and given to the core again at every start (the core holds rules in memory). The download goes to the hosted origin even when self-hosting, because the rules are signed by us, not by the server.
+  - **One conversation at a time:** the background queues server conversations (the core runs one at a time) and shares one sync run between concurrent requests.
+  - **Options page:** the popup page opened at `#settings`. The server can be changed only while signed out, because the account lives on one server.
+  - **Copy:** the Secret Key (after sign-up) and generated passwords also go through the background, so every copy is cleared after 30 seconds.
+  - **Build:** `scripts/build.mjs` (esbuild) bundles into `extension/dist/` and fails on any permission beyond the list, a host permission other than the hosted API, content scripts, web-accessible resources, a remote CSP source, or a remote URL in the scripts. CI uploads the build as an artifact.
+  - **Parity gap:** unlocking with biometrics through the desktop app waits for that app (M5.6/M7.2); the extension unlocks with the master password only.
   Why: a background-only core with a memory-only session keeps keys off disk while the extension still survives Chrome's worker shutdowns. Sealing tokens under the account keyset and keeping the Secret Key local is the same trade-off native apps make with secure storage, scaled to what a browser offers. Keeping the signing seeds with the founder, offline, is the point of signing the rules at all.
