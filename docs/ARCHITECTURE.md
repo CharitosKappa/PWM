@@ -75,7 +75,7 @@ Extension ──native messaging──▶ desktop app (unlock, biometrics)   or 
 | `POST /v1/auth/login/{start,finish}` | OPAQUE login → access + refresh tokens (D26) |
 | `POST /v1/auth/refresh` / `POST /v1/auth/logout` | New token pair (refresh token replaced on use) / end the session |
 | `GET /v1/account` | Encrypted account keyset, KDF params, salt, public keys, plan |
-| `GET /v1/vaults` / `POST /v1/vaults` | List the caller's vaults with their copy of each vault key and the current `seq` / create a vault (D27) |
+| `GET /v1/vaults` / `POST /v1/vaults` | List the caller's vaults with their copy of each vault key and the current `seq`, plus the server epoch in a `pwm-epoch` header (D30) / create a vault (D27) |
 | `GET /v1/vaults/{id}/items?since=<seq>&limit=<n>` | Delta sync: items and tombstones after `since` in `seq` order, from one snapshot; `{changes, next, more}` (D27) |
 | `PUT /v1/vaults/{id}/items/{item_id}` | Create (`If-None-Match: *`, revision 1) or update (`If-Match: "<revision>"`, revision + 1); 412 returns the current item (D27) |
 | `DELETE /v1/vaults/{id}/items/{item_id}` | Delete with `If-Match`, leaving a tombstone; ids are never reused (D27) |

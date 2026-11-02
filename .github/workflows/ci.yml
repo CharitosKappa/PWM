@@ -78,11 +78,38 @@ jobs:
     env:
       PWM_TEST_DATABASE_URL: postgres://pwm:pwm@localhost:5432/postgres
       PWM_REQUIRE_DB: "1"
+      # A second Postgres with TLS on (service containers cannot pass flags).
+      PWM_TEST_TLS_DATABASE_URL: postgres://pwm:pwm@localhost:54330/postgres
+      PWM_REQUIRE_TLS_DB: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - run: >-
+          docker run -d --name pwm-test-tls -p 54330:5432 -e POSTGRES_USER=pwm -e POSTGRES_PASSWORD=pwm
+          postgres:17 -c ssl=on -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem
+          -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: until docker exec pwm-test-tls psql -U pwm -h 127.0.0.1 -tAc "select 1"; do sleep 1; done
+      - run: cargo test -p pwm-server --locked
+
+  # The server image and compose stack (D30): build, start, smoke test.
+  image:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p pwm-server --locked
+      - run: docker compose build
+      - name: The image holds no shell
+        run: "! docker run --rm --entrypoint /bin/sh pwm-server:dev -c true"
+      - run: echo "PWM_SERVER_SECRETS=$(docker run --rm pwm-server:dev keygen)" > .env
+      - run: docker compose up -d --wait
+      - run: cargo run --locked -p pwm-server --example smoke -- http://127.0.0.1:8080
+      - run: docker compose exec -T server /pwm-server mark-restored
+      - run: cargo run --locked -p pwm-server --example smoke -- http://127.0.0.1:8080
+      - if: failure()
+        run: docker compose logs
 
   extension-test:
     if: github.event_name != 'schedule'

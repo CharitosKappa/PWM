@@ -17,6 +17,7 @@ Read these before writing code:
 | `docs/DECISIONS.md` | Open and settled decisions; log new ones here |
 | `docs/COMPETITORS.md` | Why each feature exists (competitor strengths, gaps, bad reviews) |
 | `docs/DEVELOPMENT.md` | Local toolchain setup and everyday commands |
+| `docs/DEPLOYMENT.md` | Server image, settings, TLS proxy, backups and restore |
 
 ## How to work
 

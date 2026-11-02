@@ -46,6 +46,12 @@ pub trait Store {
     /// Removes an item for good. Removing a missing item is not an error.
     fn delete_item(&mut self, vault_id: &Id, item_id: &ItemId) -> Result<(), StoreError>;
 
+    /// The server epoch seen at the last completed sync (D30); `None` before
+    /// the first one.
+    fn server_epoch(&self) -> Result<Option<Id>, StoreError>;
+
+    fn set_server_epoch(&mut self, epoch: &Id) -> Result<(), StoreError>;
+
     /// Items with local changes not yet uploaded, across all vaults.
     fn pending_items(&self) -> Result<Vec<ItemRecord>, StoreError>;
 

@@ -1,7 +1,7 @@
 //! `POST /v1/vaults` and `GET /v1/vaults` (D27).
 
 use axum::extract::State;
-use axum::http::StatusCode;
+use axum::http::{HeaderName, HeaderValue, StatusCode};
 use axum::routing::get;
 use axum::{Json, Router};
 use pwm_crypto::Envelope;
@@ -94,10 +94,16 @@ async fn create(
     ))
 }
 
+/// The caller's vaults, and the server epoch in a `pwm-epoch` header (D30)
+/// so clients notice a restore from backup.
 async fn list(
     State(state): State<AppState>,
     auth: Authenticated,
-) -> Result<Json<Vec<VaultEntry>>, ApiError> {
+) -> Result<([(HeaderName, HeaderValue); 1], Json<Vec<VaultEntry>>), ApiError> {
+    let epoch: Uuid = sqlx::query_scalar("SELECT epoch FROM server_meta")
+        .fetch_one(&state.pool)
+        .await?;
+    let epoch = HeaderValue::from_str(&epoch.to_string()).map_err(|_| ApiError::Internal)?;
     let rows = sqlx::query(
         "SELECT v.id, k.role, k.wrap, k.wrapped_key, k.shared_by, v.seq \
          FROM vault_keys k JOIN vaults v ON v.id = k.vault_id \
@@ -106,16 +112,16 @@ async fn list(
     .bind(auth.account_id)
     .fetch_all(&state.pool)
     .await?;
-    Ok(Json(
-        rows.into_iter()
-            .map(|row| VaultEntry {
-                id: row.get(0),
-                role: row.get(1),
-                wrap: row.get(2),
-                wrapped_key: row.get(3),
-                shared_by: row.get(4),
-                seq: row.get::<i64, _>(5).to_string(),
-            })
-            .collect(),
-    ))
+    let list = rows
+        .into_iter()
+        .map(|row| VaultEntry {
+            id: row.get(0),
+            role: row.get(1),
+            wrap: row.get(2),
+            wrapped_key: row.get(3),
+            shared_by: row.get(4),
+            seq: row.get::<i64, _>(5).to_string(),
+        })
+        .collect();
+    Ok(([(HeaderName::from_static("pwm-epoch"), epoch)], Json(list)))
 }

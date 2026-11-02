@@ -1,0 +1,39 @@
+# Local server stack (decision D30): Postgres and pwm-server built from the
+# Dockerfile. `just secrets` writes `.env` once; `just server` starts this.
+# The API is on http://127.0.0.1:8080 only; Postgres is not published.
+name: pwm
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: pwm
+      POSTGRES_PASSWORD: pwm
+      POSTGRES_DB: pwm
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pwm -d pwm"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  server:
+    build: .
+    image: pwm-server:dev
+    env_file: .env
+    environment:
+      # The private compose network; remote databases use sslmode=verify-full.
+      PWM_DATABASE_URL: postgres://pwm:pwm@postgres:5432/pwm
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:

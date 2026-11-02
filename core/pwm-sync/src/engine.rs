@@ -2,6 +2,7 @@
 //! request at a time and applies each answer to the local cache.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::str::FromStr;
 
 use pwm_crypto::{AccountKeyset, Envelope, Id, SymmetricKey};
 use pwm_store::{Store, SyncState, VaultRecord};
@@ -91,6 +92,8 @@ struct Run {
     /// The current request was already resent with refreshed tokens.
     refreshed: bool,
     report: SyncReport,
+    /// A server epoch to record once every vault has been pulled (D30).
+    new_epoch: Option<Id>,
 }
 
 enum Task {
@@ -106,6 +109,8 @@ enum Task {
         since: u64,
         /// Ids seen while pulling a vault again from 0 (D28 §9).
         seen: Option<HashSet<ItemId>>,
+        /// The server was restored (new epoch): pull every vault from 0.
+        resync_all: bool,
     },
     Push {
         queue: VecDeque<Pending>,
@@ -312,6 +317,7 @@ impl<S: Store> SyncEngine<S> {
             refreshing: false,
             refreshed: false,
             report: SyncReport::default(),
+            new_epoch: None,
         };
         let step = self.request(&mut run);
         self.settle(run, step)
@@ -393,6 +399,10 @@ impl<S: Store> SyncEngine<S> {
                         return Ok(Step::Send(
                             self.authorized(HttpRequest::new(Method::Get, path)),
                         ));
+                    }
+                    // Every vault is pulled: the restore (if any) is handled.
+                    if let Some(epoch) = run.new_epoch.take() {
+                        self.store.set_server_epoch(&epoch)?;
                     }
                     let queue = self
                         .store
@@ -586,14 +596,32 @@ impl<S: Store> SyncEngine<S> {
             self.store.delete_vault(vault_id)?;
             self.keys.remove(vault_id);
         }
+        // A new server epoch means the database was restored from a backup:
+        // seqs no longer say what changed, so every vault is pulled from 0
+        // and what the server lost goes up again. The first epoch seen is
+        // just recorded.
+        let epoch = response
+            .header("pwm-epoch")
+            .and_then(|e| ItemId::from_str(e).ok())
+            .map(|e| *e.as_bytes());
+        let stored = self.store.server_epoch()?;
+        let resync_all = matches!((stored, epoch), (Some(old), Some(new)) if old != new);
+        if epoch.is_some() && epoch != stored {
+            run.new_epoch = epoch;
+        }
+        run.report.resynced |= resync_all;
         let mut vaults: Vec<Id> = self.keys.keys().copied().collect();
         vaults.sort_unstable();
-        let since = vaults.first().map_or(Ok(0), |id| self.cursor(id))?;
+        let since = match vaults.first() {
+            Some(id) if !resync_all => self.cursor(id)?,
+            _ => 0,
+        };
         run.task = Task::Pull {
             vaults,
             index: 0,
             since,
-            seen: None,
+            seen: resync_all.then(HashSet::new),
+            resync_all,
         };
         self.request(run)
     }
@@ -632,6 +660,7 @@ impl<S: Store> SyncEngine<S> {
             index,
             since,
             seen,
+            resync_all,
         } = task
         else {
             unreachable!("checked by the caller");
@@ -682,9 +711,9 @@ impl<S: Store> SyncEngine<S> {
         }
         if finished {
             *index += 1;
-            *seen = None;
+            *seen = resync_all.then(HashSet::new);
             if let Some(next) = vaults.get(*index).copied() {
-                *since = self.cursor(&next)?;
+                *since = if *resync_all { 0 } else { self.cursor(&next)? };
             }
         }
         self.request(run)

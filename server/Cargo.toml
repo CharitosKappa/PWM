@@ -16,7 +16,7 @@ base64 = "0.23.1"
 pwm-crypto = { version = "0.0.0", path = "../core/pwm-crypto" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "postgres", "migrate", "macros", "uuid"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "postgres", "migrate", "macros", "uuid", "tls-rustls-ring-native-roots"] }
 thiserror = "2.0.21"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
 tracing = "0.1"

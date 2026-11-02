@@ -1,0 +1,9 @@
+# Only the Cargo workspace goes into the image build context.
+*
+!Cargo.toml
+!Cargo.lock
+!core/
+!server/
+core/pwm-crypto/fuzz/
+**/target/
+**/node_modules/

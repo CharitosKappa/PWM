@@ -3,26 +3,41 @@
 //! `PWM_LOG_FORMAT`), applies pending migrations and serves the API until
 //! Ctrl-C or SIGTERM.
 //!
-//! `pwm-server keygen` prints new server secrets for `PWM_SERVER_SECRETS`.
-//! Keep them in a secret manager with a backup: losing them locks every
-//! account out.
+//! Subcommands:
+//! - `keygen` prints new server secrets for `PWM_SERVER_SECRETS`;
+//!   `keygen --env <file>` writes them as `PWM_SERVER_SECRETS=...` to a new
+//!   file (and leaves an existing one alone). Keep them in a secret manager
+//!   with a backup: losing them locks every account out.
+//! - `mark-restored` gives the server a new epoch; run it once after
+//!   restoring the database from a backup (D30).
+//! - `healthcheck` exits 0 if the server on `PWM_LISTEN` answers
+//!   `/healthz` (the container health check).
 #![forbid(unsafe_code)]
 
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Write};
 use std::net::SocketAddr;
+use std::path::Path;
 use std::process::ExitCode;
 
 use pwm_server::{
-    AppState, Config, LogFormat, ServerError, app, connect, generate_server_secrets,
-    install_panic_hook, log_subscriber, migrate,
+    AppState, Config, DEFAULT_LISTEN, LogFormat, ServerError, app, connect,
+    generate_server_secrets, install_panic_hook, log_subscriber, migrate,
 };
 use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    if std::env::args().nth(1).as_deref() == Some("keygen") {
-        return keygen();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("keygen") => return keygen(args.get(1).map(String::as_str), args.get(2)),
+        Some("healthcheck") => return healthcheck(),
+        Some("mark-restored") | None => {}
+        Some(_) => {
+            eprintln!("usage: pwm-server [keygen [--env <file>] | mark-restored | healthcheck]");
+            return ExitCode::FAILURE;
+        }
     }
+    let restore = args.first().map(String::as_str) == Some("mark-restored");
     // sqlx logs statements at debug and slow ones at warn. Every line goes
     // through the scrubber (D29).
     let filter = std::env::var("PWM_LOG").unwrap_or_else(|_| "info,sqlx=warn".to_owned());
@@ -32,7 +47,12 @@ async fn main() -> ExitCode {
         eprintln!("logging was already set up");
     }
     install_panic_hook();
-    match run().await {
+    let result = if restore {
+        mark_restored().await
+    } else {
+        run().await
+    };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             tracing::error!("{err}");
@@ -41,17 +61,76 @@ async fn main() -> ExitCode {
     }
 }
 
-fn keygen() -> ExitCode {
-    match generate_server_secrets() {
-        Ok(secrets) => {
+fn keygen(flag: Option<&str>, path: Option<&String>) -> ExitCode {
+    let secrets = match generate_server_secrets() {
+        Ok(secrets) => secrets,
+        Err(err) => {
+            eprintln!("{err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match (flag, path) {
+        (None, _) => {
             println!("{}", secrets.expose_secret());
             ExitCode::SUCCESS
         }
-        Err(err) => {
-            eprintln!("{err}");
+        (Some("--env"), Some(path)) => match write_env(Path::new(path), secrets.expose_secret()) {
+            Ok(true) => {
+                eprintln!("wrote PWM_SERVER_SECRETS to {path}");
+                ExitCode::SUCCESS
+            }
+            Ok(false) => {
+                eprintln!("{path} already exists; keeping it");
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                eprintln!("cannot write {path}: {err}");
+                ExitCode::FAILURE
+            }
+        },
+        _ => {
+            eprintln!("usage: pwm-server keygen [--env <file>]");
             ExitCode::FAILURE
         }
     }
+}
+
+/// Creates `path` with the secrets, readable by the owner only on Unix.
+/// `false` if it already exists, so a second run never replaces secrets.
+fn write_env(path: &Path, secrets: &str) -> std::io::Result<bool> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    match options.open(path) {
+        Ok(mut file) => {
+            writeln!(file, "PWM_SERVER_SECRETS={secrets}")?;
+            Ok(true)
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+        Err(err) => Err(err),
+    }
+}
+
+fn healthcheck() -> ExitCode {
+    let listen = std::env::var("PWM_LISTEN").unwrap_or_else(|_| DEFAULT_LISTEN.to_owned());
+    match listen.parse() {
+        Ok(addr) if pwm_server::healthcheck(addr) => ExitCode::SUCCESS,
+        _ => ExitCode::FAILURE,
+    }
+}
+
+async fn mark_restored() -> Result<(), ServerError> {
+    let config = Config::from_env()?;
+    let pool = connect(config.database_url.expose_secret())?;
+    migrate(&pool).await?;
+    let epoch = pwm_server::mark_restored(&pool).await?;
+    tracing::info!(%epoch, "new server epoch: every client will pull again and upload what the backup lost");
+    pool.close().await;
+    Ok(())
 }
 
 async fn run() -> Result<(), ServerError> {
