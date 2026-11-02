@@ -92,7 +92,8 @@ jobs:
       - run: until docker exec pwm-test-tls psql -U pwm -h 127.0.0.1 -tAc "select 1"; do sleep 1; done
       - run: cargo test -p pwm-server --locked
 
-  # The core in the browser (D31): WASM build, then the Node smoke test.
+  # The core in the browser (D31, D34): WASM build, the Node smoke test, the
+  # extension's tests over the real core, and the extension build and its checks.
   wasm:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -102,16 +103,25 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-          # Only Node is needed here; without this it looks for pnpm.
-          package-manager-cache: false
+          cache: pnpm
       # Must match the wasm-bindgen version in Cargo.lock.
       - run: cargo install wasm-bindgen-cli --version 0.2.130 --locked
       - run: cargo build --locked --release -p pwm-wasm --target wasm32-unknown-unknown
+      - run: wasm-bindgen --target web --out-dir extension/core target/wasm32-unknown-unknown/release/pwm_wasm.wasm
       - run: wasm-bindgen --target nodejs --out-dir target/wasm/node target/wasm32-unknown-unknown/release/pwm_wasm.wasm
       - run: node core/pwm-wasm/smoke/smoke.mjs target/wasm/node/pwm_wasm.js
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @pwm/extension test:wasm
+      - run: pnpm --filter @pwm/extension build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-chromium
+          path: extension/dist/
+          retention-days: 14
 
   # The core for the apps (D31): UniFFI bindings, compiled and run on Linux.
   bindings:

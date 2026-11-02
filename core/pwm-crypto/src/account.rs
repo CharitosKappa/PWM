@@ -17,6 +17,10 @@ const KEYSET_VERSION: u8 = 1;
 const KEYSET_LEN: usize = 1 + 3 * 32;
 /// Vault key plaintext format: the 32 raw key bytes.
 const VAULT_KEY_VERSION: u8 = 1;
+/// Session blob format (D34): the keyset plaintext under a session key.
+const SESSION_VERSION: u8 = 1;
+/// Device secret format (D34): the raw secret under `sym_key`.
+const DEVICE_SECRET_VERSION: u8 = 1;
 /// Device name plaintext format: UTF-8 padded to exactly 64 bytes (D26).
 const DEVICE_NAME_VERSION: u8 = 1;
 const DEVICE_NAME_LEN: usize = 64;
@@ -111,9 +115,9 @@ impl AccountKeyset {
         self.ed25519.verifying_key().to_bytes()
     }
 
-    /// Seals the keyset under the AUK, bound to `account_id`.
-    pub fn seal(&self, auk: &SymmetricKey, account_id: &Id) -> Result<Envelope, CryptoError> {
-        let plaintext = Secret::<Vec<u8>>::new_with(|buf| {
+    /// The keyset plaintext: `version || sym_key || x25519_secret || ed25519_seed`.
+    fn plaintext(&self) -> Secret<Vec<u8>> {
+        Secret::<Vec<u8>>::new_with(|buf| {
             buf.reserve_exact(KEYSET_LEN);
             buf.push(KEYSET_VERSION);
             buf.extend_from_slice(self.sym_key.expose_bytes());
@@ -121,10 +125,14 @@ impl AccountKeyset {
             let mut seed = self.ed25519.to_bytes();
             buf.extend_from_slice(&seed);
             seed.zeroize();
-        });
+        })
+    }
+
+    /// Seals the keyset under the AUK, bound to `account_id`.
+    pub fn seal(&self, auk: &SymmetricKey, account_id: &Id) -> Result<Envelope, CryptoError> {
         seal(
             auk,
-            plaintext.expose_secret(),
+            self.plaintext().expose_secret(),
             &Aad::keyset(KEYSET_VERSION, account_id),
         )
     }
@@ -136,7 +144,69 @@ impl AccountKeyset {
         account_id: &Id,
     ) -> Result<Self, CryptoError> {
         let plaintext = open(auk, envelope, &Aad::keyset(KEYSET_VERSION, account_id))?;
-        let bytes = plaintext.expose_secret();
+        Self::from_plaintext(plaintext.expose_secret())
+    }
+
+    /// The unlocked keyset for a memory-only session store (decision D34):
+    /// sealed under a fresh random key that is returned with it, AAD
+    /// `pwm/session`. Both stay in memory; neither may reach disk.
+    pub fn export_session(
+        &self,
+        account_id: &Id,
+    ) -> Result<(Envelope, Secret<[u8; 32]>), CryptoError> {
+        let key_bytes = random_32()?;
+        let key = SymmetricKey::from_secret(Secret::<[u8; 32]>::new_with(|k| {
+            k.copy_from_slice(key_bytes.expose_secret());
+        }));
+        let envelope = seal(
+            &key,
+            self.plaintext().expose_secret(),
+            &Aad::session(SESSION_VERSION, account_id),
+        )?;
+        Ok((envelope, key_bytes))
+    }
+
+    /// Restores a keyset from [`export_session`](Self::export_session).
+    pub fn import_session(
+        envelope: &Envelope,
+        key: &Secret<[u8; 32]>,
+        account_id: &Id,
+    ) -> Result<Self, CryptoError> {
+        let key = SymmetricKey::from_secret(Secret::<[u8; 32]>::new_with(|k| {
+            k.copy_from_slice(key.expose_secret());
+        }));
+        let plaintext = open(&key, envelope, &Aad::session(SESSION_VERSION, account_id))?;
+        Self::from_plaintext(plaintext.expose_secret())
+    }
+
+    /// Seals a secret this device keeps on disk (the refresh token, D34)
+    /// under `sym_key`, AAD `pwm/device-tokens`: usable only after unlock.
+    pub fn seal_device_secret(
+        &self,
+        account_id: &Id,
+        secret: &[u8],
+    ) -> Result<Envelope, CryptoError> {
+        seal(
+            &self.sym_key,
+            secret,
+            &Aad::device_tokens(DEVICE_SECRET_VERSION, account_id),
+        )
+    }
+
+    /// Opens a secret sealed by [`seal_device_secret`](Self::seal_device_secret).
+    pub fn open_device_secret(
+        &self,
+        envelope: &Envelope,
+        account_id: &Id,
+    ) -> Result<Secret<Vec<u8>>, CryptoError> {
+        open(
+            &self.sym_key,
+            envelope,
+            &Aad::device_tokens(DEVICE_SECRET_VERSION, account_id),
+        )
+    }
+
+    fn from_plaintext(bytes: &[u8]) -> Result<Self, CryptoError> {
         if bytes.len() != KEYSET_LEN {
             return Err(CryptoError::Truncated);
         }
@@ -283,6 +353,12 @@ pub fn unlock_account(
 ) -> Result<AccountKeyset, CryptoError> {
     let keys = derive_account_keys(password, secret_key, account_id, salt, params)?;
     AccountKeyset::open(sealed_keyset, &keys.auk, account_id)
+}
+
+/// 32 random bytes from the OS RNG, for a new key seed (the offline rules
+/// signing key, D34).
+pub fn random_seed() -> Result<Secret<[u8; 32]>, CryptoError> {
+    random_32()
 }
 
 pub(crate) fn random_32() -> Result<Secret<[u8; 32]>, CryptoError> {

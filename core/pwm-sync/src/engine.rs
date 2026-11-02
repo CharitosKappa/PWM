@@ -155,6 +155,11 @@ impl<S: Store> SyncEngine<S> {
         })
     }
 
+    /// The unlocked account keyset (for sealing device secrets, D34).
+    pub fn keyset(&self) -> &AccountKeyset {
+        &self.keyset
+    }
+
     pub fn store(&self) -> &S {
         &self.store
     }

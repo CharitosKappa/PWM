@@ -78,6 +78,23 @@ just bindings      # Swift and Kotlin bindings into target/bindings
 
 The autofill engine vendors the Public Suffix List (D33). Refresh it before a release with `just psl` (downloads the list and its tests, records the version and SHA-256) and review the diff.
 
+## Browser extension
+
+```
+just extension     # just wasm, then build extension/dist/ (checks the manifest and that no remote code is bundled)
+pnpm --filter @pwm/extension test        # unit tests with fake chrome APIs (part of just test)
+pnpm --filter @pwm/extension test:wasm   # tests over the real WASM core (part of just wasm)
+```
+
+Load `extension/dist/` unpacked from `chrome://extensions` (developer mode). The hosted server address is a placeholder until D1. For local work, open the extension's options while signed out, choose "Self-hosted" and enter `http://localhost:8080` (run `just server`).
+
+**Rules signing keys (D34).** The founder creates them on an offline machine and keeps the seeds offline; only the public keys enter the repo:
+
+```
+just rules-keygen /media/offline/rules-current.seed   # prints the public key (hex)
+cargo run -p pwm-rules-sign -- sign <seed> <key-id> rules.json autofill-rules.bin
+```
+
 CI also compiles and runs small Swift and Kotlin programs against the bindings (`core/pwm-ffi/smoke/`). Locally, Swift can run in the `swift` Docker image on the Linux build of the library.
 
 ## Fuzzing

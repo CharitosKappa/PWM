@@ -54,12 +54,22 @@ db:
 test-server $PWM_TEST_DATABASE_URL="postgres://pwm:pwm@127.0.0.1:54329/postgres" $PWM_REQUIRE_DB="1":
     cargo test -p pwm-server --locked
 
-# WASM build of the core (D31): extension/core for the extension, target/wasm/node for the Node smoke test
+# WASM build of the core (D31): extension/core for the extension, target/wasm/node for the Node smoke test and the extension's WASM tests
 wasm:
     cargo build --locked --release -p pwm-wasm --target wasm32-unknown-unknown
     wasm-bindgen --target web --out-dir extension/core target/wasm32-unknown-unknown/release/pwm_wasm.wasm
     wasm-bindgen --target nodejs --out-dir target/wasm/node target/wasm32-unknown-unknown/release/pwm_wasm.wasm
     node core/pwm-wasm/smoke/smoke.mjs target/wasm/node/pwm_wasm.js
+    pnpm install --frozen-lockfile
+    pnpm --filter @pwm/extension test:wasm
+
+# the browser extension (D34) into extension/dist: load it unpacked from chrome://extensions
+extension: wasm
+    pnpm --filter @pwm/extension build
+
+# a rules-signing seed (D34): run on an offline machine; prints the public key for RULES_KEYS
+rules-keygen seed:
+    cargo run -q --locked -p pwm-rules-sign -- keygen {{seed}}
 
 ffi_lib := if os() == "windows" { "target/debug/pwm_ffi.dll" } else if os() == "macos" { "target/debug/libpwm_ffi.dylib" } else { "target/debug/libpwm_ffi.so" }
 

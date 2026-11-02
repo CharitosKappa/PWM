@@ -20,7 +20,8 @@ mod token;
 
 pub use aad::{Aad, Id, generate_id};
 pub use account::{
-    AccountKeys, AccountKeyset, NewAccount, create_account, derive_account_keys, unlock_account,
+    AccountKeys, AccountKeyset, NewAccount, create_account, derive_account_keys, random_seed,
+    unlock_account,
 };
 pub use aead::{Envelope, SymmetricKey, open, seal};
 pub use error::CryptoError;

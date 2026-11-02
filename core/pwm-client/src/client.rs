@@ -53,6 +53,8 @@ enum Running {
     Auth(AuthFlow),
     Sync,
     CreateVault(Id),
+    /// Sync, then create a vault if the account has none (D34).
+    EnsureVault,
 }
 
 pub struct Client<S: Store> {
@@ -226,6 +228,16 @@ impl<S: Store> Client<S> {
         }
     }
 
+    /// Unlocks with an already opened keyset (session restore, D34).
+    pub(crate) fn open_unlocked(
+        &mut self,
+        keyset: AccountKeyset,
+        tokens: Tokens,
+    ) -> Result<(), ClientError> {
+        self.idle()?;
+        self.open(keyset, tokens)
+    }
+
     fn open(&mut self, keyset: AccountKeyset, tokens: Tokens) -> Result<(), ClientError> {
         let state = std::mem::replace(&mut self.state, State::Moving);
         let store = match state {
@@ -275,6 +287,16 @@ impl<S: Store> Client<S> {
         self.idle()?;
         let step = self.engine()?.start_sync()?;
         self.running = Running::Sync;
+        self.map_engine_step(step)
+    }
+
+    /// Syncs, then creates a vault only if the account has none, so a
+    /// retried first-vault step never leaves an extra one. Ends with
+    /// `VaultCreated`, or `Synced` when a vault already existed.
+    pub fn start_ensure_vault(&mut self) -> Result<Step, ClientError> {
+        self.idle()?;
+        let step = self.engine()?.start_sync()?;
+        self.running = Running::EnsureVault;
         self.map_engine_step(step)
     }
 
@@ -356,6 +378,11 @@ impl<S: Store> Client<S> {
                 Running::CreateVault(vault_id) => Step::Done(Outcome::VaultCreated {
                     vault_id: auth::id_text(&vault_id),
                 }),
+                Running::EnsureVault if self.vault_ids()?.is_empty() => {
+                    let (vault_id, step) = self.engine()?.start_create_vault()?;
+                    self.running = Running::CreateVault(vault_id);
+                    return self.map_engine_step(step);
+                }
                 _ => Step::Done(Outcome::Synced(report)),
             },
             pwm_sync::Step::Done(SyncOutcome::SignedOut) => Step::Done(Outcome::SignedOut),

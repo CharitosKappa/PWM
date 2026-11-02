@@ -1,0 +1,32 @@
+/**
+ * Types of the WASM core module (`core/pwm_wasm.js`, built by `just wasm`),
+ * which `tsconfig.json` maps `pwm-core` to. Only what the background uses;
+ * `src/background/core.wasm.test.ts` checks them against the real build.
+ */
+import type { Core } from "./background/core.ts";
+
+export default function init(input: {
+  module_or_path: string | URL;
+}): Promise<unknown>;
+
+export declare const WasmClient: {
+  new (): Core;
+  load(snapshot: Uint8Array): Core;
+};
+
+export function newId(): string;
+export function generatePassword(
+  length: number,
+  lowercase: boolean,
+  uppercase: boolean,
+  digits: boolean,
+  symbols: boolean,
+  avoidLookalikes: boolean,
+): string;
+export function generatePassphrase(
+  words: number,
+  separator: string,
+  capitalize: boolean,
+  addDigit: boolean,
+): string;
+export function passwordScore(password: string, context: string[]): number;

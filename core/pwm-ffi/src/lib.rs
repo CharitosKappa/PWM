@@ -172,6 +172,12 @@ pub struct AutofillMatch {
     pub decision: String,
 }
 
+#[derive(uniffi::Record)]
+pub struct CurrentCode {
+    pub code: String,
+    pub seconds_left: u64,
+}
+
 /// The item and step (`password` or `totp`) to offer next on a tab.
 #[derive(uniffi::Record)]
 pub struct AutofillNextStep {
@@ -270,6 +276,27 @@ impl PwmClient {
 
     pub fn start_sync(&self) -> Result<Step, PwmError> {
         Ok(step(self.lock_inner().start_sync()?))
+    }
+
+    /// Sync, then create a vault only if the account has none.
+    pub fn start_ensure_vault(&self) -> Result<Step, PwmError> {
+        Ok(step(self.lock_inner().start_ensure_vault()?))
+    }
+
+    /// The current one-time code of a login, if it has one.
+    pub fn current_code(
+        &self,
+        vault_id: String,
+        item_id: String,
+        now_ms: i64,
+    ) -> Result<Option<CurrentCode>, PwmError> {
+        Ok(self
+            .lock_inner()
+            .current_code(&vault_id, &item_id, now_ms)?
+            .map(|(code, left)| CurrentCode {
+                code: code.expose_secret().clone(),
+                seconds_left: left,
+            }))
     }
 
     pub fn start_create_vault(&self) -> Result<Step, PwmError> {

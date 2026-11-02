@@ -309,3 +309,82 @@ fn autofill_through_the_client() {
         "invalid_rules"
     );
 }
+
+#[test]
+fn the_session_survives_a_service_worker_restart() {
+    let (store, secret_key, vault) = signed_in_store();
+    let mut client = Client::new(store);
+    client.unlock(PASSWORD, &secret_key, tokens()).unwrap();
+    let id = new_id().unwrap();
+    client
+        .save_item(&vault, &note_json(&id, "kept"), T0)
+        .unwrap();
+    let sealed = client.seal_tokens("pwma_a", "pwmr_r").unwrap();
+    let session = client.export_session().unwrap();
+    let snapshot = client.store().snapshot();
+    // The sealed tokens never show the tokens.
+    assert!(!sealed.windows(6).any(|w| w == b"pwmr_r"));
+
+    // A new worker: the cache from disk, the session from memory.
+    let mut restored = Client::new(MemoryStore::load(&snapshot).unwrap());
+    assert_eq!(
+        code(restored.restore_session(&session.blob, &[0u8; 32], Some(&sealed))),
+        "wrong_password"
+    );
+    restored
+        .restore_session(&session.blob, session.key.expose_secret(), Some(&sealed))
+        .unwrap();
+    assert!(restored.is_unlocked());
+    assert_eq!(restored.items(&vault).unwrap().len(), 1);
+
+    // After a browser restart: the password again, and the sealed tokens.
+    let mut cold = Client::new(MemoryStore::load(&snapshot).unwrap());
+    assert_eq!(
+        code(cold.unlock_with_sealed_tokens("wrong password 123", &secret_key, Some(&sealed))),
+        "wrong_password"
+    );
+    cold.unlock_with_sealed_tokens(PASSWORD, &secret_key, Some(&sealed))
+        .unwrap();
+    assert!(cold.is_unlocked());
+    assert_eq!(
+        code(cold.unlock_with_sealed_tokens(PASSWORD, &secret_key, Some(b"\x01junk"))),
+        "storage"
+    );
+
+    // Another account's session is refused.
+    let (other_store, other_key, _) = signed_in_store();
+    let mut other = Client::new(other_store);
+    other.unlock(PASSWORD, &other_key, tokens()).unwrap();
+    let foreign = other.export_session().unwrap();
+    let mut target = Client::new(MemoryStore::load(&snapshot).unwrap());
+    assert_eq!(
+        code(target.restore_session(&foreign.blob, foreign.key.expose_secret(), None)),
+        "wrong_password"
+    );
+}
+
+#[test]
+fn the_current_code_of_a_login() {
+    let (store, secret_key, vault) = signed_in_store();
+    let mut client = Client::new(store);
+    client.unlock(PASSWORD, &secret_key, tokens()).unwrap();
+    let mut login = pwm_vault::Login::default();
+    login.totp = Some("otpauth://totp/x?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned());
+    let id = ItemId::generate().unwrap();
+    let json = Item::new(ItemKind::Login(login), "2FA", T0)
+        .to_json_with_id(&id)
+        .unwrap();
+    client.save_item(&vault, json.expose_secret(), T0).unwrap();
+    // RFC 6238 test vector: SHA-1 at 59 s gives 94287082 (6 digits: 287082).
+    let (code_value, left) = client
+        .current_code(&vault, &id.to_string(), 59_000)
+        .unwrap()
+        .unwrap();
+    assert_eq!(code_value.expose_secret(), "287082");
+    assert_eq!(left, 1);
+    let note = new_id().unwrap();
+    client
+        .save_item(&vault, &note_json(&note, "n"), T0)
+        .unwrap();
+    assert!(client.current_code(&vault, &note, T0).unwrap().is_none());
+}

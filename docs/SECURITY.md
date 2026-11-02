@@ -56,8 +56,12 @@ Decisions D10–D15. All HKDF calls are HKDF-SHA256 with 32-byte output. All int
 | Export file `.pwmx` (D24) | `pwm/export` | `version:u8 \|\| m:u32 \|\| t:u32 \|\| p:u32 \|\| salt:16` |
 | Device name under sym_key (D26) | `pwm/device-name` | `version:u8 \|\| account_id \|\| device_id` |
 | Server login state under the login-state key (D26) | `pwm/login-state` | `version:u8 \|\| account_id` |
+| Unlocked keyset in the extension's session store (D34) | `pwm/session` | `version:u8 \|\| account_id` |
+| Device tokens on disk under sym_key (D34) | `pwm/device-tokens` | `version:u8 \|\| account_id` |
 
 A new kind of envelope gets a new label; labels are never reused.
+
+**Extension session (D34).** Chrome stops an idle service worker and wipes its memory. So that the extension stays unlocked, the core seals the account keyset plaintext under a fresh random 32-byte key (AAD `pwm/session`, version 1, bound to the account). The blob `v:u8 (= 1) || account_id:16 || envelope` and its key go only into `chrome.storage.session`: memory-only, cleared when the browser closes, and not readable by content scripts. Locking, sign-out and a revoked device clear it. On disk the extension keeps the cache snapshot (ciphertext and ids), the Secret Key as is (D13: useless without the master password), and the access and refresh tokens as `v:u8 (= 1) || envelope(JSON {access, refresh})` sealed under `sym_key` (AAD `pwm/device-tokens`), so they are usable only after unlock. Never the master password, the keyset or any unlocked key.
 
 **Password salt (D12).** `salt_pw` is 16 random bytes generated at signup and stored server-side with the KDF params. The pre-login endpoint returns them; for an unknown email it returns `HMAC-SHA256(server_secret, email)[..16]` and the default params, so it does not reveal which accounts exist.
 

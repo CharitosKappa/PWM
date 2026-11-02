@@ -177,10 +177,26 @@ Phase 3  Teams           months 16–24 M16–M19
     - Equivalent domains (one login for several domains), considered with the rules file.
     - Android app matching via Digital Asset Links (M6.3).
     - Measuring classification against real sites (M4.7 harness).
-- [ ] M4.2 MV3 extension shell: popup (search, copy, generator), unlock (master password, or via desktop app native messaging + biometrics).
-  - From M3:
-    - Persist the `MemoryStore` snapshot in IndexedDB, with Vitest tests on the WASM core.
-    - Onboarding creates the first vault only if the account has none. Today, a retried vault create whose answer was lost leaves an extra empty vault. The fix belongs in `pwm-client`, so every platform gets it.
+- [x] M4.2 MV3 extension shell: popup (search, copy, generator), unlock (master password, or via desktop app native messaging + biometrics).
+  - Per D34:
+    - **Background service worker:** owns the WASM core, the cache (IndexedDB snapshot) and every server conversation. The popup (Preact) only sends messages and never receives keys, tokens, item passwords or code secrets.
+    - **Session:** the unlocked keyset sealed under a random key (`pwm/session`) in `chrome.storage.session`, so a restarted worker stays unlocked. Tokens are sealed under the keyset (`pwm/device-tokens`) on disk.
+    - **Auto-lock:** 15 minutes by default (1, 5, 15, 60 minutes or 8 hours), at once when the computer locks, and on browser close.
+    - **Popup:** sign up (strength meter, Secret Key shown once, text Emergency Kit), sign in, unlock, search, item detail, copy username/password/current code (cleared after 30 s through an offscreen document), generator, sync status, lock, settings (auto-lock, a self-hosted server with permission asked at that moment), sign out.
+    - **First vault only if there is none** (`start_ensure_vault` in `pwm-client`), closing the M3 leftover.
+    - **Rules download:** every 24 hours ± 2 hours with a conditional GET, rollback refused, the last good file reloaded at start. `pwm-rules-sign` (`keygen` / `public` / `sign`) for the offline release keys.
+    - **Build:** esbuild into `extension/dist/` (`just extension`) with a manifest, permission and remote-code check; Chromium only.
+  - **Tests:**
+    - **Rust:** session export/restore (bound to the account, wrong key refused, versioned, vectors), token sealing, first-vault-if-none against the real server, the current code (RFC 6238), and `pwm-rules-sign`.
+    - **Vitest with fakes:** the popup never receives secrets, sign-up/sign-in storage, auto-lock and screen lock, restore after a worker restart, clipboard clearing, sync outcomes (wait, revoked, errors), settings validation, the rules schedule and rollback refusal, storage adapters, the HTTP loop, the manifest check and the design tokens.
+    - **Vitest over the real WASM core** (`pnpm test:wasm`, in `just wasm` and the CI `wasm` job): the typings against the build and the snapshot round trip. This closes the M3.7 deferral.
+  - **Deferred:**
+    - **Release keys:** the founder runs `just rules-keygen` twice offline and adds the public keys to `RULES_KEYS`; until then downloaded rules are refused.
+    - **Biometric unlock** through the desktop app (M5.6/M7.2), logged as a parity gap in D34.
+    - **Loading the built extension in a real browser** comes with the M4.7 Playwright harness.
+    - **Editing items in the popup:** items come from save prompts (M4.4) and the apps.
+    - **Firefox and Safari builds** (M4.8, M5.6).
+    - **Store icons and the product name** wait for D1.
 - [ ] M4.3 Fill on user action; inline icon in isolated iframe/closed shadow root; visibility/overlay checks before fill (`AUTOFILL.md`).
 - [ ] M4.4 Save/update prompts after submit.
 - [ ] M4.5 Passkey support (WebAuthn interception where browser allows; else defer to platform provider).

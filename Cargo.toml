@@ -16,6 +16,7 @@ members = [
     "core/pwm-export",
     "core/pwm-ffi",
     "core/pwm-ffi-bindgen",
+    "core/pwm-rules-sign",
     "core/pwm-wasm",
     "server",
 ]

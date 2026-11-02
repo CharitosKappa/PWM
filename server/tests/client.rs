@@ -128,7 +128,8 @@ async fn sign_up_sync_and_log_in_on_a_second_device() {
     assert!(secret_key.starts_with("A1-"));
     assert!(laptop.is_unlocked());
     let laptop_tokens = latest_tokens(&mut laptop);
-    let step = laptop.start_create_vault();
+    // The first vault is created only if the account has none (D34).
+    let step = laptop.start_ensure_vault();
     let Outcome::VaultCreated { vault_id: vault } = run(&app, &mut laptop, step).await.unwrap()
     else {
         panic!("no vault");
@@ -161,6 +162,15 @@ async fn sign_up_sync_and_log_in_on_a_second_device() {
     let step = phone.start_sync();
     run(&app, &mut phone, step).await.unwrap();
     assert_eq!(phone.vault_ids().unwrap(), std::slice::from_ref(&vault));
+    // Running it again, on either device, creates nothing new.
+    for client in [&mut laptop, &mut phone] {
+        let step = client.start_ensure_vault();
+        assert!(matches!(
+            run(&app, client, step).await.unwrap(),
+            Outcome::Synced(_)
+        ));
+        assert_eq!(client.vault_ids().unwrap(), std::slice::from_ref(&vault));
+    }
     assert_eq!(titles(&phone, &vault), ["Bank"]);
 
     // Every login failure looks the same.
