@@ -5,6 +5,7 @@ import { HOSTED_SERVER } from "../shared/config.ts";
 import { AUTO_LOCK_CHOICES } from "../shared/messages.ts";
 import type { Settings as SettingsValue, Status } from "../shared/messages.ts";
 import { describe, send } from "./api.ts";
+import { InlineIconSetting } from "./InlineIcon.tsx";
 import { Field, Notice } from "./ui.tsx";
 
 const LOCK_WORDS: Record<number, string> = {
@@ -91,6 +92,8 @@ export function Settings({
           It also locks when your computer locks or the browser closes.
         </span>
       </label>
+
+      <InlineIconSetting />
 
       <fieldset class="stack" disabled={!signedOut}>
         <legend class="label">Server</legend>

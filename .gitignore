@@ -7,6 +7,7 @@
 # Node
 node_modules/
 dist/
+dist-test/
 coverage/
 *.tsbuildinfo
 
@@ -23,3 +24,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Playwright output
+playwright-report/
+test-results/

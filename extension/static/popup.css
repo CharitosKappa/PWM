@@ -269,3 +269,19 @@ button:disabled {
 footer {
   padding: 0 var(--space-4) var(--space-4);
 }
+
+.item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.item-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warning-text {
+  color: var(--color-warning);
+}

@@ -5,6 +5,8 @@
  * Secret Key, once, right after sign-up, to show on the Emergency Kit.
  */
 
+import type { Suggestion } from "./autofill.ts";
+
 export type CopyField = "username" | "password" | "code";
 
 export type Request =
@@ -23,7 +25,11 @@ export type Request =
   | { kind: "sync" }
   | { kind: "settings" }
   | { kind: "setSettings"; settings: Settings }
-  | { kind: "activity" };
+  | { kind: "activity" }
+  | { kind: "suggestions" }
+  | { kind: "fill"; vaultId: string; itemId: string; confirmed: boolean }
+  | { kind: "inlineIcon" }
+  | { kind: "setInlineIcon"; on: boolean };
 
 export type Status =
   | { state: "signedOut" }
@@ -74,6 +80,10 @@ export interface Replies {
   settings: Settings;
   setSettings: Settings;
   activity: null;
+  suggestions: { site: string; items: Suggestion[] };
+  fill: { copiedCode: boolean };
+  inlineIcon: boolean;
+  setInlineIcon: boolean;
 }
 
 const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
@@ -93,6 +103,10 @@ const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "settings",
   "setSettings",
   "activity",
+  "suggestions",
+  "fill",
+  "inlineIcon",
+  "setInlineIcon",
 ]);
 
 /** A popup message, wrapped so the background can tell it from others. */

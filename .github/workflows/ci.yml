@@ -174,6 +174,44 @@ jobs:
       - if: failure()
         run: docker compose logs
 
+  # Filling in a real browser (D35): the extension's test build in
+  # Chromium against fixture pages, with the sync server from compose.
+  autofill-harness:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      # Must match the wasm-bindgen version in Cargo.lock.
+      - run: cargo install wasm-bindgen-cli --version 0.2.130 --locked
+      - run: cargo build --locked --release -p pwm-wasm --target wasm32-unknown-unknown
+      - run: wasm-bindgen --target web --out-dir extension/core target/wasm32-unknown-unknown/release/pwm_wasm.wasm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @pwm/extension build:test
+      - run: docker compose build
+      - run: echo "PWM_SERVER_SECRETS=$(docker run --rm pwm-server:dev keygen)" > .env
+      - run: docker compose up -d --wait
+      - run: pnpm --filter @pwm/autofill-harness exec playwright install --with-deps chromium
+      - run: pnpm --filter @pwm/autofill-harness harness
+        env:
+          CI: "true"
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autofill-harness-report
+          path: tests/autofill-harness/playwright-report/
+          retention-days: 14
+      - if: failure()
+        run: docker compose logs
+
   extension-test:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest

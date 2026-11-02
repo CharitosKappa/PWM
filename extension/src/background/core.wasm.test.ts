@@ -41,6 +41,12 @@ const CORE_METHODS: (keyof Core)[] = [
   "items",
   "currentCode",
   "setAutofillRules",
+  "autofillMatches",
+  "classifyFields",
+  "autofillRecordStep",
+  "autofillNextStep",
+  "autofillForgetTab",
+  "saveItem",
 ];
 
 describe("the WASM core", () => {
@@ -49,6 +55,49 @@ describe("the WASM core", () => {
     expect(
       CORE_METHODS.filter((name) => typeof core[name] !== "function"),
     ).toEqual([]);
+  });
+
+  it("classifies fields in the shape the fill plan reads", () => {
+    const core = fns.newCore();
+    const fields = [
+      {
+        index: 0,
+        tag: "input",
+        type: "email",
+        name: "email",
+        id: "email",
+        autocomplete: "username",
+        label: "Email",
+        placeholder: "",
+        aria_label: "",
+        inputmode: "",
+        max_length: null,
+        visible: true,
+        form: 0,
+      },
+      {
+        index: 1,
+        tag: "input",
+        type: "password",
+        name: "password",
+        id: "password",
+        autocomplete: "current-password",
+        label: "Password",
+        placeholder: "",
+        aria_label: "",
+        inputmode: "",
+        max_length: null,
+        visible: true,
+        form: 0,
+      },
+    ];
+    const classes = JSON.parse(
+      core.classifyFields(JSON.stringify(fields), "https://example.com/login"),
+    ) as { class: string; confidence: number }[];
+    expect(classes.map((c) => c.class)).toEqual([
+      "username",
+      "current-password",
+    ]);
   });
 
   it("gives steps the shape the background reads", () => {

@@ -1,0 +1,138 @@
+/* The inline icon frame (D35). Values come from tokens.css. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  color: var(--color-text);
+}
+
+body.icon {
+  background: transparent;
+  overflow: hidden;
+}
+
+body.menu {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-text-muted);
+  border-radius: var(--radius-md);
+  height: 100vh;
+  overflow: auto;
+}
+
+#root {
+  height: 100%;
+}
+
+body.menu #root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+button.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+button.icon svg {
+  width: 70%;
+  height: 70%;
+  fill: currentColor;
+}
+
+ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+button.item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+button.item span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title {
+  font-weight: var(--font-semibold);
+}
+
+.muted {
+  color: var(--color-text-muted);
+  font-size: var(--type-caption-size);
+}
+
+.warning {
+  color: var(--color-warning);
+  font-size: var(--type-caption-size);
+}
+
+p {
+  margin: 0;
+}
+
+button.primary {
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: auto;
+}
+
+button.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--color-accent);
+  font-size: var(--type-caption-size);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
