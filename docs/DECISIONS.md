@@ -12,6 +12,53 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D7 — Bundled extras**: email aliases (planned Phase 3) yes; VPN no.
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
+- **D28 — Sync client: transport, offline queue, conflicts and retries** · proposed 2026-11-02 · Claude Code. The roadmap says "`pwm-sync` client: offline queue, retry with backoff, conflict → keep both in history". D19 says a losing version goes into history, D20 gives the cache a sync state per item, and D27 fixes the server rules. Open: how the core reaches the network on six platforms, what an unsent edit looks like in the cache, how two versions are merged, what is retried and how often, and what happens when the server is behind. Proposal:
+  1. **No I/O in the core (sans-IO):**
+     - `pwm-sync` is a state machine. It hands the platform a request to send (method, path, headers, JSON body) and takes back the status, headers and body. It never opens a socket, reads a clock or sleeps.
+     - The platform sends with its own HTTP stack (URLSession, OkHttp, `fetch`, the desktop shell) and schedules the next run when the engine asks.
+     - Why not a blocking trait like D22's `RangeFetcher`: the browser extension (WASM) cannot block on a request, and a state machine runs the same on every platform. It can also be tested without a network.
+  2. **Tokens:**
+     - The engine attaches the access token. On a 401 it sends `/v1/auth/refresh` once, then retries the request.
+     - New tokens go back to the platform to keep in secure storage. Tokens are held as `Secret<String>` and never logged.
+     - If the refresh fails, the engine reports "signed out" and keeps every unsent change.
+  3. **Offline queue = the cache:** an unsent change is an item whose cache state is `Modified` or `Deleted` (D20), so it survives restarts. This needs no new cache format. Local saves go through `pwm-sync`, which keeps one rule:
+     - **New item:** revision 1, `Modified`. It is uploaded with `If-None-Match: *`.
+     - **Edit of a synced item at revision R:** sealed at R+1, `Modified`. It is uploaded with `If-Match: "R"`.
+     - **Another edit before upload:** sealed again at the same revision, replacing the unsent one. Its base stays R.
+     - **Delete:** `Deleted`, with the revision set to the base the server knows. A new item that was never uploaded is simply removed. A `Deleted` record's envelope is never read.
+     - **Trash purge:** at unlock, items due for purge (D19) are marked `Deleted`. This completes the M2.2 deferral.
+  4. **One sync run:**
+     - **Vault list:** `GET /v1/vaults`. New vaults are added with cursor 0, keys are updated, and vaults no longer listed are removed. Creating a vault needs a connection; it is rare and happens at sign-up.
+     - **Pull, then push:** each vault is pulled page by page until `more` is false. Then unsent changes are pushed. Most conflicts are therefore found while pulling, before anything is uploaded.
+     - **Cursor:** saved after a page's items are stored, so a crash only repeats that page. Applying a page twice changes nothing.
+     - **Locked app:** sync runs only while the account is unlocked, because merging needs the vault key. Pulling while locked comes later.
+  5. **Our own write coming back:** after a lost response, the engine can't tell from the revision whether the item it pulls (or the item in a 412) is its own upload. It compares the ciphertext instead. Every envelope has a random nonce, so identical bytes mean it was ours: the item becomes `Synced` and is not a conflict.
+  6. **Conflicts (both sides changed the item since revision R):**
+     - **Which version stays current:** the one with the later `updated_at` (inside the ciphertext). A tie goes to the server's version.
+     - **The other version** goes into the winner's history (`keep_version`, D19), so both are kept.
+     - **Upload:** the result is sealed at S+1 and uploaded with `If-Match: "S"`, where S is the server's revision. The losing content is in history even when the server's version stays current.
+     - **When the versions can't be merged:** either side may be read-only (a newer schema or unknown type, D18) or fail to decrypt. Then the server's version stays as it is, and the local version is saved as a new item (new id, revision 1). Nothing is dropped.
+  7. **Edits versus deletes:**
+     - **Local edit, deleted on the server** (tombstone, or 409 `item_deleted`): the edit is kept as a new item (new id), because ids are never reused (D27).
+     - **Local delete, edited on the server** (412 on the `DELETE`): the newer edit wins. The local delete is dropped and the server's version comes back. A delete never removes changes the user hasn't seen.
+     - **Deleted on both sides:** the item is removed locally.
+  8. **Retries:**
+     - **Network errors, 5xx and 429:** retried with exponential backoff and full jitter: 1 s doubling to at most 5 min, never sooner than `Retry-After`. The platform's timer runs the next attempt.
+     - **Conflict loops:** a 412 merges and retries at once, at most 3 times per item per run.
+     - **Other 4xx for one item** (for example the size limits coming in M3.5): that item stays queued and is reported as "couldn't sync", and the run carries on. It is never deleted.
+     - **403 `device_revoked`:** the engine clears the cache (D20) and reports it.
+     - **When sync runs:** at unlock, about 2 s after a local change, every 5 min while the app is open, and on demand. Push notifications come later.
+  9. **Server behind the device:** if a vault's `next` is lower than the cursor sent (D27; for example after a restore from backup), the engine pulls that vault again from 0. Afterwards, `Synced` items the server no longer has and that have no tombstone are uploaded again as new items (revision 1). Edits made after the backup therefore survive. Open risk: if a restored server has already handed out new seqs beyond a device's cursor, the device can't detect the restore from seqs alone. The restore runbook (M3.6) must bump a per-vault epoch that clients check; that is logged as a follow-up.
+  10. **Not in M3.4:**
+      - Adding members, and the read-only role in the cache: the sharing milestone. Until then, every vault a client sees is its own.
+      - Pulling while locked.
+      - Push notifications.
+      - The IndexedDB cache for the extension (M3.7/M4).
+  11. **Tests:**
+      - **Fake server:** an in-memory implementation of the D27 rules, driving the engine. Every rule above gets its own test: lost responses, crashes between pages, each conflict and delete case, signed out, revoked, backoff timing with a fixed clock and fixed jitter.
+      - **Randomized multi-device runs:** several devices edit, delete and go offline in random orders, then all sync. They must end with identical vaults, and every edit's content must still exist, as the current version, in history or as a new item.
+      - **Real server:** the engine runs against the real `pwm-server` on Postgres in-process, so the HTTP contract is checked end to end.
+  Why: keeping the network out of the core is the only design that works the same on native and WASM, and it makes every failure reproducible in tests. Reusing the cache states keeps the queue durable without a new format. "Later edit wins, the other goes to history" never loses content and needs no user prompt during autofill. Alternatives: a CRDT per field (merges more automatically, but much more complex and it leaks nothing more useful), or asking the user on every conflict (simple, but it interrupts and fails in background sync).
 
 ## Settled
 
