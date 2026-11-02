@@ -24,6 +24,7 @@ interface Background {
   handle(request: object): Promise<unknown>;
   saveItem(json: string): Promise<{ vaultId: string; itemId: string }>;
   autofill: {
+    inlineIcon(): Promise<boolean>;
     fillTab(
       tabId: number,
       vaultId: string,
@@ -38,6 +39,8 @@ declare global {
   // Only what the service worker code below uses.
   var chrome: {
     tabs: { query(query: { url: string }): Promise<{ id?: number }[]> };
+    scripting: { getRegisteredContentScripts(): Promise<unknown[]> };
+    runtime: { getURL(path: string): string };
   };
 }
 
@@ -143,8 +146,15 @@ async function fill(page: Page, confirmed = false): Promise<string> {
   );
 }
 
+/** Console output and errors per page, for failure messages. */
+const logs = new WeakMap<Page, string[]>();
+
 async function open(url: string): Promise<Page> {
   const page = await context.newPage();
+  const lines: string[] = [];
+  logs.set(page, lines);
+  page.on("console", (m) => lines.push(`${m.type()}: ${m.text()}`));
+  page.on("pageerror", (e) => lines.push(`error: ${e.message}`));
   await page.goto(url);
   return page;
 }
@@ -249,9 +259,30 @@ test.describe("the inline icon", () => {
   });
 
   async function iconFrame(page: Page): Promise<Frame> {
-    await expect
-      .poll(() => page.frames().some((f) => f.url().includes("inline.html")))
-      .toBe(true);
+    try {
+      await expect
+        .poll(() => page.frames().some((f) => f.url().includes("inline.html")))
+        .toBe(true);
+    } catch (error) {
+      // Say what was there instead, so a failure in CI explains itself.
+      const state = await inBackground(async () => {
+        const b = await globalThis.pwmTest.ready;
+        return {
+          inline: await b.autofill.inlineIcon(),
+          scripts: await chrome.scripting.getRegisteredContentScripts(),
+          url: chrome.runtime.getURL("inline.html"),
+        };
+      }, null);
+      const found = {
+        frames: page.frames().map((f) => f.url()),
+        hosts: await page.locator("pwm-inline").count(),
+        logs: logs.get(page) ?? [],
+        ...state,
+      };
+      throw new Error(`no icon frame: ${JSON.stringify(found)}`, {
+        cause: error,
+      });
+    }
     const frame = page.frames().find((f) => f.url().includes("inline.html"));
     if (!frame) throw new Error("no icon frame");
     await frame.locator("button.icon").waitFor();
