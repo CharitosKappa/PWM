@@ -96,12 +96,20 @@ export class InlineIcons {
   /** Keeps each icon at the right edge of its field, and the menu under it. */
   private place(): void {
     const inputs = this.inputs();
+    // An open menu must not be covered by our other icons, which share its
+    // z-index: the menu would count as covered and refuse every click.
+    const menuOpen = this.icons.some((i) => i.open);
     for (const icon of this.icons) {
       const field = inputs[icon.index];
       const rect = field?.isConnected
         ? field.getBoundingClientRect()
         : undefined;
-      if (!rect || rect.width < ICON * 2 || rect.height < 16) {
+      if (
+        !rect ||
+        rect.width < ICON * 2 ||
+        rect.height < 16 ||
+        (menuOpen && !icon.open)
+      ) {
         icon.host.style.display = "none";
         continue;
       }
