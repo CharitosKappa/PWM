@@ -232,7 +232,7 @@ Phase 3  Teams           months 16–24 M16–M19
       - Inline icon: two checked clicks fill; a page-made transparent icon takes no click.
   - **Fixed in passing:** the background now reads login fields where the core puts them (`login`). This was an M4.2 bug: no usernames in the popup, and password copy failed.
   - **Deferred:**
-    - **Cards and identities:** M4.10.
+    - **Cards and identities:** M14 (Phase 2, per PRODUCT.md).
     - **Firefox:** fills only in the top frame without `IntersectionObserver` v2 (M4.8).
     - **The full fixture set and the top-1,000 runner:** M4.7.
     - **Save prompts:** M4.4.
@@ -271,7 +271,6 @@ Phase 3  Teams           months 16–24 M16–M19
     - **Offering the generator on new-password fields:** a separate task.
     - **Choosing the vault for a new login:** the first vault for now. Shared vaults come in M10.
     - **Popup offers in Playwright:** driven through the background, not the popup's UI.
-- [ ] M4.10 Fill cards and identities, from D35: always with a confirmation step (`AUTOFILL.md`), rules for payment frames from other sites (Stripe, Adyen) and for items without URLs. Propose the rules in `DECISIONS.md` first.
 - [ ] M4.5 Passkey support (WebAuthn interception where browser allows; else defer to platform provider).
 - [ ] M4.6 "Autofill didn't work here" report with form fingerprint (no values).
 - [ ] M4.7 Autofill harness: fixture sites incl. clickjacking/overlay attacks that must not fill; top-1,000 runner + JSON report.
@@ -347,7 +346,7 @@ Phase 3  Teams           months 16–24 M16–M19
 - M11 Storage modes: self-hosted server image + docs; local encrypted file mode with iCloud/Drive/Dropbox/WebDAV/LAN sync.
 - M12 KeePass `.kdbx` live sync (read/write a user's KDBX file).
 - M13 Family plan, shared vaults, one-time share links (free tier: 1/day).
-- M14 Emergency access with time delay; attachments; cards/identities autofill.
+- M14 Emergency access with time delay; attachments; cards/identities autofill (moved here from M4.10, per PRODUCT.md: always with a confirmation step, rules for payment frames from other sites such as Stripe and Adyen, and for items without URLs; propose the rules in `DECISIONS.md` first).
 - M15 Support tooling (in-app chat for paid); native Linux polish; health report extras.
 
 ## Phase 3 — Teams (outline)
