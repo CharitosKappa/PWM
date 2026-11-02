@@ -57,6 +57,27 @@ impl Item {
         Ok(())
     }
 
+    /// Keeps the losing side of a sync conflict (D28): `other` as a version
+    /// saved at `saved_at`, plus every version in its history that this
+    /// item lacks, so edits made offline on the losing device survive too.
+    /// History stays newest first and at most [`HISTORY_LIMIT`] long.
+    pub fn keep_conflicting(&mut self, mut other: Item, saved_at: i64) -> Result<(), VaultError> {
+        self.ensure_editable()?;
+        for version in std::mem::take(&mut other.history) {
+            if !self.history.iter().any(|v| v.item == version.item) {
+                self.history.push(version);
+            }
+        }
+        self.history.push(ItemVersion {
+            saved_at,
+            item: other,
+        });
+        // Stable, so versions saved at the same time keep their order.
+        self.history.sort_by_key(|v| std::cmp::Reverse(v.saved_at));
+        self.history.truncate(HISTORY_LIMIT);
+        Ok(())
+    }
+
     /// Makes history entry `index` the current content again. The current
     /// content goes into history first, so nothing is lost.
     pub fn restore_version(&mut self, index: usize, now_ms: i64) -> Result<(), VaultError> {
