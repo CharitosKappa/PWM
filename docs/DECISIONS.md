@@ -13,55 +13,6 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D32 — Transactional email provider** · open · founder. Needed for M10.7: email verification at sign-up (so registration stops revealing which emails have accounts) and account notices. To choose: provider and region (EU hosting fits D5), and its licence and data-processing terms.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
-- **D40 — Extension builds: one Chromium build for Chrome, Edge, Brave and Opera, a Firefox build, packaging and tests** · proposed 2026-11-02 · Claude Code.
-  The roadmap says "Builds for Chrome, Edge, Firefox, Brave, Opera; Safari via macOS app (M5)". D34 built Chromium only. Edge, Brave and Opera run Chromium and accept the Chrome package. Firefox's MV3 differs in ways that touch our design (D34–D37):
-  - the background is an event page, not a service worker
-  - there is no `offscreen` API
-  - there is no `IntersectionObserver` v2 (`trackVisibility`), which the inline icon's click guard and the frame check rely on
-  - host permissions are opt-in after install
-  - the page-world content script and `runtime.getContexts` differ
-  - AMO review wants readable code
-  Open:
-  - what Firefox users get
-  - how one source tree builds both
-  - how each build is tested
-  - what the store packages are
-
-  Proposal:
-  1. **Two builds from one source tree** (`build.mjs --target chromium|firefox`), into `dist/chromium/` and `dist/firefox/`, each zipped as `pwm-<target>-<version>.zip`.
-     - **What differs:** each build gets its own manifest from `static/manifest.<target>.json` and a small `platform` module chosen at build time (`src/background/targets/`). Everything else is shared.
-     - **Chromium:**
-       - **Packaged as now**, for the Chrome Web Store (also Brave), Edge Add-ons and Opera add-ons. It is the same zip for all.
-       - **Store specifics:** none needed. Each store's listing and signing are done at release (M10).
-     - **Firefox** (`browser_specific_settings.gecko`, `strict_min_version` 128; an add-on id placeholder until D1):
-       - **Background:** `background.scripts` (module), an event page; the WASM core loads the same way.
-       - **Clipboard:** written from the background page itself (`document.execCommand` with the copy event, as the offscreen page does now). No `offscreen` permission.
-       - **Session store:** `storage.session` (Firefox 115+), unchanged.
-       - **Hosted API access:** asked for at sign-in (Firefox treats host permissions as optional); the popup explains why.
-       - **Reviewable code:** the build is not minified, and AMO reviewers get a source zip (closed source, but reviewers see it, as AMO requires for bundled code).
-  2. **What Firefox users get, given no `IntersectionObserver` v2:**
-     - **Filling from the popup and the shortcut:** yes, with every D35 check except v2. As D35 already says, fills only in the **top frame** (a frame cannot tell whether its parent covers it).
-     - **The inline icon: off on Firefox.** Its click guard needs v2, and without it a page could make it transparent or cover it (D35 §3). The setting is hidden, and "Fill and save on sign-in pages" offers only the save prompts. The save card is likewise replaced by the toolbar badge and the popup (its clicks need the same guard).
-     - **Passkeys:** the page-world wrapper is registered with `world: "MAIN"` (Firefox 128+). The confirmation window works as on Chromium. If Firefox refuses the registration, the switch says passkeys are not available on this browser.
-     - **Logged as platform gaps** (CLAUDE.md parity rule): the inline icon, the save card and filling in frames on Firefox. Revisit when Firefox ships `IntersectionObserver` v2.
-  3. **Code shape:**
-     - **One switch for what a browser can do:** `capabilities` (`visibilityV2`, `offscreen`, `serviceWorker`), checked at run time where cheap, set at build time where not. The background and content code ask it instead of naming browsers.
-     - **The build check (D34/D35) per target:** each manifest's permissions are an exact list (Firefox: no `offscreen`), no remote code, no extra web-accessible resources. Firefox also gets `web-ext lint` (Mozilla's linter, MPL-2.0, dev-only).
-  4. **Tests:**
-     - **Unit:** Vitest runs the background against both capability sets (a Firefox-shaped fake platform: no offscreen, no v2). This covers that the inline icon stays off, that fills in frames are refused without v2, and the background-page clipboard.
-     - **Chromium in the browser:** as now (fixtures, flows, runner), plus loading the packaged zip once to check it.
-     - **Firefox in the browser:** Playwright cannot load an extension into Firefox. CI runs `web-ext lint`, and a smoke test drives Firefox with `web-ext run` + geckodriver (Selenium, Apache-2.0): install the build, open the popup page, sign up against the local server, fill `plain.html` from the background. The full fixture suite on Firefox follows once that path is stable.
-     - **Edge, Brave and Opera:** no separate automated run; they get the identical Chromium zip. A manual smoke checklist (load unpacked, sign in, fill, passkey) lives in `docs/QUALITY.md` for release candidates.
-  5. **Not in M4.8:**
-     - **Store accounts, listings, signing and publishing:** at release, M10, with the founder's accounts.
-     - **Safari:** M5.6.
-     - **Firefox for Android:** later; it needs its own UI work.
-     - **Extension icons and names:** these wait for D1.
-
-  Alternatives:
-  - **One manifest for both** (both `background.scripts` and `service_worker`): Chrome now accepts that, but the build check and the permissions would blur. Two small manifests are clearer.
-  - **A weaker click guard on Firefox** (`elementsFromPoint` plus timing): an inline icon for Firefox users, but it is exactly the DEF CON 2025 class of attack D35 closes. Off until v2 exists.
-  - **Skip Firefox until it has v2:** simplest, but Firefox users would get no extension at all, and popup filling works fine there.
 
 ## Settled
 
@@ -994,3 +945,52 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **An icon the page moves** is put back at once. Script moves are seen through a `MutationObserver` on the icon, stylesheet moves by a 100 ms check. For 500 ms afterwards it lets clicks through to the page, and its frame restarts its visibility wait, so a click right after the slide never reaches it.
   - **Shared launch code:** `lib/extension.ts` holds the launch and sign-up code that the browser tests and the runner share. The single-page cases moved from `fill.spec.ts` to `fixtures.json`.
   - **The runner** waits 1.5 s after load for pages that draw their form with script, and takes its fill targets from the D38 report builder, so the report never holds values. A selector that matches nothing reads as empty at once, instead of waiting for the element (the browser tests caught that hang).
+- **D40 — Extension builds: one Chromium build for Chrome, Edge, Brave and Opera, a Firefox build, packaging and tests** · settled 2026-11-02 · founder (approved as proposed).
+  The roadmap says "Builds for Chrome, Edge, Firefox, Brave, Opera; Safari via macOS app (M5)". D34 built Chromium only. Edge, Brave and Opera run Chromium and accept the Chrome package. Firefox's MV3 differs in ways that touch our design (D34–D37):
+  - the background is an event page, not a service worker
+  - there is no `offscreen` API
+  - there is no `IntersectionObserver` v2 (`trackVisibility`), which the inline icon's click guard and the frame check rely on
+  - host permissions are opt-in after install
+  - the page-world content script and `runtime.getContexts` differ
+  - AMO review wants readable code
+  Open:
+  - what Firefox users get
+  - how one source tree builds both
+  - how each build is tested
+  - what the store packages are
+
+  Proposal:
+  1. **Two builds from one source tree** (`build.mjs --target chromium|firefox`), into `dist/chromium/` and `dist/firefox/`, each zipped as `pwm-<target>-<version>.zip`.
+     - **What differs:** each build gets its own manifest from `static/manifest.<target>.json` and a small `platform` module chosen at build time (`src/background/targets/`). Everything else is shared.
+     - **Chromium:**
+       - **Packaged as now**, for the Chrome Web Store (also Brave), Edge Add-ons and Opera add-ons. It is the same zip for all.
+       - **Store specifics:** none needed. Each store's listing and signing are done at release (M10).
+     - **Firefox** (`browser_specific_settings.gecko`, `strict_min_version` 128; an add-on id placeholder until D1):
+       - **Background:** `background.scripts` (module), an event page; the WASM core loads the same way.
+       - **Clipboard:** written from the background page itself (`document.execCommand` with the copy event, as the offscreen page does now). No `offscreen` permission.
+       - **Session store:** `storage.session` (Firefox 115+), unchanged.
+       - **Hosted API access:** asked for at sign-in (Firefox treats host permissions as optional); the popup explains why.
+       - **Reviewable code:** the build is not minified, and AMO reviewers get a source zip (closed source, but reviewers see it, as AMO requires for bundled code).
+  2. **What Firefox users get, given no `IntersectionObserver` v2:**
+     - **Filling from the popup and the shortcut:** yes, with every D35 check except v2. As D35 already says, fills only in the **top frame** (a frame cannot tell whether its parent covers it).
+     - **The inline icon: off on Firefox.** Its click guard needs v2, and without it a page could make it transparent or cover it (D35 §3). The setting is hidden, and "Fill and save on sign-in pages" offers only the save prompts. The save card is likewise replaced by the toolbar badge and the popup (its clicks need the same guard).
+     - **Passkeys:** the page-world wrapper is registered with `world: "MAIN"` (Firefox 128+). The confirmation window works as on Chromium. If Firefox refuses the registration, the switch says passkeys are not available on this browser.
+     - **Logged as platform gaps** (CLAUDE.md parity rule): the inline icon, the save card and filling in frames on Firefox. Revisit when Firefox ships `IntersectionObserver` v2.
+  3. **Code shape:**
+     - **One switch for what a browser can do:** `capabilities` (`visibilityV2`, `offscreen`, `serviceWorker`), checked at run time where cheap, set at build time where not. The background and content code ask it instead of naming browsers.
+     - **The build check (D34/D35) per target:** each manifest's permissions are an exact list (Firefox: no `offscreen`), no remote code, no extra web-accessible resources. Firefox also gets `web-ext lint` (Mozilla's linter, MPL-2.0, dev-only).
+  4. **Tests:**
+     - **Unit:** Vitest runs the background against both capability sets (a Firefox-shaped fake platform: no offscreen, no v2). This covers that the inline icon stays off, that fills in frames are refused without v2, and the background-page clipboard.
+     - **Chromium in the browser:** as now (fixtures, flows, runner), plus loading the packaged zip once to check it.
+     - **Firefox in the browser:** Playwright cannot load an extension into Firefox. CI runs `web-ext lint`, and a smoke test drives Firefox with `web-ext run` + geckodriver (Selenium, Apache-2.0): install the build, open the popup page, sign up against the local server, fill `plain.html` from the background. The full fixture suite on Firefox follows once that path is stable.
+     - **Edge, Brave and Opera:** no separate automated run; they get the identical Chromium zip. A manual smoke checklist (load unpacked, sign in, fill, passkey) lives in `docs/QUALITY.md` for release candidates.
+  5. **Not in M4.8:**
+     - **Store accounts, listings, signing and publishing:** at release, M10, with the founder's accounts.
+     - **Safari:** M5.6.
+     - **Firefox for Android:** later; it needs its own UI work.
+     - **Extension icons and names:** these wait for D1.
+
+  Alternatives:
+  - **One manifest for both** (both `background.scripts` and `service_worker`): Chrome now accepts that, but the build check and the permissions would blur. Two small manifests are clearer.
+  - **A weaker click guard on Firefox** (`elementsFromPoint` plus timing): an inline icon for Firefox users, but it is exactly the DEF CON 2025 class of attack D35 closes. Off until v2 exists.
+  - **Skip Firefox until it has v2:** simplest, but Firefox users would get no extension at all, and popup filling works fine there.
