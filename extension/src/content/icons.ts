@@ -20,6 +20,8 @@ export class InlineIcons {
   private icons: Icon[] = [];
   private listening = false;
   private frameRequested = false;
+  /** Fills being checked: icons stay off the page, even if a report shows them. */
+  private suspended = 0;
 
   constructor(private readonly inputs: () => HTMLInputElement[]) {}
 
@@ -58,8 +60,10 @@ export class InlineIcons {
    * count it as covering the field.
    */
   hideWhile(): () => void {
+    this.suspended += 1;
     for (const icon of this.icons) icon.host.style.display = "none";
     return () => {
+      this.suspended -= 1;
       this.place();
     };
   }
@@ -96,6 +100,10 @@ export class InlineIcons {
   /** Keeps each icon at the right edge of its field, and the menu under it. */
   private place(): void {
     const inputs = this.inputs();
+    if (this.suspended > 0) {
+      for (const icon of this.icons) icon.host.style.display = "none";
+      return;
+    }
     // An open menu must not be covered by our other icons, which share its
     // z-index: the menu would count as covered and refuse every click.
     const menuOpen = this.icons.some((i) => i.open);

@@ -29,7 +29,8 @@ export type DiskKey =
   | "rulesVersion"
   | "rulesEtag"
   | "inlineHidden"
-  | "inlineIcon";
+  | "inlineIcon"
+  | "saveNever";
 
 /** Memory-only storage that survives worker restarts (`chrome.storage.session`). */
 export interface SessionStore {
@@ -79,6 +80,8 @@ export interface Pages {
   setInlineScripts(on: boolean): Promise<void>;
   /** Whether the optional site access for the inline icon is granted. */
   hasSiteAccess(): Promise<boolean>;
+  /** The toolbar button's badge on one tab ("" clears it). */
+  setBadge(tabId: number, text: string): Promise<void>;
 }
 
 export interface Platform {

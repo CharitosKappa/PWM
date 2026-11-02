@@ -2,7 +2,7 @@
  * Which fields of a frame get which value (D35 §2), from the engine's
  * classification. Pure, so it is tested without a browser.
  */
-import type { FieldInfo } from "../shared/autofill.ts";
+import type { FieldInfo, Watch } from "../shared/autofill.ts";
 
 export interface FieldClass {
   class: string;
@@ -76,6 +76,41 @@ export function planFill(
     plan.password === undefined &&
     plan.code === undefined;
   return nothing && !plan.copyCode ? null : plan;
+}
+
+/**
+ * Which fields to read on submit (D36 §2): the username a fill would use,
+ * the current password, and up to two new-password fields (sign-up and
+ * change-password forms). Null when the frame has none of them.
+ */
+export function watchFields(
+  fields: FieldInfo[],
+  classes: FieldClass[],
+): Watch | null {
+  const visible = fields
+    .map((field, i) => ({ field, cls: classes[i] }))
+    .filter((c) => c.field.visible);
+  const plan = planFill(fields, classes, {
+    username: true,
+    password: true,
+    code: false,
+  });
+  const newPassword = visible
+    .filter((c) => c.cls?.class === "new-password")
+    .slice(0, 2)
+    .map((c) => c.field.index);
+  const watch: Watch = {
+    username: plan?.username ?? null,
+    password: plan?.password ?? null,
+    newPassword,
+  };
+  if (
+    watch.username === null &&
+    watch.password === null &&
+    newPassword.length === 0
+  )
+    return null;
+  return watch;
 }
 
 /** Where the inline icon goes: the login fields a fill would use. */

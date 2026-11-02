@@ -47,6 +47,11 @@ const MESSAGES: Record<string, string> = {
   page_changed: "The page changed. Try again.",
   no_page: "Open a web page first.",
   needs_confirm: "Check the warning, then choose Fill anyway.",
+  no_password: "No password typed on this page.",
+  already_saved: "This login is already saved.",
+  nothing_to_save: "This login is already saved.",
+  no_offer: "Nothing to save on this page now.",
+  no_vault: "No vault yet. Sync, then try again.",
   signed_in: "Sign out to change the server.",
 };
 

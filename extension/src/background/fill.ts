@@ -4,6 +4,7 @@
  * the background sends to one chosen document; they never see the vault.
  */
 import type {
+  Watch,
   FieldInfo,
   FillReply,
   FrameReply,
@@ -13,7 +14,7 @@ import type {
 } from "../shared/autofill.ts";
 import type { Core } from "./core.ts";
 import { ServiceError } from "./errors.ts";
-import { iconFields, planFill } from "./plan.ts";
+import { iconFields, planFill, watchFields } from "./plan.ts";
 import type { FieldClass, Plan } from "./plan.ts";
 import type { FrameRef, FrameSender, Platform } from "./platform.ts";
 
@@ -34,7 +35,7 @@ export interface AutofillHost {
   ): { username: string; password: string; hasCode: boolean } | undefined;
 }
 
-interface FrameState {
+export interface FrameState {
   ref: FrameRef;
   url: string;
   tabUrl: string;
@@ -142,19 +143,46 @@ export class Autofill {
     tab.set(sender.frameId, state);
     for (const wake of this.waiters.splice(0)) wake();
 
-    const none: FrameReply = { token: null, icons: [] };
+    if (sender.frameId === 0) await this.onTopFrame?.(sender);
+
+    const none: FrameReply = { token: null, icons: [], watch: null };
     if (!isWebPage(sender.url) || !(await this.inlineIcon())) return none;
+    // "Fill and save on sign-in pages" (D36 §1): read on submit, show icons.
+    const watch = watchFields(fields, classes);
     if ((await this.hiddenSites()).includes(hostname(sender.tabUrl)))
-      return none;
+      return { ...none, watch };
     const icons = iconFields(fields, classes);
-    if (icons.length === 0) return none;
+    if (icons.length === 0) return { ...none, watch };
     const token = crypto.randomUUID();
     this.tokens.set(token, state.ref);
     if (this.tokens.size > MAX_TOKENS) {
       const oldest = this.tokens.keys().next().value;
       if (oldest !== undefined) this.tokens.delete(oldest);
     }
-    return { token, icons };
+    return { token, icons, watch };
+  }
+
+  /** Called with every top frame report (the save offers watch navigation). */
+  onTopFrame: ((sender: FrameSender) => Promise<void>) | undefined;
+
+  /** The latest top document of a tab, as it last reported. */
+  topFrame(tabId: number): FrameRef | undefined {
+    return this.frames.get(tabId)?.get(0)?.ref;
+  }
+
+  /** The URL of a tab's latest top document. */
+  topUrl(tabId: number): string | undefined {
+    return this.frames.get(tabId)?.get(0)?.url;
+  }
+
+  /** The fields to read in a frame (D36 §2). */
+  watchFor(frame: FrameState): Watch | null {
+    return watchFields(frame.fields, frame.classes);
+  }
+
+  /** Injects the content script into the tab and returns its frames' reports. */
+  scanTab(tabId: number): Promise<FrameState[]> {
+    return this.scan(tabId);
   }
 
   private frameState(ref: FrameRef): FrameState | undefined {
@@ -496,6 +524,9 @@ export class Autofill {
         );
         return null;
       }
+      default:
+        // The save card's kinds go to the Saver (D36).
+        throw new ServiceError("bad_request");
     }
   }
 }

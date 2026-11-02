@@ -71,7 +71,7 @@ pub(crate) fn parse_id(text: &str) -> Result<Id, ClientError> {
         .map_err(|_| ClientError::InvalidId)
 }
 
-fn parse_item_id(text: &str) -> Result<ItemId, ClientError> {
+pub(crate) fn parse_item_id(text: &str) -> Result<ItemId, ClientError> {
     text.parse::<ItemId>().map_err(|_| ClientError::InvalidId)
 }
 
@@ -130,7 +130,7 @@ impl<S: Store> Client<S> {
         events
     }
 
-    fn engine(&mut self) -> Result<&mut SyncEngine<S>, ClientError> {
+    pub(crate) fn engine(&mut self) -> Result<&mut SyncEngine<S>, ClientError> {
         match &mut self.state {
             State::Unlocked(engine) => Ok(engine),
             _ => Err(ClientError::Locked),

@@ -15,6 +15,9 @@ import type {
 import type { Reply } from "../shared/messages.ts";
 import { fieldProblem, samplePoints } from "./checks.ts";
 import type { FieldState, StyleInfo } from "./checks.ts";
+import { Capturer, readTyped } from "./capture.ts";
+import { OfferCard } from "./card.ts";
+import { looksVisible } from "./dom.ts";
 import { InlineIcons } from "./icons.ts";
 
 const SKIPPED_TYPES = new Set([
@@ -47,20 +50,6 @@ function findInputs(
 
 function text(value: string | null | undefined, max = 100): string {
   return (value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
-}
-
-function looksVisible(el: HTMLElement): boolean {
-  const rect = el.getBoundingClientRect();
-  const style = getComputedStyle(el);
-  // Honeypots: no size, or parked outside the page (left: -9999px).
-  return (
-    rect.width > 1 &&
-    rect.height > 1 &&
-    rect.right + window.scrollX > 0 &&
-    rect.bottom + window.scrollY > 0 &&
-    style.visibility === "visible" &&
-    Number(style.opacity) > 0
-  );
 }
 
 /** The engine's description of a field (D33): attributes and labels only. */
@@ -190,6 +179,15 @@ function setValue(el: HTMLInputElement, value: string): void {
 class Content {
   private inputs: HTMLInputElement[] = [];
   private readonly icons = new InlineIcons(() => this.inputs);
+  private readonly card = new OfferCard();
+  private readonly capturer = new Capturer(
+    () => this.inputs,
+    (message) => {
+      chrome.runtime.sendMessage(message).catch(() => {
+        // Orphaned after an extension update.
+      });
+    },
+  );
 
   /** Scans and tells the background; shows the inline icon if it says so. */
   report(): void {
@@ -205,6 +203,7 @@ class Content {
         fields,
       })
       .then((reply: Reply<FrameReply> | undefined) => {
+        this.capturer.setWatch(reply?.ok ? reply.value.watch : null);
         if (reply?.ok && reply.value.token !== null) {
           this.icons.show(reply.value.token, reply.value.icons);
         } else {
@@ -223,7 +222,9 @@ class Content {
     }));
     if (targets.some((t) => t.el === undefined))
       return { ok: false, reason: "gone" };
+    // Our own icons and card overlap the page; the checks would count them.
     const restoreIcons = this.icons.hideWhile();
+    const restoreCard = this.card.hideWhile();
     try {
       // Check every field first: fill all of them or none.
       for (const { el } of targets) {
@@ -240,6 +241,7 @@ class Content {
       return { ok: true };
     } finally {
       restoreIcons();
+      restoreCard();
     }
   }
 
@@ -258,6 +260,18 @@ class Content {
         return false;
       case "removeIcons":
         this.icons.removeAll();
+        respond(true);
+        return false;
+      case "read":
+        // "Save login from this page": the user asked, so read now.
+        respond(readTyped(this.inputs, message.watch));
+        return false;
+      case "showOffer":
+        if (window === window.top) this.card.show(message.token);
+        respond(true);
+        return false;
+      case "hideOffer":
+        this.card.hide();
         respond(true);
         return false;
     }

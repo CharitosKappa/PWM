@@ -8,7 +8,7 @@ Autofill reliability is our top promise and the top complaint against every comp
 2. **Field classification**: score each input using `autocomplete`, `type`, `name`/`id`, labels, placeholder, ARIA, form structure and position. Classes: `username`, `email`, `current-password`, `new-password`, `totp`, `cc-*`, `address-*`, `ignore`.
 3. **Per-site overrides**: a signed rules file (`autofill-rules.json`) shipped and updated separately from app releases, so site fixes do not wait for store review.
 4. **Multi-step logins**: remember step state (username page → password page → TOTP page) per tab.
-5. **Save/update detection**: detect submit + navigation; offer save only when credentials changed.
+5. **Save/update detection**: detect submit + navigation; offer save only when credentials changed. The decision is in the core (`save_offer`, D36). In the extension, captured values stay in background memory for at most 5 minutes, and the offer card follows the inline icon's rules.
 
 ## Extension security rules (from the 2025 DEF CON clickjacking research)
 

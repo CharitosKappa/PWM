@@ -56,7 +56,7 @@ struct ClassJson {
 /// Autofill state the client keeps beside the vault.
 #[derive(Default)]
 pub(crate) struct AutofillState {
-    rules: Rules,
+    pub(crate) rules: Rules,
     steps: MultiStep,
 }
 

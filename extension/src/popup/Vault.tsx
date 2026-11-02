@@ -7,6 +7,7 @@ import type { JSX } from "preact";
 import type { Suggestion } from "../shared/autofill.ts";
 import type { CopyField, ItemSummary, Status } from "../shared/messages.ts";
 import { describe, describeCode, send } from "./api.ts";
+import { SaveOffer } from "./Offer.tsx";
 import { Notice } from "./ui.tsx";
 
 type Unlocked = Extract<Status, { state: "unlocked" }>;
@@ -112,6 +113,7 @@ export function Vault({
         />
       ) : (
         <>
+          {query === "" && <SaveOffer onToast={setToast} />}
           {query === "" && <Suggestions onToast={setToast} />}
           <ItemList
             items={items}

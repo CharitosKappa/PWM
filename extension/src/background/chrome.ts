@@ -235,6 +235,20 @@ export class ChromePages implements Pages {
   hasSiteAccess(): Promise<boolean> {
     return chrome.permissions.contains({ origins: SITE_ACCESS });
   }
+
+  async setBadge(tabId: number, text: string): Promise<void> {
+    try {
+      await chrome.action.setBadgeText({ tabId, text });
+      if (text !== "") {
+        await chrome.action.setBadgeBackgroundColor({
+          tabId,
+          color: "#2457D6",
+        });
+      }
+    } catch {
+      // The tab closed.
+    }
+  }
 }
 
 export function chromePlatform(): Platform {

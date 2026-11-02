@@ -7,6 +7,7 @@ import type {
   ContentMessage,
   FieldInfo,
   FillReply,
+  Typed,
 } from "../shared/autofill.ts";
 import type {
   AlarmName,
@@ -303,6 +304,114 @@ export class FakeCore implements Core {
     return [done[0], done[1] === "username" ? "password" : "totp"];
   }
 
+  /** The core's decision in miniature (tested for real in Rust). */
+  saveOffer(
+    pageUrl: string,
+    _frameUrl: string | undefined,
+    username: string,
+    password: string,
+    newPassword: string | undefined,
+  ): string {
+    if (!this.unlocked) throw coreError("locked");
+    const host = new URL(pageUrl).hostname;
+    const secret = newPassword ?? password;
+    const same = this.logins().filter(
+      (l) =>
+        l.host === host &&
+        l.username.toLowerCase() === username.trim().toLowerCase(),
+    );
+    if (secret === "" || same.some((l) => l.password === secret))
+      return JSON.stringify({ kind: "nothing", candidates: [] });
+    if (same.length > 0)
+      return JSON.stringify({
+        kind: "update",
+        candidates: same.map((l) => ({
+          vault_id: l.vaultId,
+          item_id: l.id,
+          title: l.title,
+          username: l.username,
+        })),
+      });
+    return JSON.stringify({ kind: "save", candidates: [] });
+  }
+
+  saveLogin(
+    vaultId: string,
+    pageUrl: string,
+    title: string,
+    username: string,
+    password: string,
+  ): string {
+    if (!this.unlocked) throw coreError("locked");
+    const id = `saved-${String(this.logins().length + 1)}`;
+    this.addLogin(vaultId, {
+      id,
+      title: title || new URL(pageUrl).hostname,
+      username,
+      password,
+      urls: [{ url: new URL(pageUrl).origin }],
+    });
+    return id;
+  }
+
+  /** Old passwords of updated logins, newest last. */
+  history = new Map<string, string[]>();
+
+  updatePassword(vaultId: string, itemId: string, password: string): void {
+    if (!this.unlocked) throw coreError("locked");
+    const login = this.logins().find((l) => l.id === itemId);
+    if (!login) throw coreError("unknown_item");
+    this.history.set(itemId, [
+      ...(this.history.get(itemId) ?? []),
+      login.password,
+    ]);
+    this.addLogin(vaultId, {
+      id: itemId,
+      title: login.title,
+      username: login.username,
+      password,
+      urls: [{ url: login.url }],
+    });
+  }
+
+  private logins() {
+    const out: {
+      vaultId: string;
+      id: string;
+      title: string;
+      username: string;
+      password: string;
+      url: string;
+      host: string;
+    }[] = [];
+    for (const [vaultId, list] of this.items_) {
+      for (const json of list) {
+        const item = JSON.parse(json) as {
+          id: string;
+          type: string;
+          title: string;
+          login?: {
+            username?: string;
+            password?: string;
+            urls?: { url: string }[];
+          };
+        };
+        if (item.type !== "login") continue;
+        const url = item.login?.urls?.[0]?.url ?? "";
+        out.push({
+          vaultId,
+          id: item.id,
+          title: item.title,
+          username: item.login?.username ?? "",
+          password: item.login?.password ?? "",
+          url,
+          host: url === "" ? "" : new URL(url).hostname,
+        });
+      }
+    }
+    return out;
+  }
+
   saveItem(vaultId: string, json: string): string {
     if (!this.unlocked) throw coreError("locked");
     const item = JSON.parse(json) as { id: string };
@@ -424,6 +533,8 @@ export class FakePages implements Pages {
     Promise.resolve();
   sent: { target: FrameRef; message: ContentMessage }[] = [];
   fillReply: FillReply = { ok: true };
+  /** What a "read" (Save login from this page) finds typed. */
+  typed: Typed | null = null;
   /** Documents that navigated away since they reported. */
   gone = new Set<string>();
   popups = 0;
@@ -460,6 +571,7 @@ export class FakePages implements Pages {
   send(target: FrameRef, message: ContentMessage): Promise<unknown> {
     if (this.gone.has(target.documentId)) return Promise.resolve(undefined);
     this.sent.push({ target, message });
+    if (message.kind === "read") return Promise.resolve(this.typed);
     return Promise.resolve(message.kind === "fill" ? this.fillReply : true);
   }
 
@@ -475,6 +587,13 @@ export class FakePages implements Pages {
 
   hasSiteAccess() {
     return Promise.resolve(this.siteAccess);
+  }
+
+  badges = new Map<number, string>();
+
+  setBadge(tabId: number, text: string) {
+    this.badges.set(tabId, text);
+    return Promise.resolve();
   }
 }
 

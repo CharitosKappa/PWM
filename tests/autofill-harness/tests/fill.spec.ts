@@ -1,5 +1,6 @@
-// Filling on user action with the built extension in Chromium (D35 §8):
-// what must fill, warn or refuse. The start of the M4.7 harness.
+// The built extension in Chromium: filling on user action (D35 §8), what
+// must fill, warn or refuse; then save and update offers (D36 §9). The
+// start of the M4.7 harness.
 import { chromium, expect, test } from "@playwright/test";
 import type { BrowserContext, Frame, Page, Worker } from "@playwright/test";
 import fs from "node:fs";
@@ -22,6 +23,8 @@ const ids: Record<string, string> = {};
 /** What the test build exposes in the service worker (`build.mjs --test`). */
 interface Background {
   handle(request: object): Promise<unknown>;
+  /** Private in TypeScript; the tests read items' history through it. */
+  core: { vaultIds(): string[]; items(vaultId: string): string[] };
   saveItem(json: string): Promise<{ vaultId: string; itemId: string }>;
   autofill: {
     inlineIcon(): Promise<boolean>;
@@ -38,7 +41,13 @@ declare global {
   var pwmTest: { ready: Promise<Background> };
   // Only what the service worker code below uses.
   var chrome: {
-    tabs: { query(query: { url: string }): Promise<{ id?: number }[]> };
+    tabs: {
+      query(query: {
+        url?: string;
+        active?: boolean;
+        lastFocusedWindow?: boolean;
+      }): Promise<{ id?: number; url?: string }[]>;
+    };
     scripting: { getRegisteredContentScripts(): Promise<unknown[]> };
     runtime: { getURL(path: string): string };
   };
@@ -129,7 +138,11 @@ test.afterAll(async () => {
 });
 
 /** What the shortcut or the popup's Fill does, on the tab showing `page`. */
-async function fill(page: Page, confirmed = false): Promise<string> {
+async function fill(
+  page: Page,
+  confirmed = false,
+  item = ids.siteA ?? "",
+): Promise<string> {
   return inBackground(
     async ({ url, vault, item, confirmed }) => {
       const b = await globalThis.pwmTest.ready;
@@ -142,7 +155,7 @@ async function fill(page: Page, confirmed = false): Promise<string> {
         return (error as { code?: string }).code ?? String(error);
       }
     },
-    { url: page.url(), vault: vaultId, item: ids.siteA ?? "", confirmed },
+    { url: page.url(), vault: vaultId, item, confirmed },
   );
 }
 
@@ -317,6 +330,232 @@ test.describe("the inline icon", () => {
     await page.waitForTimeout(800);
     await expect(frame.locator("body")).toHaveClass("icon");
     await expect(page.locator("#password")).toHaveValue("");
+    await page.close();
+  });
+});
+
+interface SavedLogin {
+  id: string;
+  title: string;
+  username: string;
+  password: string;
+  history: string[];
+}
+
+/** Every login in the vault, with old passwords (via the core, test only). */
+function logins(): Promise<SavedLogin[]> {
+  return inBackground(async () => {
+    const b = await globalThis.pwmTest.ready;
+    const out: SavedLogin[] = [];
+    for (const vault of b.core.vaultIds()) {
+      for (const json of b.core.items(vault)) {
+        const item = JSON.parse(json) as {
+          id: string;
+          type: string;
+          title: string;
+          login?: { username: string; password: string };
+          history?: { login?: { password: string } }[];
+        };
+        if (item.type !== "login" || !item.login) continue;
+        out.push({
+          id: item.id,
+          title: item.title,
+          username: item.login.username,
+          password: item.login.password,
+          history: (item.history ?? []).map((h) => h.login?.password ?? ""),
+        });
+      }
+    }
+    return out;
+  }, null);
+}
+
+test.describe("save offers", () => {
+  const C = "https://site-c.test:8443";
+
+  test.beforeAll(async () => {
+    const on = await inBackground(async () => {
+      const b = await globalThis.pwmTest.ready;
+      return b.handle({ kind: "setInlineIcon", on: true });
+    }, null);
+    expect(on).toBe(true);
+  });
+
+  /** The save card's frame, once it shows. */
+  async function card(page: Page): Promise<Frame> {
+    let found: Frame | undefined;
+    await expect
+      .poll(
+        async () => {
+          for (const frame of page.frames()) {
+            if (!frame.url().includes("inline.html")) continue;
+            if ((await frame.locator("body.offer").count()) > 0) found = frame;
+          }
+          return found !== undefined;
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+    if (!found) throw new Error("no card");
+    await found.locator("button").first().waitFor();
+    return found;
+  }
+
+  async function noCard(page: Page): Promise<void> {
+    // Long enough for a navigation or a form going away to count.
+    await page.waitForTimeout(3000);
+    for (const frame of page.frames()) {
+      if (!frame.url().includes("inline.html")) continue;
+      // Quote the card, so a failure says what it offered.
+      const says =
+        (await frame.locator("body.offer").count()) > 0
+          ? await frame.locator("body").innerText()
+          : "";
+      expect(says).toBe("");
+    }
+  }
+
+  async function signIn(
+    page: Page,
+    url: string,
+    email: string,
+    password: string,
+  ): Promise<void> {
+    await page.goto(url);
+    await page.fill("#email", email);
+    await page.fill("#password", password);
+    await page.click("#submit");
+  }
+
+  test("offers to save after a sign-in that worked, and the login fills next time", async () => {
+    const page = await context.newPage();
+    await signIn(
+      page,
+      `${C}/save-login.html`,
+      "carol@site-c.test",
+      "carol-secret",
+    );
+    await page.waitForURL(/save-done/);
+    const frame = await card(page);
+    await expect(frame.locator("body")).toContainText(
+      "Save the login for site-c.test?",
+    );
+    await expect(frame.locator("body")).not.toContainText("carol-secret");
+    await page.waitForTimeout(800);
+    await frame.locator("button.primary", { hasText: "Save" }).click();
+    await expect
+      .poll(async () =>
+        (await logins()).find((l) => l.username === "carol@site-c.test"),
+      )
+      .toMatchObject({ title: "site-c.test", password: "carol-secret" });
+
+    const saved = (await logins()).find(
+      (l) => l.username === "carol@site-c.test",
+    );
+    await page.goto(`${C}/plain.html`);
+    expect(await fill(page, false, saved?.id ?? "")).toBe("ok");
+    await expect(page.locator("#password")).toHaveValue("carol-secret");
+    await page.close();
+  });
+
+  test("no offer after a failed sign-in", async () => {
+    const page = await context.newPage();
+    await signIn(page, `${C}/save-failed.html`, "carl@site-c.test", "wrong");
+    await noCard(page);
+    expect(
+      (await logins()).some((l) => l.username === "carl@site-c.test"),
+    ).toBe(false);
+    await page.close();
+  });
+
+  test("no offer for a login saved as it is", async () => {
+    const page = await context.newPage();
+    await signIn(
+      page,
+      `${C}/save-login.html`,
+      "carol@site-c.test",
+      "carol-secret",
+    );
+    await page.waitForURL(/save-done/);
+    await noCard(page);
+    await page.close();
+  });
+
+  test("offers to save after a single-page sign-in without a form submit", async () => {
+    const page = await context.newPage();
+    await page.goto(`${C}/save-spa.html`);
+    await page.fill("#email", "spa@site-c.test");
+    await page.fill("#password", "spa-secret");
+    await page.click("#submit");
+    const frame = await card(page);
+    await page.waitForTimeout(800);
+    await frame.locator("button.primary", { hasText: "Save" }).click();
+    await expect
+      .poll(async () =>
+        (await logins()).find((l) => l.username === "spa@site-c.test"),
+      )
+      .toMatchObject({ password: "spa-secret" });
+    await page.close();
+  });
+
+  test("ignores clicks on a card the page made transparent", async () => {
+    const page = await context.newPage();
+    await signIn(
+      page,
+      "https://site-d.test:8443/attack-card-login.html",
+      "dave@site-d.test",
+      "dave-secret",
+    );
+    await page.waitForURL(/attack-card-done/);
+    const frame = await card(page);
+    await page.waitForTimeout(800);
+    await frame.locator("button.primary").click({ force: true });
+    await page.waitForTimeout(1000);
+    expect(
+      (await logins()).some((l) => l.username === "dave@site-d.test"),
+    ).toBe(false);
+    await page.close();
+  });
+
+  test("saves from the popup's Save login from this page", async () => {
+    const page = await context.newPage();
+    await page.goto("https://site-e.test:8443/plain.html");
+    await page.fill("#email", "eve@site-e.test");
+    await page.fill("#password", "eve-secret");
+    await page.bringToFront();
+    const view = await inBackground(async () => {
+      const b = await globalThis.pwmTest.ready;
+      return b.handle({ kind: "captureNow" });
+    }, null);
+    expect(view).toMatchObject({ action: "save", username: "eve@site-e.test" });
+    await inBackground(async () => {
+      const b = await globalThis.pwmTest.ready;
+      return b.handle({ kind: "acceptOffer", itemId: null });
+    }, null);
+    expect(
+      (await logins()).find((l) => l.username === "eve@site-e.test"),
+    ).toMatchObject({
+      password: "eve-secret",
+    });
+    await page.close();
+  });
+
+  // Last: it changes Site A's password, which the fill tests use.
+  test("a change-password form offers an update, and history keeps the old one", async () => {
+    const page = await context.newPage();
+    await page.goto(`${A}/change-password.html`);
+    await page.fill("#current", PASSWORD);
+    await page.fill("#new", "Site-A new 8!");
+    await page.fill("#confirm", "Site-A new 8!");
+    await page.click("#submit");
+    await page.waitForURL(/save-done/);
+    const frame = await card(page);
+    await expect(frame.locator("body")).toContainText("Update the password");
+    await page.waitForTimeout(800);
+    await frame.locator("button.primary", { hasText: "Update" }).click();
+    await expect
+      .poll(async () => (await logins()).find((l) => l.id === ids.siteA))
+      .toMatchObject({ password: "Site-A new 8!", history: [PASSWORD] });
     await page.close();
   });
 });

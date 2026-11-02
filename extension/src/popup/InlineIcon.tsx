@@ -1,5 +1,6 @@
 /**
- * The inline icon switch (D35 §1). Turning it on asks for site access at
+ * The "Fill and save on sign-in pages" switch (D35 §1, D36 §1): the inline
+ * icon and save offers. Turning it on asks for site access at
  * that moment (it must be the first thing the click does); turning it off
  * gives the access back.
  */
@@ -56,11 +57,12 @@ export function InlineIconSetting(): JSX.Element {
           disabled={on === null}
           onChange={toggle}
         />
-        <span class="label">Show the icon in sign-in fields</span>
+        <span class="label">Fill and save on sign-in pages</span>
       </span>
       <span class="caption muted">
-        Fill with one click. The browser will ask to let PWM read sites; it
-        reads only the sign-in fields, never what you type.
+        Shows the icon in sign-in fields, and offers to save a login after you
+        sign in. The browser will ask to let PWM read sites. It reads what you
+        type only when you sign in.
       </span>
     </label>
   );
@@ -74,10 +76,11 @@ export function InlineIconOffer({
 }): JSX.Element {
   return (
     <div class="stack">
-      <h2>Show the icon in sign-in fields?</h2>
+      <h2>Fill and save on sign-in pages?</h2>
       <p>
-        Fill with one click on the icon. The browser will ask to let PWM read
-        sites. You can change this in Settings.
+        Fill with one click on the icon, and save new logins when you sign in.
+        The browser will ask to let PWM read sites. You can change this in
+        Settings.
       </p>
       <div class="row">
         <button

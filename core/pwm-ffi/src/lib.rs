@@ -178,6 +178,24 @@ pub struct CurrentCode {
     pub seconds_left: u64,
 }
 
+/// A saved login an update could go to (D36).
+#[derive(uniffi::Record)]
+pub struct SaveCandidate {
+    pub vault_id: String,
+    pub item_id: String,
+    pub title: String,
+    pub username: String,
+}
+
+/// What to offer after a sign-in (D36): nothing, saving a new login, or
+/// updating the password of these logins.
+#[derive(uniffi::Enum)]
+pub enum SaveOffer {
+    Nothing,
+    Save,
+    Update { candidates: Vec<SaveCandidate> },
+}
+
 /// The item and step (`password` or `totp`) to offer next on a tab.
 #[derive(uniffi::Record)]
 pub struct AutofillNextStep {
@@ -394,6 +412,67 @@ impl PwmClient {
 
     pub fn purge_trash(&self, now_ms: i64) -> Result<u64, PwmError> {
         Ok(count(self.lock_inner().purge_trash(now_ms)?))
+    }
+
+    /// What to offer after a sign-in on `page_url` (D36).
+    pub fn save_offer(
+        &self,
+        page_url: String,
+        frame_url: Option<String>,
+        username: String,
+        password: String,
+        new_password: Option<String>,
+    ) -> Result<SaveOffer, PwmError> {
+        let offer = self.lock_inner().save_offer(
+            &page_url,
+            frame_url.as_deref(),
+            &username,
+            &password,
+            new_password.as_deref(),
+        )?;
+        Ok(match offer {
+            pwm_client::SaveOffer::Nothing => SaveOffer::Nothing,
+            pwm_client::SaveOffer::Save => SaveOffer::Save,
+            pwm_client::SaveOffer::Update(list) => SaveOffer::Update {
+                candidates: list
+                    .into_iter()
+                    .map(|c| SaveCandidate {
+                        vault_id: c.vault_id,
+                        item_id: c.item_id,
+                        title: c.title,
+                        username: c.username,
+                    })
+                    .collect(),
+            },
+        })
+    }
+
+    /// Saves a new login for the site of `page_url`; returns its id.
+    pub fn save_login(
+        &self,
+        vault_id: String,
+        page_url: String,
+        title: String,
+        username: String,
+        password: String,
+        now_ms: i64,
+    ) -> Result<String, PwmError> {
+        Ok(self
+            .lock_inner()
+            .save_login(&vault_id, &page_url, &title, &username, &password, now_ms)?)
+    }
+
+    /// Replaces a login's password; the old one goes to history.
+    pub fn update_password(
+        &self,
+        vault_id: String,
+        item_id: String,
+        password: String,
+        now_ms: i64,
+    ) -> Result<(), PwmError> {
+        Ok(self
+            .lock_inner()
+            .update_password(&vault_id, &item_id, &password, now_ms)?)
     }
 
     /// The logins this page (or the frame holding the fields) may get.
