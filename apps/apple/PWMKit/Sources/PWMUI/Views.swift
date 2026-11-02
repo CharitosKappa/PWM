@@ -92,8 +92,10 @@ struct PrimaryButton: View {
     }
 }
 
+/// No `newPassword` on purpose: iOS would offer to generate the master
+/// password and keep it in iCloud Keychain, and it must be one the user knows.
 enum FieldKind {
-    case email, url, password, newPassword
+    case email, url, password
 }
 
 extension View {
@@ -114,12 +116,10 @@ extension View {
         case .email: self.textContentType(.emailAddress).keyboardType(.emailAddress)
         case .url: self.textContentType(.URL).keyboardType(.URL)
         case .password: self.textContentType(.password)
-        case .newPassword: self.textContentType(.newPassword)
         }
         #elseif os(macOS)
         switch kind {
         case .password: self.textContentType(.password)
-        case .newPassword: self.textContentType(.newPassword)
         case .email, .url: self
         }
         #else
@@ -168,11 +168,9 @@ struct CreateAccountView: View {
                 .field(.email)
                 .accessibilityIdentifier("email")
             SecureField("Master password", text: $model.password)
-                .field(.newPassword)
                 .accessibilityIdentifier("password")
             StrengthMeter(strength: model.strength)
             SecureField("Master password again", text: $model.confirm)
-                .field(.newPassword)
                 .accessibilityIdentifier("confirm")
             Text(!model.confirm.isEmpty && !model.passwordsMatch ? "The passwords don't match." : " ")
                 .textStyle(Tokens.Text.caption)

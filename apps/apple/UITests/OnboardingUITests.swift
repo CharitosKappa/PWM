@@ -77,9 +77,25 @@ final class OnboardingUITests: XCTestCase {
         element.tap()
     }
 
+    /// Types into a field. If iOS covers a password field with its own strong
+    /// password, it is declined first, and the field must then hold exactly
+    /// what was typed (secure fields show one dot per character).
     private func type(_ text: String, into field: XCUIElement) {
         tap(field)
+        let ownPassword = app.buttons["Choose My Own Password"]
+        let otherOptions = app.buttons["Other Options…"]
+        if ownPassword.waitForExistence(timeout: 1) {
+            ownPassword.tap()
+        } else if otherOptions.exists {
+            otherOptions.tap()
+            if ownPassword.waitForExistence(timeout: 2) { ownPassword.tap() }
+        }
         field.typeText(text)
+        let typed = text.hasSuffix("\n") ? String(text.dropLast()) : text
+        let expected = field.elementType == .secureTextField ? String(repeating: "•", count: typed.count) : typed
+        if (field.value as? String) != expected {
+            XCTFail("\(field) holds \(((field.value as? String) ?? "").count) of \(typed.count) characters. \(screen())")
+        }
     }
 
     private func screen() -> String {
@@ -92,9 +108,10 @@ final class OnboardingUITests: XCTestCase {
             .map { "\($0.identifier)=\"\(($0.value as? String) ?? "")\"" }
         let texts = app.staticTexts.allElementsBoundByIndex.map(\.label)
             .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        let strength = app.otherElements["strength"]
+        let strength = app.descendants(matching: .any)["strength"].firstMatch
         let meter = strength.exists ? (strength.value as? String) ?? "?" : "none"
         return "Error line: \"\(shown)\". Buttons: \(buttons.joined(separator: ", ")). "
-            + "Fields: \(fields.joined(separator: ", ")). Texts: \(texts.joined(separator: " | ")). Strength: \(meter)."
+            + "Fields: \(fields.joined(separator: ", ")). Texts: \(texts.joined(separator: " | ")). Strength: \(meter).\n"
+            + "Tree:\n\(app.debugDescription)"
     }
 }
