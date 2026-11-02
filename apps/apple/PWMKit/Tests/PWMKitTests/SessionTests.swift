@@ -21,10 +21,14 @@ final class FakeTransport: HTTPTransport, @unchecked Sendable {
         return sent
     }
 
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+    private func record(_ request: HTTPRequest) {
         lock.lock()
+        defer { lock.unlock() }
         sent.append(request)
-        lock.unlock()
+    }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        record(request)
         return try answer(request)
     }
 }
