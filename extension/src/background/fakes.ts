@@ -520,6 +520,42 @@ export class FakeCore implements Core {
     });
   }
 
+  /** Calls to autofillReport, for the tests to look at. */
+  reports: { pageUrl: string; problem: string; framesJson: string }[] = [];
+
+  autofillReport(
+    pageUrl: string,
+    problem: string,
+    framesJson: string,
+    extensionVersion: string,
+    browser: string,
+  ): string {
+    this.reports.push({ pageUrl, problem, framesJson });
+    const frames = JSON.parse(framesJson) as {
+      relation: string;
+      fields: { form: number | null; type: string }[];
+    }[];
+    return JSON.stringify({
+      v: 1,
+      site: new URL(pageUrl).origin,
+      problem,
+      matched: this.unlocked ? true : null,
+      software: {
+        extension: extensionVersion,
+        core: "0.0.0",
+        rules: 0,
+        browser,
+      },
+      frames: frames.map((f) => ({
+        relation: f.relation,
+        fields: f.fields.map((x) => ({
+          form: x.form,
+          class: x.type === "password" ? "current-password" : "username",
+        })),
+      })),
+    });
+  }
+
   saveItem(vaultId: string, json: string): string {
     if (!this.unlocked) throw coreError("locked");
     const item = JSON.parse(json) as { id: string };
@@ -820,6 +856,7 @@ export function fakePlatform(disk = new MemoryDisk()): FakePlatform {
       );
     },
     now: () => clock.now,
+    browser: "Chrome 140",
     random: () => 0.5,
   };
 }

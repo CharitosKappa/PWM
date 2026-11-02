@@ -1,6 +1,6 @@
 // The built extension in Chromium: filling on user action (D35 §8), what
 // must fill, warn or refuse; save and update offers (D36 §9); passkeys
-// (D37 §8). The start of the M4.7 harness.
+// (D37 §8); failure reports (D38 §7). The start of the M4.7 harness.
 import { chromium, expect, test } from "@playwright/test";
 import type { BrowserContext, Frame, Page, Worker } from "@playwright/test";
 import fs from "node:fs";
@@ -680,6 +680,49 @@ test.describe("passkeys", () => {
     expect(await registered).toBe("registered");
     // Made by the browser's authenticator, not by PWM.
     expect(await page.evaluate(() => window.rp.aaguid)).not.toBe(AAGUID);
+    await page.close();
+  });
+});
+
+test.describe("failure reports", () => {
+  test("a report holds the form's structure, with personal text and typed values left out", async () => {
+    const page = await context.newPage();
+    await page.goto(
+      "https://site-r.test:8443/report-personal.html?session=abc123#top",
+    );
+    await page.fill("#email", "typed-user@example.com");
+    await page.fill("#password", "typed-secret");
+    await page.bringToFront();
+    const preview = (await inBackground(async () => {
+      const b = await globalThis.pwmTest.ready;
+      return b.handle({ kind: "reportPreview", problem: "nothing_filled" });
+    }, null)) as { json: string; fields: number };
+    const report = JSON.parse(preview.json) as {
+      site: string;
+      frames: { fields: { label: string; class: string }[] }[];
+    };
+    expect(report.site).toBe("https://site-r.test:8443");
+    expect(preview.fields).toBe(2);
+    expect(report.frames[0]?.fields.map((f) => f.label)).toEqual([
+      "hello ada (<email>), sign in",
+      "password for account #",
+    ]);
+    expect(report.frames[0]?.fields.map((f) => f.class)).toEqual([
+      "username",
+      "current-password",
+    ]);
+    for (const absent of [
+      "ada@example.com",
+      "4242424242",
+      "typed-user",
+      "typed-secret",
+      "session",
+      "abc123",
+      "report-personal",
+      "Welcome back",
+    ]) {
+      expect(preview.json).not.toContain(absent);
+    }
     await page.close();
   });
 });

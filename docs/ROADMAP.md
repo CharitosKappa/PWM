@@ -307,7 +307,35 @@ Phase 3  Teams           months 16–24 M16–M19
     - Algorithms other than ES256.
     - Firefox and Safari (M4.8, M5.6).
     - The apps' passkey providers (M5.5, M6.3, M5.6/M7).
-- [ ] M4.6 "Autofill didn't work here" report with form fingerprint (no values).
+- [x] M4.6 "Autofill didn't work here" report with form fingerprint (no values).
+  - Per D38:
+    - **Core (`pwm-autofill::report`, through `pwm-client`, WASM and UniFFI):**
+      - the v1 report: the page's origin only, what happened from a fixed list, and per frame its relation (top, same site, other site) and each input's structure, cleaned labels and names, and the engine's class
+      - whether a fill would use it, the software versions, and whether a saved login matched (only when unlocked)
+      - **Cleaning:** lower case, emails become `<email>`, runs of 3+ digits become `#`, tokens become `<token>`, at most 40 characters
+      - **Limits:** 20 frames, 200 inputs, 32 KiB
+    - **Server:**
+      - **The endpoint:** `POST /v1/reports/autofill`, without auth, at 10 per hour per IP, with a 32 KiB body limit.
+      - **Checked:** against the v1 schema, unknown keys refused.
+      - **Stored:** in `autofill_reports` (migration 0004) with no account or IP, kept 90 days.
+      - **Exported:** with `pwm-server reports export [--since]`.
+    - **Popup:** "Autofill didn't work here?", unlocked or locked.
+      - **Before sending:** pick what happened, then a summary and "Show everything" (the exact JSON).
+      - **Sending:** only Send posts, to the hosted service, without credentials.
+  - **Tests:**
+    - **Rust:** cleaning, what a report holds and never holds, frames, problems, limits, web pages only, the client (classes from the core, matched only when unlocked).
+    - **Server:** the schema check, storing without account or IP, refusing values and oversized bodies, retention, the per-IP limit, and the export.
+    - **Vitest (169):**
+      - frames and fill targets to the core
+      - nothing sent on preview
+      - locked reports
+      - Send posts exactly the preview, anonymously, to the hosted service
+      - errors and the browser name
+    - **Playwright:** a form with a name and an email in its labels, a typed username and password, and a session in the URL. The report has `<email>` and `#`, and none of the rest.
+  - **Deferred:**
+    - **Tickets from reports and the public dashboard:** M4.7 / M10.
+    - **Reports from the apps:** M5/M6 (the core is ready).
+    - **The popup's report screen in Playwright:** the tests drive the background.
 - [ ] M4.7 Autofill harness: fixture sites incl. clickjacking/overlay attacks that must not fill; top-1,000 runner + JSON report.
 - [ ] M4.8 Builds for Chrome, Edge, Firefox, Brave, Opera; Safari via macOS app (M5).
 - [ ] M4.9 Dependency review of the `cargo deny` ignores, from M3:

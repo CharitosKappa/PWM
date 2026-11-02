@@ -21,6 +21,14 @@ const TEXT_COLUMNS: &[(&str, &str)] = &[
         "accounts.email",
         "login lookup and the notices PRICING.md requires",
     ),
+    (
+        "autofill_reports.report",
+        "anonymous failure reports (D38): form structure only, schema-checked, no account",
+    ),
+    (
+        "autofill_reports.site",
+        "the reported site's origin (D38), not tied to any account",
+    ),
     ("devices.platform", "enum, CHECK constraint"),
     ("subscriptions.currency", "ISO 4217 code, CHECK constraint"),
     ("subscriptions.plan", "enum, CHECK constraint"),

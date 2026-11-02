@@ -388,3 +388,55 @@ fn the_current_code_of_a_login() {
         .unwrap();
     assert!(client.current_code(&vault, &note, T0).unwrap().is_none());
 }
+
+#[test]
+fn an_autofill_report_through_the_client() {
+    let (store, secret_key, vault) = signed_in_store();
+    let mut client = Client::new(store);
+    let frames = serde_json::json!([{
+        "relation": "top",
+        "fields": [
+            {"tag": "input", "type": "email", "name": "email", "visible": true, "form": 0},
+            {"tag": "input", "type": "password", "name": "pass", "visible": true, "form": 0},
+        ],
+        "fill": [0, 1],
+    }])
+    .to_string();
+    let report = |client: &Client<MemoryStore>| -> Value {
+        let json = client
+            .autofill_report(
+                "https://bank.example/login?x=1",
+                "wrong_field",
+                &frames,
+                "0.1.0",
+                "Chrome 140",
+            )
+            .unwrap();
+        serde_json::from_str(&json).unwrap()
+    };
+    let locked = report(&client);
+    assert!(locked["matched"].is_null());
+    assert_eq!(locked["site"], "https://bank.example");
+    assert_eq!(
+        locked["frames"][0]["fields"][1]["class"],
+        "current-password"
+    );
+    client.unlock(PASSWORD, &secret_key, tokens()).unwrap();
+    assert_eq!(report(&client)["matched"], false);
+    client
+        .save_item(
+            &vault,
+            &login_json(&new_id().unwrap(), "Bank", "alice", "bank.example"),
+            T0,
+        )
+        .unwrap();
+    assert_eq!(report(&client)["matched"], true);
+    assert_eq!(
+        code(client.autofill_report("https://bank.example", "my own words", &frames, "", "")),
+        "invalid_item"
+    );
+    assert_eq!(
+        code(client.autofill_report("chrome://x", "other", "[]", "", "")),
+        "invalid_url"
+    );
+}

@@ -8,6 +8,7 @@ import type { Suggestion } from "../shared/autofill.ts";
 import type { CopyField, ItemSummary, Status } from "../shared/messages.ts";
 import { describe, describeCode, send } from "./api.ts";
 import { SaveOffer } from "./Offer.tsx";
+import { ReportLink } from "./Report.tsx";
 import { Notice } from "./ui.tsx";
 
 type Unlocked = Extract<Status, { state: "unlocked" }>;
@@ -16,10 +17,12 @@ export function Vault({
   status,
   onStatus,
   onSettings,
+  onReport,
 }: {
   status: Unlocked;
   onStatus: (status: Status) => void;
   onSettings: () => void;
+  onReport: () => void;
 }): JSX.Element {
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<ItemSummary[]>([]);
@@ -121,6 +124,7 @@ export function Vault({
             onSelect={setSelected}
             onCopy={(item, field) => void copy(item, field)}
           />
+          {query === "" && <ReportLink onOpen={onReport} />}
         </>
       )}
       {/* Floats over the list, so nothing moves under the cursor. */}

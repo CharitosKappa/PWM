@@ -46,4 +46,4 @@ Most one-star reviews in this market come from broken updates. Release safety is
 | Free → paid conversion | 3% | 5% | 6% |
 | Paid support first reply | < 24 h | < 8 h | < 4 h |
 
-Privacy: product analytics are opt-in, aggregate, and never include URLs, item data or form contents.
+Privacy: product analytics are opt-in, aggregate, and never include URLs, item data or form contents. Autofill failure reports are not analytics. The user sends each one after seeing it, and it holds the site's origin and the form's structure only (D38).

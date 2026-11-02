@@ -52,6 +52,7 @@ const MESSAGES: Record<string, string> = {
   nothing_to_save: "This login is already saved.",
   no_offer: "Nothing to save on this page now.",
   no_vault: "No vault yet. Sync, then try again.",
+  no_report: "Look at the report again, then send it.",
   signed_in: "Sign out to change the server.",
 };
 

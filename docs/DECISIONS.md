@@ -871,3 +871,12 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **A third-party crash/feedback service:** less work, but it sends data to another company and needs a DPA.
   - **Free-text descriptions:** more useful, but people type passwords and personal data into them. Maybe later with a strong warning and its own scrubbing.
   - **Reports to the user's own server:** self-hosters keep their data, but we never see the failures we are meant to fix.
+
+  Implementation notes (M4.6):
+  - **Cleaning keeps the punctuation** around a replaced address (`(ada@x.com)` becomes `(<email>)`). A token needs at least one digit, so long ordinary words such as German compounds stay.
+  - **Versions are kept as given:** the extension and browser version strings come from the extension, not the page, so they are only cut to 40 characters, not cleaned.
+  - **Size before count:** a report over 32 KiB loses frames from the end until it fits, before the 200-input limit is reached.
+  - **The server's schema check refuses unknown keys** at every level, so nothing can ride along under another name. Text values are at most 160 bytes (40 characters).
+  - **No SQL JSON feature:** the report is stored with `CAST($2 AS jsonb)` and read back as text, so `sqlx` needs no new feature.
+  - **The plaintext column allow-list** (`server/tests/schema.rs`) gains `autofill_reports.site` and `.report`, with D38 as the reason.
+  - **One look, one send:** the background keeps the previewed JSON per tab, and Send posts exactly that string once. A new Send needs a new look.

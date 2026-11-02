@@ -139,6 +139,14 @@ export interface Core {
     itemId: string,
     credentialId: string,
   ): string;
+  /** An "Autofill didn't work here" report (D38), as JSON; never values. */
+  autofillReport(
+    pageUrl: string,
+    problem: string,
+    framesJson: string,
+    extensionVersion: string,
+    browser: string,
+  ): string;
   /** Saves an item (D18 JSON with its `id`); returns the id. */
   saveItem(vaultId: string, json: string, nowMs: number): string;
 }

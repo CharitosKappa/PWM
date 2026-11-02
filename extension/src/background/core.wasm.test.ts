@@ -54,6 +54,7 @@ const CORE_METHODS: (keyof Core)[] = [
   "passkeyCreate",
   "passkeyCandidates",
   "passkeyGet",
+  "autofillReport",
 ];
 
 describe("the WASM core", () => {

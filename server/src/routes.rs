@@ -4,7 +4,7 @@ use axum::routing::get;
 use axum::{Router, middleware};
 
 use crate::api::AppState;
-use crate::{account, auth, items, limits, logging, vaults};
+use crate::{account, auth, items, limits, logging, reports, vaults};
 
 /// Request bodies other than item writes (D29).
 pub const MAX_BODY_BYTES: usize = 16 * 1024;
@@ -15,7 +15,8 @@ pub fn app(state: AppState) -> Router {
     let by_ip = middleware::from_fn_with_state(state.clone(), limits::by_ip);
     Router::new()
         .route("/healthz", get(healthz))
-        .merge(auth::routes().route_layer(by_ip))
+        .merge(auth::routes().route_layer(by_ip.clone()))
+        .merge(reports::routes().route_layer(by_ip))
         .merge(account::routes())
         .merge(vaults::routes())
         .merge(items::routes())

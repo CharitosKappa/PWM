@@ -304,6 +304,22 @@ export class ChromePages implements Pages {
   }
 }
 
+/** "Edge 140", "Opera 125", "Chrome 140" from a user agent. */
+export function browserName(userAgent: string): string {
+  for (const [token, name] of [
+    ["Edg/", "Edge"],
+    ["OPR/", "Opera"],
+    ["Chrome/", "Chrome"],
+  ] as const) {
+    const at = userAgent.indexOf(token);
+    if (at >= 0) {
+      const major = /^\d+/.exec(userAgent.slice(at + token.length))?.[0] ?? "";
+      return `${name} ${major}`.trim();
+    }
+  }
+  return "Other";
+}
+
 export function chromePlatform(): Platform {
   return {
     disk: new ChromeDisk(indexedDB, chrome.storage.local),
@@ -313,6 +329,7 @@ export function chromePlatform(): Platform {
     pages: new ChromePages(),
     fetch: (url, init) => fetch(url, init),
     now: () => Date.now(),
+    browser: browserName(navigator.userAgent),
     random: () => Math.random(),
   };
 }

@@ -17,6 +17,7 @@ import { errorCode } from "./core.ts";
 import { ServiceError } from "./errors.ts";
 import { Autofill } from "./fill.ts";
 import { Passkeys } from "./passkeys.ts";
+import { Reporter } from "./report.ts";
 import { Saver } from "./save.ts";
 import type { Core, CoreFunctions, CoreStep } from "./core.ts";
 import { runSteps } from "./http.ts";
@@ -87,6 +88,8 @@ export class Background {
   readonly saver: Saver;
   /** Passkeys (D37). */
   readonly passkeys: Passkeys;
+  /** Autofill failure reports (D38). */
+  readonly reporter: Reporter;
 
   private constructor(
     private readonly fns: CoreFunctions,
@@ -113,6 +116,11 @@ export class Background {
       touch: () => this.touch(),
     });
     this.autofill.onTopFrame = (sender) => this.saver.onTopFrame(sender);
+    this.reporter = new Reporter({
+      core: () => this.core,
+      platform,
+      autofill: this.autofill,
+    });
     this.passkeys = new Passkeys({
       core: () => this.core,
       platform,
@@ -276,6 +284,10 @@ export class Background {
         );
       case "setPasskeys":
         return this.passkeys.setEnabled(request.on);
+      case "reportPreview":
+        return this.reporter.preview(request.problem);
+      case "reportSend":
+        return this.reporter.send();
       case "activity":
         await this.touch();
         return null;

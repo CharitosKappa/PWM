@@ -12,6 +12,8 @@
 //!   restoring the database from a backup (D30).
 //! - `healthcheck` exits 0 if the server on `PWM_LISTEN` answers
 //!   `/healthz` (the container health check).
+//! - `reports export [--since YYYY-MM-DD]` writes the autofill failure
+//!   reports (D38) to stdout as JSON lines, for triage.
 #![forbid(unsafe_code)]
 
 use std::io::{IsTerminal, Write};
@@ -31,9 +33,12 @@ async fn main() -> ExitCode {
     match args.first().map(String::as_str) {
         Some("keygen") => return keygen(args.get(1).map(String::as_str), args.get(2)),
         Some("healthcheck") => return healthcheck(),
+        Some("reports") => return reports(&args[1..]).await,
         Some("mark-restored") | None => {}
         Some(_) => {
-            eprintln!("usage: pwm-server [keygen [--env <file>] | mark-restored | healthcheck]");
+            eprintln!(
+                "usage: pwm-server [keygen [--env <file>] | mark-restored | healthcheck | reports export [--since YYYY-MM-DD]]"
+            );
             return ExitCode::FAILURE;
         }
     }
@@ -120,6 +125,42 @@ fn healthcheck() -> ExitCode {
     match listen.parse() {
         Ok(addr) if pwm_server::healthcheck(addr) => ExitCode::SUCCESS,
         _ => ExitCode::FAILURE,
+    }
+}
+
+/// `reports export [--since YYYY-MM-DD]` (D38 §6).
+async fn reports(args: &[String]) -> ExitCode {
+    let since = match args {
+        [cmd] if cmd == "export" => None,
+        [cmd, flag, date] if cmd == "export" && flag == "--since" => Some(date.as_str()),
+        _ => {
+            eprintln!("usage: pwm-server reports export [--since YYYY-MM-DD]");
+            return ExitCode::FAILURE;
+        }
+    };
+    let result = async {
+        let config = Config::from_env()?;
+        let pool = connect(config.database_url.expose_secret())?;
+        migrate(&pool).await?;
+        let lines = pwm_server::export_reports(&pool, since).await?;
+        pool.close().await;
+        Ok::<_, ServerError>(lines)
+    }
+    .await;
+    match result {
+        Ok(lines) => {
+            let mut out = std::io::stdout().lock();
+            for line in lines {
+                if writeln!(out, "{line}").is_err() {
+                    return ExitCode::FAILURE;
+                }
+            }
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::FAILURE
+        }
     }
 }
 
