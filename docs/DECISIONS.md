@@ -13,70 +13,6 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D32 — Transactional email provider** · open · founder. Needed for M10.7: email verification at sign-up (so registration stops revealing which emails have accounts) and account notices. To choose: provider and region (EU hosting fits D5), and its licence and data-processing terms.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
-- **D38 — "Autofill didn't work here" reports: what is sent, where, and how it is kept** · proposed 2026-11-02 · Claude Code.
-  The roadmap says "'Autofill didn't work here' report with form fingerprint (no values)". `AUTOFILL.md` says the report captures "URL origin and a form-structure fingerprint (tag, type, attributes, label text of inputs — never values), user confirms before sending", and that reports become tickets with a 7-day fix SLA for the top 1,000 sites. `PRODUCT.md` lists it as P0.
-  The tension: CLAUDE.md says the server never sees plaintext (no URLs), and `QUALITY.md` says analytics never include URLs or form contents. A failure report is, by its nature, a site and its form.
-  Open:
-  - how a report stays apart from accounts
-  - what exactly it holds
-  - how label text that may contain personal data is cleaned
-  - where it goes, and how long it is kept
-
-  Proposal:
-  1. **Reports are anonymous and apart from the vault:**
-     - **The endpoint:** `POST /v1/reports/autofill`, sent without a token, cookies, account id or device id. The sync API never sees a report, and a report cannot be tied to an account.
-     - **Explicit and one-off:** the user explicitly sends each report and sees exactly what goes. This is not analytics, so the `QUALITY.md` rule ("never URLs") applies to analytics, not to these reports. The CLAUDE.md "server never sees plaintext" rule is about vault data, and a report holds none.
-     - **On the server:** no IP address stored, request bodies never logged, and a per-IP rate limit (GCRA, D29) of 10 reports per hour.
-  2. **Where reports go:** always to the **hosted** service, even for self-hosted accounts, because we are the ones who fix sites. The confirmation names the destination. Self-hosters who never want this simply never send one. There is no automatic sending of any kind.
-  3. **What a report holds** (JSON, `"v": 1`; built by the core, `pwm-autofill::report`, so the apps can send the same reports later):
-     - **The site:** the page's **origin only** (scheme, host, port), never the path or query, which can hold tokens.
-     - **What happened**, picked from a list: "Nothing was filled", "The wrong field was filled", "It didn't offer to save", "The icon was in the way", "Something else". No free text, since people paste passwords into free text.
-     - **Per frame:**
-       - **The frame:** whether it is the top frame, a same-site frame or another site's frame. Never the frame's URL.
-       - **Per input:** the form index; tag, `type`, `autocomplete`, `inputmode`, `maxlength`, visibility; `name` and `id`; the label, placeholder and `aria-label` text, cleaned (§4).
-       - **What the engine decided:** the class and confidence for each field, and which fields a fill would use.
-     - **The software:** the extension, core and rules versions and the browser's major version.
-     - **Whether a saved login matched the site** (yes/no, only when unlocked). Never which one, or anything from it.
-     - **Never:** field values, item data, usernames, the account, the device, cookies, the page's text outside labels, or the full URL.
-  4. **Cleaning text** (labels, placeholders, names, ids), in the core, before anything leaves the device:
-     - **Normal form:** lower case, with whitespace collapsed and cut to 40 characters.
-     - **Things that look like personal data are replaced:**
-       - email addresses become `<email>`
-       - runs of 3 or more digits become `#`
-       - anything that looks like a token (20+ characters of letters, digits, `-` or `_` without spaces) becomes `<token>`
-     - **Limits:** at most 200 inputs and 20 frames; a report over 32 KiB is cut to fit, or refused.
-  5. **Sending:**
-     - **Where:** the popup, on a web page, gets **"Autofill didn't work here?"**.
-     - **What it shows first:** the user picks what happened and sees a plain summary (the site, the number of forms and fields, their kinds), with "Show everything" for the exact JSON.
-     - **Send or Cancel:** nothing goes until **Send**.
-     - **Reaching the page:** it works without site access, using `activeTab` to scan the page at that moment, the same as fill.
-  6. **On the server:**
-     - **Storage:** a new table `autofill_reports` (migration `0004`): id, received time, the site origin and the report JSON. It is validated against the v1 schema and the limits.
-     - **Retention:** kept 90 days; older rows are deleted on each insert.
-     - **Reading reports:** `pwm-server reports export --since <date>` writes them as JSON lines for triage.
-     - **Tickets and the public dashboard** come with M4.7 / M10, which read this table.
-  7. **Tests:**
-     - **Rust:**
-       - the cleaning rules (emails, digit runs, tokens, length, Unicode)
-       - that no value or URL path can get in
-       - the size and count limits
-       - the report schema
-     - **Server:**
-       - the endpoint without auth
-       - the rate limit
-       - retention
-       - that no IP is stored and no body is logged (the D29 log scrubber)
-       - the export
-     - **Vitest:**
-       - that the popup's preview is exactly what is sent
-       - that nothing is sent without Send
-       - that the request has no credentials
-     - **Playwright:** a fixture form with a personal label ("Hello Ada, ada@x.com") gives a report with `<email>`, without the name of the logged-in user or any value.
-
-  Alternatives:
-  - **A third-party crash/feedback service:** less work, but it sends data to another company and needs a DPA.
-  - **Free-text descriptions:** more useful, but people type passwords and personal data into them. Maybe later with a strong warning and its own scrubbing.
-  - **Reports to the user's own server:** self-hosters keep their data, but we never see the failures we are meant to fix.
 
 ## Settled
 
@@ -871,3 +807,67 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **One site access:** "Use PWM for passkeys" uses the same optional site access as "Fill and save". The popup gives the access back only when neither switch is on and the server is the hosted one.
   - **The page-world wrapper** answers with objects whose own properties shadow the native prototypes' getters, so `instanceof PublicKeyCredential` and `response.getPublicKey()` both work.
   - **Fuzzing:** the `passkey_request` fuzz target registers and signs whatever parses, for any origin.
+- **D38 — "Autofill didn't work here" reports: what is sent, where, and how it is kept** · settled 2026-11-02 · founder (approved as proposed).
+  The roadmap says "'Autofill didn't work here' report with form fingerprint (no values)". `AUTOFILL.md` says the report captures "URL origin and a form-structure fingerprint (tag, type, attributes, label text of inputs — never values), user confirms before sending", and that reports become tickets with a 7-day fix SLA for the top 1,000 sites. `PRODUCT.md` lists it as P0.
+  The tension: CLAUDE.md says the server never sees plaintext (no URLs), and `QUALITY.md` says analytics never include URLs or form contents. A failure report is, by its nature, a site and its form.
+  Open:
+  - how a report stays apart from accounts
+  - what exactly it holds
+  - how label text that may contain personal data is cleaned
+  - where it goes, and how long it is kept
+
+  Proposal:
+  1. **Reports are anonymous and apart from the vault:**
+     - **The endpoint:** `POST /v1/reports/autofill`, sent without a token, cookies, account id or device id. The sync API never sees a report, and a report cannot be tied to an account.
+     - **Explicit and one-off:** the user explicitly sends each report and sees exactly what goes. This is not analytics, so the `QUALITY.md` rule ("never URLs") applies to analytics, not to these reports. The CLAUDE.md "server never sees plaintext" rule is about vault data, and a report holds none.
+     - **On the server:** no IP address stored, request bodies never logged, and a per-IP rate limit (GCRA, D29) of 10 reports per hour.
+  2. **Where reports go:** always to the **hosted** service, even for self-hosted accounts, because we are the ones who fix sites. The confirmation names the destination. Self-hosters who never want this simply never send one. There is no automatic sending of any kind.
+  3. **What a report holds** (JSON, `"v": 1`; built by the core, `pwm-autofill::report`, so the apps can send the same reports later):
+     - **The site:** the page's **origin only** (scheme, host, port), never the path or query, which can hold tokens.
+     - **What happened**, picked from a list: "Nothing was filled", "The wrong field was filled", "It didn't offer to save", "The icon was in the way", "Something else". No free text, since people paste passwords into free text.
+     - **Per frame:**
+       - **The frame:** whether it is the top frame, a same-site frame or another site's frame. Never the frame's URL.
+       - **Per input:** the form index; tag, `type`, `autocomplete`, `inputmode`, `maxlength`, visibility; `name` and `id`; the label, placeholder and `aria-label` text, cleaned (§4).
+       - **What the engine decided:** the class and confidence for each field, and which fields a fill would use.
+     - **The software:** the extension, core and rules versions and the browser's major version.
+     - **Whether a saved login matched the site** (yes/no, only when unlocked). Never which one, or anything from it.
+     - **Never:** field values, item data, usernames, the account, the device, cookies, the page's text outside labels, or the full URL.
+  4. **Cleaning text** (labels, placeholders, names, ids), in the core, before anything leaves the device:
+     - **Normal form:** lower case, with whitespace collapsed and cut to 40 characters.
+     - **Things that look like personal data are replaced:**
+       - email addresses become `<email>`
+       - runs of 3 or more digits become `#`
+       - anything that looks like a token (20+ characters of letters, digits, `-` or `_` without spaces) becomes `<token>`
+     - **Limits:** at most 200 inputs and 20 frames; a report over 32 KiB is cut to fit, or refused.
+  5. **Sending:**
+     - **Where:** the popup, on a web page, gets **"Autofill didn't work here?"**.
+     - **What it shows first:** the user picks what happened and sees a plain summary (the site, the number of forms and fields, their kinds), with "Show everything" for the exact JSON.
+     - **Send or Cancel:** nothing goes until **Send**.
+     - **Reaching the page:** it works without site access, using `activeTab` to scan the page at that moment, the same as fill.
+  6. **On the server:**
+     - **Storage:** a new table `autofill_reports` (migration `0004`): id, received time, the site origin and the report JSON. It is validated against the v1 schema and the limits.
+     - **Retention:** kept 90 days; older rows are deleted on each insert.
+     - **Reading reports:** `pwm-server reports export --since <date>` writes them as JSON lines for triage.
+     - **Tickets and the public dashboard** come with M4.7 / M10, which read this table.
+  7. **Tests:**
+     - **Rust:**
+       - the cleaning rules (emails, digit runs, tokens, length, Unicode)
+       - that no value or URL path can get in
+       - the size and count limits
+       - the report schema
+     - **Server:**
+       - the endpoint without auth
+       - the rate limit
+       - retention
+       - that no IP is stored and no body is logged (the D29 log scrubber)
+       - the export
+     - **Vitest:**
+       - that the popup's preview is exactly what is sent
+       - that nothing is sent without Send
+       - that the request has no credentials
+     - **Playwright:** a fixture form with a personal label ("Hello Ada, ada@x.com") gives a report with `<email>`, without the name of the logged-in user or any value.
+
+  Alternatives:
+  - **A third-party crash/feedback service:** less work, but it sends data to another company and needs a DPA.
+  - **Free-text descriptions:** more useful, but people type passwords and personal data into them. Maybe later with a strong warning and its own scrubbing.
+  - **Reports to the user's own server:** self-hosters keep their data, but we never see the failures we are meant to fix.
