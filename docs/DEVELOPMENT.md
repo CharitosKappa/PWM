@@ -109,20 +109,27 @@ CI also compiles and runs small Swift and Kotlin programs against the bindings (
 `apps/apple/PWMKit` (D41) is the Swift package that the iOS app, its AutoFill extension and the macOS app share. On a Mac with Xcode and Apple Silicon:
 
 ```
-just apple     # the core as an XCFramework into apps/apple/PWMKit/Generated/, then swift test
+brew install xcodegen
+just apple     # the core as an XCFramework into apps/apple/PWMKit/Generated/, swift test, then apps/apple/PWM.xcodeproj
 just tokens    # regenerate Sources/PWMDesign/Tokens.swift after changing design/tokens.json
 ```
+
+- **The iOS app:** open `apps/apple/PWM.xcodeproj`, choose the `PWM` scheme and an iPhone simulator, then run.
+  - The project is generated from `apps/apple/project.yml`; change that file, not the project.
+  - **A self-hosted or local server:** choose "Other server" on the welcome screen. For a local server, enter `http://127.0.0.1:8080` after `just server`.
+  - **A real device:** copy `apps/apple/Config/Local.example.xcconfig` to `Local.xcconfig` (gitignored) and set your team id. Simulators need no team.
+- **The UI test:** start `just server`, then in `apps/apple` run `TEST_RUNNER_PWM_TEST_SERVER=http://127.0.0.1:8080 xcodebuild test -project PWM.xcodeproj -scheme PWM -destination 'platform=iOS Simulator,name=iPhone 16'`. It is skipped without the variable.
 
 - **Before Xcode opens the package:** run `just apple` first, after every core change. The package does not resolve without `Generated/`.
 - **The server tests** run when `PWM_TEST_SERVER=http://127.0.0.1:8080` is set (run `just server`), and are skipped otherwise.
 - **On Linux** (as in CI):
   1. `bash apps/apple/PWMKit/generate.sh linux`
   2. In `apps/apple/PWMKit`, run `swift test -Xlinker -L$PWD/../../../target/debug`, with `LD_LIBRARY_PATH` set to the same folder.
-- **On Windows:** the package does not build there; CI runs it.
+- **On Windows:** the package does not build natively. It does build in the `swift` Docker image, on the Linux build of the core (generate it in a `rust` container first). The app and the views build only on a Mac, so CI runs them.
 
 ## Fuzzing
 
-Targets live in `core/pwm-crypto/fuzz/fuzz_targets/` (`envelope_decode`, `vault_share_decode`, `keyset_plaintext`, `secret_key_parse`, `password_normalize`, `totp_parse`, `export_read`, `opaque_messages`, `autofill_rules`, `url_match`). CI runs each for 60 s on every PR and 10 minutes nightly; crash inputs are uploaded as artifacts.
+Targets live in `core/pwm-crypto/fuzz/fuzz_targets/` (`envelope_decode`, `vault_share_decode`, `keyset_plaintext`, `secret_key_parse`, `password_normalize`, `totp_parse`, `export_read`, `opaque_messages`, `autofill_rules`, `url_match`, `kit_qr_parse`). CI runs each for 60 s on every PR and 10 minutes nightly; crash inputs are uploaded as artifacts.
 
 Linux/macOS (nightly + `cargo install cargo-fuzz`):
 

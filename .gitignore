@@ -6,6 +6,9 @@
 
 # Generated core for the Swift package (`just apple`, D41) and SwiftPM output
 /apps/apple/PWMKit/Generated/
+# The Xcode project generated from apps/apple/project.yml (D42) and local signing
+/apps/apple/PWM.xcodeproj/
+/apps/apple/Config/Local.xcconfig
 .build/
 .swiftpm/
 

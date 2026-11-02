@@ -1,0 +1,8 @@
+// Signing (D42 §2). Simulator builds are signed to run locally with no team,
+// as in CI. For a real device, copy Local.example.xcconfig to Local.xcconfig
+// (gitignored) and set your Apple Developer team id there.
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY[sdk=iphonesimulator*] = -
+DEVELOPMENT_TEAM =
+
+#include? "Local.xcconfig"

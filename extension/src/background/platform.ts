@@ -108,6 +108,8 @@ export interface Platform {
   capabilities: Capabilities;
   fetch: (url: string, init: RequestInit) => Promise<Response>;
   now: () => number;
+  /** The browser's language, such as "en-US" (for the Emergency Kit's paper size). */
+  locale: string;
   /** The browser's name and major version, such as "Chrome 140" (for reports). */
   browser: string;
   /** 0 ≤ x < 1, for spreading the rules download. */

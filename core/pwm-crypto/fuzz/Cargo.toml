@@ -1,4 +1,4 @@
-# Fuzz targets for pwm-crypto decoders (M1.7), pwm-vault parsers, export readers and the autofill engine (D33). Run with `just fuzz <target>`
+# Fuzz targets for pwm-crypto decoders (M1.7), pwm-vault parsers, export readers, the autofill engine (D33) and the Emergency Kit code (D42). Run with `just fuzz <target>`
 # (Linux/macOS, nightly) or in Docker on Windows, see docs/DEVELOPMENT.md.
 #
 # Separate workspace on purpose: libFuzzer (Apache-2.0 WITH LLVM-exception)
@@ -22,6 +22,7 @@ pwm-autofill = { path = "../../pwm-autofill" }
 pwm-passkey = { path = "../../pwm-passkey" }
 pwm-crypto = { path = ".." }
 pwm-export = { path = "../../pwm-export" }
+pwm-kit = { path = "../../pwm-kit" }
 pwm-vault = { path = "../../pwm-vault" }
 url = "2.5.8"
 
@@ -101,6 +102,13 @@ bench = false
 [[bin]]
 name = "passkey_request"
 path = "fuzz_targets/passkey_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "kit_qr_parse"
+path = "fuzz_targets/kit_qr_parse.rs"
 test = false
 doc = false
 bench = false

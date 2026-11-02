@@ -30,3 +30,11 @@ export function generatePassphrase(
   addDigit: boolean,
 ): string;
 export function passwordScore(password: string, context: string[]): number;
+export function emergencyKit(
+  email: string,
+  secretKey: string,
+  server: string | undefined,
+  accountId: string,
+  created: string,
+  paper: string,
+): Uint8Array;

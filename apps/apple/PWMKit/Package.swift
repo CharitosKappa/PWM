@@ -20,6 +20,7 @@ let package = Package(
     products: [
         .library(name: "PWMKit", targets: ["PWMKit"]),
         .library(name: "PWMDesign", targets: ["PWMDesign"]),
+        .library(name: "PWMUI", targets: ["PWMUI"]),
     ],
     targets: [
         core,
@@ -32,7 +33,11 @@ let package = Package(
         ),
         .target(name: "PWMKit", dependencies: ["PWMCore"]),
         .target(name: "PWMDesign"),
+        // The screens (D42 §3): view models with no SwiftUI, tested on Linux
+        // too, and SwiftUI views the iOS and macOS apps share.
+        .target(name: "PWMUI", dependencies: ["PWMKit", "PWMDesign"]),
         .testTarget(name: "PWMKitTests", dependencies: ["PWMKit"]),
         .testTarget(name: "PWMDesignTests", dependencies: ["PWMDesign"]),
+        .testTarget(name: "PWMUITests", dependencies: ["PWMUI"]),
     ]
 )

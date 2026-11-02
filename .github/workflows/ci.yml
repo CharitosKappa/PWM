@@ -56,6 +56,10 @@ jobs:
           package-manager-cache: false
       - run: cargo test --workspace --all-features --locked
       - run: just test-vectors
+      - name: The Emergency Kit's golden PDFs are valid (D42)
+        run: |
+          sudo apt-get install -y -qq qpdf
+          for pdf in core/pwm-kit/tests/golden/*.pdf; do qpdf --check "$pdf"; done
 
   # Server integration tests against a real Postgres (D25). PWM_REQUIRE_DB
   # turns a missing database into a failure instead of a skip.
@@ -225,7 +229,7 @@ jobs:
     needs: apple-changes
     if: needs.apple-changes.outputs.run == 'true'
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -233,12 +237,53 @@ jobs:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim,aarch64-apple-darwin,x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
       - run: bash apps/apple/PWMKit/generate.sh apple
+      # A local sync server for the package's server tests and the app's UI
+      # test (D42 §6), as in the Linux job but with Postgres from Homebrew.
+      - run: brew install postgresql@17 xcodegen
+      - name: Start Postgres
+        run: |
+          pg="$(brew --prefix postgresql@17)/bin"
+          "$pg/initdb" -D "$RUNNER_TEMP/pg" -U pwm --auth=trust > /dev/null
+          "$pg/pg_ctl" -D "$RUNNER_TEMP/pg" -l "$RUNNER_TEMP/pg.log" -o "-p 5432" -w start
+      - run: cargo build --locked -p pwm-server
+      - name: Start the sync server
+        env:
+          PWM_DATABASE_URL: postgres://pwm@localhost:5432/postgres
+        run: |
+          export PWM_SERVER_SECRETS="$(target/debug/pwm-server keygen)"
+          nohup target/debug/pwm-server > target/pwm-server.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if target/debug/pwm-server healthcheck; then exit 0; fi
+            sleep 1
+          done
+          cat target/pwm-server.log
+          exit 1
       - name: Swift package tests (macOS)
         working-directory: apps/apple/PWMKit
+        env:
+          PWM_TEST_SERVER: http://127.0.0.1:8080
         run: swift test
-      - name: Build for the iOS simulator
-        working-directory: apps/apple/PWMKit
-        run: xcodebuild build -scheme PWMKit-Package -destination 'generic/platform=iOS Simulator' -quiet
+      - name: The iOS app's UI test in the simulator
+        working-directory: apps/apple
+        env:
+          TEST_RUNNER_PWM_TEST_SERVER: http://127.0.0.1:8080
+        run: |
+          xcodegen generate
+          device="$(xcrun simctl list devices available -j | jq -r '[.devices | to_entries[] | select(.key | test("iOS")) | .value[] | select(.name | startswith("iPhone"))][0].udid')"
+          xcodebuild test -project PWM.xcodeproj -scheme PWM -destination "id=$device" -resultBundlePath "$RUNNER_TEMP/ui.xcresult" -quiet
+      - if: failure()
+        run: cat target/pwm-server.log || true
+      - name: UI test failures
+        if: failure()
+        run: |
+          [ -d "$RUNNER_TEMP/ui.xcresult" ] || exit 0
+          xcrun xcresulttool get test-results tests --path "$RUNNER_TEMP/ui.xcresult" --compact             | jq -r '.. | objects | select(.nodeType? == "Failure Message") | .name'
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-results
+          path: ${{ runner.temp }}/ui.xcresult
+          if-no-files-found: ignore
 
   # The server image and compose stack (D30): build, start, smoke test.
   image:
@@ -378,6 +423,7 @@ jobs:
           - opaque_messages
           - autofill_rules
           - url_match
+          - kit_qr_parse
           - passkey_request
     steps:
       - uses: actions/checkout@v5

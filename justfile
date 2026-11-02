@@ -84,10 +84,11 @@ rules-keygen seed:
 
 ffi_lib := if os() == "windows" { "target/debug/pwm_ffi.dll" } else if os() == "macos" { "target/debug/libpwm_ffi.dylib" } else { "target/debug/libpwm_ffi.so" }
 
-# the Swift package (D41) on a Mac: the core as an XCFramework, then its tests
+# the Swift package (D41) on a Mac: the core as an XCFramework, its tests, then the Xcode project (D42; needs `brew install xcodegen`)
 apple:
     bash apps/apple/PWMKit/generate.sh apple
     cd apps/apple/PWMKit && swift test
+    cd apps/apple && xcodegen generate
 
 # design tokens into apps/apple/PWMKit/Sources/PWMDesign/Tokens.swift (D41); `just check` fails when it is stale
 tokens:

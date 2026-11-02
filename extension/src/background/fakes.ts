@@ -626,6 +626,10 @@ export function fakeFunctions(): CoreFunctions & { cores: FakeCore[] } {
     generatePassphrase: (words) =>
       Array.from({ length: words }, () => "word").join("-"),
     passwordScore: (password) => (password === PASSWORD ? 4 : 1),
+    emergencyKit: (email, secretKey, server, accountId, created, paper) =>
+      new TextEncoder().encode(
+        `%PDF-fake ${[email, secretKey, server ?? "hosted", accountId, created, paper].join(" ")}`,
+      ),
   };
 }
 
@@ -862,6 +866,7 @@ export function fakePlatform(disk = new MemoryDisk()): FakePlatform {
       );
     },
     now: () => clock.now,
+    locale: "en-GB",
     browser: "Chrome 140",
     random: () => 0.5,
   };

@@ -182,7 +182,7 @@ Phase 3  Teams           months 16–24 M16–M19
     - **Background service worker:** owns the WASM core, the cache (IndexedDB snapshot) and every server conversation. The popup (Preact) only sends messages and never receives keys, tokens, item passwords or code secrets.
     - **Session:** the unlocked keyset sealed under a random key (`pwm/session`) in `chrome.storage.session`, so a restarted worker stays unlocked. Tokens are sealed under the keyset (`pwm/device-tokens`) on disk.
     - **Auto-lock:** 15 minutes by default (1, 5, 15, 60 minutes or 8 hours), at once when the computer locks, and on browser close.
-    - **Popup:** sign up (strength meter, Secret Key shown once, text Emergency Kit), sign in, unlock, search, item detail, copy username/password/current code (cleared after 30 s through an offscreen document), generator, sync status, lock, settings (auto-lock, a self-hosted server with permission asked at that moment), sign out.
+    - **Popup:** sign up (strength meter, Secret Key shown once, text Emergency Kit, a PDF since M5.2), sign in, unlock, search, item detail, copy username/password/current code (cleared after 30 s through an offscreen document), generator, sync status, lock, settings (auto-lock, a self-hosted server with permission asked at that moment), sign out.
     - **First vault only if there is none** (`start_ensure_vault` in `pwm-client`), closing the M3 leftover.
     - **Rules download:** every 24 hours ± 2 hours with a conditional GET, rollback refused, the last good file reloaded at start. `pwm-rules-sign` (`keygen` / `public` / `sign`) for the offline release keys.
     - **Build:** esbuild into `extension/dist/` (`just extension`) with a manifest, permission and remote-code check; Chromium only.
@@ -408,12 +408,38 @@ Phase 3  Teams           months 16–24 M16–M19
     - **To M5.2, with D1 and the Apple developer account:** app targets, signing, bundle and team ids, App Group and Keychain access group ids.
     - **Face ID / Touch ID:** M5.4.
     - **Background sync:** M5.8.
-- [ ] M5.2 Onboarding: create account, Emergency Kit PDF, sign in on new device (password + Secret Key, or approve from existing device).
+- [x] M5.2 Onboarding: create account, Emergency Kit PDF, sign in on new device (password + Secret Key). Approving from an existing device is M5.9 (D42).
+  - **`pwm-kit` (new core crate):** the Emergency Kit as a one-page PDF (A4 or Letter, deterministic) and its QR code (`pwm-kit:1?…`, never the password), through UniFFI and WASM.
+    - **The extension** now downloads the same PDF instead of a text file.
+    - **`sign_out`:** a new core call that wipes the cache.
+  - **iOS app:** `apps/apple/project.yml` (XcodeGen) with placeholder ids until D1, and no entitlements yet.
+  - **`PWMUI` (new package target):** the screens.
+    - welcome, with the server choice
+    - create account (strength meter, at least 3)
+    - the Secret Key and the kit (share sheet, a local-only copy that expires after 30 s)
+    - sign in, typed or scanned from the kit with VisionKit
+    - unlock
+    - a placeholder vault screen
+  - **Tests:**
+    - golden PDFs, checked by `qpdf --check` in CI
+    - a scan test of the printed QR code
+    - a new fuzz target, `kit_qr_parse`
+    - view-model tests on Linux and macOS
+    - a sign-out and kit test against a real server
+    - an XCUITest in the macOS job: create an account, then sign in again with the Secret Key, lock and unlock
+  - **Deferred:**
+    - **Onboarding on macOS:** M5.6, with the same `PWMUI` screens. Logged in D42.
+    - **The App Group and the shared Keychain group,** with the move of the cache and keys into them: M5.5.
+    - **Signing for devices:** waits for the Apple Developer account.
+    - **The real name and icon:** D1.
+    - **Approval from an existing device:** M5.9.
+    - **Screenshot protection of the Secret Key screen:** M5.7.
 - [ ] M5.3 Vault list, search, item detail/edit, generator, health report, settings, lock timeout.
   - From M3: the device list in settings, with rename and revoke.
     - **Rename needs a new endpoint** (`PATCH /v1/devices/{id}` with a sealed name, D26 format).
     - **A newly signed-in device** sets its name right after login, because today it has none until its next login.
 - [ ] M5.4 Face ID / Touch ID unlock via Secure Enclave-wrapped key.
+- [ ] M5.9 Approve a new device from an existing one (D42 split it from M5.2): the Secret Key sent over an authenticated X25519 channel (`SECURITY.md`), relay endpoints on the server, and the approving side on every signed-in platform, starting with the extension. Needs its own decision, test vectors and security review; reuses the M5.2 kit scanner.
 - [ ] M5.5 iOS AutoFill Credential Provider + passkeys + QuickType identity sync.
 - [ ] M5.6 macOS app + Safari Web Extension; native-messaging host for other browsers' biometric unlock.
 - [ ] M5.7 Screenshot/screen-recording protection on unlock and revealed secrets.

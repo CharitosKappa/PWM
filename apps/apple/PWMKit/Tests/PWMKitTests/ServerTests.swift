@@ -62,6 +62,38 @@ final class ServerTests: XCTestCase {
         let email2 = try await session.email()
         XCTAssertEqual(email2, email)
     }
+
+    func testTheKitAndSigningOut() async throws {
+        let email = "swift-\(UUID().uuidString.lowercased())@example.com"
+        let keys = MemoryKeyStore()
+        let session = try Session(cachePath: nil, server: server, keys: keys)
+        let secretKey = try await session.signUp(email: email, password: strong, deviceName: "iPhone")
+        let kit = try await session.emergencyKit(paper: .a4)
+        let text = String(decoding: kit.value, as: UTF8.self)
+        XCTAssertTrue(text.hasPrefix("%PDF-1.4"))
+        XCTAssertTrue(text.contains("(\(secretKey.value))"))
+        // A local server is self-hosted, so its address is printed.
+        XCTAssertTrue(text.contains("(Server)"))
+
+        let deviceId = keys.get(.deviceId)
+        try await session.signOut()
+        let signedIn = try await session.isSignedIn()
+        XCTAssertFalse(signedIn)
+        let unlocked = await session.isUnlocked
+        XCTAssertFalse(unlocked)
+        for name in [KeyName.secretKey, .accessToken, .refreshToken, .email] {
+            XCTAssertNil(keys.get(name), name.rawValue)
+        }
+        XCTAssertEqual(keys.get(.deviceId), deviceId, "the device id stays")
+        do {
+            try await session.unlock(password: strong)
+            XCTFail("unlocked after signing out")
+        } catch {
+            XCTAssertEqual(code(of: error), "not_signed_in")
+        }
+        let vaults = try? await session.vaultIds()
+        XCTAssertNil(vaults, "locked, and the cache is empty")
+    }
 }
 
 /// `XCTUnwrap` for a value that needs `await`.

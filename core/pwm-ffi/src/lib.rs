@@ -306,6 +306,12 @@ impl PwmClient {
         self.lock_inner().is_unlocked()
     }
 
+    /// Locks and deletes this account's cache; delete the stored tokens and
+    /// Secret Key too.
+    pub fn sign_out(&self) -> Result<(), PwmError> {
+        Ok(self.lock_inner().sign_out()?)
+    }
+
     pub fn account_id(&self) -> Result<Option<String>, PwmError> {
         Ok(self.lock_inner().account_id()?)
     }
@@ -752,4 +758,62 @@ pub fn password_strength(password: String, context: Vec<String>) -> Strength {
         warning: s.warning,
         suggestions: s.suggestions,
     }
+}
+
+/// Paper size for the Emergency Kit, from the user's locale.
+#[derive(Debug, Clone, Copy, uniffi::Enum)]
+pub enum Paper {
+    A4,
+    Letter,
+}
+
+impl From<Paper> for pwm_client::Paper {
+    fn from(p: Paper) -> Self {
+        match p {
+            Paper::A4 => Self::A4,
+            Paper::Letter => Self::Letter,
+        }
+    }
+}
+
+/// The Emergency Kit as PDF bytes (D42). It holds the Secret Key: hand it
+/// to the share sheet or printer and drop it; never write it to a cache.
+#[uniffi::export]
+pub fn emergency_kit(
+    email: String,
+    secret_key: String,
+    server: Option<String>,
+    account_id: String,
+    created: String,
+    paper: Paper,
+) -> Result<Vec<u8>, PwmError> {
+    let pdf = pwm_client::emergency_kit(
+        &email,
+        &secret_key,
+        server.as_deref(),
+        &account_id,
+        &created,
+        paper.into(),
+    )?;
+    Ok(pdf.expose_secret().clone())
+}
+
+/// What a scanned Emergency Kit fills in: never a password.
+#[derive(uniffi::Record)]
+pub struct ScannedKit {
+    pub email: String,
+    pub secret_key: String,
+    /// A self-hosted server's address; `None` for the hosted service.
+    pub server: Option<String>,
+}
+
+/// Reads the text of a scanned QR code; `not_a_kit` for any other code.
+#[uniffi::export]
+pub fn scan_kit(text: String) -> Result<ScannedKit, PwmError> {
+    let kit = pwm_client::scan_kit(&text)?;
+    Ok(ScannedKit {
+        email: kit.email,
+        secret_key: kit.secret_key.expose_secret().clone(),
+        server: kit.server,
+    })
 }
