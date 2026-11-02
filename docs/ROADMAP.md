@@ -376,10 +376,17 @@ Phase 3  Teams           months 16–24 M16–M19
     - **Safari:** M5.6.
     - **Firefox for Android:** later.
   - **Parity gaps (D40):** on Firefox, the inline icon, the save card and filling in frames.
-- [ ] M4.9 Dependency review of the `cargo deny` ignores, from M3:
+- [x] M4.9 Dependency review of the `cargo deny` ignores, from M3:
   - **RUSTSEC-2026-0387:** drop it once `opaque-ke` has a stable release on `elliptic-curve` 0.14, after rerunning `opaque.json`.
   - **RUSTSEC-2026-0374:** drop it once UniFFI no longer pulls in `basic-toml`.
   - **Either way:** upgrade, or keep the ignore with its reason refreshed.
+  - **Done 2026-11-02, both ignores kept, with their reasons refreshed in `deny.toml`. Recheck at M5.1:**
+    - **RUSTSEC-2026-0387:** no upgrade exists. The latest `opaque-ke` (4.1.0-pre.2) and `voprf` (0.6.0-pre.1) are still on `elliptic-curve` 0.13. `opaque.json` was not rerun, since nothing changed.
+      - Still not reachable from the ristretto255 suite.
+      - The `crypto-bigint` 0.7 that `p256` brings (D37) is 0.7.10, past the fix.
+    - **RUSTSEC-2026-0374:** `uniffi` 0.32.2, the latest, still pulls in `basic-toml` through `askama` 0.16.1.
+      - It runs only inside a derive macro at build time.
+      - `pwm-ffi` built on its own does not contain it.
 
 **Done when:** fixture suite 100%; top-1,000 classification ≥ 90% (target 95% by launch); overlay attacks never fill. Since D39, the classification target is measured each night by the top-sites runner on a growing list, and gates the launch in M10, not the end of M4.
 
