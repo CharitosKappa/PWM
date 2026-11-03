@@ -52,7 +52,16 @@ public final class MemoryKeyStore: KeyStore, @unchecked Sendable {
 }
 
 #if canImport(Security)
+import os
 import Security
+
+/// Only the status of a refused Keychain call, and which key: never a value.
+private let keychainLog = Logger(subsystem: "pwm", category: "keychain")
+
+private func refused(_ status: OSStatus, _ call: String, _ name: String) -> PWMError {
+    keychainLog.error("\(call, privacy: .public) \(name, privacy: .public) refused: \(status, privacy: .public)")
+    return PWMError(code: "keychain")
+}
 
 /// The Keychain: generic passwords, this device only, readable after the
 /// first unlock (so AutoFill and background sync work), optionally in an
@@ -98,7 +107,7 @@ public struct KeychainKeyStore: KeyStore {
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = result as? Data else {
-            throw PWMError(code: "keychain")
+            throw refused(status, "get", name.rawValue)
         }
         return String(data: data, encoding: .utf8)
     }
@@ -114,13 +123,13 @@ public struct KeychainKeyStore: KeyStore {
             let add = query(name).merging(update) { $1 }
             status = SecItemAdd(add as CFDictionary, nil)
         }
-        guard status == errSecSuccess else { throw PWMError(code: "keychain") }
+        guard status == errSecSuccess else { throw refused(status, "set", name.rawValue) }
     }
 
     public func delete(_ name: KeyName) throws {
         let status = SecItemDelete(query(name) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw PWMError(code: "keychain")
+            throw refused(status, "delete", name.rawValue)
         }
     }
 
@@ -136,7 +145,11 @@ public struct KeychainKeyStore: KeyStore {
         if dataProtection {
             add[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         }
-        guard SecItemAdd(add as CFDictionary, nil) == errSecSuccess else { return false }
+        let status = SecItemAdd(add as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            keychainLog.info("probe refused: \(status, privacy: .public), data protection \(dataProtection, privacy: .public)")
+            return false
+        }
         SecItemDelete(probe as CFDictionary)
         return true
     }

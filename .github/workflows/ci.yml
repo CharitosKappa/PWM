@@ -297,9 +297,9 @@ jobs:
           device="$(xcrun simctl list devices available -j | jq -r '[.devices | to_entries[] | select(.key | test("iOS")) | .value[] | select(.name | startswith("iPhone"))][0].udid')"
           xcodebuild test -project PWM.xcodeproj -scheme PWM -destination "id=$device" -resultBundlePath "$RUNNER_TEMP/ui.xcresult" -quiet             -test-timeouts-enabled YES -default-test-execution-time-allowance 900 -maximum-test-execution-time-allowance 900
       # The macOS app (D48 §6): its credential provider is built with it.
-      # CI signs ad-hoc, so the app is built with the entitlements an
-      # unsigned app may have (sandbox, network); it then keeps its own
-      # Keychain and cache, as a build without the shared groups does.
+      # CI signs ad-hoc, so the app is built with no entitlements (see
+      # Mac/PWMMac-CI.entitlements); it then keeps its own login-keychain
+      # items and cache, as a build without the shared groups does.
       - name: The macOS app's UI test
         working-directory: apps/apple
         timeout-minutes: 20
@@ -316,6 +316,9 @@ jobs:
           xcodebuild test -project PWM.xcodeproj -scheme PWMMac -destination "platform=macOS" -resultBundlePath "$RUNNER_TEMP/mac.xcresult" -quiet             CODE_SIGN_ENTITLEMENTS=Mac/PWMMac-CI.entitlements             -test-timeouts-enabled YES -default-test-execution-time-allowance 600 -maximum-test-execution-time-allowance 600
       - if: failure()
         run: cat target/pwm-server.log || true
+      - name: Keychain refusals (statuses only, never values)
+        if: failure()
+        run: log show --last 30m --style compact --predicate 'subsystem == "pwm"' | tail -40 || true
       - name: UI test failures
         if: failure()
         run: |
