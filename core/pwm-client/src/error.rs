@@ -32,6 +32,10 @@ pub enum ClientError {
     InvalidItem,
     #[error("the item is read-only in this app version")]
     ReadOnlyItem,
+    /// A one-time-code setup that is neither a supported URI nor a base32
+    /// secret (D23).
+    #[error("not a one-time-code secret")]
+    InvalidTotp,
     #[error("the master password is too weak")]
     WeakPassword,
     #[error("the Secret Key is not valid")]
@@ -84,6 +88,7 @@ impl ClientError {
             Self::ItemTooLarge => "item_too_large",
             Self::InvalidItem => "invalid_item",
             Self::ReadOnlyItem => "read_only_item",
+            Self::InvalidTotp => "invalid_totp",
             Self::WeakPassword => "weak_password",
             Self::InvalidSecretKey => "invalid_secret_key",
             Self::WrongPassword => "wrong_password",

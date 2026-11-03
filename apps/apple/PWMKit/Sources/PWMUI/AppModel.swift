@@ -2,8 +2,9 @@ import Foundation
 import Observation
 import PWMKit
 
-/// The app's state before the vault (D42 §4): welcome, create account, the
-/// Secret Key, sign in, unlock, then a placeholder vault until M5.3.
+/// The app's state (D42 §4, D43): welcome, create account, the Secret Key,
+/// sign in, unlock, then the vault with its tabs. It also locks the vault
+/// after the lock timeout (D43 §5).
 @MainActor
 @Observable
 public final class AppModel {
@@ -24,6 +25,8 @@ public final class AppModel {
     public private(set) var signIn: SignInModel?
     public private(set) var unlock: UnlockModel?
     public private(set) var vault: VaultModel?
+    public private(set) var generator: GeneratorModel?
+    public private(set) var settings: SettingsModel?
 
     private var account: (any Account)?
     private var accountServer: URL?
@@ -31,22 +34,28 @@ public final class AppModel {
     private let defaults: UserDefaults
     private let pasteboard: any SecretPasteboard
     private let deviceName: String
+    private let clock: @MainActor () -> ContinuousClock.Instant
+    private var backgroundedAt: ContinuousClock.Instant?
 
     static let serverKey = "server"
 
     /// - Parameters:
     ///   - makeAccount: opens the device's account for a server.
-    ///   - defaults: keeps the server address (`-server <url>` at launch overrides it).
+    ///   - defaults: keeps the server address (`-server <url>` at launch
+    ///     overrides it) and the lock timeout.
+    ///   - clock: for the lock timeout; it keeps counting while the device sleeps.
     public init(
         makeAccount: @escaping @MainActor (URL) throws -> any Account,
         defaults: UserDefaults = .standard,
         pasteboard: any SecretPasteboard,
-        deviceName: String
+        deviceName: String,
+        clock: @escaping @MainActor () -> ContinuousClock.Instant = { ContinuousClock.now }
     ) {
         self.makeAccount = makeAccount
         self.defaults = defaults
         self.pasteboard = pasteboard
         self.deviceName = deviceName
+        self.clock = clock
     }
 
     /// Opens the account on the saved server: unlock if one is signed in.
@@ -120,14 +129,65 @@ public final class AppModel {
 
     private func showVault() {
         guard let account else { return }
-        vault = VaultModel(account: account, onLocked: { [unowned self] in
-            self.vault = nil
-            await self.showUnlock()
-        }, onSignedOut: { [unowned self] in
-            self.vault = nil
-            self.showWelcome()
-        })
+        vault = VaultModel(account: account, pasteboard: pasteboard) { [unowned self] in self.didSignOut() }
+        generator = GeneratorModel(pasteboard: pasteboard)
+        let server = accountServer.flatMap { $0 == Server.hosted ? nil : $0 }
+        settings = SettingsModel(server: server, app: self, account: account)
         screen = .vault
+    }
+
+    /// Back to welcome once the account is gone from this device.
+    func didSignOut() {
+        dropVault()
+        unlock = nil
+        showWelcome()
+    }
+
+    private func dropVault() {
+        vault = nil
+        generator = nil
+        settings = nil
+        backgroundedAt = nil
+    }
+
+    // MARK: Locking (D43 §5)
+
+    public var lockTimeout: LockTimeout {
+        get { LockTimeout.saved(in: defaults) }
+        set { defaults.set(newValue.rawValue, forKey: LockTimeout.key) }
+    }
+
+    /// Locks the vault and shows unlock. Only the vault locks: the Secret
+    /// Key screen is shown once and stays until "I saved it".
+    public func lock() async {
+        guard screen == .vault, let account else { return }
+        await account.lock()
+        dropVault()
+        await showUnlock()
+    }
+
+    /// The app left the screen.
+    public func didEnterBackground() async {
+        guard screen == .vault else { return }
+        if lockTimeout == .immediately {
+            await lock()
+        } else {
+            backgroundedAt = clock()
+        }
+    }
+
+    /// The app is coming back: lock first if it was away too long.
+    public func willEnterForeground() async {
+        guard let since = backgroundedAt else { return }
+        backgroundedAt = nil
+        if clock() - since >= lockTimeout.duration {
+            await lock()
+        }
+    }
+
+    /// The device is locking: the vault locks too, whatever the timeout.
+    public func deviceWillLock() async {
+        await lock()
     }
 
     // MARK: Server

@@ -1,20 +1,54 @@
 // The onboarding screens (D42 §4), shared by the iOS app and, with M5.6, the
-// macOS app. Copy is plain and short; nothing moves under the cursor.
+// macOS app. Copy is plain and short; nothing moves under the cursor. The
+// vault's screens are in VaultViews.swift.
 #if canImport(SwiftUI)
+import Combine
 import PWMDesign
 import PWMKit
 import SwiftUI
 import UniformTypeIdentifiers
+#if os(iOS)
+import UIKit
+#endif
 
-/// The app's root: one screen at a time, chosen by `AppModel`.
+/// The app's root: one screen at a time, chosen by `AppModel`. It tells the
+/// model when the app leaves and comes back, for the lock timeout (D43 §5),
+/// and covers the vault from leaving until that check is done.
 public struct RootView: View {
     let model: AppModel
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var covered = false
 
     public init(model: AppModel) {
         self.model = model
     }
 
     public var body: some View {
+        screens
+            .overlay {
+                if covered && model.screen == .vault {
+                    Tokens.Color.bg.color.ignoresSafeArea()
+                }
+            }
+            .onChange(of: scenePhase) { old, new in
+                if new == .background {
+                    covered = true
+                    Task { await model.didEnterBackground() }
+                } else if old == .background {
+                    Task {
+                        await model.willEnterForeground()
+                        covered = false
+                    }
+                }
+            }
+            #if os(iOS)
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
+                Task { await model.deviceWillLock() }
+            }
+            #endif
+    }
+
+    private var screens: some View {
         Group {
             switch model.screen {
             case .loading:
@@ -30,7 +64,7 @@ public struct RootView: View {
             case .unlock:
                 if let unlock = model.unlock { UnlockView(model: unlock) }
             case .vault:
-                if let vault = model.vault { VaultView(model: vault) }
+                MainView(app: model)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -273,7 +307,7 @@ struct SignInView: View {
 
     var body: some View {
         Page(title: "Sign in", subtitle: "Use your master password and the Secret Key on your Emergency Kit.") {
-            if KitScanner.isAvailable {
+            if QRScanner.isAvailable {
                 Button {
                     scanning = true
                 } label: {
@@ -307,7 +341,7 @@ struct SignInView: View {
         }
         .textFieldStyle(.roundedBorder)
         .sheet(isPresented: $scanning) {
-            KitScanner { text in
+            QRScanner { text in
                 if model.scanned(text) { scanning = false }
             }
             .ignoresSafeArea()
@@ -341,22 +375,4 @@ struct UnlockView: View {
     }
 }
 
-/// A placeholder until the vault list (M5.3).
-struct VaultView: View {
-    let model: VaultModel
-
-    var body: some View {
-        Page(title: "Vault", subtitle: nil) {
-            Text(model.itemCount.map { $0 == 1 ? "1 item" : "\($0) items" } ?? " ")
-                .textStyle(Tokens.Text.body)
-                .accessibilityIdentifier("itemCount")
-            Button("Lock") { Task { await model.lock() } }
-                .accessibilityIdentifier("lock")
-            Button("Sign out", role: .destructive) { Task { await model.signOut() } }
-                .accessibilityIdentifier("signOut")
-            ErrorText(text: model.error)
-        }
-        .task { await model.load() }
-    }
-}
 #endif

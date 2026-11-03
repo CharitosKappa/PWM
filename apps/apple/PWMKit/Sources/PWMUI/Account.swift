@@ -12,17 +12,21 @@ public protocol Account: AnyObject, Sendable {
     func lock() async
     func signOut() async throws
     func emergencyKit(paper: EmergencyKit.Paper) async throws -> Redacted<Data>
-    /// Items not in the trash, across every vault.
-    func itemCount() async throws -> Int
+
+    // The vault (D43).
+    func sync() async throws -> SyncResult
+    func vaultIds() async throws -> [String]
+    /// Every item of a vault, trashed ones included.
+    func items(in vaultId: String) async throws -> [Item]
+    func newItem(_ kind: Item.Kind, title: String) async throws -> Item
+    func save(_ item: Item, in vaultId: String) async throws -> String
+    func setTrashed(_ itemId: String, in vaultId: String, trashed: Bool) async throws
+    func delete(_ itemId: String, in vaultId: String) async throws
+    func purgeTrash() async throws -> Int
+    func currentCode(_ itemId: String, in vaultId: String) async throws -> (code: Redacted<String>, secondsLeft: UInt64)?
 }
 
-extension Session: Account {
-    public func itemCount() throws -> Int {
-        try vaultIds().reduce(0) { count, vault in
-            count + (try items(in: vault).filter { $0.trashedAtMs == nil }.count)
-        }
-    }
-}
+extension Session: Account {}
 
 /// A plain message for any error, never a value.
 func message(for error: any Error) -> String {

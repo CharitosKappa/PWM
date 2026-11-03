@@ -23,7 +23,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>To scan the QR code on your Emergency Kit when you sign in.</string>
+	<string>To scan the QR code on your Emergency Kit, or a site's two-factor setup code.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

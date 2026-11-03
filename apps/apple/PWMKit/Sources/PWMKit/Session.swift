@@ -190,6 +190,12 @@ public actor Session {
         try core { try client.deleteItem(vaultId: vaultId, itemId: itemId) }
     }
 
+    /// Deletes items that have been in the trash for 30 days (D19).
+    @discardableResult
+    public func purgeTrash() throws -> Int {
+        Int(try core { try client.purgeTrash(nowMs: now()) })
+    }
+
     /// The login's current one-time code and the seconds it stays valid.
     public func currentCode(_ itemId: String, in vaultId: String) throws -> (code: Redacted<String>, secondsLeft: UInt64)? {
         try core { try client.currentCode(vaultId: vaultId, itemId: itemId, nowMs: now()) }
