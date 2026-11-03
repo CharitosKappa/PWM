@@ -64,10 +64,13 @@ final class MacUITests: XCTestCase {
             click(row.exists ? row : element("sidebar.settings"))
             _ = button.waitForExistence(timeout: 3)
         }
-        // The Settings form, not the sidebar, scrolls to it.
-        let form = app.scrollViews.containing(.button, identifier: "signOut").firstMatch
+        // Scroll the Settings form, not the sidebar: the innermost element
+        // holding the button gets the scroll, which reaches the form behind
+        // it (macOS shows the form as groups, not as a scroll view).
+        expect(button)
+        let holder = app.groups.containing(.button, identifier: "signOut").allElementsBoundByIndex.last ?? app.windows.firstMatch
         for _ in 0..<6 where !button.isHittable {
-            form.scroll(byDeltaX: 0, deltaY: -600)
+            holder.scroll(byDeltaX: 0, deltaY: -600)
         }
         click(button)
         click(app.buttons["confirmSignOut"].firstMatch)
