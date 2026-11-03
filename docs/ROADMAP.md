@@ -387,6 +387,7 @@ Phase 3  Teams           months 16–24 M16–M19
     - **RUSTSEC-2026-0374:** `uniffi` 0.32.2, the latest, still pulls in `basic-toml` through `askama` 0.16.1.
       - It runs only inside a derive macro at build time.
       - `pwm-ffi` built on its own does not contain it.
+- [ ] M4.10 Health report, device list and export in the extension (D43), with the WASM calls from M5.10. Export must be done before the beta (M10).
 
 **Done when:** fixture suite 100%; top-1,000 classification ≥ 90% (target 95% by launch); overlay attacks never fill. Since D39, the classification target is measured each night by the top-sites runner on a growing list, and gates the launch in M10, not the end of M4.
 
@@ -434,10 +435,13 @@ Phase 3  Teams           months 16–24 M16–M19
     - **The real name and icon:** D1.
     - **Approval from an existing device:** M5.9.
     - **Screenshot protection of the Secret Key screen:** M5.7.
-- [ ] M5.3 Vault list, search, item detail/edit, generator, health report, settings, lock timeout.
-  - From M3: the device list in settings, with rename and revoke.
+- [ ] M5.3 Vault list, search, item detail/edit, generator, settings, lock timeout. D43 moved the health report and the device list to M5.10.
+- [ ] M5.10 Health report, device list with rename and revoke, and export, on iOS (D43). Needs core and server work:
+  - **Health:** the D22 checks through `pwm-client`, UniFFI and WASM, and the iOS HIBP fetcher.
+  - **Devices:**
     - **Rename needs a new endpoint** (`PATCH /v1/devices/{id}` with a sealed name, D26 format).
-    - **A newly signed-in device** sets its name right after login, because today it has none until its next login.
+    - **A newly signed-in device** sets its name right after login, because today only sign-up sends one.
+  - **Export:** the D24 flows through `pwm-client`, with re-auth, in Settings.
 - [ ] M5.4 Face ID / Touch ID unlock via Secure Enclave-wrapped key.
 - [ ] M5.9 Approve a new device from an existing one (D42 split it from M5.2): the Secret Key sent over an authenticated X25519 channel (`SECURITY.md`), relay endpoints on the server, and the approving side on every signed-in platform, starting with the extension. Needs its own decision, test vectors and security review; reuses the M5.2 kit scanner.
 - [ ] M5.5 iOS AutoFill Credential Provider + passkeys + QuickType identity sync.

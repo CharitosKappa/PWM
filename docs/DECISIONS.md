@@ -1205,3 +1205,159 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The extension popup** has no UI tests, so the kit download is covered by a background test (the request and its signed-out error) and by the WASM test on the real build.
   - **Not verified on this machine:** there is no Xcode here. The package, its view models and the server tests run on Linux in the `swift` Docker image. The views, the scanner, the Keychain, the app target and the UI test run first in the macOS job.
   - **Recheck of the `cargo deny` ignores** (due at M5.1): unchanged upstream. The next recheck is at M5.5.
+- **D43 — iOS vault screens: splitting M5.3, the screens, search, editing, the lock timeout, and the device, health and export work that is still missing** · settled 2026-11-03 · founder (approved as proposed).
+  The roadmap says "Vault list, search, item detail/edit, generator, health report, settings, lock timeout", plus the device list with rename and revoke from M3. `Session` (D41) already lists, saves, trashes and deletes items, gives TOTP codes and generates passwords. The rest is missing:
+  - **The health report** (D22) exists only inside `pwm-health`. It isn't in `pwm-client`, UniFFI or WASM, and no platform has the HIBP fetcher.
+  - **The device list** exists only on the server (`GET /v1/devices`). No client opens the sealed names, and there is no rename endpoint.
+  - **Export** (D24) exists only inside `pwm-export`. No platform has an export screen, including the extension, although `CLAUDE.md` says export is always available. M2.7 deferred the dialogs to "M4/M5", and M4 didn't do them.
+
+  Open: how to cut this into reviewable PRs, what the screens are, where search lives, how editing handles item kinds and newer items, how the lock timeout works on iOS, and the rename endpoint.
+
+  Proposal:
+  1. **Split the task in two.**
+     - **M5.3, the vault, mostly Swift over the existing `Session`:**
+       - the vault list, search, filters and trash
+       - item detail and edit for every item type
+       - the generator
+       - TOTP
+       - settings with the lock timeout
+     - **M5.10 (new, right after M5.3), the parts that need core and server work:**
+       - the health report
+       - the device list with rename and revoke
+       - export
+     - **Why:** the PR keeps to one task. Each part with a new protocol surface (a new endpoint, a network call to HIBP, a re-auth flow) is reviewed on its own, not inside a large UI PR.
+     - **The extension's gaps:** health, the device list and export are added to the extension in a new task, M4.10, which comes right after M5.10 and uses the same WASM calls. Until then they are logged here as parity gaps. Export must be done before the beta (M10).
+  2. **The screens (M5.3), in `PWMUI`,** so macOS (M5.6) reuses them:
+     - **The layout:**
+       - **iPhone:** three tabs: Vault, Generator and Settings.
+       - **iPad, and macOS later:** a sidebar with the same sections.
+     - **The vault list:**
+       - **Sections:** All items, Favorites, Logins, Cards, Identities, Notes, each folder, and Trash.
+       - **Rows:** title and username (or the card's last 4 digits), with an icon for the item type.
+       - **No website icons:** fetching favicons would tell third parties which sites are in the vault.
+       - **Sync:** pull to refresh syncs, and so does every save. Background sync is M5.8.
+     - **Search:** see point 3.
+     - **Item detail:**
+       - **Fields:** every field of the type.
+       - **Hidden values** (passwords, card number and security code, hidden custom fields) are masked until tapped, and masked again when the screen goes.
+       - **Copy:** each field has Copy, through the existing local-only, 30-second pasteboard (D42).
+       - **Logins:** URLs open in the browser. The TOTP code shows with its countdown.
+       - **Passkeys** show as "Passkey for example.com", read-only.
+       - **Password history:** the previous passwords from the item's history (D19), read-only, newest first.
+     - **Edit and new item:**
+       - **Fields:** all D18 fields per type: login, card, identity, note, plus custom fields of every kind.
+       - **The folder** can be picked, or a new one made in the picker.
+       - **Tags** are entered as text.
+       - **TOTP setup:** a pasted `otpauth://` URI or a bare secret. "Scan QR code" reuses the M5.2 scanner, and the core's D23 parser checks the result.
+       - **The password field** has a Generate button, which opens the generator as a sheet.
+     - **Delete and trash:**
+       - "Delete" moves an item to Trash.
+       - **Trash** offers Restore and Delete forever, which asks first.
+       - **Emptying old trash:** the core's existing `purge_trash` runs after each sync.
+     - **The generator tab:**
+       - **Options:** the same as the extension: password length and character sets, or a passphrase's word count and separator.
+       - **The strength meter**, Copy, and Regenerate.
+       - **Kept in memory only:** the generated values are never stored.
+     - **Settings (M5.3 part):**
+       - the account email and the server, read-only
+       - the lock timeout (point 5)
+       - "Lock now"
+       - "Save Emergency Kit" again, the same share sheet as onboarding
+       - "Sign out"
+       - "Third-party notices", which shows the bundled `THIRD_PARTY_NOTICES` (S6 requires them in every app)
+       - the app version
+     - **Copy** goes in the String Catalog, as in M5.2.
+  3. **Search, specified here so Android and desktop match the extension:**
+     - **What it matches:** a case-insensitive substring of the title, the username, a URL, or a card's last 4 digits, after trimming spaces.
+     - **What it skips:** trashed items and folders.
+     - **Order:** by title, using the locale's ordering, then by id.
+     - **Where it runs:** in the view model, over the items `Session` has already opened.
+       - **Not in the core:** this is matching on fields the platform already reads (D41's `Item` accessors), not vault parsing.
+       - **Nothing is indexed:** no search index is written anywhere.
+     - **Scale:** 5,000 items should open and filter without a visible delay. A view-model test checks this with generated items.
+  4. **Editing:**
+     - **Swift accessors** for cards, identities and custom fields join `Login` in `Item.swift`. As now, they edit the D18 JSON in place, so fields a newer client wrote are kept.
+     - **The core still validates every save** (`save_item`), and its error text is shown.
+     - **Newer items stay read-only:** items with a newer schema or an unknown type show read-only with "Update the app to edit this item" (D18).
+     - **Unsaved edits:** leaving the edit screen with changes asks to discard them.
+     - **A sync during an edit:** the save still wins. The other version goes to the item's history, as the core's merge already does (D19), so neither edit is lost.
+  5. **The lock timeout on iOS:**
+     - **Choices:**
+       - **Immediately:** lock as soon as the app leaves the screen.
+       - **1, 5, 15 or 60 minutes, or 8 hours:** the extension's choices.
+       - **Default:** 15 minutes, as in the extension.
+       - **Where it's kept:** in `UserDefaults`. It isn't secret and isn't synced.
+     - **What the time counts:** the time the app spends in the background, measured with `ContinuousClock`. That clock keeps running while the phone sleeps and ignores changes to the wall clock.
+       - **When the app returns** after the timeout, it locks before it shows anything.
+       - **Not counted in the foreground:** idle time while the app is open. Phones lock their own screens.
+     - **Locking the device locks the vault too,** whatever the setting. The app uses `protectedDataWillBecomeUnavailableNotification` for this.
+     - **If iOS ends the app,** the keys go with the process, so the next launch asks to unlock as now.
+     - **Face ID** (M5.4) will shorten this; the timeout rules stay.
+  6. **M5.10: devices.**
+     - **Core:**
+       - **`pwm-client` lists the devices:** it opens each sealed name under the D26 v1 format. A name that fails to open shows as "Unknown device", never an error.
+       - **It seals new names:** the same format, with the AAD bound to the account id and the device id, so a sealed name can't be moved to another device.
+       - **Through UniFFI and WASM.**
+     - **The server, `PATCH /v1/devices/{id} {name_sealed}`:**
+       - **Answers:**
+         - **204** when the name is saved.
+         - **404** for a device id that isn't one of the account's.
+         - **409 `device_revoked`** for a revoked device.
+         - **400** for a blob that isn't a v1 envelope of exactly the padded size.
+       - **What it stores:** only the ciphertext, in the existing column. No migration is needed.
+       - **No logging:** neither the blob nor the device id is logged.
+     - **The device name after login:** the client now seals its name right after login, through the new endpoint. Today only sign-up sends a sealed name. Login can't, because the keys open only after login finishes, so a device that signs in has no name at all.
+     - **The screen, in Settings:**
+       - **Each device:** name, platform, when it was added and last seen, and "This device" for the current one.
+       - **Rename** any of the account's devices.
+       - **Revoke** any device but this one, after asking first. This device uses Sign out instead.
+  7. **M5.10: the health report (D22, unchanged).**
+     - **Core:** `pwm-client` runs the weak and reused checks over every vault. For the breach check, it builds the HIBP prefixes and parses the responses. All of it goes through UniFFI and WASM.
+     - **iOS fetcher:**
+       - **The request:** an ephemeral `URLSession` with no cookies and no cache. It sends `Add-Padding: true`, straight to `api.pwnedpasswords.com`.
+       - **Once per prefix** in each run.
+     - **The screen:**
+       - counts for weak, reused and breached, each opening its list of items
+       - each item opens its edit screen, with Generate
+       - the breach switch in Settings, on by default with D22's sentence
+     - **Results are kept in memory** for the session only.
+  8. **M5.10: export (D24, unchanged).**
+     - **Core:** `pwm-client` wraps `authorize_export` and the `.pwmx`, JSON and CSV writers, through UniFFI and WASM. The grant stays in the core and never crosses the FFI.
+     - **The flow, in Settings:**
+       1. Pick a format.
+       2. Enter the master password: Face ID doesn't count (D24).
+       3. **For `.pwmx`:** an export password, entered twice, with the strength meter.
+       4. **For JSON and CSV:** a plain warning that the file isn't encrypted, and anyone who gets it can read every password.
+       5. Save the file through the share sheet or the file exporter, passed as data with no temporary file left behind.
+     - **Every plan:** no plan check, now or in M9.
+  9. **Tests:**
+     - **View models (`swift test` on Linux and macOS):**
+       - search and order
+       - section filters
+       - editing per type, with unknown fields kept
+       - the discard prompt
+       - read-only newer items
+       - Trash
+       - generator options
+       - the lock timeout with an injected clock
+       - **M5.10:** the device list and rename, health counts, the export steps, and refusal of a wrong master password
+     - **Core (tests first, M5.10):**
+       - the device name round trip, including a name moved to another device id being refused
+       - health through the client over several vaults
+       - export through the client, including a reused grant being refused
+     - **Server (M5.10):** `PATCH` against real Postgres, covering each answer above, with only ciphertext stored. The plaintext-column test stays green.
+     - **UI test (XCUITest), extending the M5.2 flow:**
+       - **Logins:** add one with a generated password, find it by search, edit it, copy the password, then trash it and restore it.
+       - **Lock:** set "Immediately", send the app to the background, and see the unlock screen.
+       - **M5.10:** rename this device and see the new name after a sync.
+  10. **Logged parity gaps:**
+      - **macOS:** all of this ships with M5.6, on the same `PWMUI` screens.
+      - **Android:** M6.1.
+      - **The extension:** health, devices and export come in M4.10. Editing items in the popup stays out of scope, as before.
+
+  Alternatives:
+  - **One PR for all of M5.3:** fewer steps, but a very large PR that mixes UI with a new endpoint, a network call and the export re-auth.
+  - **Search in the core:** every platform would get identical matching for free. But each item would cross the FFI an extra time, and the rule is small enough to specify (point 3).
+  - **Website icons in the list:** they look better, but fetching them leaks the vault's sites. If they come later, they'd be an opt-in through our own proxy.
+  - **Counting idle time in the foreground:** it matches the extension more closely, but on a phone the screen lock already covers it, and it needs a global touch monitor.
+  - **Leaving extension export until M10:** it meets the rule only on paper. M4.10 closes the gap sooner, with WASM calls M5.10 already makes.
