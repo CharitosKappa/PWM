@@ -387,7 +387,7 @@ Phase 3  Teams           months 16–24 M16–M19
     - **RUSTSEC-2026-0374:** `uniffi` 0.32.2, the latest, still pulls in `basic-toml` through `askama` 0.16.1.
       - It runs only inside a derive macro at build time.
       - `pwm-ffi` built on its own does not contain it.
-- [ ] M4.10 Health report, device list and export in the extension (D43), with the WASM calls from M5.10. Export must be done before the beta (M10).
+- [ ] M4.10 Health report, device list and export in the extension (D43, D44: a full page, `manage.html`), with the WASM calls from M5.10. Export must be done before the beta (M10).
 
 **Done when:** fixture suite 100%; top-1,000 classification ≥ 90% (target 95% by launch); overlay attacks never fill. Since D39, the classification target is measured each night by the top-sites runner on a growing list, and gates the launch in M10, not the end of M4.
 
