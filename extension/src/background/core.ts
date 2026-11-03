@@ -87,6 +87,14 @@ export interface Core {
     sealedTokens: Uint8Array | undefined,
   ): void;
   exportSession(): Uint8Array;
+  /** Touch ID unlock (D48 §5): a 32-byte key, then the blob. */
+  exportBrowserUnlock(deviceId: string): Uint8Array;
+  unlockBrowser(
+    blob: Uint8Array,
+    key: Uint8Array,
+    deviceId: string,
+    sealedTokens: Uint8Array | undefined,
+  ): void;
   restoreSession(
     session: Uint8Array,
     sealedTokens: Uint8Array | undefined,

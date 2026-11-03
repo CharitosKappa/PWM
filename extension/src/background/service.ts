@@ -17,6 +17,7 @@ import { errorCode } from "./core.ts";
 import { localDate, paperFor } from "./kit.ts";
 import { ServiceError } from "./errors.ts";
 import { Approvals } from "./approvals.ts";
+import { TouchIdUnlock } from "./touchid.ts";
 import { Autofill } from "./fill.ts";
 import { Manager } from "./manage.ts";
 import { Passkeys } from "./passkeys.ts";
@@ -97,6 +98,7 @@ export class Background {
   readonly manager: Manager;
   /** Approving a new device from a signed-in one (D46). */
   readonly approvals: Approvals;
+  private readonly touchId: TouchIdUnlock;
 
   private constructor(
     private readonly fns: CoreFunctions,
@@ -147,6 +149,12 @@ export class Background {
       secretKey: () => platform.disk.get("secretKey"),
       signIn: (email, password, secretKey) =>
         this.signIn(email, password, secretKey),
+    });
+    this.touchId = new TouchIdUnlock({
+      core: () => this.core,
+      platform,
+      deviceId: () => this.deviceId(),
+      sealedTokens: () => this.sealedTokens(),
     });
     this.passkeys = new Passkeys({
       core: () => this.core,
@@ -243,6 +251,18 @@ export class Background {
       case "unlock":
         await this.unlock(request.password);
         return null;
+      case "unlockTouchId":
+        await this.touchId.unlock();
+        await this.afterUnlock();
+        void this.sync();
+        return null;
+      case "touchId":
+        return this.touchId.isOn();
+      case "setTouchId":
+        await this.touch();
+        if (request.on) await this.touchId.turnOn();
+        else await this.touchId.turnOff();
+        return this.touchId.isOn();
       case "lock":
         await this.lock();
         return null;
@@ -366,7 +386,8 @@ export class Background {
   async status(): Promise<Status> {
     if (this.core.accountId() === undefined) return { state: "signedOut" };
     const email = (await this.platform.disk.get("email")) ?? "";
-    if (!this.core.isUnlocked()) return { state: "locked", email };
+    if (!this.core.isUnlocked())
+      return { state: "locked", email, touchId: await this.touchId.isOn() };
     return {
       state: "unlocked",
       email,
@@ -514,6 +535,9 @@ export class Background {
   private async signedIn(email: string, secretKey: string): Promise<void> {
     await this.platform.disk.set("email", email);
     await this.platform.disk.set("secretKey", secretKey);
+    // A new sign-in starts with Touch ID off (as D45).
+    await this.platform.disk.remove(["browserUnlock"]);
+    await this.touchId.passwordTyped();
     await this.afterUnlock();
     try {
       await this.handleOutcome(
@@ -537,6 +561,7 @@ export class Background {
     } catch (error) {
       throw new ServiceError(errorCode(error));
     }
+    await this.touchId.passwordTyped();
     await this.afterUnlock();
     void this.sync();
   }
@@ -550,8 +575,14 @@ export class Background {
   }
 
   private async signOut(): Promise<void> {
+    await this.touchId.turnOff();
     await this.lock();
-    await this.platform.disk.remove(["email", "secretKey", "sealedTokens"]);
+    await this.platform.disk.remove([
+      "email",
+      "secretKey",
+      "sealedTokens",
+      "passwordUnlockedAt",
+    ]);
     this.core = this.fns.newCore();
     await this.persist();
     await this.loadRules();

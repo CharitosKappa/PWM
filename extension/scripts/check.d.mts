@@ -1,6 +1,7 @@
 export type Target = "chromium" | "firefox" | "safari";
 export const TARGETS: Target[];
 export const PERMISSIONS: Record<Target, string[]>;
+export const OPTIONAL_PERMISSIONS: Record<Target, string[] | undefined>;
 export const HOSTED_ORIGIN: string;
 export const GECKO_ID: string;
 export const OPTIONAL_HOSTS: string[];

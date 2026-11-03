@@ -71,7 +71,12 @@ export function App({
       );
     case "locked":
       return (
-        <Unlock email={status.email} onDone={refresh} onReport={openReport} />
+        <Unlock
+          email={status.email}
+          touchId={status.touchId}
+          onDone={refresh}
+          onReport={openReport}
+        />
       );
     case "unlocked":
       return (
@@ -90,10 +95,13 @@ export function App({
 /** Also the manage page's, when the vault is locked (D44 §1). */
 export function Unlock({
   email,
+  touchId = false,
   onDone,
   onReport,
 }: {
   email: string;
+  /** Offer Touch ID through the PWM app for Mac (D48 §5). */
+  touchId?: boolean;
   onDone: () => void;
   onReport?: () => void;
 }): JSX.Element {
@@ -116,10 +124,33 @@ export function Unlock({
     }
   };
 
+  const withTouchId = async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      await send({ kind: "unlockTouchId" });
+      onDone();
+    } catch (err) {
+      setError(describe(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <main class="stack">
       <h1>Unlock</h1>
       <p class="muted">{email}</p>
+      {touchId && (
+        <button
+          class="primary"
+          id="unlock-touch-id"
+          disabled={busy}
+          onClick={() => void withTouchId()}
+        >
+          Unlock with Touch ID
+        </button>
+      )}
       <form class="stack" onSubmit={(e) => void submit(e)}>
         <Field
           label="Master password"

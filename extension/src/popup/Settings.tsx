@@ -95,6 +95,7 @@ export function Settings({
 
       <InlineIconSetting />
       <PasskeysSetting />
+      {status.state === "unlocked" && ON_MAC && <TouchIdSetting />}
 
       <fieldset class="stack" disabled={!signedOut}>
         <legend class="label">Server</legend>
@@ -172,5 +173,64 @@ export function Settings({
         </button>
       )}
     </main>
+  );
+}
+
+/** Touch ID through the PWM app for Mac (D48 §5); only Macs have it. */
+const ON_MAC = navigator.userAgent.includes("Mac OS X");
+
+/**
+ * "Unlock with Touch ID": asks for the native-messaging permission on the
+ * click (D44), then enrols with the Mac app's helper, which asks for Touch
+ * ID once.
+ */
+function TouchIdSetting(): JSX.Element {
+  const [on, setOn] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void send({ kind: "touchId" }).then(setOn);
+  }, []);
+
+  const change = async (next: boolean): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (
+        next &&
+        !(await chrome.permissions.request({
+          permissions: ["nativeMessaging"],
+        }))
+      ) {
+        setError("PWM needs permission to talk to the PWM app for Mac.");
+        return;
+      }
+      setOn(await send({ kind: "setTouchId", on: next }));
+    } catch (err) {
+      setError(describe(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div class="stack">
+      <label class="row">
+        <input
+          type="checkbox"
+          id="touch-id"
+          checked={on === true}
+          disabled={busy || on === null}
+          onChange={(event) => void change(event.currentTarget.checked)}
+        />
+        Unlock with Touch ID
+      </label>
+      <span class="caption muted">
+        Needs the PWM app for Mac, with browser unlock turned on in its
+        Settings. Your master password is still asked every 14 days.
+      </span>
+      {error && <Notice kind="danger">{error}</Notice>}
+    </div>
   );
 }

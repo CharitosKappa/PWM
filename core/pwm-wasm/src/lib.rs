@@ -607,7 +607,10 @@ impl WasmClient {
     /// once to the helper, which keeps it behind Touch ID.
     #[wasm_bindgen(js_name = exportBrowserUnlock)]
     pub fn export_browser_unlock(&self, device_id: &str) -> Result<Vec<u8>, JsValue> {
-        let unlock = self.inner.export_browser_unlock(device_id).map_err(js_error)?;
+        let unlock = self
+            .inner
+            .export_browser_unlock(device_id)
+            .map_err(js_error)?;
         let mut out = unlock.key.expose_secret().to_vec();
         out.extend_from_slice(&unlock.blob);
         Ok(out)

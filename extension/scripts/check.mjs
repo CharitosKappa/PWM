@@ -30,7 +30,25 @@ export const PERMISSIONS = {
     "activeTab",
     "scripting",
   ],
-  safari: ["storage", "alarms", "clipboardWrite", "activeTab", "scripting"],
+  // Safari has no optional permissions for it; it asks nothing at install.
+  safari: [
+    "storage",
+    "alarms",
+    "clipboardWrite",
+    "activeTab",
+    "scripting",
+    "nativeMessaging",
+  ],
+};
+
+/**
+ * Asked for on the click that turns on Touch ID through the Mac app
+ * (D44, D48 §5), never at install.
+ */
+export const OPTIONAL_PERMISSIONS = {
+  chromium: ["nativeMessaging"],
+  firefox: ["nativeMessaging"],
+  safari: undefined,
 };
 
 /** The Firefox add-on id, a placeholder until D1 names the product. */
@@ -80,6 +98,8 @@ export function checkManifest(manifest, version, target = "chromium") {
     problems.push("host permissions beyond the hosted API");
   if (!same(manifest.optional_host_permissions, OPTIONAL_HOSTS))
     problems.push("optional host permissions");
+  if (!same(manifest.optional_permissions, OPTIONAL_PERMISSIONS[target]))
+    problems.push("optional permissions");
   // Firefox and Safari have no inline icon or save card (D40 §2, D48 §4):
   // pages load nothing.
   const accessible = target === "chromium" ? WEB_ACCESSIBLE : undefined;
