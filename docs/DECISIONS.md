@@ -1750,4 +1750,53 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Signing:** a macOS App Group outside the App Store starts with the team id (`$(TeamIdentifierPrefix)`). A build signed to run locally (no team, as in CI) can't carry the Keychain group, App Group or AutoFill entitlements. CI builds it with `Mac/PWMMac-CI.entitlements`, which has none: a sandboxed app without a team id is refused by the Keychain, so the CI build is not sandboxed. It can't use the data-protection Keychain either, so `SharedStorage` falls back to the login keychain there (checked with a write, since reading can answer "not found" where writing is refused). A refused Keychain call logs its status only, never a value, under the `pwm` subsystem. A build signed with the team always uses the data-protection Keychain and the shared group.
   - **Tests:** a view-model test for ⌘N. In CI, the macOS app and its extension are built, and a macOS UI test signs up, adds a login with ⌘N, locks with ⇧⌘L, unlocks and signs out. A manual checklist for release candidates is in `QUALITY.md`.
   - **Not run on this machine:** all of the macOS code (no Xcode); CI builds it first. Touch ID, the Secure Enclave and the credential provider need a signed build on a Mac.
+- **D49 — Screenshots, screen recording and the app switcher on iOS and macOS** · settled 2026-11-03 · founder (approved as proposed).
+  The roadmap says "Screenshot/screen-recording protection on unlock and revealed secrets". M5.2 and M5.3 left the Secret Key screen and the app-switcher cover here.
 
+  What each platform allows:
+  - **iOS:** no public way to block a screenshot. iOS reports that one was taken only after the fact. It does report screen recording, AirPlay mirroring and capture over a cable while they last (`sceneCaptureState`, iOS 17).
+  - **macOS:** a window can be left out of screenshots, recordings and screen sharing (`NSWindow.sharingType = .none`). The system's own tools respect it; a capture app may not, so it is best effort.
+  - **Android** has `FLAG_SECURE` (M6.4); **Windows**, `WDA_EXCLUDEFROMCAPTURE` (M7). **The browser extension** has no way at all.
+
+  Open:
+  - which screens count as secret
+  - what the app does on each platform
+  - whether the user can turn it off
+
+  Proposal:
+  1. **What counts as secret:**
+     - a revealed hidden field (password, card number and code, other hidden fields)
+     - the one-time code
+     - the Secret Key screen, and the Emergency Kit preview
+     - the generator's password
+     - **Not counted:** the unlock screen. The master password field is always masked and shows only the email.
+  2. **iOS, while the screen is recorded, mirrored or captured:**
+     - **What the user sees:** every secret above is replaced with one line, "Hidden while your screen is recorded or shared." Revealing is turned off; copying still works, since nothing then shows on screen.
+     - **When it ends:** the values show again only when the user taps them again.
+  3. **iOS screenshots:**
+     - **What happens:** iOS gives no way to stop one, so a revealed value is masked again when a screenshot is taken. One line under it says "Screenshots go to your photo library. The password is hidden again." That line shows only then, never as a prompt.
+     - **No undocumented tricks:** not drawing content inside a hidden secure text field's layer, which some apps do to blank out screenshots. It relies on iOS internals, can break with any update, and breaks VoiceOver for that content.
+  4. **The app switcher (iOS):** the vault is covered as soon as the app becomes inactive, not only when it reaches the background. iOS takes the switcher's picture in between, and the current cover can come too late. The Secret Key screen is covered too.
+  5. **macOS:** the PWM window is left out of screenshots, recordings and screen sharing while the vault is unlocked or the Secret Key shows.
+     - **The setting:** "Hide PWM from screenshots and screen sharing" in Settings, on by default.
+     - **Why a switch:** someone sharing their screen for help may need to show the app. Turning it off asks nothing; the footer says what it changes.
+     - **The unlock screen** stays visible, so screen sharing still shows that the app is locked.
+  6. **Code shape:**
+     - **The capture state:** a small `ScreenCapture` value in `PWMUI` (recorded or not, plus screenshot events), fed by the system on Apple platforms and by a fake in tests.
+     - **The models decide what's hidden:** the item detail, the Secret Key screen and the generator read it. So the rules are tested on Linux, and the views only show what the models say.
+  7. **Tests:**
+     - **Swift (Linux and macOS):**
+       - recording hides each kind of secret and turns revealing off
+       - when recording ends, nothing is revealed again by itself
+       - a screenshot masks again, with its line
+       - the macOS switch is kept, and on by default
+     - **The UI test:** checks that the switcher cover is there once the app is inactive.
+     - **Not testable in CI:** real recording, mirroring and screenshots. A manual step goes in `QUALITY.md`.
+  8. **Parity, logged as gaps:**
+     - Android in M6.4 (`FLAG_SECURE`), Windows and Linux in M7 (Linux has no reliable API).
+     - The browser extension: no API exists. The popup shows secrets only when tapped, and they mask again when it closes.
+
+  Alternatives:
+  - **The secure-text-field layer trick on iOS:** it does blank screenshots, but it's undocumented, fragile, and costs VoiceOver.
+  - **Warning before each reveal while recording:** a prompt every time, which `CLAUDE.md` rules out (no nags).
+  - **macOS exclusion always on, with no switch:** simpler, but it blocks honest screen sharing for support with no way out.
