@@ -47,6 +47,11 @@ pub enum SyncOutcome {
     Devices(Vec<DeviceRecord>),
     /// A [`DeviceTask::Rename`] or [`DeviceTask::Revoke`] was done.
     DeviceUpdated,
+    /// The answer to [`SyncEngine::start_call`], for the caller to read.
+    Answered {
+        status: u16,
+        body: Vec<u8>,
+    },
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -122,6 +127,12 @@ enum Task {
         current: Option<Sent>,
     },
     Device(DeviceTask),
+    /// One authenticated request (device approvals, D46).
+    Call {
+        method: Method,
+        path: String,
+        body: Option<Vec<u8>>,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -319,6 +330,18 @@ impl<S: Store> SyncEngine<S> {
         Ok((vault_id, step))
     }
 
+    /// Sends one authenticated request and ends with its answer
+    /// (`Answered`), after a token refresh if needed. 429 and 5xx end the run
+    /// with a wait; a revoked device ends with `DeviceRevoked`.
+    pub fn start_call(
+        &mut self,
+        method: Method,
+        path: String,
+        body: Option<Vec<u8>>,
+    ) -> Result<Step, SyncError> {
+        self.start(Task::Call { method, path, body })
+    }
+
     /// Starts a device request (D43 §6); it needs a connection. A 404 or
     /// 409 (not the account's, or revoked) ends it with `UnknownDevice`.
     pub fn start_device_task(&mut self, task: DeviceTask) -> Result<Step, SyncError> {
@@ -402,6 +425,14 @@ impl<S: Store> SyncEngine<S> {
                     return Ok(Step::Send(self.authorized(request)));
                 }
                 Task::Device(task) => return Ok(Step::Send(self.authorized(task.request()))),
+                Task::Call { method, path, body } => {
+                    let request = HttpRequest::new(*method, path.clone());
+                    let request = match body {
+                        Some(body) => request.json(body.clone()),
+                        None => request,
+                    };
+                    return Ok(Step::Send(self.authorized(request)));
+                }
                 Task::Pull {
                     vaults,
                     index,
@@ -527,6 +558,10 @@ impl<S: Store> SyncEngine<S> {
             Task::Pull { .. } => self.on_page(run, response, now_ms),
             Task::Push { .. } => self.on_pushed(run, response, now_ms),
             Task::Device(_) => self.on_device(run, response),
+            Task::Call { .. } => Ok(self.done(SyncOutcome::Answered {
+                status: response.status,
+                body: response.body.clone(),
+            })),
         }
     }
 

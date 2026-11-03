@@ -43,6 +43,10 @@ pub enum Outcome {
     Devices(Vec<crate::DeviceInfo>),
     /// A device was renamed or revoked.
     DeviceUpdated,
+    /// The account's open device approval requests (D46).
+    Approvals(Vec<crate::ApprovalRequest>),
+    /// An approval was accepted, completed or denied.
+    ApprovalUpdated,
 }
 
 enum State<S> {
@@ -52,7 +56,7 @@ enum State<S> {
     Moving,
 }
 
-enum Running {
+pub(crate) enum Running {
     Idle,
     Auth(AuthFlow),
     Sync,
@@ -61,16 +65,22 @@ enum Running {
     EnsureVault,
     /// A device request (D43 §6).
     Devices,
+    /// A device approval call (D46).
+    Approval(crate::approval::ApprovalCall),
 }
 
 pub struct Client<S: Store> {
     state: State<S>,
-    running: Running,
+    pub(crate) running: Running,
     events: Vec<SyncEvent>,
     signup_params: KdfParams,
     pub(crate) autofill: crate::autofill::AutofillState,
     /// The master password was entered again for an export (D24).
     pub(crate) export_grant: Option<pwm_export::ExportGrant>,
+    /// The approval this device accepted and has not finished (D46).
+    pub(crate) approving: Option<crate::approval::Approving>,
+    /// The commitments of the requests last listed, by id.
+    pub(crate) approval_commitments: std::collections::HashMap<Id, [u8; 32]>,
 }
 
 pub(crate) fn parse_id(text: &str) -> Result<Id, ClientError> {
@@ -98,6 +108,8 @@ impl<S: Store> Client<S> {
             signup_params: KdfParams::DEFAULT,
             autofill: crate::autofill::AutofillState::default(),
             export_grant: None,
+            approving: None,
+            approval_commitments: std::collections::HashMap::new(),
         }
     }
 
@@ -153,7 +165,7 @@ impl<S: Store> Client<S> {
         }
     }
 
-    fn idle(&self) -> Result<(), ClientError> {
+    pub(crate) fn idle(&self) -> Result<(), ClientError> {
         match self.running {
             Running::Idle => Ok(()),
             _ => Err(ClientError::Busy),
@@ -233,6 +245,8 @@ impl<S: Store> Client<S> {
     pub fn lock(&mut self) {
         self.running = Running::Idle;
         self.export_grant = None;
+        self.approving = None;
+        self.approval_commitments.clear();
         if let State::Unlocked(_) = self.state {
             let State::Unlocked(engine) = std::mem::replace(&mut self.state, State::Moving) else {
                 unreachable!("checked above");
@@ -474,7 +488,7 @@ impl<S: Store> Client<S> {
         }
     }
 
-    fn map_engine_step(&mut self, step: pwm_sync::Step) -> Result<Step, ClientError> {
+    pub(crate) fn map_engine_step(&mut self, step: pwm_sync::Step) -> Result<Step, ClientError> {
         let step = match step {
             pwm_sync::Step::Send(request) => return Ok(Step::Send(request)),
             pwm_sync::Step::Wait { delay_ms } => Step::Wait { delay_ms },
@@ -494,6 +508,14 @@ impl<S: Store> Client<S> {
                 Step::Done(Outcome::Devices(self.open_devices(records)?))
             }
             pwm_sync::Step::Done(SyncOutcome::DeviceUpdated) => Step::Done(Outcome::DeviceUpdated),
+            pwm_sync::Step::Done(SyncOutcome::Answered { status, body }) => {
+                let Running::Approval(call) = self.running else {
+                    self.running = Running::Idle;
+                    return Err(ClientError::Protocol);
+                };
+                self.running = Running::Idle;
+                return Ok(Step::Done(self.approval_answer(call, status, &body)?));
+            }
             pwm_sync::Step::Done(SyncOutcome::DeviceRevoked) => {
                 // The engine cleared the cache; nothing stays unlocked either.
                 self.running = Running::Idle;

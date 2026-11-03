@@ -288,6 +288,51 @@ extension ServerTests {
     }
 }
 
+/// Approving a new device between two sessions (D46).
+extension ServerTests {
+    final class Codes: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: String?
+        var code: String? {
+            get { lock.lock(); defer { lock.unlock() }; return value }
+            set { lock.lock(); value = newValue; lock.unlock() }
+        }
+    }
+
+    func testASignedInDeviceApprovesANewOne() async throws {
+        let existing = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
+        let account = try await logInShared(existing)
+        let new = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
+        let seen = Codes()
+        let asking = Task {
+            try await new.askForApproval(email: account.email) { code in seen.code = code }
+        }
+
+        var request: ApprovalEntry?
+        for _ in 0..<50 where request == nil {
+            request = try await existing.approvalRequests().last
+            if request == nil { try await Task.sleep(for: .milliseconds(200)) }
+        }
+        let id = try XCTUnwrap(request?.id)
+        try await existing.acceptApproval(id)
+        var code: String?
+        for _ in 0..<50 where code == nil {
+            code = try await existing.approvalRequests().first { $0.id == id }?.code
+            if code == nil { try await Task.sleep(for: .milliseconds(200)) }
+        }
+        XCTAssertNotNil(code)
+        for _ in 0..<50 where seen.code == nil { try await Task.sleep(for: .milliseconds(100)) }
+        XCTAssertEqual(seen.code, code, "the same code on both devices")
+
+        try await existing.completeApproval(id)
+        let secretKey = try await asking.value
+        XCTAssertEqual(secretKey.value, account.secretKey.value)
+        _ = try await new.logIn(email: account.email, password: strong, secretKey: secretKey, deviceName: "New iPhone")
+        let unlocked = await new.isUnlocked
+        XCTAssertTrue(unlocked)
+    }
+}
+
 /// The account the server tests share, signed up once per run.
 actor SharedAccount {
     static let shared = SharedAccount()

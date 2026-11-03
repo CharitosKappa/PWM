@@ -1,0 +1,20 @@
+{
+  "description": "Approving a new device: commitment, code and sealed Secret Key v1 (D46)",
+  "format_version": 1,
+  "operation": "approval",
+  "vectors": [
+    {
+      "aad": "0c70776d2f617070726f76616c01ababababababababababababababababb0d08f35b4683381489afb32825e59152d47d19bc9e050d6d5a954984c9d1e2cb1d15b513029951e811115ffe62a614706554fb610b8295e889bc3bebdf4370e",
+      "approval_id": "abababababababababababababababab",
+      "code": 162,
+      "code_text": "000 162",
+      "commitment": "03ae2846d445efca55517360a75188d869760f948dc4eb889bb2990bbfb1e154",
+      "envelope": "01ff2cb98328833f51b3371f95769c0b1dbeceb33550abdac035b1d47694e4d75ee6db41859874f0d42cd6de60f6dfea7aa469a64f381b12c52858a07e78278fcda01a2d8ecae7aa6b8f8a",
+      "existing_public": "b1d15b513029951e811115ffe62a614706554fb610b8295e889bc3bebdf4370e",
+      "existing_secret": "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b",
+      "new_public": "b0d08f35b4683381489afb32825e59152d47d19bc9e050d6d5a954984c9d1e2c",
+      "new_secret": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+      "secret_key": "A1-014D2P-F2DBSQ-QZXQ5T-K1V58C-GGA"
+    }
+  ]
+}

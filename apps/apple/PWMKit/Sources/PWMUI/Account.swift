@@ -34,6 +34,13 @@ public protocol Account: AnyObject, Sendable {
     func authorizeExport(password: Redacted<String>) async throws
     func export(_ format: ExportFile.Format) async throws -> Redacted<Data>
 
+    // Approving a new device (D46).
+    func askForApproval(email: String, onCode: @escaping @Sendable (String) async -> Void) async throws -> Redacted<String>
+    func approvalRequests() async throws -> [ApprovalEntry]
+    func acceptApproval(_ id: String) async throws
+    func completeApproval(_ id: String) async throws
+    func denyApproval(_ id: String) async throws
+
     // Face ID / Touch ID (D45).
     func biometricState() async throws -> BiometricState
     func enableBiometricUnlock(reason: String) async throws

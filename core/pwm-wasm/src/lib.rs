@@ -47,6 +47,7 @@ pub struct WasmStep {
     vault_id: Option<String>,
     report: Vec<f64>,
     devices: Option<String>,
+    approvals: Option<String>,
 }
 
 #[wasm_bindgen]
@@ -113,6 +114,14 @@ impl WasmStep {
     pub fn devices(&self) -> Option<String> {
         self.devices.clone()
     }
+
+    /// After `approvals`: a JSON array of `{id, platform, created_at, state,
+    /// code}`; `code` is null until this device accepted and the new device
+    /// revealed its key (D46).
+    #[wasm_bindgen(getter)]
+    pub fn approvals(&self) -> Option<String> {
+        self.approvals.clone()
+    }
 }
 
 fn step(step: Step) -> WasmStep {
@@ -128,6 +137,7 @@ fn step(step: Step) -> WasmStep {
         vault_id: None,
         report: Vec::new(),
         devices: None,
+        approvals: None,
     };
     match step {
         Step::Send(request) => {
@@ -183,6 +193,20 @@ fn step(step: Step) -> WasmStep {
                     "devices"
                 }
                 Outcome::DeviceUpdated => "device_updated",
+                Outcome::Approvals(approvals) => {
+                    let list: Vec<serde_json::Value> = approvals
+                        .into_iter()
+                        .map(|a| {
+                            serde_json::json!({
+                                "id": a.id, "platform": a.platform, "created_at": a.created_at,
+                                "state": a.state, "code": a.code,
+                            })
+                        })
+                        .collect();
+                    out.approvals = Some(serde_json::Value::Array(list).to_string());
+                    "approvals"
+                }
+                Outcome::ApprovalUpdated => "approval_updated",
             });
         }
     }
@@ -259,6 +283,44 @@ impl WasmClient {
                 platform,
                 device_name,
             )
+            .map(step)
+            .map_err(js_error)
+    }
+
+    /// The account's open device approval requests (D46); ends with `approvals`.
+    #[wasm_bindgen(js_name = startListApprovals)]
+    pub fn start_list_approvals(&mut self) -> Result<WasmStep, JsValue> {
+        self.inner
+            .start_list_approvals()
+            .map(step)
+            .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = startAcceptApproval)]
+    pub fn start_accept_approval(&mut self, approval_id: &str) -> Result<WasmStep, JsValue> {
+        self.inner
+            .start_accept_approval(approval_id)
+            .map(step)
+            .map_err(js_error)
+    }
+
+    /// After the user saw the same code on both devices.
+    #[wasm_bindgen(js_name = startCompleteApproval)]
+    pub fn start_complete_approval(
+        &mut self,
+        approval_id: &str,
+        secret_key: &str,
+    ) -> Result<WasmStep, JsValue> {
+        self.inner
+            .start_complete_approval(approval_id, secret_key)
+            .map(step)
+            .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = startDenyApproval)]
+    pub fn start_deny_approval(&mut self, approval_id: &str) -> Result<WasmStep, JsValue> {
+        self.inner
+            .start_deny_approval(approval_id)
             .map(step)
             .map_err(js_error)
     }
@@ -914,4 +976,124 @@ impl WasmBreachCheck {
 #[wasm_bindgen(js_name = breachRangeUrl)]
 pub fn breach_range_url(prefix: &str) -> String {
     format!("{}{prefix}", pwm_client::HIBP_RANGE_URL)
+}
+
+/// The new device's side of an approval (D46): `kind` is `send`, `wait`,
+/// `code`, `approved` or `ended`.
+#[wasm_bindgen]
+pub struct WasmAskStep {
+    kind: &'static str,
+    request: Option<WasmStep>,
+    delay_ms: f64,
+    code: Option<String>,
+    secret_key: Option<String>,
+}
+
+#[wasm_bindgen]
+impl WasmAskStep {
+    #[wasm_bindgen(getter)]
+    pub fn kind(&self) -> String {
+        self.kind.to_owned()
+    }
+
+    /// After `send`: the request, as a `send` step.
+    pub fn request(&mut self) -> Option<WasmStep> {
+        self.request.take()
+    }
+
+    #[wasm_bindgen(getter, js_name = delayMs)]
+    pub fn delay_ms(&self) -> f64 {
+        self.delay_ms
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn code(&self) -> Option<String> {
+        self.code.clone()
+    }
+
+    /// After `approved`: log in with it and the master password.
+    #[wasm_bindgen(getter, js_name = secretKey)]
+    pub fn secret_key(&self) -> Option<String> {
+        self.secret_key.clone()
+    }
+}
+
+fn send_step(request: pwm_client::HttpRequest) -> WasmStep {
+    step(pwm_client::Step::Send(request))
+}
+
+#[wasm_bindgen]
+pub struct WasmApprovalAsk {
+    inner: pwm_client::ApprovalAsk,
+    first: Option<pwm_client::HttpRequest>,
+}
+
+#[wasm_bindgen]
+impl WasmApprovalAsk {
+    #[wasm_bindgen(constructor)]
+    pub fn new(email: &str, platform_name: &str) -> Result<WasmApprovalAsk, JsValue> {
+        let (inner, first) =
+            pwm_client::ApprovalAsk::start(email, platform(platform_name)?).map_err(js_error)?;
+        Ok(Self {
+            inner,
+            first: Some(first),
+        })
+    }
+
+    /// The request that makes it, as a `send` step; given once.
+    #[wasm_bindgen(js_name = firstRequest)]
+    pub fn first_request(&mut self) -> Option<WasmStep> {
+        self.first.take().map(send_step)
+    }
+
+    pub fn poll(&mut self) -> Result<WasmStep, JsValue> {
+        self.inner.poll().map(send_step).map_err(js_error)
+    }
+
+    pub fn cancel(&self) -> Option<WasmStep> {
+        self.inner.cancel().map(send_step)
+    }
+
+    pub fn receive(
+        &mut self,
+        status: u16,
+        headers: Vec<String>,
+        body: Vec<u8>,
+    ) -> Result<WasmAskStep, JsValue> {
+        let headers = headers
+            .chunks(2)
+            .filter_map(|pair| match pair {
+                [name, value] => Some((name.clone(), value.clone())),
+                _ => None,
+            })
+            .collect();
+        let response = pwm_client::HttpResponse::new(status, headers, body);
+        let mut out = WasmAskStep {
+            kind: "ended",
+            request: None,
+            delay_ms: 0.0,
+            code: None,
+            secret_key: None,
+        };
+        match self.inner.receive(&response).map_err(js_error)? {
+            pwm_client::AskStep::Send(request) => {
+                out.kind = "send";
+                out.request = Some(send_step(request));
+            }
+            pwm_client::AskStep::Wait { delay_ms } => {
+                out.kind = "wait";
+                out.delay_ms = delay_ms as f64;
+            }
+            pwm_client::AskStep::ShowCode { code } => {
+                out.kind = "code";
+                out.code = Some(code);
+            }
+            pwm_client::AskStep::Approved { secret_key } => {
+                out.kind = "approved";
+                out.secret_key = Some(secret_key.expose_secret().clone());
+            }
+            pwm_client::AskStep::Ended => {}
+        }
+        Ok(out)
+    }
 }

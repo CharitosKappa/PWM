@@ -348,6 +348,89 @@ public actor Session {
         }
     }
 
+    // MARK: Approving a new device (D46)
+
+    /// The new device's side: asks the account of `email`, calls `onCode`
+    /// with the code to compare on the signed-in device, and returns the
+    /// Secret Key it sent. Log in with it and the master password. Throws
+    /// `approval_ended` when it was denied or expired; cancelling the task
+    /// gives up on the server too.
+    public func askForApproval(
+        email: String, onCode: @escaping @Sendable (String) async -> Void
+    ) async throws -> Redacted<String> {
+        let ask = try core { try ApprovalAsk(email: email, platform: Session.platform) }
+        guard var request = ask.firstRequest() else { throw PWMError(code: "internal") }
+        while true {
+            let response: HTTPResponse
+            do {
+                response = try await transport.send(try httpRequest(request))
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                throw PWMError(code: "network")
+            }
+            let answer = Response(
+                status: response.status,
+                headers: response.headers.map { Header(name: $0.name, value: $0.value) },
+                body: response.body
+            )
+            switch try core({ try ask.receive(response: answer) }) {
+            case let .send(next):
+                request = next
+                continue
+            case let .showCode(code):
+                await onCode(code)
+                fallthrough
+            case .wait:
+                do {
+                    try await Task.sleep(for: .milliseconds(2000))
+                } catch {
+                    if let cancel = ask.cancel() { _ = try? await transport.send(try httpRequest(cancel)) }
+                    throw CancellationError()
+                }
+                request = try core { try ask.poll() }
+            case let .approved(secretKey):
+                return Redacted(secretKey)
+            case .ended:
+                throw PWMError(code: "approval_ended")
+            }
+        }
+    }
+
+    /// The signed-in side: the account's open requests.
+    public func approvalRequests() async throws -> [ApprovalEntry] {
+        guard case let .approvals(list) = try await runOnline(try core { try client.startListApprovals() }) else {
+            throw PWMError(code: "protocol")
+        }
+        return list.map {
+            ApprovalEntry(
+                id: $0.id, platform: $0.platform,
+                created: Date(timeIntervalSince1970: TimeInterval($0.createdAt) / 1000),
+                state: $0.state, code: $0.code
+            )
+        }
+    }
+
+    /// Accepts a listed request; list again until it has a code.
+    public func acceptApproval(_ id: String) async throws {
+        try await expectApproval(try core { try client.startAcceptApproval(approvalId: id) })
+    }
+
+    /// After the user saw the same code on both devices: sends this device's
+    /// Secret Key, sealed for the new one.
+    public func completeApproval(_ id: String) async throws {
+        guard let secretKey = try keys.get(.secretKey) else { throw PWMError(code: "not_signed_in") }
+        try await expectApproval(try core { try client.startCompleteApproval(approvalId: id, secretKey: secretKey) })
+    }
+
+    public func denyApproval(_ id: String) async throws {
+        try await expectApproval(try core { try client.startDenyApproval(approvalId: id) })
+    }
+
+    private func expectApproval(_ first: Step) async throws {
+        guard case .approvalUpdated = try await runOnline(first) else { throw PWMError(code: "protocol") }
+    }
+
     // MARK: Health (D22, D43 §7)
 
     /// Weak and reused passwords across every vault; local only.

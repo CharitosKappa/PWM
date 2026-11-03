@@ -176,6 +176,45 @@ actor FakeAccount: Account {
         calls.append("unlock biometric")
     }
 
+    // Approving a new device.
+    var approvalList: [ApprovalEntry] = []
+    var askCode = "123 456"
+    var askResult: Result<String, PWMError> = .success(kitKey)
+
+    func setApprovals(_ list: [ApprovalEntry]) { approvalList = list }
+    func setAsk(code: String, result: Result<String, PWMError>) {
+        askCode = code
+        askResult = result
+    }
+
+    func askForApproval(email: String, onCode: @escaping @Sendable (String) async -> Void) async throws -> Redacted<String> {
+        calls.append("ask \(email)")
+        await onCode(askCode)
+        return Redacted(try askResult.get())
+    }
+
+    func approvalRequests() throws -> [ApprovalEntry] {
+        try check()
+        return approvalList
+    }
+
+    func acceptApproval(_ id: String) throws {
+        calls.append("accept \(id)")
+        approvalList = approvalList.map {
+            $0.id == id ? ApprovalEntry(id: $0.id, platform: $0.platform, created: $0.created, state: "revealed", code: "654 321") : $0
+        }
+    }
+
+    func completeApproval(_ id: String) throws {
+        calls.append("complete \(id)")
+        approvalList.removeAll { $0.id == id }
+    }
+
+    func denyApproval(_ id: String) throws {
+        calls.append("deny \(id)")
+        approvalList.removeAll { $0.id == id }
+    }
+
     func setDevices(_ devices: [DeviceEntry]) { deviceList = devices }
     func setHealth(_ health: PasswordHealth, breached: [String: UInt64] = [:], breachFailure: String? = nil) {
         self.health = health

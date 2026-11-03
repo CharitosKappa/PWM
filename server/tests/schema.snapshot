@@ -25,6 +25,33 @@ table accounts
   index CREATE UNIQUE INDEX accounts_email_key ON public.accounts USING btree (email)
   index CREATE UNIQUE INDEX accounts_pkey ON public.accounts USING btree (id)
 
+table approvals
+  column id uuid not null default gen_random_uuid()
+  column account_id uuid null
+  column platform text not null
+  column commitment bytea not null
+  column poll_hash bytea not null
+  column existing_pub bytea null
+  column new_pub bytea null
+  column envelope bytea null
+  column state text not null default 'pending'::text
+  column created_at timestamp with time zone not null default now()
+  column expires_at timestamp with time zone not null
+  constraint approvals_account_id_fkey: FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+  constraint approvals_commitment_check: CHECK ((octet_length(commitment) = 32))
+  constraint approvals_envelope_check: CHECK (((octet_length(envelope) >= 41) AND (octet_length(envelope) <= 256)))
+  constraint approvals_existing_pub_check: CHECK ((octet_length(existing_pub) = 32))
+  constraint approvals_new_pub_check: CHECK ((octet_length(new_pub) = 32))
+  constraint approvals_pkey: PRIMARY KEY (id)
+  constraint approvals_platform_check: CHECK ((platform = ANY (ARRAY['ios'::text, 'android'::text, 'macos'::text, 'windows'::text, 'linux'::text, 'extension'::text])))
+  constraint approvals_poll_hash_check: CHECK ((octet_length(poll_hash) = 32))
+  constraint approvals_poll_hash_key: UNIQUE (poll_hash)
+  constraint approvals_state_check: CHECK ((state = ANY (ARRAY['pending'::text, 'accepted'::text, 'revealed'::text, 'completed'::text, 'delivered'::text, 'ended'::text])))
+  index CREATE INDEX approvals_account_id ON public.approvals USING btree (account_id)
+  index CREATE INDEX approvals_expires_at ON public.approvals USING btree (expires_at)
+  index CREATE UNIQUE INDEX approvals_pkey ON public.approvals USING btree (id)
+  index CREATE UNIQUE INDEX approvals_poll_hash_key ON public.approvals USING btree (poll_hash)
+
 table autofill_reports
   column id bigint not null
   column received_at timestamp with time zone not null default now()

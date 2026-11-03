@@ -101,6 +101,22 @@ impl Aad {
         aad
     }
 
+    /// The Secret Key sent to a new device that a signed-in one approved
+    /// (decision D46).
+    pub fn approval(
+        version: u8,
+        approval_id: &Id,
+        new_pub: &[u8; 32],
+        existing_pub: &[u8; 32],
+    ) -> Self {
+        let mut aad = Self::labelled("pwm/approval");
+        aad.0.push(version);
+        aad.0.extend_from_slice(approval_id);
+        aad.0.extend_from_slice(new_pub);
+        aad.0.extend_from_slice(existing_pub);
+        aad
+    }
+
     /// Unlocked keyset kept on one device for Face ID / Touch ID, under a
     /// random key the platform wraps with a hardware key (decision D45).
     pub fn biometric_unlock(version: u8, account_id: &Id, device_id: &Id) -> Self {

@@ -363,3 +363,166 @@ async fn devices_are_named_listed_renamed_and_revoked() {
     ));
     db.drop().await;
 }
+
+/// What the new device's step machine does with one answer.
+async fn ask_step(
+    app: &Router,
+    ask: &mut pwm_client::ApprovalAsk,
+    request: &HttpRequest,
+) -> pwm_client::AskStep {
+    ask.receive(&send(app, request).await).unwrap()
+}
+
+/// Approving a new device (D46) through the client against the real relay:
+/// the new device asks, the signed-in one accepts, both show the same code,
+/// and the Secret Key arrives; then a relay that swaps the keys is caught.
+#[tokio::test]
+async fn a_signed_in_device_approves_a_new_one() {
+    use pwm_client::{ApprovalAsk, AskStep};
+    let Some((db, app)) = setup().await else {
+        return;
+    };
+    let mut laptop = new_client();
+    let step = laptop.start_signup(
+        EMAIL,
+        PASSWORD,
+        &new_id().unwrap(),
+        Platform::Linux,
+        "Laptop",
+    );
+    let Outcome::SignedUp { secret_key } = run(&app, &mut laptop, step).await.unwrap() else {
+        panic!("not signed up");
+    };
+    let secret_key = secret_key.expose_secret().clone();
+
+    // N asks; nothing happens until E accepts.
+    let (mut ask, create) = ApprovalAsk::start(EMAIL, Platform::Ios).unwrap();
+    assert!(matches!(
+        ask_step(&app, &mut ask, &create).await,
+        AskStep::Wait { .. }
+    ));
+    let poll = ask.poll().unwrap();
+    assert!(matches!(
+        ask_step(&app, &mut ask, &poll).await,
+        AskStep::Wait { .. }
+    ));
+
+    let step = laptop.start_list_approvals();
+    let Outcome::Approvals(list) = run(&app, &mut laptop, step).await.unwrap() else {
+        panic!("no list");
+    };
+    assert_eq!(list.len(), 1);
+    assert_eq!(
+        (list[0].platform.as_str(), list[0].state.as_str()),
+        ("ios", "pending")
+    );
+    assert!(list[0].code.is_none());
+    let id = list[0].id.clone();
+    let step = laptop.start_accept_approval(&id);
+    assert!(matches!(
+        run(&app, &mut laptop, step).await.unwrap(),
+        Outcome::ApprovalUpdated
+    ));
+    // Completing before N revealed its key is refused on the device.
+    assert_eq!(
+        laptop
+            .start_complete_approval(&id, &secret_key)
+            .unwrap_err()
+            .code(),
+        "unknown_approval"
+    );
+
+    // N reveals, then shows the code.
+    let poll = ask.poll().unwrap();
+    let AskStep::Send(reveal) = ask_step(&app, &mut ask, &poll).await else {
+        panic!("N did not reveal");
+    };
+    let AskStep::ShowCode { code: at_new } = ask_step(&app, &mut ask, &reveal).await else {
+        panic!("no code at N");
+    };
+    let step = laptop.start_list_approvals();
+    let Outcome::Approvals(list) = run(&app, &mut laptop, step).await.unwrap() else {
+        panic!("no list");
+    };
+    assert_eq!(
+        list[0].code.as_deref(),
+        Some(at_new.as_str()),
+        "the same code on both screens"
+    );
+
+    // The user saw the codes match: E sends the Secret Key; N gets it once.
+    let step = laptop.start_complete_approval(&id, &secret_key);
+    assert!(matches!(
+        run(&app, &mut laptop, step).await.unwrap(),
+        Outcome::ApprovalUpdated
+    ));
+    let poll = ask.poll().unwrap();
+    let AskStep::Approved { secret_key: got } = ask_step(&app, &mut ask, &poll).await else {
+        panic!("not approved");
+    };
+    assert_eq!(got.expose_secret(), &secret_key);
+    let poll = ask.poll().unwrap();
+    assert!(
+        matches!(ask_step(&app, &mut ask, &poll).await, AskStep::Ended),
+        "handed out once"
+    );
+
+    // N logs in with it and the master password, as usual.
+    let mut phone = new_client();
+    let step = phone.start_login(
+        EMAIL,
+        PASSWORD,
+        got.expose_secret(),
+        &new_id().unwrap(),
+        Platform::Ios,
+        "iPhone",
+    );
+    assert!(matches!(
+        run(&app, &mut phone, step).await.unwrap(),
+        Outcome::LoggedIn
+    ));
+
+    // A relay that gives N its own key instead of E's: N's code differs.
+    let (mut ask, create) = ApprovalAsk::start(EMAIL, Platform::Ios).unwrap();
+    ask_step(&app, &mut ask, &create).await;
+    let step = laptop.start_list_approvals();
+    let Outcome::Approvals(list) = run(&app, &mut laptop, step).await.unwrap() else {
+        panic!("no list");
+    };
+    let id = list[0].id.clone();
+    let step = laptop.start_accept_approval(&id);
+    run(&app, &mut laptop, step).await.unwrap();
+    let poll = ask.poll().unwrap();
+    let mut answer = send(&app, &poll).await;
+    let mut polled: Value = serde_json::from_slice(&answer.body).unwrap();
+    let relay = pwm_crypto::ApprovalKeys::generate().unwrap();
+    polled["existing_pub"] = Value::String(base64::Engine::encode(
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+        relay.public(),
+    ));
+    answer.body = polled.to_string().into_bytes();
+    let AskStep::Send(reveal) = ask.receive(&answer).unwrap() else {
+        panic!("N did not reveal");
+    };
+    let AskStep::ShowCode { code: at_new } = ask_step(&app, &mut ask, &reveal).await else {
+        panic!("no code at N");
+    };
+    let step = laptop.start_list_approvals();
+    let Outcome::Approvals(list) = run(&app, &mut laptop, step).await.unwrap() else {
+        panic!("no list");
+    };
+    assert_ne!(
+        list[0].code.as_deref(),
+        Some(at_new.as_str()),
+        "the user sees two codes"
+    );
+    // E's user denies; N's request ends.
+    let step = laptop.start_deny_approval(&id);
+    run(&app, &mut laptop, step).await.unwrap();
+    let poll = ask.poll().unwrap();
+    assert!(matches!(
+        ask_step(&app, &mut ask, &poll).await,
+        AskStep::Ended
+    ));
+    db.drop().await;
+}

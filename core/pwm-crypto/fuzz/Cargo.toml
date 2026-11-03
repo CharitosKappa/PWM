@@ -112,3 +112,10 @@ path = "fuzz_targets/kit_qr_parse.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "approval_messages"
+path = "fuzz_targets/approval_messages.rs"
+test = false
+doc = false
+bench = false

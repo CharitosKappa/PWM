@@ -19,6 +19,8 @@ pub enum TokenKind {
     Access,
     /// Long-lived, exchanged for a new token pair.
     Refresh,
+    /// A new device's handle on its approval request (D46), for 10 minutes.
+    Approval,
 }
 
 impl TokenKind {
@@ -26,6 +28,7 @@ impl TokenKind {
         match self {
             Self::Access => "pwma_",
             Self::Refresh => "pwmr_",
+            Self::Approval => "pwmp_",
         }
     }
 }

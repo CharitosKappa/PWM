@@ -59,6 +59,7 @@ Decisions D10–D15. All HKDF calls are HKDF-SHA256 with 32-byte output. All int
 | Unlocked keyset in the extension's session store (D34) | `pwm/session` | `version:u8 \|\| account_id` |
 | Device tokens on disk under sym_key (D34) | `pwm/device-tokens` | `version:u8 \|\| account_id` |
 | Unlocked keyset for Face ID / Touch ID on one device (D45) | `pwm/biometric-unlock` | `version:u8 \|\| account_id \|\| device_id` |
+| Secret Key sent to a new device that a signed-in one approved (D46) | `pwm/approval` | `version:u8 \|\| approval_id \|\| n_pub:32 \|\| e_pub:32` |
 
 A new kind of envelope gets a new label; labels are never reused.
 
@@ -116,6 +117,28 @@ A new kind of envelope gets a new label; labels are never reused.
 - **Keys:** private keys are PKCS#8 inside the login item (D18), so they are encrypted like any item, and the server sees only ciphertext.
 
 **Signatures (D17).** Ed25519 over `len(label):u8 || label || message`, verified in strict mode (rejects malleable signatures and small-order public keys). Labels are never reused; current labels: `pwm/share-sig` (vault shares) and `pwm/autofill-rules` (the signed autofill rules file, D33: `v:u8 (= 1) || key_id:u8 || signature:64 || json`, signature over `key_id || json`, release keys pinned in the apps, the signing key kept offline).
+
+**Device approval v1 (D46).** A new device ("N") gets the Secret Key from a signed-in, unlocked one ("E") of the same account. N still needs the master password.
+
+```
+N: n_secret, n_pub = fresh X25519 key pair
+   commitment      = SHA-256(len:u8 || "pwm/approval-commit" || n_pub)
+   → relay: email, commitment, platform            (unauthenticated; same answer for any email)
+E: e_secret, e_pub = fresh X25519 key pair          (after the user picks the request)
+   → relay: e_pub                                    (authenticated)
+N: → relay: n_pub                                    (the relay and E both check it against the commitment)
+both: dh   = X25519(own secret, other pub)           # all-zero result rejected
+      salt = approval_id || n_pub || e_pub
+      key  = HKDF(dh, salt, info = "pwm/approval/v1")
+      code = u32_be(HKDF(dh, salt, info = "pwm/approval-code/v1")[0..4]) mod 1,000,000, shown as "123 456"
+E: after the user sees the same code on both screens and taps "Codes match":
+   envelope = seal(key, secret_key_text, AAD "pwm/approval": version:u8 || approval_id || n_pub || e_pub)
+   → relay: envelope                                  (handed to N once, then deleted)
+```
+
+- **Why the commitment:** a relay in the middle could otherwise try many keys until the two codes match. N commits to its key before E's key is known and reveals it only after, so neither code can be steered: a man in the middle succeeds with a chance of 1 in 1,000,000 per request, and the user sees two different codes otherwise.
+- **The relay** stores only public keys, the commitment, the platform, times and the envelope until it is fetched; requests live 10 minutes, at most 3 are pending per account (more go nowhere), and asking is limited to 5 per IP per 10 minutes. The poll token is a `pwmp_` token stored as a SHA-256 hash.
+- **Not covered:** a person at an unlocked E who approves a stranger's request; that device still needs the master password. A review of this exchange is part of the external audit before the beta (M10.3).
 
 **Vault share v1 (D17).**
 

@@ -3,10 +3,10 @@
 //! single-bit flip must be rejected.
 
 use pwm_crypto::{
-    Aad, AccountKeyset, Envelope, ExportHeader, Id, KdfParams, OpaqueLogin, OtpAlgorithm, Secret,
-    SecretKey, ServerSecrets, SignatureContext, SymmetricKey, VaultShare, derive_account_keys,
-    derive_password_key, hkdf_sha256, hotp_value, normalize_password, opaque_record, open,
-    open_export, seal, unlock_account, verify_signature,
+    Aad, AccountKeyset, ApprovalKeys, Envelope, ExportHeader, Id, KdfParams, OpaqueLogin,
+    OtpAlgorithm, Secret, SecretKey, ServerSecrets, SignatureContext, SymmetricKey, VaultShare,
+    approval_commitment, derive_account_keys, derive_password_key, hkdf_sha256, hotp_value,
+    normalize_password, opaque_record, open, open_export, seal, unlock_account, verify_signature,
 };
 use serde_json::Value;
 
@@ -501,6 +501,43 @@ fn vectors_biometric_unlock() {
                     )
                 })
                 .is_ok_and(|k| k.x25519_public() == original.x25519_public())
+        });
+    }
+}
+
+#[test]
+fn vectors_approval() {
+    for v in load(include_str!("../../test-vectors/approval.json")) {
+        let id: Id = arr(&v["approval_id"]);
+        let new = ApprovalKeys::from_seed(&Secret::new(arr(&v["new_secret"])));
+        let existing = ApprovalKeys::from_seed(&Secret::new(arr(&v["existing_secret"])));
+        let (n_pub, e_pub): ([u8; 32], [u8; 32]) =
+            (arr(&v["new_public"]), arr(&v["existing_public"]));
+        assert_eq!(new.public(), n_pub);
+        assert_eq!(existing.public(), e_pub);
+        assert_eq!(approval_commitment(&n_pub), arr::<32>(&v["commitment"]));
+        assert_eq!(
+            Aad::approval(1, &id, &n_pub, &e_pub).as_bytes(),
+            bytes(&v["aad"])
+        );
+        for side in [&new, &existing] {
+            let channel = side.channel(&id, &n_pub, &e_pub).unwrap();
+            assert_eq!(u64::from(channel.code()), v["code"].as_u64().unwrap());
+            assert_eq!(channel.code_text(), v["code_text"].as_str().unwrap());
+        }
+        let channel = new.channel(&id, &n_pub, &e_pub).unwrap();
+        let envelope = bytes(&v["envelope"]);
+        let opened = channel
+            .open(&Envelope::from_bytes(&envelope).unwrap())
+            .unwrap();
+        assert_eq!(
+            opened.expose_secret().as_slice(),
+            v["secret_key"].as_str().unwrap().as_bytes()
+        );
+        assert_tamper_evident(&envelope, |b| {
+            Envelope::from_bytes(b)
+                .and_then(|env| channel.open(&env))
+                .is_ok()
         });
     }
 }

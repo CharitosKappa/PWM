@@ -315,6 +315,13 @@ export class ChromePages implements Pages {
       // The tab closed.
     }
   }
+
+  async setGlobalBadge(text: string): Promise<void> {
+    await chrome.action.setBadgeText({ text });
+    if (text !== "") {
+      await chrome.action.setBadgeBackgroundColor({ color: "#2457D6" });
+    }
+  }
 }
 
 /** "Edge 140", "Opera 125", "Chrome 140" from a user agent. */

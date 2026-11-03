@@ -477,7 +477,16 @@ Phase 3  Teams           months 16–24 M16–M19
     - **The first real check** is on a device (no enclave in the simulator or CI).
     - **The AutoFill extension's use of it,** through the shared Keychain group: M5.5.
     - **Touch ID on macOS:** M5.6. **Android:** M6.2. **Windows Hello:** M7.1.
-- [ ] M5.9 Approve a new device from an existing one (D42 split it from M5.2): the Secret Key sent over an authenticated X25519 channel (`SECURITY.md`), relay endpoints on the server, and the approving side on every signed-in platform, starting with the extension. Needs its own decision, test vectors and security review; reuses the M5.2 kit scanner.
+- [x] M5.9 Approve a new device from an existing one (D42 split it from M5.2): the Secret Key sent over an authenticated X25519 channel (`SECURITY.md`), relay endpoints on the server, and the approving side on every signed-in platform, starting with the extension. Needs its own decision, test vectors and security review; reuses the M5.2 kit scanner.
+  - Per D46:
+    - **The exchange:** fresh X25519 keys on both sides; a commitment from the new device; a 6-digit code compared on both screens; the Secret Key sealed for the new device. Normative text in `SECURITY.md`, with vectors (Rust and Node) and a fuzz target.
+    - **The relay:** `/v1/approvals` (migration 0005), storing only public keys, the commitment and one ciphertext, handed out once; 10-minute lifetime; at most 3 pending per account; asking limited per IP; the same answer for any email.
+    - **Asking:** "Sign in with another device" on iOS and in the extension. **Approving:** iOS Settings and the extension's manage page, with a count on the Settings tab and the toolbar badge.
+  - **Deferred:**
+    - **The security review** of the exchange: part of the external audit (M10.3).
+    - **Push** instead of checking at sync or when the app comes to the front: M5.8.
+    - **macOS:** M5.6. **Android:** M6.
+    - **The scanner** is not used (D46 §2).
 - [ ] M5.5 iOS AutoFill Credential Provider + passkeys + QuickType identity sync.
 - [ ] M5.6 macOS app + Safari Web Extension; native-messaging host for other browsers' biometric unlock.
 - [ ] M5.7 Screenshot/screen-recording protection on unlock and revealed secrets.

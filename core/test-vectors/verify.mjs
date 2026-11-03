@@ -296,6 +296,30 @@ for (const v of load("device_name")) {
   check("device_name open", eq(openEnvelope(symKey, hex(v.envelope), aad), padded));
 }
 
+// Device approval (D46): both sides' X25519, the commitment, the code and the envelope.
+for (const v of load("approval")) {
+  const id = hex(v.approval_id);
+  const nPub = hex(v.new_public);
+  const ePub = hex(v.existing_public);
+  check("approval new public", eq(rawPublic(privateKey("x25519", hex(v.new_secret))), nPub));
+  check("approval existing public", eq(rawPublic(privateKey("x25519", hex(v.existing_secret))), ePub));
+  const label = Buffer.from("pwm/approval-commit");
+  const commitment = crypto.createHash("sha256").update(Buffer.concat([Buffer.from([label.length]), label, nPub])).digest();
+  check("approval commitment", eq(commitment, hex(v.commitment)));
+  const dhNew = crypto.diffieHellman({ privateKey: privateKey("x25519", hex(v.new_secret)), publicKey: publicKey("x25519", ePub) });
+  const dhExisting = crypto.diffieHellman({ privateKey: privateKey("x25519", hex(v.existing_secret)), publicKey: publicKey("x25519", nPub) });
+  check("approval dh", eq(dhNew, dhExisting) && !eq(dhNew, Buffer.alloc(32)));
+  const salt = Buffer.concat([id, nPub, ePub]);
+  const key = hkdf(dhNew, salt, Buffer.from("pwm/approval/v1"));
+  const code = hkdf(dhNew, salt, Buffer.from("pwm/approval-code/v1")).readUInt32BE(0) % 1000000;
+  check("approval code", code === v.code);
+  const digits = String(code).padStart(6, "0");
+  check("approval code text", `${digits.slice(0, 3)} ${digits.slice(3)}` === v.code_text);
+  const aad = labelled("pwm/approval", Buffer.from([1]), id, nPub, ePub);
+  check("approval aad", eq(aad, hex(v.aad)));
+  check("approval open", openEnvelope(key, hex(v.envelope), aad).toString("utf8") === v.secret_key);
+}
+
 for (const v of load("biometric_unlock")) {
   const keyset = openKeyset(v);
   check("biometric keyset", eq(keyset, hex(v.keyset_plaintext)));

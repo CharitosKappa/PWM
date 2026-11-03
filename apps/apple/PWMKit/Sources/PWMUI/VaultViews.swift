@@ -19,6 +19,7 @@ struct MainView: View {
                     .tabItem { Label("Generator", systemImage: "dice") }
                 NavigationStack { SettingsView(model: settings) }
                     .tabItem { Label("Settings", systemImage: "gearshape") }
+                    .badge(settings.pendingApprovals)
             }
         }
     }

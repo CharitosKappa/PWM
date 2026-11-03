@@ -4,6 +4,7 @@
 mod aad;
 mod account;
 mod aead;
+mod approval;
 mod error;
 mod export;
 mod health;
@@ -24,6 +25,7 @@ pub use account::{
     derive_account_keys, random_seed, unlock_account,
 };
 pub use aead::{Envelope, SymmetricKey, open, seal};
+pub use approval::{ApprovalChannel, ApprovalKeys, approval_commitment, check_approval_commitment};
 pub use error::CryptoError;
 pub use export::{EXPORT_MAGIC, ExportHeader, open_export, seal_export};
 pub use health::{ReuseHasher, hibp_sha1};

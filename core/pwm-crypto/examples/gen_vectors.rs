@@ -12,9 +12,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use pwm_crypto::{
-    Aad, AccountKeyset, Id, KdfParams, OpaqueLogin, OpaqueRegistration, Secret, SecretKey,
-    ServerSecrets, SignatureContext, SymmetricKey, create_account, derive_account_keys,
-    derive_password_key, hkdf_sha256, normalize_password, opaque_record, open, open_export, seal,
+    Aad, AccountKeyset, ApprovalKeys, Id, KdfParams, OpaqueLogin, OpaqueRegistration, Secret,
+    SecretKey, ServerSecrets, SignatureContext, SymmetricKey, approval_commitment, create_account,
+    derive_account_keys, derive_password_key, hkdf_sha256, normalize_password, opaque_record, open,
+    open_export, seal,
 };
 use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::SeedableRng;
@@ -31,7 +32,7 @@ type Generator = (&'static str, &'static str, fn() -> Vec<Value>);
 
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../test-vectors");
-    let files: [Generator; 15] = [
+    let files: [Generator; 16] = [
         ("aad", "AAD byte layouts (D11, D17)", aad),
         ("aead", "XChaCha20-Poly1305 v1 envelopes (D10)", aead),
         ("hkdf", "HKDF-SHA256, 32-byte output (D13)", hkdf),
@@ -78,6 +79,11 @@ fn main() {
             "biometric_unlock",
             "Face ID / Touch ID unlock blob v1 (D45)",
             biometric_unlock,
+        ),
+        (
+            "approval",
+            "Approving a new device: commitment, code and sealed Secret Key v1 (D46)",
+            approval,
         ),
     ];
     for (name, description, generate) in files {
@@ -426,6 +432,30 @@ fn biometric_unlock() -> Vec<Value> {
         "sealed_keyset": h(&sealed), "keyset_plaintext": h(&plaintext),
         "unlock_key": h(unlock_key.expose_secret()),
         "aad": h(Aad::biometric_unlock(1, &ACCOUNT_A, &DEVICE).as_bytes()),
+        "envelope": h(&envelope.to_bytes()),
+    })]
+}
+
+/// Device approval (D46): fixed key seeds on both sides, the commitment,
+/// the code, and the Secret Key sealed by the signed-in device.
+fn approval() -> Vec<Value> {
+    let approval_id: Id = [0xAB; 16];
+    let new = ApprovalKeys::from_seed(&Secret::new([0x5A; 32]));
+    let existing = ApprovalKeys::from_seed(&Secret::new([0x5B; 32]));
+    let (n_pub, e_pub) = (new.public(), existing.public());
+    let channel = existing.channel(&approval_id, &n_pub, &e_pub).unwrap();
+    let at_new = new.channel(&approval_id, &n_pub, &e_pub).unwrap();
+    assert_eq!(channel.code(), at_new.code());
+    let secret_key = b"A1-014D2P-F2DBSQ-QZXQ5T-K1V58C-GGA";
+    let envelope = channel.seal(secret_key).unwrap();
+    vec![json!({
+        "approval_id": h(&approval_id),
+        "new_secret": h(&[0x5A; 32]), "new_public": h(&n_pub),
+        "existing_secret": h(&[0x5B; 32]), "existing_public": h(&e_pub),
+        "commitment": h(&approval_commitment(&n_pub)),
+        "code": channel.code(), "code_text": channel.code_text(),
+        "aad": h(Aad::approval(1, &approval_id, &n_pub, &e_pub).as_bytes()),
+        "secret_key": String::from_utf8(secret_key.to_vec()).unwrap(),
         "envelope": h(&envelope.to_bytes()),
     })]
 }

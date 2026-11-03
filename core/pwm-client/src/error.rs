@@ -48,6 +48,12 @@ pub enum ClientError {
     /// The biometric unlock blob did not open: the master password is needed (D45).
     #[error("biometric unlock failed")]
     BiometricUnlockFailed,
+    /// Not one of the account's open approval requests, or out of order (D46).
+    #[error("unknown approval request")]
+    UnknownApproval,
+    /// The Secret Key from the signed-in device did not open (D46).
+    #[error("the approval did not complete")]
+    ApprovalFailed,
     /// The master password was entered more than 5 minutes ago.
     #[error("enter the master password again to export")]
     ExportExpired,
@@ -110,6 +116,8 @@ impl ClientError {
             Self::UnknownDevice => "unknown_device",
             Self::ExportNotAuthorized => "export_not_authorized",
             Self::BiometricUnlockFailed => "biometric_unlock_failed",
+            Self::UnknownApproval => "unknown_approval",
+            Self::ApprovalFailed => "approval_failed",
             Self::ExportExpired => "export_expired",
             Self::WeakExportPassword => "weak_export_password",
             Self::WeakPassword => "weak_password",

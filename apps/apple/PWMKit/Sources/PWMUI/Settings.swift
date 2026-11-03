@@ -178,6 +178,17 @@ public final class SettingsModel {
         ExportModel(account: account)
     }
 
+    public func makeApprovals() -> ApprovalsModel {
+        ApprovalsModel(account: account)
+    }
+
+    /// Requests from new devices, read when the app comes to the front (D46 §5).
+    public private(set) var pendingApprovals = 0
+
+    public func checkApprovals() async {
+        pendingApprovals = (try? await account.approvalRequests().count) ?? 0
+    }
+
     /// The app's version, from its Info.plist.
     public var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–"

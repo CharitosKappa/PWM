@@ -7,6 +7,7 @@ import {
   useServerOrigin,
 } from "./access.ts";
 import { fromBase64 } from "../shared/bytes.ts";
+import type { AskView } from "../shared/messages.ts";
 import { describe, describeCode, send } from "./api.ts";
 import { InlineIconOffer } from "./InlineIcon.tsx";
 import { Field, Notice } from "./ui.tsx";
@@ -54,7 +55,45 @@ function SignIn({ onDone }: { onDone: () => void }): JSX.Element {
   const [secretKey, setSecretKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Asking a signed-in device (D46): its state, and the code to compare. */
+  const [ask, setAsk] = useState<AskView | null>(null);
   const origin = useServerOrigin();
+  const approved = ask?.state === "approved";
+
+  // While asking, the popup polls every 2 seconds.
+  useEffect(() => {
+    if (ask === null || ask.state === "approved" || ask.state === "ended")
+      return;
+    const timer = setTimeout(() => {
+      send({ kind: "askApprovalPoll" })
+        .then(setAsk)
+        .catch((err: unknown) => {
+          setError(describe(err));
+          setAsk(null);
+        });
+    }, 2000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [ask]);
+
+  const startAsking = async (): Promise<void> => {
+    if (!(await askServerAccess(origin))) {
+      setError(describeCode("no_server_access"));
+      return;
+    }
+    setError(null);
+    try {
+      setAsk(await send({ kind: "askApproval", email: email.trim() }));
+    } catch (err) {
+      setError(describe(err));
+    }
+  };
+
+  const stopAsking = (): void => {
+    void send({ kind: "askApprovalCancel" });
+    setAsk(null);
+  };
 
   const submit = async (event: Event): Promise<void> => {
     event.preventDefault();
@@ -65,12 +104,16 @@ function SignIn({ onDone }: { onDone: () => void }): JSX.Element {
     setBusy(true);
     setError(null);
     try {
-      await send({
-        kind: "signIn",
-        email: email.trim(),
-        password,
-        secretKey: secretKey.trim(),
-      });
+      if (approved) {
+        await send({ kind: "signInApproved", password });
+      } else {
+        await send({
+          kind: "signIn",
+          email: email.trim(),
+          password,
+          secretKey: secretKey.trim(),
+        });
+      }
       setPassword("");
       onDone();
     } catch (err) {
@@ -79,6 +122,35 @@ function SignIn({ onDone }: { onDone: () => void }): JSX.Element {
       setBusy(false);
     }
   };
+
+  if (ask !== null && !approved) {
+    return (
+      <div class="stack" id="asking">
+        <p>
+          Approve this request on a device where you're signed in: Approve a new
+          device in the app's Settings, or Devices on the extension's manage
+          page.
+        </p>
+        {ask.state === "code" && ask.code !== null ? (
+          <>
+            <p class="caption muted">Check that it shows this code:</p>
+            <p class="secret" id="approval-code">
+              {ask.code}
+            </p>
+          </>
+        ) : ask.state === "ended" ? (
+          <Notice kind="info">
+            The request ended. Ask again, or sign in with your Secret Key.
+          </Notice>
+        ) : (
+          <p class="caption muted">Waiting for your other device…</p>
+        )}
+        <button onClick={stopAsking}>
+          {ask.state === "ended" ? "Back" : "Cancel"}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <form class="stack" onSubmit={(e) => void submit(e)}>
@@ -96,18 +168,32 @@ function SignIn({ onDone }: { onDone: () => void }): JSX.Element {
         onInput={setPassword}
         autoComplete="current-password"
       />
-      <Field
-        label="Secret Key"
-        value={secretKey}
-        onInput={setSecretKey}
-        mono
-        hint="On your Emergency Kit."
-      />
+      {approved ? (
+        <Notice kind="info">Secret Key received from your other device.</Notice>
+      ) : (
+        <>
+          <Field
+            label="Secret Key"
+            value={secretKey}
+            onInput={setSecretKey}
+            mono
+            hint="On your Emergency Kit."
+          />
+          <button
+            type="button"
+            id="ask-device"
+            disabled={!email.includes("@")}
+            onClick={() => void startAsking()}
+          >
+            Sign in with another device instead
+          </button>
+        </>
+      )}
       <ServerAccessNote />
       <div class="slot">{error && <Notice kind="danger">{error}</Notice>}</div>
       <button
         class="primary"
-        disabled={busy || !email || !password || !secretKey}
+        disabled={busy || !email || !password || (!secretKey && !approved)}
       >
         {busy ? "Signing in…" : "Sign in"}
       </button>

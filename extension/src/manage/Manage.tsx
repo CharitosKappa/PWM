@@ -7,6 +7,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import type {
+  ApprovalView,
   DeviceView,
   ExportFormat,
   HealthItem,
@@ -80,7 +81,12 @@ export function Manage(): JSX.Element {
       </div>
       <section role="tabpanel" aria-labelledby={`tab-${tab}`} class="stack">
         {tab === "health" && <Health onLocked={refresh} />}
-        {tab === "devices" && <Devices onLocked={refresh} />}
+        {tab === "devices" && (
+          <>
+            <Approvals onLocked={refresh} />
+            <Devices onLocked={refresh} />
+          </>
+        )}
         {tab === "export" && <Export onLocked={refresh} />}
       </section>
     </main>
@@ -254,6 +260,131 @@ function ChangeLink({ item }: { item: HealthItem }): JSX.Element {
     <a href={url.href} target="_blank" rel="noreferrer noopener">
       Change
     </a>
+  );
+}
+
+// --- Approving a new device (D46) ---
+
+function Approvals({ onLocked }: { onLocked: () => void }): JSX.Element {
+  const [requests, setRequests] = useState<ApprovalView[] | null>(null);
+  const [approving, setApproving] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const { error, busy, run } = useRequest(onLocked);
+  const current = requests?.find((r) => r.id === approving);
+
+  useEffect(() => {
+    void run(() => send({ kind: "approvals" })).then((r) => {
+      if (r) setRequests(r);
+    });
+  }, []);
+
+  // After accepting: read the list until the new device revealed its key.
+  useEffect(() => {
+    if (approving === null || current?.code) return;
+    const timer = setTimeout(() => {
+      void run(() => send({ kind: "approvals" })).then((r) => {
+        if (!r) return;
+        setRequests(r);
+        if (!r.some((x) => x.id === approving)) setApproving(null);
+      });
+    }, 2000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [approving, requests]);
+
+  if (requests === null || (requests.length === 0 && !done)) return <></>;
+
+  const accept = async (id: string): Promise<void> => {
+    setDone(false);
+    const r = await run(() => send({ kind: "acceptApproval", id }));
+    if (r) {
+      setRequests(r);
+      setApproving(id);
+    }
+  };
+
+  const codesMatch = async (id: string): Promise<void> => {
+    const r = await run(() => send({ kind: "completeApproval", id }));
+    if (r) {
+      setRequests(r);
+      setApproving(null);
+      setDone(true);
+    }
+  };
+
+  const deny = async (id: string): Promise<void> => {
+    const r = await run(() => send({ kind: "denyApproval", id }));
+    if (r) setRequests(r);
+    if (approving === id) setApproving(null);
+  };
+
+  return (
+    <section class="stack card" id="approvals">
+      <h2>Approve a new device</h2>
+      {done && (
+        <Notice kind="info">
+          Approved. Enter your master password on the new device.
+        </Notice>
+      )}
+      {approving !== null && current ? (
+        current.code ? (
+          <div class="stack">
+            <p>Does the new device show this code?</p>
+            <p class="secret" id="approval-code">
+              {current.code}
+            </p>
+            <div class="row">
+              <button
+                class="primary"
+                id="codes-match"
+                disabled={busy}
+                onClick={() => void codesMatch(current.id)}
+              >
+                Codes match
+              </button>
+              <button class="danger" onClick={() => void deny(current.id)}>
+                Codes don't match
+              </button>
+            </div>
+            <p class="caption muted">
+              Only approve a device you are setting up yourself. It still needs
+              your master password.
+            </p>
+          </div>
+        ) : (
+          <p class="muted">Waiting for the new device…</p>
+        )
+      ) : (
+        <ul class="list">
+          {requests.map((request) => (
+            <li key={request.id} class="approval-request">
+              <span class="stack">
+                <strong>
+                  {PLATFORMS[request.platform] ?? request.platform}
+                </strong>
+                <span class="caption muted">
+                  Asked {new Date(request.createdAt).toLocaleTimeString()}
+                </span>
+              </span>
+              <span class="row">
+                <button
+                  class="primary"
+                  disabled={busy}
+                  onClick={() => void accept(request.id)}
+                >
+                  Approve
+                </button>
+                <button class="danger" onClick={() => void deny(request.id)}>
+                  Deny
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && <Notice kind="danger">{error}</Notice>}
+    </section>
   );
 }
 

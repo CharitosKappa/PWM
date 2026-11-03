@@ -209,3 +209,93 @@ public final class ExportModel {
         understood = false
     }
 }
+
+/// "Approve a new device" (D46): the account's requests; approving one
+/// shows the code to compare, and the Secret Key goes only after the user
+/// says the codes match.
+@MainActor
+@Observable
+public final class ApprovalsModel {
+    public private(set) var requests: [ApprovalEntry] = []
+    /// The request this device accepted.
+    public private(set) var approving: String?
+    public private(set) var loaded = false
+    public private(set) var busy = false
+    public private(set) var done = false
+    public private(set) var error: String?
+
+    private let account: any Account
+    /// How often the list is read while waiting for the new device's key.
+    let pollEvery: Duration
+
+    init(account: any Account, pollEvery: Duration = .seconds(2)) {
+        self.account = account
+        self.pollEvery = pollEvery
+    }
+
+    /// The code for the request being approved, once the new device revealed its key.
+    public var code: String? {
+        requests.first { $0.id == approving }?.code
+    }
+
+    public func load() async {
+        do {
+            requests = try await account.approvalRequests()
+            loaded = true
+            if let approving, !requests.contains(where: { $0.id == approving }) {
+                self.approving = nil
+                error = PWMError(code: "unknown_approval").message
+            }
+        } catch {
+            self.error = message(for: error)
+        }
+    }
+
+    public func approve(_ request: ApprovalEntry) async {
+        error = nil
+        done = false
+        await change { try await self.account.acceptApproval(request.id) }
+        if error == nil { approving = request.id }
+    }
+
+    /// Reads the list until the code shows (the screen keeps calling it).
+    public func waitForCode() async {
+        while approving != nil, code == nil, !Task.isCancelled {
+            await load()
+            if code != nil { return }
+            try? await Task.sleep(for: pollEvery)
+        }
+    }
+
+    /// The user saw the same code on both devices.
+    public func codesMatch() async {
+        guard let id = approving, code != nil else { return }
+        await change { try await self.account.completeApproval(id) }
+        if error == nil {
+            approving = nil
+            done = true
+        }
+        await load()
+    }
+
+    /// The codes differ, or the user doesn't know this request.
+    public func deny(_ id: String) async {
+        await change { try await self.account.denyApproval(id) }
+        if approving == id { approving = nil }
+        await load()
+    }
+
+    @discardableResult
+    private func change(_ action: @escaping () async throws -> Void) async -> Bool {
+        busy = true
+        defer { busy = false }
+        do {
+            try await action()
+            return true
+        } catch {
+            self.error = message(for: error)
+            return false
+        }
+    }
+}
+

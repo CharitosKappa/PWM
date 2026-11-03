@@ -91,6 +91,8 @@ export interface Pages {
   closeWindow(windowId: number): Promise<void>;
   /** The toolbar button's badge on one tab ("" clears it). */
   setBadge(tabId: number, text: string): Promise<void>;
+  /** The toolbar button's badge on every tab ("" clears it). */
+  setGlobalBadge(text: string): Promise<void>;
 }
 
 /** What this browser can do (D40); the code asks this, never the browser's name. */

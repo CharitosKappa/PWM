@@ -5,6 +5,7 @@
 //! platform sends with its own HTTP stack.
 #![forbid(unsafe_code)]
 
+mod approval;
 mod auth;
 mod autofill;
 mod biometric;
@@ -17,6 +18,7 @@ mod session;
 mod tools;
 mod totp;
 
+pub use approval::{ApprovalAsk, ApprovalRequest, AskStep, POLL_EVERY_MS};
 pub use auth::id_text;
 pub use autofill::AutofillMatch;
 pub use biometric::BiometricUnlock;
