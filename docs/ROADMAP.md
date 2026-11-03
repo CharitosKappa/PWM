@@ -487,7 +487,16 @@ Phase 3  Teams           months 16–24 M16–M19
     - **Push** instead of checking at sync or when the app comes to the front: M5.8.
     - **macOS:** M5.6. **Android:** M6.
     - **The scanner** is not used (D46 §2).
-- [ ] M5.5 iOS AutoFill Credential Provider + passkeys + QuickType identity sync.
+- [x] M5.5 iOS AutoFill Credential Provider + passkeys + QuickType identity sync.
+  - Per D47:
+    - **The extension** (`apps/apple/AutoFill`, iOS 17) shares the cache and Keychain group with the app; a one-time move brings existing installs over. It unlocks with Face ID or Touch ID only, lists the logins the core matches with a search, and fills on a tap (copying the one-time code for 30 seconds).
+    - **Passkeys:** sign-in and creation through new hashed core calls, with vectors (`passkey_hashed.json`, Rust and Node).
+    - **QuickType:** domains and usernames (and passkeys by RP id) in `ASCredentialIdentityStore`, replaced after every vault change, emptied by the Settings switch or at sign-out.
+    - **Settings:** a card that opens AutoFill settings while PWM is not the provider.
+  - **Deferred:**
+    - **A check on a device:** iOS calling the provider, and the Secure Enclave key in the shared group. Not possible in CI.
+    - **Fresh data in the extension** while the app hasn't run: background sync, M5.8.
+    - **macOS:** M5.6. **Android:** M6.3.
 - [ ] M5.6 macOS app + Safari Web Extension; native-messaging host for other browsers' biometric unlock.
 - [ ] M5.7 Screenshot/screen-recording protection on unlock and revealed secrets.
 - [ ] M5.8 Background sync, from M3:

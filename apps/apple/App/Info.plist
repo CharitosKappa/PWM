@@ -24,6 +24,10 @@
 	<true/>
 	<key>NSFaceIDUsageDescription</key>
 	<string>To unlock your vault with Face ID instead of your master password.</string>
+	<key>PWMAppGroup</key>
+	<string>$(PWM_APP_GROUP)</string>
+	<key>PWMKeychainGroup</key>
+	<string>$(AppIdentifierPrefix)$(PWM_KEYCHAIN_GROUP)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>To scan the QR code on your Emergency Kit, or a site's two-factor setup code.</string>
 	<key>NSAppTransportSecurity</key>

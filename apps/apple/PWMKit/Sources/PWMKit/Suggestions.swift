@@ -138,15 +138,15 @@ public struct SystemSuggestionStore: SuggestionStore {
     public func replace(with suggestions: [Suggestion]) async {
         let store = ASCredentialIdentityStore.shared
         guard await store.state().isEnabled else { return }
-        let identities: [any ASCredentialIdentity] = suggestions.map { s in
+        let identities = suggestions.map { s -> any ASCredentialIdentity in
             switch s.kind {
             case .password:
-                ASPasswordCredentialIdentity(
+                return ASPasswordCredentialIdentity(
                     serviceIdentifier: ASCredentialServiceIdentifier(identifier: s.service, type: .domain),
                     user: s.user, recordIdentifier: s.record
                 )
             case .passkey:
-                ASPasskeyCredentialIdentity(
+                return ASPasskeyCredentialIdentity(
                     relyingPartyIdentifier: s.service, userName: s.user,
                     credentialID: s.credentialId, userHandle: s.userHandle, recordIdentifier: s.record
                 )

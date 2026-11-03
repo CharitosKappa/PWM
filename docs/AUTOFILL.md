@@ -22,6 +22,9 @@ Autofill reliability is our top promise and the top complaint against every comp
 ## Mobile
 
 - iOS: AutoFill Credential Provider + passkey provider (ASCredentialProviderViewController). QuickType suggestions via `ASCredentialIdentityStore`, kept in sync after every vault change.
+  - Per D47: the extension (`apps/apple/AutoFill`) unlocks with Face ID or Touch ID only; without it, it says in one line what to do in the app. It lists the logins the core matches (D33) for each service identifier iOS passes, with a search over the rest; a tap fills, and copies the login's one-time code for 30 seconds. A suggestion chosen above the keyboard fills after Face ID; iOS's no-interaction path always answers "interaction required".
+  - Suggestions are each login's domains (the registrable domain for the default match, the host otherwise; regex and never URLs are left out) and username, plus passkeys by RP id. The switch "Suggest logins above the keyboard" is in Settings, on by default.
+  - Passkeys use the core's hashed calls (`passkey_register_hashed`, `passkey_assert_hashed`), since iOS passes only the client data hash.
 - Android: AutofillService + Credential Manager provider; inline suggestions on keyboards that support them; fall back to dataset picker.
 
 ## Test harness (`tests/autofill-harness`)

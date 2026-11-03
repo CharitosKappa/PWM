@@ -145,7 +145,12 @@ public final class SettingsModel {
 
     /// Read again when the app comes back from the Settings app.
     public func loadAutoFill() async {
+        let was = autofillOn
         autofillOn = await app.autofill.isProviderOn()
+        // iOS takes the suggestions only once PWM is the provider.
+        if was == false, autofillOn == true {
+            await account.setSuggestions(on: suggestLogins)
+        }
     }
 
     public func openAutoFillSettings() async {

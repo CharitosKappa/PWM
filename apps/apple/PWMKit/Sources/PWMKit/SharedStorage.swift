@@ -105,6 +105,11 @@ public enum SharedStorage {
         (Bundle.main.object(forInfoDictionaryKey: "PWMKeychainGroup") as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 
+    /// Settings both read: the suggestion switch (D47 §5).
+    public static var defaults: UserDefaults {
+        appGroup.flatMap(UserDefaults.init(suiteName:)) ?? .standard
+    }
+
     /// The app's places. The first launch with the shared places moves
     /// everything there; a build that can't reach them (no App Group or
     /// Keychain group in its signature) keeps the app's own, and the

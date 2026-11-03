@@ -81,7 +81,7 @@ extension AppModel {
 
     static func liveSuggestions(shared: Bool) -> Suggestions? {
         #if os(iOS)
-        shared ? Suggestions(store: SystemSuggestionStore()) : nil
+        shared ? Suggestions(store: SystemSuggestionStore(), defaults: SharedStorage.defaults) : nil
         #else
         nil
         #endif

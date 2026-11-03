@@ -198,10 +198,12 @@ final class AutoFillTests: XCTestCase {
         system.on = true
         await settings.loadAutoFill()
         XCTAssertEqual(settings.autofillOn, true)
+        var calls = await fakeAccount.calls
+        XCTAssertEqual(calls.last, "suggestions on", "sent again once iOS takes them")
 
         await settings.setSuggestLogins(false)
         XCTAssertFalse(settings.suggestLogins)
-        let calls = await fakeAccount.calls
+        calls = await fakeAccount.calls
         XCTAssertEqual(calls.last, "suggestions off")
     }
 }
