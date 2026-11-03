@@ -99,6 +99,22 @@ pub enum Outcome {
     },
     /// A device was renamed or revoked.
     DeviceUpdated,
+    /// The account's open device approval requests (D46).
+    Approvals {
+        approvals: Vec<ApprovalRequest>,
+    },
+    ApprovalUpdated,
+}
+
+/// A request from a new device; `code` once this device accepted it and the
+/// new device revealed its key.
+#[derive(uniffi::Record)]
+pub struct ApprovalRequest {
+    pub id: String,
+    pub platform: String,
+    pub created_at: i64,
+    pub state: String,
+    pub code: Option<String>,
 }
 
 /// One of the account's devices; `name` is `None` when it has none or it
@@ -137,22 +153,38 @@ fn count(n: usize) -> u64 {
     u64::try_from(n).unwrap_or(u64::MAX)
 }
 
+fn request_of(request: &pwm_client::HttpRequest) -> Request {
+    Request {
+        method: request.method.as_str().to_owned(),
+        path: request.path.clone(),
+        headers: request
+            .headers
+            .iter()
+            .map(|(n, v)| Header {
+                name: (*n).to_owned(),
+                value: v.clone(),
+            })
+            .collect(),
+        body: request.body.clone(),
+    }
+}
+
+fn response_of(response: Response) -> pwm_client::HttpResponse {
+    pwm_client::HttpResponse::new(
+        response.status,
+        response
+            .headers
+            .into_iter()
+            .map(|h| (h.name, h.value))
+            .collect(),
+        response.body,
+    )
+}
+
 fn step(step: pwm_client::Step) -> Step {
     match step {
         pwm_client::Step::Send(request) => Step::Send {
-            request: Request {
-                method: request.method.as_str().to_owned(),
-                path: request.path.clone(),
-                headers: request
-                    .headers
-                    .iter()
-                    .map(|(n, v)| Header {
-                        name: (*n).to_owned(),
-                        value: v.clone(),
-                    })
-                    .collect(),
-                body: request.body.clone(),
-            },
+            request: request_of(&request),
         },
         pwm_client::Step::Wait { delay_ms } => Step::Wait { delay_ms },
         pwm_client::Step::Done(outcome) => Step::Done {
@@ -188,6 +220,19 @@ fn step(step: pwm_client::Step) -> Step {
                         .collect(),
                 },
                 pwm_client::Outcome::DeviceUpdated => Outcome::DeviceUpdated,
+                pwm_client::Outcome::Approvals(approvals) => Outcome::Approvals {
+                    approvals: approvals
+                        .into_iter()
+                        .map(|a| ApprovalRequest {
+                            id: a.id,
+                            platform: a.platform,
+                            created_at: a.created_at,
+                            state: a.state,
+                            code: a.code,
+                        })
+                        .collect(),
+                },
+                pwm_client::Outcome::ApprovalUpdated => Outcome::ApprovalUpdated,
             },
         },
     }
@@ -478,16 +523,36 @@ impl PwmClient {
     }
 
     pub fn receive(&self, response: Response, now_ms: i64) -> Result<Step, PwmError> {
-        let response = pwm_client::HttpResponse::new(
-            response.status,
-            response
-                .headers
-                .into_iter()
-                .map(|h| (h.name, h.value))
-                .collect(),
-            response.body,
-        );
-        Ok(step(self.lock_inner().receive(response, now_ms)?))
+        Ok(step(
+            self.lock_inner().receive(response_of(response), now_ms)?,
+        ))
+    }
+
+    /// The account's open device approval requests (D46); ends with `Approvals`.
+    pub fn start_list_approvals(&self) -> Result<Step, PwmError> {
+        Ok(step(self.lock_inner().start_list_approvals()?))
+    }
+
+    /// Accepts a listed request; list again for the code.
+    pub fn start_accept_approval(&self, approval_id: String) -> Result<Step, PwmError> {
+        Ok(step(self.lock_inner().start_accept_approval(&approval_id)?))
+    }
+
+    /// After the user saw the same code on both devices: sends this device's
+    /// Secret Key, sealed for the new one.
+    pub fn start_complete_approval(
+        &self,
+        approval_id: String,
+        secret_key: String,
+    ) -> Result<Step, PwmError> {
+        Ok(step(
+            self.lock_inner()
+                .start_complete_approval(&approval_id, &secret_key)?,
+        ))
+    }
+
+    pub fn start_deny_approval(&self, approval_id: String) -> Result<Step, PwmError> {
+        Ok(step(self.lock_inner().start_deny_approval(&approval_id)?))
     }
 
     pub fn network_failed(&self) -> Result<Step, PwmError> {
@@ -1052,4 +1117,87 @@ pub fn breach_padding_header() -> Header {
 pub struct BiometricUnlock {
     pub blob: Vec<u8>,
     pub key: Vec<u8>,
+}
+
+/// What the new device does next (D46).
+#[derive(uniffi::Enum)]
+pub enum AskStep {
+    Send {
+        request: Request,
+    },
+    Wait {
+        delay_ms: u64,
+    },
+    /// Show it; the user compares it on the signed-in device. Keep polling.
+    ShowCode {
+        code: String,
+    },
+    /// Log in with it and the master password. Never log it.
+    Approved {
+        secret_key: String,
+    },
+    Ended,
+}
+
+/// The new device's side of an approval: send `first_request`, then
+/// `receive` each answer and `poll` when told to wait.
+#[derive(uniffi::Object)]
+pub struct ApprovalAsk {
+    inner: Mutex<pwm_client::ApprovalAsk>,
+    first: Mutex<Option<Request>>,
+}
+
+#[uniffi::export]
+impl ApprovalAsk {
+    #[uniffi::constructor]
+    pub fn new(email: String, platform: Platform) -> Result<Arc<Self>, PwmError> {
+        let (ask, request) = pwm_client::ApprovalAsk::start(&email, platform.into())?;
+        Ok(Arc::new(Self {
+            inner: Mutex::new(ask),
+            first: Mutex::new(Some(request_of(&request))),
+        }))
+    }
+
+    /// The request that makes it; given once.
+    pub fn first_request(&self) -> Option<Request> {
+        self.first
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+    }
+
+    pub fn poll(&self) -> Result<Request, PwmError> {
+        let mut ask = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Ok(request_of(&ask.poll()?))
+    }
+
+    /// Gives up; send it without waiting for the answer.
+    pub fn cancel(&self) -> Option<Request> {
+        let ask = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        ask.cancel().as_ref().map(request_of)
+    }
+
+    pub fn receive(&self, response: Response) -> Result<AskStep, PwmError> {
+        let mut ask = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Ok(match ask.receive(&response_of(response))? {
+            pwm_client::AskStep::Send(request) => AskStep::Send {
+                request: request_of(&request),
+            },
+            pwm_client::AskStep::Wait { delay_ms } => AskStep::Wait { delay_ms },
+            pwm_client::AskStep::ShowCode { code } => AskStep::ShowCode { code },
+            pwm_client::AskStep::Approved { secret_key } => AskStep::Approved {
+                secret_key: secret_key.expose_secret().clone(),
+            },
+            pwm_client::AskStep::Ended => AskStep::Ended,
+        })
+    }
 }
