@@ -34,6 +34,8 @@ public final class AppModel {
     private let defaults: UserDefaults
     private let pasteboard: any SecretPasteboard
     private let deviceName: String
+    /// Whether PWM is the AutoFill provider (D47 §7).
+    let autofill: any AutoFillSystem
     private let clock: @MainActor () -> ContinuousClock.Instant
     private var backgroundedAt: ContinuousClock.Instant?
 
@@ -49,12 +51,14 @@ public final class AppModel {
         defaults: UserDefaults = .standard,
         pasteboard: any SecretPasteboard,
         deviceName: String,
+        autofill: any AutoFillSystem = NoAutoFillSystem(),
         clock: @escaping @MainActor () -> ContinuousClock.Instant = { ContinuousClock.now }
     ) {
         self.makeAccount = makeAccount
         self.defaults = defaults
         self.pasteboard = pasteboard
         self.deviceName = deviceName
+        self.autofill = autofill
         self.clock = clock
     }
 

@@ -23,7 +23,7 @@ public enum SessionEvent: Sendable, Equatable {
 /// `HTTPTransport`; the Secret Key, tokens and device id go to `KeyStore`.
 /// Never logs values.
 public actor Session {
-    private let client: PwmClient
+    let client: PwmClient
     private let server: URL
     private let keys: any KeyStore
     private let transport: any HTTPTransport
@@ -31,7 +31,9 @@ public actor Session {
     private let breachTransport: any HTTPTransport
     /// Holds the biometric unlock key's protection (D45).
     private let biometrics: any BiometricKeyStore
-    private let now: @Sendable () -> Int64
+    /// The suggestions above the keyboard (D47 §5), when this app offers them.
+    private let suggestions: Suggestions?
+    let now: @Sendable () -> Int64
     private let eventsContinuation: AsyncStream<SessionEvent>.Continuation
 
     /// Item failures and other notices, for the app's UI.
@@ -41,6 +43,7 @@ public actor Session {
     ///   - cachePath: the cache file (see `CacheLocation`), or nil for memory only.
     ///   - server: the sync server's base URL.
     ///   - breachTransport: sends the breach check's range requests (D22 §4).
+    ///   - suggestions: kept current after every vault change (D47 §5).
     public init(
         cachePath: String?,
         server: URL,
@@ -48,6 +51,7 @@ public actor Session {
         transport: any HTTPTransport = URLSessionTransport(),
         breachTransport: any HTTPTransport = URLSessionTransport(),
         biometrics: any BiometricKeyStore = Biometrics.platform,
+        suggestions: Suggestions? = nil,
         now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }
     ) throws {
         client = try core {
@@ -58,6 +62,7 @@ public actor Session {
         self.transport = transport
         self.breachTransport = breachTransport
         self.biometrics = biometrics
+        self.suggestions = suggestions
         self.now = now
         let (stream, continuation) = AsyncStream.makeStream(of: SessionEvent.self)
         events = stream
@@ -117,9 +122,12 @@ public actor Session {
         try core { try client.unlock(password: password.value, secretKey: secretKey, access: access, refresh: refresh) }
         try passwordTyped()
         // The blob is made again, so it always matches the keyset (D45 §4).
+        // After the move to the shared places (D47 §2) only the blob is
+        // left, and this makes the key again in the shared group.
         if try keys.get(.biometricBlob) != nil {
             try storeBiometricUnlock(try makeBiometricUnlock())
         }
+        refreshSuggestions()
     }
 
     /// Drops every key from memory; a running conversation is abandoned.
@@ -136,6 +144,7 @@ public actor Session {
     /// and email. The device id stays. Unsent changes are lost.
     public func signOut() throws {
         try core { try client.signOut() }
+        suggestions?.clear()
         try disableBiometricUnlock()
         for name in [KeyName.secretKey, .accessToken, .refreshToken, .email, .passwordUnlockedAt] {
             try keys.delete(name)
@@ -179,6 +188,9 @@ public actor Session {
         guard case .on = try biometricState() else { throw PWMError(code: "biometric_unavailable") }
         let last = try keys.get(.passwordUnlockedAt).flatMap { Int64($0) } ?? 0
         guard now() - last < Biometrics.masterPasswordEveryMs else { throw PWMError(code: "master_password_due") }
+        // Moved to the shared places without its key (D47 §2): the next
+        // master password unlock makes the key again.
+        guard try keys.get(.biometricKey) != nil else { throw PWMError(code: "master_password_due") }
         guard let blob = try keys.get(.biometricBlob).flatMap({ Data(base64Encoded: $0) }),
               let wrapped = try keys.get(.biometricKey).flatMap({ Data(base64Encoded: $0) }),
               let access = try keys.get(.accessToken),
@@ -203,6 +215,7 @@ public actor Session {
             try disableBiometricUnlock()
             throw PWMError(code: "biometric_changed")
         }
+        refreshSuggestions()
     }
 
     private struct MadeUnlock {
@@ -253,6 +266,7 @@ public actor Session {
         }
         switch outcome {
         case let .synced(pulled, pushed, conflicts, failed, _):
+            if pulled > 0 || pushed > 0 { refreshSuggestions() }
             return .synced(pulled: pulled, pushed: pushed, conflicts: conflicts, failed: failed)
         case .signedOut: return .signedOut
         case .deviceRevoked: return .deviceRevoked
@@ -285,21 +299,50 @@ public actor Session {
     public func save(_ item: Item, in vaultId: String) throws -> String {
         guard item.isEditable else { throw PWMError(code: "read_only_item") }
         let json = try item.text()
-        return try core { try client.saveItem(vaultId: vaultId, json: json, nowMs: now()) }
+        let id = try core { try client.saveItem(vaultId: vaultId, json: json, nowMs: now()) }
+        refreshSuggestions()
+        return id
     }
 
     public func setTrashed(_ itemId: String, in vaultId: String, trashed: Bool) throws {
         try core { try client.setTrashed(vaultId: vaultId, itemId: itemId, trashed: trashed, nowMs: now()) }
+        refreshSuggestions()
     }
 
     public func delete(_ itemId: String, in vaultId: String) throws {
         try core { try client.deleteItem(vaultId: vaultId, itemId: itemId) }
+        refreshSuggestions()
     }
 
     /// Deletes items that have been in the trash for 30 days (D19).
     @discardableResult
     public func purgeTrash() throws -> Int {
         Int(try core { try client.purgeTrash(nowMs: now()) })
+    }
+
+    // MARK: Suggestions above the keyboard (D47 §5)
+
+    /// "Suggest logins above the keyboard"; on by default.
+    public func suggestionsOn() -> Bool { suggestions?.isOn ?? false }
+
+    public func setSuggestions(on: Bool) {
+        suggestions?.isOn = on
+        refreshSuggestions()
+    }
+
+    /// Sends the current list (domains and usernames only) to the system,
+    /// or empties it when the switch is off. Needs the vault unlocked; a
+    /// failure leaves the last list until the next change.
+    func refreshSuggestions() {
+        guard let suggestions else { return }
+        guard suggestions.isOn else {
+            suggestions.clear()
+            return
+        }
+        guard client.isUnlocked(),
+              let identities = try? core({ try client.credentialIdentities() })
+        else { return }
+        suggestions.update(identities.compactMap(Suggestion.init))
     }
 
     /// The login's current one-time code and the seconds it stays valid.

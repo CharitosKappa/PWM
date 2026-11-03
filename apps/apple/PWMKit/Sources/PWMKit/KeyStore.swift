@@ -112,5 +112,14 @@ public struct KeychainKeyStore: KeyStore {
             throw PWMError(code: "keychain")
         }
     }
+
+    /// Whether this build may use the access group: a build signed without
+    /// it gets a missing-entitlement error.
+    public func isReachable() -> Bool {
+        var query = query(.deviceId)
+        query[kSecMatchLimit] = kSecMatchLimitOne
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
 }
 #endif

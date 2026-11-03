@@ -60,20 +60,39 @@ public var currentDeviceName: String {
 
 #if canImport(Security)
 extension AppModel {
-    /// The app's model over the real `Session`: the cache in Application
-    /// Support and the keys in the app's own Keychain group. The App Group
-    /// and shared Keychain group come with the AutoFill extension (M5.5).
+    /// The app's model over the real `Session`, in the places it shares
+    /// with the AutoFill extension (D47 §2): the first launch moves the
+    /// cache and keys there. On iOS it keeps the suggestions above the
+    /// keyboard current and knows whether PWM is the AutoFill provider.
     public static func live() -> AppModel {
         AppModel(
             makeAccount: { server in
-                let support = try FileManager.default.url(
-                    for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+                let places = try SharedStorage.app()
+                return try Session(
+                    cachePath: places.cachePath, server: server, keys: places.keys,
+                    biometrics: places.biometrics, suggestions: liveSuggestions(shared: places.shared)
                 )
-                return try Session(cachePath: CacheLocation.path(in: support), server: server, keys: KeychainKeyStore())
             },
             pasteboard: SystemPasteboard(),
-            deviceName: currentDeviceName
+            deviceName: currentDeviceName,
+            autofill: liveAutoFill
         )
+    }
+
+    static func liveSuggestions(shared: Bool) -> Suggestions? {
+        #if os(iOS)
+        shared ? Suggestions(store: SystemSuggestionStore()) : nil
+        #else
+        nil
+        #endif
+    }
+
+    static var liveAutoFill: any AutoFillSystem {
+        #if os(iOS)
+        SystemAutoFill()
+        #else
+        NoAutoFillSystem()
+        #endif
     }
 }
 #endif

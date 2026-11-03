@@ -130,9 +130,32 @@ public final class SettingsModel {
     /// Face ID / Touch ID (D45); nil until loaded.
     public private(set) var biometric: BiometricState?
 
+    /// Whether PWM fills in other apps and Safari (D47 §7); nil until
+    /// loaded. The card that explains how to turn it on shows while false.
+    public private(set) var autofillOn: Bool?
+    /// "Suggest logins above the keyboard" (D47 §5).
+    public private(set) var suggestLogins = true
+
     public func load() async {
         email = (try? await account.email()) ?? nil
         biometric = try? await account.biometricState()
+        suggestLogins = await account.suggestionsOn()
+        await loadAutoFill()
+    }
+
+    /// Read again when the app comes back from the Settings app.
+    public func loadAutoFill() async {
+        autofillOn = await app.autofill.isProviderOn()
+    }
+
+    public func openAutoFillSettings() async {
+        await app.autofill.openSettings()
+    }
+
+    /// Off empties the system's list; on sends it again.
+    public func setSuggestLogins(_ on: Bool) async {
+        await account.setSuggestions(on: on)
+        suggestLogins = on
     }
 
     /// Turning it on asks for Face ID once; off deletes the keys.

@@ -331,6 +331,105 @@ extension ServerTests {
         let unlocked = await new.isUnlocked
         XCTAssertTrue(unlocked)
     }
+
+    /// The suggestions iOS gets (D47 §5), what the AutoFill extension fills
+    /// and signs (§4, §6), and Face ID after the move to the shared places.
+    func testSuggestionsAndWhatTheExtensionFills() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "pwm-suggest-\(UUID().uuidString)"))
+        let store = FakeSuggestionStore()
+        let suggestions = Suggestions(store: store, defaults: defaults)
+        let keys = MemoryKeyStore()
+        let session = try Session(
+            cachePath: nil, server: server, keys: keys, biometrics: FakeBiometrics(), suggestions: suggestions
+        )
+        try await logInShared(session)
+        let domain = "example-\(UUID().uuidString.prefix(8).lowercased()).com"
+        let vaultId = try await XCTUnwrapAsync(try await session.vaultIds().first)
+        var item = try await session.newItem(.login, title: "Shop")
+        var login = Login()
+        login.username = "ada"
+        login.password = "hunter2-secret"
+        login.urls = [LoginURL(url: "https://shop.\(domain)/login")]
+        item.login = login
+        let itemId = try await session.save(item, in: vaultId)
+        let record = Suggestion.record(vaultId: vaultId, itemId: itemId)
+
+        await suggestions.settle()
+        var last = await store.lists.last ?? []
+        let password = try XCTUnwrap(last.first { $0.record == record && $0.kind == .password })
+        XCTAssertEqual(password.service, domain, "the registrable domain")
+        XCTAssertEqual(password.user, "ada")
+        XCTAssertFalse(String(describing: last).contains("hunter2"), "never a password")
+
+        let choices = try await session.fillChoices(for: ["shop.\(domain)"])
+        XCTAssertEqual(choices.map(\.itemId), [itemId])
+        let elsewhere = try await session.fillChoices(for: ["other-\(domain)"])
+        XCTAssertTrue(elsewhere.isEmpty)
+        let all = try await session.allFillChoices()
+        XCTAssertTrue(all.contains { $0.itemId == itemId })
+        let credential = try await session.fillCredential(itemId, in: vaultId)
+        XCTAssertEqual(credential.username, "ada")
+        XCTAssertEqual(credential.password.value, "hunter2-secret")
+        XCTAssertFalse(credential.hasCode)
+
+        // A passkey made from what iOS hands over joins the login.
+        let made = try await session.registerPasskey(rpId: domain, userName: "ada", userHandle: Data("handle".utf8))
+        XCTAssertEqual(made.credentialId.count, 16)
+        XCTAssertFalse(made.attestationObject.isEmpty)
+        await suggestions.settle()
+        last = await store.lists.last ?? []
+        let passkey = try XCTUnwrap(last.first { $0.record == record && $0.kind == .passkey })
+        XCTAssertEqual(passkey.service, domain)
+        XCTAssertEqual(passkey.credentialId, made.credentialId)
+        XCTAssertEqual(passkey.userHandle, Data("handle".utf8))
+        let passkeys = try await session.passkeyChoices(rpId: domain, allowed: [])
+        XCTAssertEqual(passkeys.map(\.credentialId), [made.credentialId])
+        let unlisted = try await session.passkeyChoices(rpId: domain, allowed: [Data([1])])
+        XCTAssertTrue(unlisted.isEmpty)
+        let signed = try await session.signWithPasskey(
+            try XCTUnwrap(passkeys.first), rpId: domain, clientDataHash: Data(repeating: 7, count: 32)
+        )
+        XCTAssertEqual(signed.authenticatorData.count, 37)
+        XCTAssertEqual(signed.userHandle, Data("handle".utf8))
+        XCTAssertFalse(signed.signature.isEmpty)
+
+        // The switch.
+        await session.setSuggestions(on: false)
+        await suggestions.settle()
+        last = await store.lists.last ?? [Suggestion(kind: .password, service: "", user: "", record: "")]
+        XCTAssertEqual(last, [])
+        await session.setSuggestions(on: true)
+        await suggestions.settle()
+        last = await store.lists.last ?? []
+        XCTAssertTrue(last.contains { $0.record == record })
+
+        // Face ID moved without its key: the password unlock makes it again.
+        try await session.enableBiometricUnlock(reason: "Turn on Face ID")
+        keys.delete(.biometricKey)
+        await session.lock()
+        do {
+            try await session.unlockWithBiometrics(reason: "Fill")
+            XCTFail("unlocked without the key")
+        } catch {
+            XCTAssertEqual(code(of: error), "master_password_due")
+        }
+        let state = try await session.biometricState()
+        XCTAssertEqual(state, .on(.faceID), "still on")
+        try await session.unlock(password: strong)
+        XCTAssertNotNil(keys.get(.biometricKey))
+        await session.lock()
+        try await session.unlockWithBiometrics(reason: "Fill")
+
+        // Trash takes it out; signing out empties the list.
+        try await session.setTrashed(itemId, in: vaultId, trashed: true)
+        await suggestions.settle()
+        last = await store.lists.last ?? []
+        XCTAssertFalse(last.contains { $0.record == record })
+        try await session.signOut()
+        await suggestions.settle()
+        last = await store.lists.last ?? [Suggestion(kind: .password, service: "", user: "", record: "")]
+        XCTAssertEqual(last, [])
+    }
 }
 
 /// The account the server tests share, signed up once per run.
