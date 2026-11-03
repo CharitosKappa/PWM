@@ -1800,3 +1800,14 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The secure-text-field layer trick on iOS:** it does blank screenshots, but it's undocumented, fragile, and costs VoiceOver.
   - **Warning before each reveal while recording:** a prompt every time, which `CLAUDE.md` rules out (no nags).
   - **macOS exclusion always on, with no switch:** simpler, but it blocks honest screen sharing for support with no way out.
+
+  Implementation notes (M5.7):
+  - **`ScreenCapture`** (in `PWMUI`) holds whether the screen is captured and tells the models that registered (weakly) when capture starts or a screenshot is taken. `RootView` feeds the shared one on iOS: `sceneCaptureState` through a trait-change registration on the window's scene (no `UIApplication.shared`, so the AutoFill extension still builds), and the screenshot notification.
+  - **The models:** `ItemDetailModel` hides revealed fields and the one-time code, refuses to reveal while captured, masks again after a screenshot with its line, and never reveals again by itself. `SecretKeyModel` and `GeneratorModel` hide their value while captured. Copying still works everywhere.
+  - **The Emergency Kit preview:** the app shows none of its own; the kit opens in the system's share sheet, which the app can't hide. Not covered.
+  - **The switcher cover (iOS):** from inactive, over the vault and the Secret Key screen, lifted when active again and the lock-timeout check is done. On macOS it still starts only in the background, since an inactive Mac window stays on screen beside others.
+  - **macOS:** `WindowSharing` sets `NSWindow.sharingType` to `.none` while the vault or the Secret Key shows and the switch is on (`hideFromCapture`, on by default).
+  - **Tests:** 5 new package tests on Linux (recording, screenshots, the Secret Key and the generator, dropped listeners, the macOS switch).
+  - **Not done as proposed:** a UI test for the switcher cover. XCUITest has no reliable way to hold the app in the inactive state. A manual step covers it in `QUALITY.md`, with recording, mirroring, screenshots and the macOS setting.
+  - **Not run on this machine:** the views and the system feeds (no Xcode); CI builds them first.
+

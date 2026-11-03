@@ -171,6 +171,26 @@ public final class AppModel {
 
     static let breachCheckKey = "breachCheck"
 
+    /// macOS: the window is left out of screenshots, recordings and screen
+    /// sharing while it shows the vault or the Secret Key; on by default (D49 §5).
+    public var hidesFromCapture: Bool {
+        get { defaults.object(forKey: Self.hidesFromCaptureKey) as? Bool ?? true }
+        set {
+            defaults.set(newValue, forKey: Self.hidesFromCaptureKey)
+            hidesFromCaptureChanged += 1
+        }
+    }
+
+    static let hidesFromCaptureKey = "hideFromCapture"
+    /// Read by the view so a change applies at once.
+    private(set) var hidesFromCaptureChanged = 0
+
+    /// Whether the window is left out of captures now (macOS).
+    public var hidesWindow: Bool {
+        _ = hidesFromCaptureChanged
+        return hidesFromCapture && (screen == .vault || screen == .secretKey)
+    }
+
     public var lockTimeout: LockTimeout {
         get { LockTimeout.saved(in: defaults) }
         set { defaults.set(newValue.rawValue, forKey: LockTimeout.key) }

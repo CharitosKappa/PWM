@@ -60,6 +60,15 @@ For each release candidate, signed with the founder's Developer ID and notarized
 4. Create a passkey on a WebAuthn test page in Safari, then sign in with it.
 5. Turn off "Suggest logins above the keyboard": no suggestions are left. Sign out: none either.
 
+### Screen capture checklist (D49)
+
+On an iPhone and a Mac, for each release candidate:
+
+1. Reveal a password, then start a screen recording (Control Center): it shows "Hidden while your screen is recorded or shared", and Show does nothing. Stop: the password stays masked until tapped.
+2. Reveal a password and take a screenshot: it is masked again, with the line about the photo library.
+3. Open the app switcher on the vault and on the Secret Key screen: both are covered.
+4. On the Mac, take a screenshot and share the screen while unlocked: the PWM window is left out. Turn off "Hide PWM from screenshots and screen sharing": it shows.
+
 ## Success metrics
 
 | Metric | Phase 1 | Phase 2 | Phase 3 |

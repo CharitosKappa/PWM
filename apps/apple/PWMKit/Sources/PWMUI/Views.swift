@@ -15,11 +15,16 @@ import AppKit
 
 /// The app's root: one screen at a time, chosen by `AppModel`. It tells the
 /// model when the app leaves and comes back, for the lock timeout (D43 §5),
-/// and covers the vault from leaving until that check is done.
+/// and covers the vault and the Secret Key from leaving until that check is
+/// done. On iOS the cover starts as soon as the app is inactive, before the
+/// app switcher takes its picture (D49 §4); it also feeds `ScreenCapture`.
 public struct RootView: View {
     let model: AppModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var covered = false
+    @State private var active = true
+    /// The lock timeout check after coming back is under way.
+    @State private var checking = false
 
     public init(model: AppModel) {
         self.model = model
@@ -28,23 +33,33 @@ public struct RootView: View {
     public var body: some View {
         screens
             .overlay {
-                if covered && model.screen == .vault {
+                if covered && (model.screen == .vault || model.screen == .secretKey) {
                     Tokens.Color.bg.color.ignoresSafeArea()
                         .accessibilityIdentifier("privacyCover")
                 }
             }
             .onChange(of: scenePhase) { old, new in
-                if new == .background {
+                active = new == .active
+                switch new {
+                case .background:
                     covered = true
                     Task { await model.didEnterBackground() }
-                } else if old == .background {
-                    Task {
-                        await model.willEnterForeground()
-                        covered = false
-                    }
+                case .inactive:
+                    #if os(iOS)
+                    covered = true
+                    #endif
+                    if old == .background { comeBack() }
+                case .active:
+                    if old == .background { comeBack() } else if !checking { covered = false }
+                @unknown default:
+                    break
                 }
             }
             #if os(iOS)
+            .background(CaptureWatcher())
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.userDidTakeScreenshotNotification)) { _ in
+                ScreenCapture.shared.screenshotTaken()
+            }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
                 Task { await model.deviceWillLock() }
             }
@@ -66,7 +81,23 @@ public struct RootView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 Task { await model.willEnterForeground() }
             }
+            .background(WindowSharing(hidden: model.hidesWindow))
             #endif
+    }
+
+    /// Back from the background: the lock timeout first, then uncover (on
+    /// iOS only once active again, so the switcher never sees the vault).
+    private func comeBack() {
+        checking = true
+        Task {
+            await model.willEnterForeground()
+            checking = false
+            #if os(iOS)
+            if active { covered = false }
+            #else
+            covered = false
+            #endif
+        }
     }
 
     private var screens: some View {
@@ -287,7 +318,7 @@ struct SecretKeyView: View {
 
     var body: some View {
         Page(title: "Save your Secret Key", subtitle: "You need it with your master password to sign in on a new device. It is shown only now.") {
-            Text(model.secretKey.value)
+            Text(verbatim: model.hiddenByCapture ? ScreenCapture.hiddenLine : model.secretKey.value)
                 .textStyle(Tokens.Text.secret)
                 .textSelection(.enabled)
                 .padding(Tokens.Space.s3)

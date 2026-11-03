@@ -296,6 +296,14 @@ struct ItemDetailView: View {
                         .textStyle(Tokens.Text.caption)
                 }
             }
+            if let notice = model.notice {
+                Section {
+                    Text(verbatim: notice)
+                        .textStyle(Tokens.Text.caption)
+                        .foregroundStyle(Tokens.Color.textMuted.color)
+                        .accessibilityIdentifier("captureNotice")
+                }
+            }
             switch item.kind {
             case .login: loginFields
             case .card: cardFields
@@ -470,12 +478,13 @@ struct FieldRow: View {
 
     var body: some View {
         let shown = !hidden || model.isRevealed(key)
+        let captured = hidden && model.hiddenByCapture
         HStack(spacing: Tokens.Space.s2) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: label)
                     .textStyle(Tokens.Text.caption)
                     .foregroundStyle(Tokens.Color.textMuted.color)
-                Text(verbatim: shown ? value : ItemDetailModel.masked(value))
+                Text(verbatim: captured ? ScreenCapture.hiddenLine : shown ? value : ItemDetailModel.masked(value))
                     .font(monospaced ? .system(.body, design: .monospaced) : .body)
                     .textSelection(.enabled)
                     .accessibilityIdentifier("value.\(key)")
@@ -488,6 +497,7 @@ struct FieldRow: View {
                     Image(systemName: shown ? "eye.slash" : "eye")
                 }
                 .buttonStyle(.borderless)
+                .disabled(captured)
                 .accessibilityLabel(shown ? "Hide" : "Show")
                 .accessibilityIdentifier("show.\(key)")
             }
@@ -515,6 +525,9 @@ struct CodeRow: View {
                     .foregroundStyle(Tokens.Color.textMuted.color)
                 if model.codeUnsupported {
                     Text("Unsupported code type").foregroundStyle(Tokens.Color.textMuted.color)
+                } else if model.hiddenByCapture, model.code != nil {
+                    Text(verbatim: ScreenCapture.hiddenLine)
+                        .foregroundStyle(Tokens.Color.textMuted.color)
                 } else if let code = model.code {
                     Text(verbatim: code.value.value)
                         .font(.system(.title3, design: .monospaced))

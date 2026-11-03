@@ -505,7 +505,15 @@ Phase 3  Teams           months 16–24 M16–M19
     - **⌘F** for the search field: not checked yet (D48 notes).
 - [ ] M5.11 Safari Web Extension (D48 §4): a third extension build (`build.mjs --target safari`) inside the macOS app, with Firefox's capability set.
 - [ ] M5.12 Touch ID unlock for the extension in other browsers (D48 §5): a native-messaging helper in the macOS app keeps a key behind Touch ID that opens a sealed blob the extension holds. New AAD label `pwm/browser-unlock`, vectors, a versioned protocol. Windows and Linux in M7.2.
-- [ ] M5.7 Screenshot/screen-recording protection on unlock and revealed secrets.
+- [x] M5.7 Screenshot/screen-recording protection on unlock and revealed secrets.
+  - Per D49:
+    - **iOS, while recorded, mirrored or captured:** revealed values, one-time codes, the Secret Key and the generator's password are hidden, and revealing is off; copying still works.
+    - **iOS screenshots:** iOS can't block them, so what was shown is masked again, with one line saying why.
+    - **The app switcher:** covered from the moment the app is inactive, including the Secret Key screen.
+    - **macOS:** the window is left out of screenshots, recordings and screen sharing while unlocked ("Hide PWM from screenshots and screen sharing", on by default).
+  - **Deferred:**
+    - **A check on a device:** real recording, mirroring and screenshots (manual steps in `QUALITY.md`).
+    - **Android:** M6.4. **Windows:** M7. **Linux and the browser extension:** no API (logged in D49).
 - [ ] M5.8 Background sync, from M3:
   - **Pulling while locked:** store new ciphertext in the cache without keys, and merge conflicts at the next unlock. This keeps the AutoFill extension's data fresh.
   - **Background refresh:** iOS background refresh, and a timer on macOS.
