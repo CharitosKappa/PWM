@@ -30,6 +30,7 @@ public struct RootView: View {
             .overlay {
                 if covered && model.screen == .vault {
                     Tokens.Color.bg.color.ignoresSafeArea()
+                        .accessibilityIdentifier("privacyCover")
                 }
             }
             .onChange(of: scenePhase) { old, new in

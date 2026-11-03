@@ -51,8 +51,11 @@ final class MacUITests: XCTestCase {
         click(app.buttons["unlock"], once: .enabled)
         expect(app.staticTexts["Bank"].firstMatch, timeout: 30)
 
-        // The sidebar switches panes.
-        click(sidebarRow("sidebar.generator"))
+        // The sidebar switches panes. Clicked by position: XCUITest calls
+        // these rows not hittable even when nothing covers them.
+        let generator = sidebarRow("sidebar.generator")
+        expect(generator)
+        generator.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
         expect(app.staticTexts["generated"])
 
         signOut()
