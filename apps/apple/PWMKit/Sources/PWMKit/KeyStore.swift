@@ -60,10 +60,15 @@ import Security
 public struct KeychainKeyStore: KeyStore {
     public let service: String
     public let accessGroup: String?
+    /// The data-protection Keychain, as on iOS. A Mac build signed without
+    /// a Keychain entitlement (CI's ad-hoc builds) can only use the login
+    /// keychain, which `SharedStorage` then picks (D48 §2).
+    public let dataProtection: Bool
 
-    public init(service: String = "pwm", accessGroup: String? = nil) {
+    public init(service: String = "pwm", accessGroup: String? = nil, dataProtection: Bool = true) {
         self.service = service
         self.accessGroup = accessGroup
+        self.dataProtection = dataProtection
     }
 
     private func query(_ name: KeyName) -> [CFString: Any] {
@@ -71,8 +76,10 @@ public struct KeychainKeyStore: KeyStore {
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccount: name.rawValue,
-            kSecUseDataProtectionKeychain: true,
         ]
+        if dataProtection {
+            query[kSecUseDataProtectionKeychain] = true
+        }
         if let accessGroup {
             query[kSecAttrAccessGroup] = accessGroup
         }
@@ -94,10 +101,10 @@ public struct KeychainKeyStore: KeyStore {
 
     public func set(_ name: KeyName, _ value: String) throws {
         let data = Data(value.utf8)
-        let update: [CFString: Any] = [
-            kSecValueData: data,
-            kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-        ]
+        var update: [CFString: Any] = [kSecValueData: data]
+        if dataProtection {
+            update[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        }
         var status = SecItemUpdate(query(name) as CFDictionary, update as CFDictionary)
         if status == errSecItemNotFound {
             let add = query(name).merging(update) { $1 }

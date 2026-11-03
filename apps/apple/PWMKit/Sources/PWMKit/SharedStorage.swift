@@ -115,12 +115,20 @@ public enum SharedStorage {
     /// Keychain group in its signature) keeps the app's own, and the
     /// extension then says to open the app.
     public static func app() throws -> SessionPlaces {
+        let ownKeys: KeychainKeyStore = {
+            #if os(macOS)
+            let keys = KeychainKeyStore()
+            return keys.isReachable() ? keys : KeychainKeyStore(dataProtection: false)
+            #else
+            return KeychainKeyStore()
+            #endif
+        }()
         let support = try FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
         )
         let own = SessionPlaces(
             cachePath: try CacheLocation.path(in: support),
-            keys: KeychainKeyStore(),
+            keys: ownKeys,
             biometrics: Biometrics.platform,
             shared: false
         )

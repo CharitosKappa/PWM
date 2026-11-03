@@ -53,6 +53,20 @@ final class VaultTests: XCTestCase {
         XCTAssertEqual(found("hunter2"), [], "never passwords")
     }
 
+    /// ⌘N on macOS (D48 §2): the list opens the editor; from the trash it
+    /// goes back to all items first.
+    func testANewItemFromTheMenuBar() async {
+        let model = await vault()
+        model.section = .trash
+        model.requestNew(.login)
+        XCTAssertEqual(model.section, .all)
+        XCTAssertEqual(model.pendingNew, .login)
+        model.section = .favorites
+        model.requestNew(.note)
+        XCTAssertEqual(model.section, .favorites, "other sections stay")
+        XCTAssertEqual(model.pendingNew, .note)
+    }
+
     func testOrderIsByTitleThenId() {
         let entries = [("b", "Mail"), ("a", "Mail"), ("c", "Apple"), ("d", "item 10"), ("e", "item 9")].map {
             Entry(vaultId: "v", item: loginItem($0.0, $0.1))

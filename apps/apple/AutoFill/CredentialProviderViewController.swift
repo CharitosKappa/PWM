@@ -3,8 +3,9 @@ import PWMKit
 import PWMUI
 import SwiftUI
 
-/// The AutoFill extension (D47): a thin shell that turns what iOS asks into
-/// an `AutoFillRequest`, shows `AutoFillView`, and hands the answer back.
+/// The AutoFill extension (D47, and on macOS D48 §2): a thin shell that
+/// turns what the system asks into an `AutoFillRequest`, shows
+/// `AutoFillView`, and hands the answer back. iOS and macOS share it.
 /// It unlocks with Face ID or Touch ID only, and every key it opened is
 /// dropped before it answers.
 final class CredentialProviderViewController: ASCredentialProviderViewController {
@@ -79,12 +80,21 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
             self?.answer($0)
         }
         self.model = model
+        #if os(macOS)
+        let host = NSHostingController(rootView: AutoFillView(model: model))
+        addChild(host)
+        host.view.frame = view.bounds
+        host.view.autoresizingMask = [.width, .height]
+        view.addSubview(host.view)
+        preferredContentSize = NSSize(width: 420, height: 480)
+        #else
         let host = UIHostingController(rootView: AutoFillView(model: model))
         addChild(host)
         host.view.frame = view.bounds
         host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(host.view)
         host.didMove(toParent: self)
+        #endif
     }
 
     private func answer(_ result: AutoFillResult) {

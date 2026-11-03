@@ -63,7 +63,8 @@ extension AppModel {
     /// The app's model over the real `Session`, in the places it shares
     /// with the AutoFill extension (D47 §2): the first launch moves the
     /// cache and keys there. On iOS it keeps the suggestions above the
-    /// keyboard current and knows whether PWM is the AutoFill provider.
+    /// keyboard current and knows whether PWM is the AutoFill provider
+    /// (on macOS too, D48 §2).
     public static func live() -> AppModel {
         AppModel(
             makeAccount: { server in
@@ -80,7 +81,7 @@ extension AppModel {
     }
 
     static func liveSuggestions(shared: Bool) -> Suggestions? {
-        #if os(iOS)
+        #if os(iOS) || os(macOS)
         shared ? Suggestions(store: SystemSuggestionStore(), defaults: SharedStorage.defaults) : nil
         #else
         nil
@@ -88,7 +89,7 @@ extension AppModel {
     }
 
     static var liveAutoFill: any AutoFillSystem {
-        #if os(iOS)
+        #if os(iOS) || os(macOS)
         SystemAutoFill()
         #else
         NoAutoFillSystem()

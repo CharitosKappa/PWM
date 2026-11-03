@@ -4,6 +4,7 @@ name: PWM
 options:
   deploymentTarget:
     iOS: "17.0"
+    macOS: "14.0"
   createIntermediateGroups: true
   developmentLanguage: en
 configFiles:
@@ -74,6 +75,74 @@ targets:
     dependencies:
       - package: PWMKit
         products: [PWMKit, PWMDesign, PWMUI]
+  # The macOS app (D48 §2): the same package, a sidebar, Touch ID, and the
+  # credential provider for Safari and other apps. Distributed with
+  # Developer ID, outside the Mac App Store (D48 §3).
+  PWMMac:
+    type: application
+    platform: macOS
+    sources:
+      - Mac
+    postBuildScripts:
+      - name: Third-party notices
+        basedOnDependencyAnalysis: false
+        script: |
+          for name in rust.html data.md data-autofill.md; do
+            file="$SRCROOT/../../THIRD_PARTY_NOTICES/$name"
+            if [ -f "$file" ]; then
+              cp "$file" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/"
+            fi
+          done
+    settings:
+      base:
+        PRODUCT_NAME: PWM
+        PRODUCT_BUNDLE_IDENTIFIER: invalid.pwm.mac
+        INFOPLIST_FILE: Mac/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Mac/PWMMac.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    dependencies:
+      - package: PWMKit
+        products: [PWMKit, PWMDesign, PWMUI]
+      - target: PWMMacAutoFill
+        embed: true
+  PWMMacAutoFill:
+    type: app-extension
+    platform: macOS
+    sources:
+      - AutoFill/CredentialProviderViewController.swift
+    settings:
+      base:
+        PRODUCT_NAME: PWMAutoFill
+        PRODUCT_BUNDLE_IDENTIFIER: invalid.pwm.mac.autofill
+        INFOPLIST_FILE: AutoFill/Info.plist
+        CODE_SIGN_ENTITLEMENTS: AutoFill/PWMAutoFill-macOS.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        APPLICATION_EXTENSION_API_ONLY: YES
+    dependencies:
+      - package: PWMKit
+        products: [PWMKit, PWMDesign, PWMUI]
+  PWMMacUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - MacUITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: invalid.pwm.mac.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+        TEST_TARGET_NAME: PWMMac
+    dependencies:
+      - target: PWMMac
   PWMUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -96,3 +165,11 @@ schemes:
     test:
       targets:
         - PWMUITests
+  PWMMac:
+    build:
+      targets:
+        PWMMac: all
+        PWMMacUITests: [test]
+    test:
+      targets:
+        - PWMMacUITests

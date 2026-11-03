@@ -253,7 +253,7 @@ public struct NoAutoFillSystem: AutoFillSystem {
     public func openSettings() async {}
 }
 
-#if os(iOS) && canImport(AuthenticationServices)
+#if (os(iOS) || os(macOS)) && canImport(AuthenticationServices)
 import AuthenticationServices
 
 public struct SystemAutoFill: AutoFillSystem {

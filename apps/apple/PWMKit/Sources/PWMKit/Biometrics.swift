@@ -120,12 +120,17 @@ public struct SecureEnclaveKeyStore: BiometricKeyStore {
         if let accessGroup {
             keyAttributes[kSecAttrAccessGroup] = accessGroup
         }
-        let attributes: [CFString: Any] = [
+        var attributes: [CFString: Any] = [
             kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
             kSecAttrKeySizeInBits: 256,
             kSecAttrTokenID: kSecAttrTokenIDSecureEnclave,
             kSecPrivateKeyAttrs: keyAttributes,
         ]
+        // On macOS, Secure Enclave keys live in the data-protection Keychain
+        // only (D48 §2); iOS has no other.
+        #if os(macOS)
+        attributes[kSecUseDataProtectionKeychain] = true
+        #endif
         guard let privateKey = SecKeyCreateRandomKey(attributes as CFDictionary, &error),
               let publicKey = SecKeyCopyPublicKey(privateKey),
               let wrapped = SecKeyCreateEncryptedData(publicKey, Self.algorithm, secret.value as CFData, &error)
@@ -139,13 +144,16 @@ public struct SecureEnclaveKeyStore: BiometricKeyStore {
         return try await Task.detached {
             let context = LAContext()
             context.localizedReason = reason
-            let query: [CFString: Any] = [
+            var query: [CFString: Any] = [
                 kSecClass: kSecClassKey,
                 kSecAttrApplicationTag: Data(tag.utf8),
                 kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
                 kSecReturnRef: true,
                 kSecUseAuthenticationContext: context,
             ]
+            #if os(macOS)
+            query[kSecUseDataProtectionKeychain] = true
+            #endif
             var item: CFTypeRef?
             guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let found = item else {
                 throw PWMError(code: "biometric_changed")
@@ -169,11 +177,14 @@ public struct SecureEnclaveKeyStore: BiometricKeyStore {
     }
 
     public func delete() throws {
-        let query: [CFString: Any] = [
+        var query: [CFString: Any] = [
             kSecClass: kSecClassKey,
             kSecAttrApplicationTag: Data(tag.utf8),
             kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
         ]
+        #if os(macOS)
+        query[kSecUseDataProtectionKeychain] = true
+        #endif
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw PWMError(code: "keychain")

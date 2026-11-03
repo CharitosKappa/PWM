@@ -9,6 +9,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 #if os(iOS)
 import UIKit
+#elseif os(macOS)
+import AppKit
 #endif
 
 /// The app's root: one screen at a time, chosen by `AppModel`. It tells the
@@ -44,6 +46,24 @@ public struct RootView: View {
             #if os(iOS)
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
                 Task { await model.deviceWillLock() }
+            }
+            #elseif os(macOS)
+            // The Mac sleeps or its screen locks: the vault locks (D48 §2).
+            // Switching to another app counts as leaving, for the timeout.
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in
+                Task { await model.deviceWillLock() }
+            }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.screensDidSleepNotification)) { _ in
+                Task { await model.deviceWillLock() }
+            }
+            .onReceive(DistributedNotificationCenter.default().publisher(for: Notification.Name("com.apple.screenIsLocked"))) { _ in
+                Task { await model.deviceWillLock() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+                Task { await model.didEnterBackground() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                Task { await model.willEnterForeground() }
             }
             #endif
     }

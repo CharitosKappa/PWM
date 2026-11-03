@@ -46,7 +46,7 @@ public struct Suggestion: Sendable, Equatable {
     }
 }
 
-/// The system's list of suggestions: `ASCredentialIdentityStore` on iOS,
+/// The system's list of suggestions: `ASCredentialIdentityStore` on iOS and macOS,
 /// a fake in tests.
 public protocol SuggestionStore: Sendable {
     /// Replaces the whole list; an empty one clears it.
@@ -127,7 +127,7 @@ public final class Suggestions: @unchecked Sendable {
     }
 }
 
-#if os(iOS) && canImport(AuthenticationServices)
+#if (os(iOS) || os(macOS)) && canImport(AuthenticationServices)
 import AuthenticationServices
 
 /// The system's store. When PWM is not the AutoFill provider it refuses
