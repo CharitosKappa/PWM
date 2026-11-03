@@ -49,12 +49,17 @@ public final class VaultModel {
 
     let account: any Account
     let pasteboard: any SecretPasteboard
+    let capture: ScreenCapture
     private let onSignedOut: @MainActor () -> Void
     private var syncAgain = false
 
-    init(account: any Account, pasteboard: any SecretPasteboard, onSignedOut: @escaping @MainActor () -> Void) {
+    init(
+        account: any Account, pasteboard: any SecretPasteboard, capture: ScreenCapture = .shared,
+        onSignedOut: @escaping @MainActor () -> Void
+    ) {
         self.account = account
         self.pasteboard = pasteboard
+        self.capture = capture
         self.onSignedOut = onSignedOut
     }
 
@@ -178,7 +183,7 @@ public final class VaultModel {
     }
 
     public func detail(_ entry: Entry) -> ItemDetailModel {
-        ItemDetailModel(entry: entry, account: account, pasteboard: pasteboard)
+        ItemDetailModel(entry: entry, account: account, pasteboard: pasteboard, capture: capture)
     }
 
     public func edit(_ entry: Entry) -> ItemEditModel {
@@ -229,10 +234,11 @@ public final class VaultModel {
     }
 }
 
-/// One item's fields: hidden values stay masked until tapped.
+/// One item's fields: hidden values stay masked until tapped, and are
+/// hidden while the screen is captured (D49).
 @MainActor
 @Observable
-public final class ItemDetailModel {
+public final class ItemDetailModel: CaptureListener {
     public struct Code: Sendable, Equatable {
         public let value: Redacted<String>
         public let secondsLeft: UInt64
@@ -247,25 +253,48 @@ public final class ItemDetailModel {
     public private(set) var codeUnsupported = false
     /// The field copied last, for its "Copied" label.
     public private(set) var copied: String?
+    /// After a screenshot masked what was shown (D49 §3).
+    public private(set) var notice: String?
 
     /// As for the Secret Key (D42).
     public static let clipboardSeconds: TimeInterval = 30
 
     private let account: any Account
     private let pasteboard: any SecretPasteboard
+    private let capture: ScreenCapture
 
-    init(entry: Entry, account: any Account, pasteboard: any SecretPasteboard) {
+    init(entry: Entry, account: any Account, pasteboard: any SecretPasteboard, capture: ScreenCapture = .shared) {
         self.entry = entry
         self.account = account
         self.pasteboard = pasteboard
+        self.capture = capture
+        capture.add(self)
     }
 
     public var item: Item { entry.item }
 
-    public func isRevealed(_ field: String) -> Bool { revealed.contains(field) }
+    /// Hidden fields and the one-time code show `ScreenCapture.hiddenLine`
+    /// instead; copying still works.
+    public var hiddenByCapture: Bool { capture.isRecorded }
 
+    public func isRevealed(_ field: String) -> Bool { !capture.isRecorded && revealed.contains(field) }
+
+    /// Nothing is revealed while the screen is captured.
     public func toggle(_ field: String) {
+        guard !capture.isRecorded else { return }
+        notice = nil
         if revealed.contains(field) { revealed.remove(field) } else { revealed.insert(field) }
+    }
+
+    // Revealed values don't come back by themselves after a capture.
+    func captureStarted() {
+        revealed = []
+    }
+
+    func screenshotTaken() {
+        guard !revealed.isEmpty else { return }
+        revealed = []
+        notice = ScreenCapture.screenshotLine
     }
 
     /// Masks everything again, when the screen goes away.
@@ -392,7 +421,7 @@ public final class ItemEditModel {
 
     /// A generator for the password field's sheet.
     func makeGenerator() -> GeneratorModel {
-        GeneratorModel(pasteboard: vault.pasteboard)
+        GeneratorModel(pasteboard: vault.pasteboard, capture: vault.capture)
     }
 
     /// A password from the generator sheet.

@@ -33,10 +33,15 @@ public final class GeneratorModel {
     public private(set) var error: String?
 
     private let pasteboard: any SecretPasteboard
+    private let capture: ScreenCapture
 
-    init(pasteboard: any SecretPasteboard) {
+    init(pasteboard: any SecretPasteboard, capture: ScreenCapture = .shared) {
         self.pasteboard = pasteboard
+        self.capture = capture
     }
+
+    /// The password shows `ScreenCapture.hiddenLine` instead (D49).
+    public var hiddenByCapture: Bool { capture.isRecorded }
 
     /// Changes whenever an option does, for the screen to regenerate.
     public var options: String {
@@ -125,6 +130,7 @@ public final class SettingsModel {
         self.account = account
         lockTimeout = app.lockTimeout
         breachCheck = app.breachCheckOn
+        hidesFromCapture = app.hidesFromCapture
     }
 
     /// Face ID / Touch ID (D45); nil until loaded.
@@ -192,6 +198,15 @@ public final class SettingsModel {
     public func setBreachCheck(_ on: Bool) {
         app.breachCheckOn = on
         breachCheck = on
+    }
+
+    /// "Hide PWM from screenshots and screen sharing" (macOS, D49 §5).
+    public var hidesFromCaptureOn: Bool { hidesFromCapture }
+    private var hidesFromCapture = true
+
+    public func setHidesFromCapture(_ on: Bool) {
+        app.hidesFromCapture = on
+        hidesFromCapture = on
     }
 
     public func makeHealth() -> HealthModel? {

@@ -165,6 +165,7 @@ The recipient verifies the signature with the sender's Ed25519 public key before
 | Malicious website (phishing, clickjacking) | Yes | Exact-origin matching, user-initiated fill, no DOM-injected clickable UI (see `AUTOFILL.md`) |
 | Malicious extension in same browser | Partial | Minimal permissions, isolated UI, no secrets in DOM longer than needed |
 | Compromised unlocked device / malware | No (document it) | Auto-lock, clipboard clearing (30s), memory zeroize |
+| Screen recording, screen sharing, screenshots, the app switcher | Partial | iOS hides secrets while the screen is captured and masks them again after a screenshot (iOS can't block one); the switcher is covered; macOS leaves the window out of captures (D49). No API in browsers or on Linux |
 | Lost/stolen locked device | Yes | Full-disk + vault encryption, biometric bound to hardware keys, remote device revoke |
 | Weak master password | Partial | Secret Key; zxcvbn ≥ 3 required at signup |
 

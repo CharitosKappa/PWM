@@ -90,14 +90,23 @@ public final class SecretKeyModel {
 
     private let account: any Account
     private let pasteboard: any SecretPasteboard
+    private let capture: ScreenCapture
     private let onDone: @MainActor () -> Void
 
-    init(secretKey: Redacted<String>, account: any Account, pasteboard: any SecretPasteboard, onDone: @escaping @MainActor () -> Void) {
+    init(
+        secretKey: Redacted<String>, account: any Account, pasteboard: any SecretPasteboard,
+        capture: ScreenCapture = .shared, onDone: @escaping @MainActor () -> Void
+    ) {
         self.secretKey = secretKey
         self.account = account
         self.pasteboard = pasteboard
+        self.capture = capture
         self.onDone = onDone
     }
+
+    /// The key shows `ScreenCapture.hiddenLine` instead (D49); Copy and the
+    /// kit still work.
+    public var hiddenByCapture: Bool { capture.isRecorded }
 
     /// "I saved it" needs a saved or printed kit, or a copied key.
     public var canContinue: Bool { saved || copied }

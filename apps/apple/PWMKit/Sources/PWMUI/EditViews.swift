@@ -304,7 +304,7 @@ struct GeneratorView: View {
     var body: some View {
         Form {
             Section {
-                Text(verbatim: model.value?.value ?? " ")
+                Text(verbatim: model.hiddenByCapture ? ScreenCapture.hiddenLine : model.value?.value ?? " ")
                     .font(.system(.title3, design: .monospaced))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
@@ -440,6 +440,16 @@ struct SettingsView: View {
             } footer: {
                 Text("Checks your passwords against known leaks without sending them: only the first 5 characters of a hash leave your device.")
             }
+            #if os(macOS)
+            Section {
+                Toggle("Hide PWM from screenshots and screen sharing", isOn: Binding(
+                    get: { model.hidesFromCaptureOn }, set: { model.setHidesFromCapture($0) }
+                ))
+                .accessibilityIdentifier("hideFromCapture")
+            } footer: {
+                Text("While unlocked, the PWM window is left out of screenshots, recordings and screen sharing. Turn this off to show it when you share your screen.")
+            }
+            #endif
             Section {
                 NavigationLink("Devices") { DevicesHost(settings: model) }
                     .accessibilityIdentifier("devices")
