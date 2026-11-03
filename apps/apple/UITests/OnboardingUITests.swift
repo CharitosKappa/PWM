@@ -121,7 +121,12 @@ final class OnboardingUITests: XCTestCase {
     /// Settings, Sign out, and the confirmation.
     private func signOut() {
         tap(app.tabBars.buttons["Settings"])
-        tap(app.buttons["signOut"])
+        // At the bottom of Settings: rows off screen are not made yet.
+        let button = app.buttons["signOut"]
+        for _ in 0..<6 where !button.exists {
+            app.swipeUp()
+        }
+        tap(button)
         let confirm = app.buttons["confirmSignOut"]
         if confirm.waitForExistence(timeout: 3) {
             confirm.tap()
