@@ -56,6 +56,10 @@ final class OnboardingUITests: XCTestCase {
 
         // Find it, check the password, edit it.
         let search = app.searchFields.firstMatch
+        // iOS may tuck the search bar away under the title: pull it down.
+        for _ in 0..<2 where !search.waitForExistence(timeout: 5) {
+            app.collectionViews.firstMatch.swipeDown()
+        }
         tap(search)
         search.typeText("bank")
         tap(app.staticTexts["Bank"].firstMatch)
