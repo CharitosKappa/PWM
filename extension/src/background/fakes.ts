@@ -107,8 +107,9 @@ export class FakeCore implements Core {
     secretKey: string,
     deviceId: string,
     platform: string,
+    deviceName: string,
   ): CoreStep {
-    if (deviceId === "" || platform !== "extension")
+    if (deviceId === "" || platform !== "extension" || deviceName === "")
       throw coreError("invalid_id");
     this.next = () => {
       if (password !== PASSWORD || secretKey !== SECRET_KEY || email === "")

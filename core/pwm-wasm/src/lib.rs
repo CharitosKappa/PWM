@@ -46,6 +46,7 @@ pub struct WasmStep {
     secret_key: Option<String>,
     vault_id: Option<String>,
     report: Vec<f64>,
+    devices: Option<String>,
 }
 
 #[wasm_bindgen]
@@ -81,8 +82,8 @@ impl WasmStep {
         self.delay_ms
     }
 
-    /// `signed_up`, `logged_in`, `vault_created`, `synced`, `signed_out` or
-    /// `device_revoked`.
+    /// `signed_up`, `logged_in`, `vault_created`, `synced`, `signed_out`,
+    /// `device_revoked`, `devices` or `device_updated`.
     #[wasm_bindgen(getter)]
     pub fn outcome(&self) -> Option<String> {
         self.outcome.map(str::to_owned)
@@ -104,6 +105,14 @@ impl WasmStep {
     pub fn report(&self) -> Vec<f64> {
         self.report.clone()
     }
+
+    /// After `devices`: a JSON array of `{id, platform, name, created_at,
+    /// last_seen_at, revoked_at, current}`; `name` is null when it has none
+    /// or it does not open.
+    #[wasm_bindgen(getter)]
+    pub fn devices(&self) -> Option<String> {
+        self.devices.clone()
+    }
 }
 
 fn step(step: Step) -> WasmStep {
@@ -118,6 +127,7 @@ fn step(step: Step) -> WasmStep {
         secret_key: None,
         vault_id: None,
         report: Vec::new(),
+        devices: None,
     };
     match step {
         Step::Send(request) => {
@@ -158,6 +168,21 @@ fn step(step: Step) -> WasmStep {
                 }
                 Outcome::SignedOut => "signed_out",
                 Outcome::DeviceRevoked => "device_revoked",
+                Outcome::Devices(devices) => {
+                    let list: Vec<serde_json::Value> = devices
+                        .into_iter()
+                        .map(|d| {
+                            serde_json::json!({
+                                "id": d.id, "platform": d.platform, "name": d.name,
+                                "created_at": d.created_at, "last_seen_at": d.last_seen_at,
+                                "revoked_at": d.revoked_at, "current": d.current,
+                            })
+                        })
+                        .collect();
+                    out.devices = Some(serde_json::Value::Array(list).to_string());
+                    "devices"
+                }
+                Outcome::DeviceUpdated => "device_updated",
             });
         }
     }
@@ -222,12 +247,102 @@ impl WasmClient {
         secret_key: &str,
         device_id: &str,
         platform_name: &str,
+        device_name: &str,
     ) -> Result<WasmStep, JsValue> {
         let platform = platform(platform_name)?;
         self.inner
-            .start_login(email, password, secret_key, device_id, platform)
+            .start_login(
+                email,
+                password,
+                secret_key,
+                device_id,
+                platform,
+                device_name,
+            )
             .map(step)
             .map_err(js_error)
+    }
+
+    /// The account's devices; ends with `devices`.
+    #[wasm_bindgen(js_name = startListDevices)]
+    pub fn start_list_devices(&mut self) -> Result<WasmStep, JsValue> {
+        self.inner.start_list_devices().map(step).map_err(js_error)
+    }
+
+    /// Renames one of the account's devices; ends with `device_updated`.
+    #[wasm_bindgen(js_name = startRenameDevice)]
+    pub fn start_rename_device(
+        &mut self,
+        device_id: &str,
+        name: &str,
+    ) -> Result<WasmStep, JsValue> {
+        self.inner
+            .start_rename_device(device_id, name)
+            .map(step)
+            .map_err(js_error)
+    }
+
+    /// Revokes another device; ends with `device_updated`.
+    #[wasm_bindgen(js_name = startRevokeDevice)]
+    pub fn start_revoke_device(&mut self, device_id: &str) -> Result<WasmStep, JsValue> {
+        self.inner
+            .start_revoke_device(device_id)
+            .map(step)
+            .map_err(js_error)
+    }
+
+    /// Weak and reused passwords across every vault (D22), as JSON:
+    /// `{weak: [{item_id, score}], reused: [[item_id]]}`.
+    #[wasm_bindgen(js_name = healthReport)]
+    pub fn health_report(&self) -> Result<String, JsValue> {
+        let report = self.inner.health_report().map_err(js_error)?;
+        let weak: Vec<serde_json::Value> = report
+            .weak
+            .iter()
+            .map(|w| serde_json::json!({ "item_id": w.item_id, "score": w.score }))
+            .collect();
+        Ok(serde_json::json!({ "weak": weak, "reused": report.reused }).to_string())
+    }
+
+    /// A breach check over the logins as they are now (D22 §4).
+    #[wasm_bindgen(js_name = breachCheck)]
+    pub fn breach_check(&self) -> Result<WasmBreachCheck, JsValue> {
+        Ok(WasmBreachCheck {
+            inner: Some(self.inner.breach_check().map_err(js_error)?),
+        })
+    }
+
+    /// The master password again, before an export (D24); the grant stays
+    /// in the core for the next `exportFile`, for 5 minutes.
+    #[wasm_bindgen(js_name = authorizeExport)]
+    pub fn authorize_export(
+        &mut self,
+        password: &str,
+        secret_key: &str,
+        now: f64,
+    ) -> Result<(), JsValue> {
+        self.inner
+            .authorize_export(password, secret_key, ms(now))
+            .map_err(js_error)
+    }
+
+    /// Every vault as a file, using up the grant: `format` is `pwmx` (with
+    /// `export_password`), `json` or `csv`.
+    #[wasm_bindgen(js_name = exportFile)]
+    pub fn export_file(
+        &mut self,
+        format: &str,
+        export_password: &str,
+        now: f64,
+    ) -> Result<Vec<u8>, JsValue> {
+        let format = match format {
+            "pwmx" => pwm_client::ExportFormat::Pwmx(export_password),
+            "json" => pwm_client::ExportFormat::Json,
+            "csv" => pwm_client::ExportFormat::Csv,
+            _ => return Err(js_error(ClientError::InvalidItem)),
+        };
+        let file = self.inner.export(format, ms(now)).map_err(js_error)?;
+        Ok(file.expose_secret().clone())
     }
 
     pub fn unlock(
@@ -754,4 +869,49 @@ pub fn emergency_kit(
     )
     .map_err(js_error)?;
     Ok(pdf.expose_secret().clone())
+}
+
+/// One breach check (D22 §4): fetch each prefix from `breachRangeUrl` with
+/// the padding header, add each body, then finish.
+#[wasm_bindgen]
+pub struct WasmBreachCheck {
+    inner: Option<pwm_client::BreachCheck>,
+}
+
+#[wasm_bindgen]
+impl WasmBreachCheck {
+    pub fn prefixes(&self) -> Vec<String> {
+        self.inner
+            .as_ref()
+            .map(pwm_client::BreachCheck::prefixes)
+            .unwrap_or_default()
+    }
+
+    #[wasm_bindgen(js_name = addResponse)]
+    pub fn add_response(&mut self, prefix: &str, body: &str) -> Result<(), JsValue> {
+        let check = self
+            .inner
+            .as_mut()
+            .ok_or_else(|| js_error(ClientError::NotRunning))?;
+        check.add_response(prefix, body).map_err(js_error)
+    }
+
+    /// JSON: `[{item_id, count}]`. The check is used up.
+    pub fn finish(&mut self) -> String {
+        let breached: Vec<serde_json::Value> = self
+            .inner
+            .take()
+            .map(pwm_client::BreachCheck::finish)
+            .unwrap_or_default()
+            .iter()
+            .map(|b| serde_json::json!({ "item_id": b.item_id, "count": b.count }))
+            .collect();
+        serde_json::Value::Array(breached).to_string()
+    }
+}
+
+/// The HIBP range URL for a prefix (D22 §4).
+#[wasm_bindgen(js_name = breachRangeUrl)]
+pub fn breach_range_url(prefix: &str) -> String {
+    format!("{}{prefix}", pwm_client::HIBP_RANGE_URL)
 }

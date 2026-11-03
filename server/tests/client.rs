@@ -153,7 +153,14 @@ async fn sign_up_sync_and_log_in_on_a_second_device() {
     // Log in on a phone with the email, password and Secret Key.
     let mut phone = new_client();
     let phone_id = new_id().unwrap();
-    let step = phone.start_login(EMAIL, PASSWORD, &secret_key, &phone_id, Platform::Android);
+    let step = phone.start_login(
+        EMAIL,
+        PASSWORD,
+        &secret_key,
+        &phone_id,
+        Platform::Android,
+        "Phone",
+    );
     assert!(matches!(
         run(&app, &mut phone, step).await.unwrap(),
         Outcome::LoggedIn
@@ -185,7 +192,7 @@ async fn sign_up_sync_and_log_in_on_a_second_device() {
         ("nobody@example.com", PASSWORD, secret_key.as_str()),
     ] {
         let mut client = new_client();
-        let step = client.start_login(email, password, key, &new_id().unwrap(), Platform::Ios);
+        let step = client.start_login(email, password, key, &new_id().unwrap(), Platform::Ios, "");
         assert_eq!(
             run(&app, &mut client, step).await.unwrap_err().code(),
             "invalid_credentials"
@@ -227,5 +234,132 @@ async fn sign_up_sync_and_log_in_on_a_second_device() {
         .unlock(PASSWORD, &secret_key, phone_tokens)
         .unwrap();
     assert_eq!(titles(&restored, &vault), ["Bank (new)"]);
+    db.drop().await;
+}
+
+/// Devices from the app (D43 §6): a device names itself at login, any
+/// device renames or revokes the others, and a name moved to another
+/// device does not open.
+#[tokio::test]
+async fn devices_are_named_listed_renamed_and_revoked() {
+    let Some((db, app)) = setup().await else {
+        return;
+    };
+    let mut laptop = new_client();
+    let laptop_id = new_id().unwrap();
+    let step = laptop.start_signup(EMAIL, PASSWORD, &laptop_id, Platform::Linux, "Laptop");
+    let Outcome::SignedUp { secret_key } = run(&app, &mut laptop, step).await.unwrap() else {
+        panic!("not signed up");
+    };
+    let secret_key = secret_key.expose_secret().clone();
+    let mut phone = new_client();
+    let phone_id = new_id().unwrap();
+    let step = phone.start_login(
+        EMAIL,
+        PASSWORD,
+        &secret_key,
+        &phone_id,
+        Platform::Ios,
+        "iPhone",
+    );
+    assert!(matches!(
+        run(&app, &mut phone, step).await.unwrap(),
+        Outcome::LoggedIn
+    ));
+
+    let step = phone.start_list_devices();
+    let Outcome::Devices(devices) = run(&app, &mut phone, step).await.unwrap() else {
+        panic!("no devices");
+    };
+    let names: Vec<(String, Option<String>, bool)> = devices
+        .iter()
+        .map(|d| (d.platform.clone(), d.name.clone(), d.current))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("linux".to_owned(), Some("Laptop".to_owned()), false),
+            ("ios".to_owned(), Some("iPhone".to_owned()), true),
+        ],
+        "the phone named itself right after login"
+    );
+    assert!(
+        devices
+            .iter()
+            .all(|d| d.revoked_at.is_none() && d.last_seen_at > 0)
+    );
+
+    // The phone renames the laptop; too long a name is refused on the device.
+    let step = phone.start_rename_device(&laptop_id, "Work laptop");
+    assert!(matches!(
+        run(&app, &mut phone, step).await.unwrap(),
+        Outcome::DeviceUpdated
+    ));
+    assert_eq!(
+        phone
+            .start_rename_device(&laptop_id, &"x".repeat(64))
+            .unwrap_err()
+            .code(),
+        "invalid_device_name"
+    );
+    let step = phone.start_rename_device(&new_id().unwrap(), "Ghost");
+    assert_eq!(
+        run(&app, &mut phone, step).await.unwrap_err().code(),
+        "unknown_device"
+    );
+
+    // A sealed name moved to another device's row does not open there.
+    let laptop_tokens = latest_tokens(&mut laptop);
+    let (_, rows) = common::call(
+        &app,
+        "GET",
+        "/v1/devices",
+        Some(laptop_tokens.access()),
+        None,
+    )
+    .await;
+    let laptop_name = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["id"] == laptop_id.as_str())
+        .unwrap()["name_sealed"]
+        .clone();
+    let (status, _) = common::call(
+        &app,
+        "PATCH",
+        &format!("/v1/devices/{phone_id}"),
+        Some(laptop_tokens.access()),
+        Some(serde_json::json!({ "name_sealed": laptop_name })),
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::NO_CONTENT);
+    let step = laptop.start_list_devices();
+    let Outcome::Devices(devices) = run(&app, &mut laptop, step).await.unwrap() else {
+        panic!("no devices");
+    };
+    let named: Vec<Option<String>> = devices.iter().map(|d| d.name.clone()).collect();
+    assert_eq!(named, [Some("Work laptop".to_owned()), None]);
+    assert!(
+        !format!("{devices:?}").contains("Work laptop"),
+        "names are redacted in Debug"
+    );
+
+    // The laptop revokes the phone, which is signed out at its next sync.
+    let step = laptop.start_revoke_device(&phone_id);
+    assert!(matches!(
+        run(&app, &mut laptop, step).await.unwrap(),
+        Outcome::DeviceUpdated
+    ));
+    let step = laptop.start_list_devices();
+    let Outcome::Devices(devices) = run(&app, &mut laptop, step).await.unwrap() else {
+        panic!("no devices");
+    };
+    assert!(devices[1].revoked_at.is_some());
+    let step = phone.start_sync();
+    assert!(matches!(
+        run(&app, &mut phone, step).await.unwrap(),
+        Outcome::DeviceRevoked
+    ));
     db.drop().await;
 }

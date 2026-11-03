@@ -58,6 +58,28 @@ const CORE_METHODS: (keyof Core)[] = [
 ];
 
 describe("the WASM core", () => {
+  it("has the calls M4.10 needs: devices, health and export (D43)", () => {
+    // Typed here until the background uses them (M4.10).
+    interface Later {
+      healthReport(): string;
+      breachCheck(): unknown;
+      startListDevices(): unknown;
+      exportFile(format: string, password: string, now: number): Uint8Array;
+    }
+    const client = new wasm.WasmClient() as unknown as Later;
+    const { breachRangeUrl } = wasm as unknown as {
+      breachRangeUrl: (prefix: string) => string;
+    };
+    const locked = expect.objectContaining({ code: "locked" }) as Error;
+    expect(() => client.healthReport()).toThrow(locked);
+    expect(() => client.breachCheck()).toThrow(locked);
+    expect(() => client.startListDevices()).toThrow(locked);
+    expect(() => client.exportFile("json", "", Date.now())).toThrow(locked);
+    expect(breachRangeUrl("ABCDE")).toBe(
+      "https://api.pwnedpasswords.com/range/ABCDE",
+    );
+  });
+
   it("has every method the background calls", () => {
     const core = fns.newCore() as unknown as Record<string, unknown>;
     expect(

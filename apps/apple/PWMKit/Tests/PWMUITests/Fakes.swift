@@ -59,9 +59,9 @@ actor FakeAccount: Account {
         return Redacted("A1-014D2P-F2DBSQ-QZXQ5T-K1V58C-GGA")
     }
 
-    func logIn(email: String, password: Redacted<String>, secretKey: Redacted<String>) throws -> SyncResult {
+    func logIn(email: String, password: Redacted<String>, secretKey: Redacted<String>, deviceName: String) throws -> SyncResult {
         try check()
-        calls.append("logIn \(email) \(password.value) \(secretKey.value)")
+        calls.append("logIn \(email) \(password.value) \(secretKey.value) \(deviceName)")
         setSignedIn(email: email)
         return .synced(pulled: 0, pushed: 0, conflicts: 0, failed: 0)
     }
@@ -135,6 +135,74 @@ actor FakeAccount: Account {
     func currentCode(_ itemId: String, in vaultId: String) throws -> (code: Redacted<String>, secondsLeft: UInt64)? {
         if codeFails { throw PWMError(code: "invalid_item") }
         return code
+    }
+
+    // Devices, health and export.
+
+    var deviceList: [DeviceEntry] = []
+    var health = PasswordHealth(weak: [:], reused: [])
+    var breached: [String: UInt64] = [:]
+    var breachFailure: PWMError?
+    var exportAuthorized = false
+
+    func setDevices(_ devices: [DeviceEntry]) { deviceList = devices }
+    func setHealth(_ health: PasswordHealth, breached: [String: UInt64] = [:], breachFailure: String? = nil) {
+        self.health = health
+        self.breached = breached
+        self.breachFailure = breachFailure.map(PWMError.init(code:))
+    }
+
+    func devices() throws -> [DeviceEntry] {
+        try check()
+        return deviceList
+    }
+
+    func renameDevice(_ deviceId: String, to name: String) throws {
+        try check()
+        guard let index = deviceList.firstIndex(where: { $0.id == deviceId }) else { throw PWMError(code: "unknown_device") }
+        let d = deviceList[index]
+        deviceList[index] = DeviceEntry(id: d.id, platform: d.platform, name: name, added: d.added, lastSeen: d.lastSeen, revoked: d.revoked, isCurrent: d.isCurrent)
+        calls.append("rename \(deviceId) \(name)")
+    }
+
+    func revokeDevice(_ deviceId: String) throws {
+        try check()
+        guard let index = deviceList.firstIndex(where: { $0.id == deviceId }) else { throw PWMError(code: "unknown_device") }
+        let d = deviceList[index]
+        deviceList[index] = DeviceEntry(id: d.id, platform: d.platform, name: d.name, added: d.added, lastSeen: d.lastSeen, revoked: Date(), isCurrent: d.isCurrent)
+        calls.append("revoke \(deviceId)")
+    }
+
+    func passwordHealth() throws -> PasswordHealth {
+        try check()
+        return health
+    }
+
+    func breachedPasswords() throws -> [String: UInt64] {
+        calls.append("breaches")
+        if let breachFailure { throw breachFailure }
+        return breached
+    }
+
+    func authorizeExport(password: Redacted<String>) throws {
+        guard password.value == unlockPassword else { throw PWMError(code: "wrong_password") }
+        exportAuthorized = true
+    }
+
+    func export(_ format: ExportFile.Format) throws -> Redacted<Data> {
+        guard exportAuthorized else { throw PWMError(code: "export_not_authorized") }
+        exportAuthorized = false
+        switch format {
+        case let .pwmx(password):
+            calls.append("export pwmx \(password.value)")
+            return Redacted(Data("encrypted".utf8))
+        case .json:
+            calls.append("export json")
+            return Redacted(Data("{}".utf8))
+        case .csv:
+            calls.append("export csv")
+            return Redacted(Data("title".utf8))
+        }
     }
 }
 

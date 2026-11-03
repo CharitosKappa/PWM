@@ -36,6 +36,20 @@ pub enum ClientError {
     /// secret (D23).
     #[error("not a one-time-code secret")]
     InvalidTotp,
+    /// A device name over 63 bytes or with control characters (D26).
+    #[error("the device name is not valid")]
+    InvalidDeviceName,
+    /// Not one of the account's devices, or revoked already.
+    #[error("unknown device")]
+    UnknownDevice,
+    /// Export needs the master password again first (D24).
+    #[error("enter the master password to export")]
+    ExportNotAuthorized,
+    /// The master password was entered more than 5 minutes ago.
+    #[error("enter the master password again to export")]
+    ExportExpired,
+    #[error("the export password is too easy to guess")]
+    WeakExportPassword,
     #[error("the master password is too weak")]
     WeakPassword,
     #[error("the Secret Key is not valid")]
@@ -89,6 +103,11 @@ impl ClientError {
             Self::InvalidItem => "invalid_item",
             Self::ReadOnlyItem => "read_only_item",
             Self::InvalidTotp => "invalid_totp",
+            Self::InvalidDeviceName => "invalid_device_name",
+            Self::UnknownDevice => "unknown_device",
+            Self::ExportNotAuthorized => "export_not_authorized",
+            Self::ExportExpired => "export_expired",
+            Self::WeakExportPassword => "weak_export_password",
             Self::WeakPassword => "weak_password",
             Self::InvalidSecretKey => "invalid_secret_key",
             Self::WrongPassword => "wrong_password",
@@ -136,6 +155,28 @@ impl From<VaultError> for ClientError {
     }
 }
 
+impl From<pwm_export::ExportError> for ClientError {
+    fn from(err: pwm_export::ExportError) -> Self {
+        match err {
+            pwm_export::ExportError::GrantExpired => Self::ExportExpired,
+            pwm_export::ExportError::WeakPassword => Self::WeakExportPassword,
+            pwm_export::ExportError::Vault(e) => e.into(),
+            _ => Self::Internal,
+        }
+    }
+}
+
+impl From<pwm_health::HealthError> for ClientError {
+    fn from(err: pwm_health::HealthError) -> Self {
+        match err {
+            pwm_health::HealthError::BadResponse | pwm_health::HealthError::UnexpectedPrefix => {
+                Self::Protocol
+            }
+            _ => Self::Internal,
+        }
+    }
+}
+
 impl From<StoreError> for ClientError {
     fn from(_: StoreError) -> Self {
         Self::Storage
@@ -155,6 +196,8 @@ impl From<SyncError> for ClientError {
             SyncError::NotRunning => Self::NotRunning,
             SyncError::UnknownVault => Self::UnknownVault,
             SyncError::ItemDeleted => Self::ItemDeleted,
+            SyncError::UnknownDevice => Self::UnknownDevice,
+            SyncError::Refused(status) => Self::Server(status),
             SyncError::Store(e) => e.into(),
             SyncError::Vault(e) => e.into(),
             SyncError::Crypto(e) => e.into(),

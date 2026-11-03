@@ -93,6 +93,25 @@ pub enum Outcome {
     },
     SignedOut,
     DeviceRevoked,
+    /// The account's devices (D43 §6).
+    Devices {
+        devices: Vec<Device>,
+    },
+    /// A device was renamed or revoked.
+    DeviceUpdated,
+}
+
+/// One of the account's devices; `name` is `None` when it has none or it
+/// does not open. Times are Unix ms.
+#[derive(uniffi::Record)]
+pub struct Device {
+    pub id: String,
+    pub platform: String,
+    pub name: Option<String>,
+    pub created_at: i64,
+    pub last_seen_at: i64,
+    pub revoked_at: Option<i64>,
+    pub current: bool,
 }
 
 #[derive(uniffi::Enum)]
@@ -154,6 +173,21 @@ fn step(step: pwm_client::Step) -> Step {
                 },
                 pwm_client::Outcome::SignedOut => Outcome::SignedOut,
                 pwm_client::Outcome::DeviceRevoked => Outcome::DeviceRevoked,
+                pwm_client::Outcome::Devices(devices) => Outcome::Devices {
+                    devices: devices
+                        .into_iter()
+                        .map(|d| Device {
+                            id: d.id,
+                            platform: d.platform,
+                            name: d.name,
+                            created_at: d.created_at,
+                            last_seen_at: d.last_seen_at,
+                            revoked_at: d.revoked_at,
+                            current: d.current,
+                        })
+                        .collect(),
+                },
+                pwm_client::Outcome::DeviceUpdated => Outcome::DeviceUpdated,
             },
         },
     }
@@ -276,6 +310,7 @@ impl PwmClient {
         secret_key: String,
         device_id: String,
         platform: Platform,
+        device_name: String,
     ) -> Result<Step, PwmError> {
         Ok(step(self.lock_inner().start_login(
             &email,
@@ -283,7 +318,76 @@ impl PwmClient {
             &secret_key,
             &device_id,
             platform.into(),
+            &device_name,
         )?))
+    }
+
+    /// The account's devices; ends with `Devices`.
+    pub fn start_list_devices(&self) -> Result<Step, PwmError> {
+        Ok(step(self.lock_inner().start_list_devices()?))
+    }
+
+    /// Renames one of the account's devices; ends with `DeviceUpdated`.
+    pub fn start_rename_device(&self, device_id: String, name: String) -> Result<Step, PwmError> {
+        Ok(step(
+            self.lock_inner().start_rename_device(&device_id, &name)?,
+        ))
+    }
+
+    /// Revokes another device; ends with `DeviceUpdated`.
+    pub fn start_revoke_device(&self, device_id: String) -> Result<Step, PwmError> {
+        Ok(step(self.lock_inner().start_revoke_device(&device_id)?))
+    }
+
+    /// Weak and reused passwords across every vault (D22).
+    pub fn health_report(&self) -> Result<HealthReport, PwmError> {
+        let report = self.lock_inner().health_report()?;
+        Ok(HealthReport {
+            weak: report
+                .weak
+                .into_iter()
+                .map(|w| WeakItem {
+                    item_id: w.item_id,
+                    score: w.score,
+                })
+                .collect(),
+            reused: report.reused,
+        })
+    }
+
+    /// A breach check over the logins as they are now; the platform fetches
+    /// each prefix from `breach_range_url`.
+    pub fn breach_check(&self) -> Result<Arc<BreachCheck>, PwmError> {
+        let check = self.lock_inner().breach_check()?;
+        Ok(Arc::new(BreachCheck {
+            inner: Mutex::new(Some(check)),
+        }))
+    }
+
+    /// The master password again, before an export (D24). The grant stays in
+    /// the core for the next `export`, for 5 minutes.
+    pub fn authorize_export(
+        &self,
+        password: String,
+        secret_key: String,
+        now_ms: i64,
+    ) -> Result<(), PwmError> {
+        Ok(self
+            .lock_inner()
+            .authorize_export(&password, &secret_key, now_ms)?)
+    }
+
+    /// Every vault as a file, using up the grant. Never log the bytes.
+    pub fn export(&self, format: ExportFormat, now_ms: i64) -> Result<Vec<u8>, PwmError> {
+        let mut client = self.lock_inner();
+        let file = match &format {
+            ExportFormat::Pwmx { password } => {
+                client.export(pwm_client::ExportFormat::Pwmx(password), now_ms)?
+            }
+            ExportFormat::Json => client.export(pwm_client::ExportFormat::Json, now_ms)?,
+            ExportFormat::Csv => client.export(pwm_client::ExportFormat::Csv, now_ms)?,
+        };
+        Ok(file.expose_secret().clone())
     }
 
     pub fn unlock(
@@ -825,4 +929,92 @@ pub fn normalize_totp(input: String, title: String) -> Result<String, PwmError> 
     Ok(pwm_client::normalize_totp(&input, &title)?
         .expose_secret()
         .clone())
+}
+
+#[derive(uniffi::Record)]
+pub struct WeakItem {
+    pub item_id: String,
+    pub score: u8,
+}
+
+#[derive(uniffi::Record)]
+pub struct HealthReport {
+    pub weak: Vec<WeakItem>,
+    /// Groups of logins sharing one password.
+    pub reused: Vec<Vec<String>>,
+}
+
+#[derive(uniffi::Record)]
+pub struct BreachedItem {
+    pub item_id: String,
+    pub count: u64,
+}
+
+/// What to export (D24); `Pwmx` takes the export password.
+#[derive(uniffi::Enum)]
+pub enum ExportFormat {
+    Pwmx { password: String },
+    Json,
+    Csv,
+}
+
+/// One breach check (D22 §4): fetch each prefix, add each body, then finish.
+#[derive(uniffi::Object)]
+pub struct BreachCheck {
+    inner: Mutex<Option<pwm_client::BreachCheck>>,
+}
+
+#[uniffi::export]
+impl BreachCheck {
+    pub fn prefixes(&self) -> Vec<String> {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .map(pwm_client::BreachCheck::prefixes)
+            .unwrap_or_default()
+    }
+
+    pub fn add_response(&self, prefix: String, body: String) -> Result<(), PwmError> {
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let check = inner
+            .as_mut()
+            .ok_or(PwmError::from(ClientError::NotRunning))?;
+        Ok(check.add_response(&prefix, &body)?)
+    }
+
+    /// The breached logins; the check is used up.
+    pub fn finish(&self) -> Vec<BreachedItem> {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+            .map(pwm_client::BreachCheck::finish)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|b| BreachedItem {
+                item_id: b.item_id,
+                count: b.count,
+            })
+            .collect()
+    }
+}
+
+/// The HIBP range URL for a prefix, sent with `breach_padding_header` and
+/// nothing that identifies the account (D22 §4).
+#[uniffi::export]
+pub fn breach_range_url(prefix: String) -> String {
+    format!("{}{prefix}", pwm_client::HIBP_RANGE_URL)
+}
+
+/// The header every range request sends, so sizes do not hint at prefixes.
+#[uniffi::export]
+pub fn breach_padding_header() -> Header {
+    Header {
+        name: pwm_client::ADD_PADDING_HEADER.0.to_owned(),
+        value: pwm_client::ADD_PADDING_HEADER.1.to_owned(),
+    }
 }

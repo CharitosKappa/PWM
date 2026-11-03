@@ -361,6 +361,117 @@ async fn a_revoked_device_is_locked_out() {
     db.drop().await;
 }
 
+/// `PATCH /v1/devices/{id}` (D43 §6): only a sealed name of the padded size,
+/// only for the account's own devices that are not revoked.
+#[tokio::test]
+async fn devices_are_renamed_with_a_sealed_name() {
+    let Some((db, app)) = setup().await else {
+        return;
+    };
+    let account = register(&app, "a@example.com").await;
+    let other = register(&app, "b@example.com").await;
+    let phone = new_id();
+    let (_, phone_tokens) = login(&app, &account, &phone).await;
+    let phone_access = phone_tokens["access_token"].as_str().unwrap();
+    let path = |id: &Uuid| format!("/v1/devices/{id}");
+    let sealed = |device: &Uuid, name: &str| {
+        let envelope = account
+            .keyset
+            .seal_device_name(account.id.as_bytes(), device.as_bytes(), name)
+            .unwrap();
+        json!({ "name_sealed": b64(&envelope.to_bytes()) })
+    };
+
+    // The phone names itself, then renames the laptop.
+    for (device, name) in [(&phone, "Phone"), (&account.device, "Work laptop")] {
+        let (status, body) = call(
+            &app,
+            "PATCH",
+            &path(device),
+            Some(phone_access),
+            Some(sealed(device, name)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    }
+    let (_, devices) = call(&app, "GET", "/v1/devices", Some(phone_access), None).await;
+    for device in devices.as_array().unwrap() {
+        let id: Uuid = device["id"].as_str().unwrap().parse().unwrap();
+        let envelope = pwm_crypto::Envelope::from_bytes(&unb64(&device["name_sealed"])).unwrap();
+        let name = account
+            .keyset
+            .open_device_name(&envelope, account.id.as_bytes(), id.as_bytes())
+            .unwrap();
+        assert_eq!(name, if id == phone { "Phone" } else { "Work laptop" });
+    }
+
+    // Anything but a v1 envelope of the padded size is refused.
+    let invalid = (
+        StatusCode::BAD_REQUEST,
+        json!({ "error": "invalid_request" }),
+    );
+    let mut short = vec![1u8; 41];
+    short[0] = 1;
+    for body in [
+        json!({ "name_sealed": b64(&short) }),
+        json!({ "name_sealed": b64(&[0u8; 105]) }),
+        json!({ "name_sealed": "not base64!" }),
+        json!({}),
+        json!({ "name_sealed": sealed(&phone, "x")["name_sealed"], "name": "x" }),
+    ] {
+        assert_eq!(
+            call(&app, "PATCH", &path(&phone), Some(phone_access), Some(body)).await,
+            invalid
+        );
+    }
+
+    // Another account's device, an unknown one, or no session: refused.
+    for device in [&other.device, &new_id()] {
+        let (status, _) = call(
+            &app,
+            "PATCH",
+            &path(device),
+            Some(phone_access),
+            Some(sealed(device, "x")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+    assert_eq!(
+        call(
+            &app,
+            "PATCH",
+            &path(&phone),
+            None,
+            Some(sealed(&phone, "x"))
+        )
+        .await,
+        unauthorized()
+    );
+
+    // A revoked device keeps its last name.
+    call(
+        &app,
+        "DELETE",
+        &path(&account.device),
+        Some(phone_access),
+        None,
+    )
+    .await;
+    assert_eq!(
+        call(
+            &app,
+            "PATCH",
+            &path(&account.device),
+            Some(phone_access),
+            Some(sealed(&account.device, "Old laptop")),
+        )
+        .await,
+        (StatusCode::CONFLICT, json!({ "error": "device_revoked" }))
+    );
+    db.drop().await;
+}
+
 #[tokio::test]
 async fn registration_is_validated() {
     let Some((db, app)) = setup().await else {

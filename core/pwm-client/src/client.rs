@@ -39,6 +39,10 @@ pub enum Outcome {
     SignedOut,
     /// This device was revoked: its cache is cleared and the client locked.
     DeviceRevoked,
+    /// The account's devices, from [`Client::start_list_devices`].
+    Devices(Vec<crate::DeviceInfo>),
+    /// A device was renamed or revoked.
+    DeviceUpdated,
 }
 
 enum State<S> {
@@ -55,6 +59,8 @@ enum Running {
     CreateVault(Id),
     /// Sync, then create a vault if the account has none (D34).
     EnsureVault,
+    /// A device request (D43 §6).
+    Devices,
 }
 
 pub struct Client<S: Store> {
@@ -63,6 +69,8 @@ pub struct Client<S: Store> {
     events: Vec<SyncEvent>,
     signup_params: KdfParams,
     pub(crate) autofill: crate::autofill::AutofillState,
+    /// The master password was entered again for an export (D24).
+    pub(crate) export_grant: Option<pwm_export::ExportGrant>,
 }
 
 pub(crate) fn parse_id(text: &str) -> Result<Id, ClientError> {
@@ -89,6 +97,7 @@ impl<S: Store> Client<S> {
             events: Vec::new(),
             signup_params: KdfParams::DEFAULT,
             autofill: crate::autofill::AutofillState::default(),
+            export_grant: None,
         }
     }
 
@@ -180,7 +189,9 @@ impl<S: Store> Client<S> {
     }
 
     /// Starts logging in on this device with the email, master password and
-    /// Secret Key. `device_id` stays the same for this install.
+    /// Secret Key. `device_id` stays the same for this install. Once logged
+    /// in, the device sends its name, sealed (D43 §6); an empty name sends
+    /// none.
     pub fn start_login(
         &mut self,
         email: &str,
@@ -188,12 +199,13 @@ impl<S: Store> Client<S> {
         secret_key: &str,
         device_id: &str,
         platform: Platform,
+        device_name: &str,
     ) -> Result<Step, ClientError> {
         self.idle()?;
         let device = Device {
             id: parse_id(device_id)?,
             platform,
-            name: String::new(),
+            name: device_name.to_owned(),
         };
         let (flow, request) = auth::start_login(email, password, secret_key, device)?;
         self.running = Running::Auth(flow);
@@ -220,6 +232,7 @@ impl<S: Store> Client<S> {
     /// Drops every key from memory. A running operation is abandoned.
     pub fn lock(&mut self) {
         self.running = Running::Idle;
+        self.export_grant = None;
         if let State::Unlocked(_) = self.state {
             let State::Unlocked(engine) = std::mem::replace(&mut self.state, State::Moving) else {
                 unreachable!("checked above");
@@ -312,6 +325,79 @@ impl<S: Store> Client<S> {
         self.map_engine_step(step)
     }
 
+    /// Lists the account's devices with their names opened; needs a
+    /// connection. Ends with `Devices`.
+    pub fn start_list_devices(&mut self) -> Result<Step, ClientError> {
+        self.start_device_task(pwm_sync::DeviceTask::List)
+    }
+
+    /// Renames one of the account's devices (this one included); ends with
+    /// `DeviceUpdated`, or `unknown_device`.
+    pub fn start_rename_device(
+        &mut self,
+        device_id: &str,
+        name: &str,
+    ) -> Result<Step, ClientError> {
+        let device = parse_id(device_id)?;
+        let account = self.account_record()?.account_id;
+        let name_sealed = self
+            .engine_ref()?
+            .keyset()
+            .seal_device_name(&account, &device, name.trim())
+            .map_err(|_| ClientError::InvalidDeviceName)?;
+        self.start_device_task(pwm_sync::DeviceTask::Rename {
+            device_id: device,
+            name_sealed,
+        })
+    }
+
+    /// Revokes another device: its session ends and it clears its cache at
+    /// its next request (D26). Ends with `DeviceUpdated`. To leave this
+    /// device, sign out instead.
+    pub fn start_revoke_device(&mut self, device_id: &str) -> Result<Step, ClientError> {
+        let device_id = parse_id(device_id)?;
+        self.start_device_task(pwm_sync::DeviceTask::Revoke { device_id })
+    }
+
+    fn start_device_task(&mut self, task: pwm_sync::DeviceTask) -> Result<Step, ClientError> {
+        self.idle()?;
+        let step = self.engine()?.start_device_task(task)?;
+        self.running = Running::Devices;
+        self.map_engine_step(step)
+    }
+
+    /// Opens each device name; one that does not open (moved from another
+    /// device, or corrupted) is `None`.
+    fn open_devices(
+        &self,
+        records: Vec<pwm_sync::DeviceRecord>,
+    ) -> Result<Vec<crate::DeviceInfo>, ClientError> {
+        let account = self.account_record()?.account_id;
+        let keyset = self.engine_ref()?.keyset();
+        Ok(records
+            .into_iter()
+            .map(|r| crate::DeviceInfo {
+                id: auth::id_text(&r.id),
+                name: r
+                    .name_sealed
+                    .as_ref()
+                    .and_then(|sealed| keyset.open_device_name(sealed, &account, &r.id).ok()),
+                platform: r.platform,
+                created_at: r.created_at,
+                last_seen_at: r.last_seen_at,
+                revoked_at: r.revoked_at,
+                current: r.current,
+            })
+            .collect())
+    }
+
+    pub(crate) fn account_record(&self) -> Result<AccountRecord, ClientError> {
+        self.engine_ref()?
+            .store()
+            .account()?
+            .ok_or(ClientError::Locked)
+    }
+
     /// Creates a vault on the server; needs a connection.
     pub fn start_create_vault(&mut self) -> Result<Step, ClientError> {
         self.idle()?;
@@ -352,7 +438,13 @@ impl<S: Store> Client<S> {
     pub fn network_failed(&mut self) -> Result<Step, ClientError> {
         match std::mem::replace(&mut self.running, Running::Idle) {
             Running::Idle => Err(ClientError::NotRunning),
-            Running::Auth(_) => Err(ClientError::Network),
+            Running::Auth(flow) => match auth::after_network_failure(flow) {
+                Some(Finished::LoggedIn(record, keyset, tokens)) => {
+                    self.finish_auth(record, keyset, tokens)?;
+                    Ok(Step::Done(Outcome::LoggedIn))
+                }
+                _ => Err(ClientError::Network),
+            },
             running => {
                 self.running = running;
                 let step = self.engine()?.network_failed();
@@ -398,6 +490,10 @@ impl<S: Store> Client<S> {
                 _ => Step::Done(Outcome::Synced(report)),
             },
             pwm_sync::Step::Done(SyncOutcome::SignedOut) => Step::Done(Outcome::SignedOut),
+            pwm_sync::Step::Done(SyncOutcome::Devices(records)) => {
+                Step::Done(Outcome::Devices(self.open_devices(records)?))
+            }
+            pwm_sync::Step::Done(SyncOutcome::DeviceUpdated) => Step::Done(Outcome::DeviceUpdated),
             pwm_sync::Step::Done(SyncOutcome::DeviceRevoked) => {
                 // The engine cleared the cache; nothing stays unlocked either.
                 self.running = Running::Idle;

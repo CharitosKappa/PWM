@@ -24,6 +24,8 @@ const DEVICE_SECRET_VERSION: u8 = 1;
 /// Device name plaintext format: UTF-8 padded to exactly 64 bytes (D26).
 const DEVICE_NAME_VERSION: u8 = 1;
 const DEVICE_NAME_LEN: usize = 64;
+/// Every sealed device name is an envelope of exactly this many bytes.
+pub const SEALED_DEVICE_NAME_LEN: usize = Envelope::MIN_LEN + DEVICE_NAME_LEN;
 
 /// The two keys derived from master password + Secret Key.
 pub struct AccountKeys {

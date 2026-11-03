@@ -124,6 +124,7 @@ public final class SettingsModel {
         self.app = app
         self.account = account
         lockTimeout = app.lockTimeout
+        breachCheck = app.breachCheckOn
     }
 
     public func load() async {
@@ -133,6 +134,27 @@ public final class SettingsModel {
     public func setLockTimeout(_ timeout: LockTimeout) {
         app.lockTimeout = timeout
         lockTimeout = timeout
+    }
+
+    /// The leak check in the health report (D22 §5).
+    public var breachCheckOn: Bool { breachCheck }
+    private var breachCheck = true
+
+    public func setBreachCheck(_ on: Bool) {
+        app.breachCheckOn = on
+        breachCheck = on
+    }
+
+    public func makeHealth() -> HealthModel? {
+        app.vault.map { HealthModel(vault: $0, breachCheckOn: breachCheck) }
+    }
+
+    public func makeDevices() -> DevicesModel {
+        DevicesModel(account: account)
+    }
+
+    public func makeExport() -> ExportModel {
+        ExportModel(account: account)
     }
 
     /// The app's version, from its Info.plist.

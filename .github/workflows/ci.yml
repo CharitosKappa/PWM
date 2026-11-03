@@ -251,7 +251,9 @@ jobs:
           PWM_DATABASE_URL: postgres://pwm@localhost:5432/postgres
         run: |
           export PWM_SERVER_SECRETS="$(target/debug/pwm-server keygen)"
+          echo "$PWM_SERVER_SECRETS" > "$RUNNER_TEMP/server-secrets"
           nohup target/debug/pwm-server > target/pwm-server.log 2>&1 &
+          echo $! > "$RUNNER_TEMP/server.pid"
           for _ in $(seq 1 60); do
             if target/debug/pwm-server healthcheck; then exit 0; fi
             sleep 1
@@ -263,14 +265,37 @@ jobs:
         env:
           PWM_TEST_SERVER: http://127.0.0.1:8080
         run: swift test
+      # The package's server tests use up the per-IP sign-up limit (10
+      # requests an hour); the limiter is in memory, so a restart with the
+      # same secrets gives the UI test its own.
+      - name: Restart the sync server
+        env:
+          PWM_DATABASE_URL: postgres://pwm@localhost:5432/postgres
+        run: |
+          kill "$(cat "$RUNNER_TEMP/server.pid")"
+          for _ in $(seq 1 30); do
+            target/debug/pwm-server healthcheck > /dev/null 2>&1 || break
+            sleep 1
+          done
+          export PWM_SERVER_SECRETS="$(cat "$RUNNER_TEMP/server-secrets")"
+          nohup target/debug/pwm-server >> target/pwm-server.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if target/debug/pwm-server healthcheck; then exit 0; fi
+            sleep 1
+          done
+          cat target/pwm-server.log
+          exit 1
       - name: The iOS app's UI test in the simulator
         working-directory: apps/apple
+        # A hang fails this step (and the test, with where it stopped)
+        # instead of cancelling the job, so the steps below still report.
+        timeout-minutes: 25
         env:
           TEST_RUNNER_PWM_TEST_SERVER: http://127.0.0.1:8080
         run: |
           xcodegen generate
           device="$(xcrun simctl list devices available -j | jq -r '[.devices | to_entries[] | select(.key | test("iOS")) | .value[] | select(.name | startswith("iPhone"))][0].udid')"
-          xcodebuild test -project PWM.xcodeproj -scheme PWM -destination "id=$device" -resultBundlePath "$RUNNER_TEMP/ui.xcresult" -quiet
+          xcodebuild test -project PWM.xcodeproj -scheme PWM -destination "id=$device" -resultBundlePath "$RUNNER_TEMP/ui.xcresult" -quiet             -test-timeouts-enabled YES -default-test-execution-time-allowance 900 -maximum-test-execution-time-allowance 900
       - if: failure()
         run: cat target/pwm-server.log || true
       - name: UI test failures

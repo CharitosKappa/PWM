@@ -84,6 +84,21 @@ final class OnboardingUITests: XCTestCase {
         tap(app.buttons["unlock"], once: .enabled)
         expect(app.buttons["newItem"], timeout: 30)
 
+        // Name this device; the server keeps the name sealed.
+        tap(app.tabBars.buttons["Settings"])
+        tap(app.buttons["devices"])
+        let current = app.descendants(matching: .any)["device.current"]
+        expect(current, timeout: 30)
+        current.swipeLeft()
+        tap(app.buttons["Rename"])
+        let name = app.alerts.textFields.firstMatch
+        tap(name)
+        name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 20) + "Test iPhone")
+        tap(app.alerts.buttons["Rename"])
+        let renamed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'Test iPhone'"), object: current)
+        XCTAssertEqual(XCTWaiter().wait(for: [renamed], timeout: 30), .completed, screen())
+        app.navigationBars.buttons.firstMatch.tap()
+
         // Sign out, then sign in again as on a new device: the login synced.
         signOut()
         tap(app.buttons["signIn"])
@@ -106,7 +121,12 @@ final class OnboardingUITests: XCTestCase {
     /// Settings, Sign out, and the confirmation.
     private func signOut() {
         tap(app.tabBars.buttons["Settings"])
-        tap(app.buttons["signOut"])
+        // At the bottom of Settings: rows off screen are not made yet.
+        let button = app.buttons["signOut"]
+        for _ in 0..<6 where !button.exists {
+            app.swipeUp()
+        }
+        tap(button)
         let confirm = app.buttons["confirmSignOut"]
         if confirm.waitForExistence(timeout: 3) {
             confirm.tap()
