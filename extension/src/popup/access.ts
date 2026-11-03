@@ -1,14 +1,14 @@
 /**
- * Server access on Firefox (D40 §1): it treats the manifest's host
- * permissions as optional, so the popup asks for the server's origin when
- * the user signs in or creates an account. On Chromium they are granted at
- * install and this asks nothing.
+ * Server access on Firefox and Safari (D40 §1, D48 §4): they treat the
+ * manifest's host permissions as needing the user's yes, so the popup asks
+ * for the server's origin when the user signs in or creates an account. On
+ * Chromium they are granted at install and this asks nothing.
  */
 import { useEffect, useState } from "preact/hooks";
 import { send } from "./api.ts";
 
 /** Whether this build must ask for server access before signing in. */
-export const ASKS_SERVER_ACCESS = PWM_TARGET === "firefox";
+export const ASKS_SERVER_ACCESS = PWM_TARGET !== "chromium";
 
 /**
  * The server's origin pattern, loaded ahead of the click: the permission

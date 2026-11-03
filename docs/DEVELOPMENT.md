@@ -122,6 +122,7 @@ just tokens    # regenerate Sources/PWMDesign/Tokens.swift after changing design
 - **The macOS app:** the `PWMMac` scheme, run on "My Mac".
   - **Without a team** it is signed to run locally, which can't carry the Keychain group, App Group or AutoFill entitlements. Build it as CI does, with `CODE_SIGN_ENTITLEMENTS=Mac/PWMMac-CI.entitlements` (no entitlements, not sandboxed): it then keeps its own login-keychain items and cache, and Touch ID and AutoFill are off.
   - **With your team** in `Local.xcconfig` (it also sets the Mac signing identity), everything works, including the credential provider.
+  - **The Safari extension:** run `just extension` first; the `PWMSafari` target copies `extension/dist/safari/` into the app. Without it the app still builds, with a warning, and Safari gets no extension. To try an unsigned build, allow unsigned extensions in Safari's Develop settings.
   - **Its UI test:** `TEST_RUNNER_PWM_TEST_SERVER=http://127.0.0.1:8080 xcodebuild test -project PWM.xcodeproj -scheme PWMMac -destination 'platform=macOS' CODE_SIGN_ENTITLEMENTS=Mac/PWMMac-CI.entitlements`.
 
 - **Before Xcode opens the package:** run `just apple` first, after every core change. The package does not resolve without `Generated/`.

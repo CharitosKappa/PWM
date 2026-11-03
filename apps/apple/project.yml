@@ -111,6 +111,38 @@ targets:
         products: [PWMKit, PWMDesign, PWMUI]
       - target: PWMMacAutoFill
         embed: true
+      - target: PWMSafari
+        embed: true
+  # The Safari Web Extension (D48 §4): the shared web build, carried by the
+  # macOS app. Build it first with `just extension`; without it the target
+  # still builds, and says so, but Safari gets no extension.
+  PWMSafari:
+    type: app-extension
+    platform: macOS
+    sources:
+      - Safari
+    postBuildScripts:
+      - name: The web extension (extension/dist/safari)
+        basedOnDependencyAnalysis: false
+        script: |
+          web="$SRCROOT/../../extension/dist/safari"
+          if [ -f "$web/manifest.json" ]; then
+            cp -R "$web/" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/"
+          else
+            echo "warning: no extension/dist/safari; run just extension first"
+          fi
+    settings:
+      base:
+        PRODUCT_NAME: PWMSafari
+        PRODUCT_BUNDLE_IDENTIFIER: invalid.pwm.mac.safari
+        INFOPLIST_FILE: Safari/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Safari/PWMSafari.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        APPLICATION_EXTENSION_API_ONLY: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
   PWMMacAutoFill:
     type: app-extension
     platform: macOS

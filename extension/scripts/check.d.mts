@@ -1,4 +1,4 @@
-export type Target = "chromium" | "firefox";
+export type Target = "chromium" | "firefox" | "safari";
 export const TARGETS: Target[];
 export const PERMISSIONS: Record<Target, string[]>;
 export const HOSTED_ORIGIN: string;

@@ -169,10 +169,14 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   void ready.then((background) => background.onAlarm(alarm.name as AlarmName));
 });
 
-chrome.idle.onStateChanged.addListener((state) => {
-  if (state === "locked")
-    void ready.then((background) => background.onScreenLocked());
-});
+// Safari has no `idle` API (D48 §4): there the vault locks on its timer,
+// and when Safari quits.
+if (PWM_TARGET !== "safari") {
+  chrome.idle.onStateChanged.addListener((state) => {
+    if (state === "locked")
+      void ready.then((background) => background.onScreenLocked());
+  });
+}
 
 /** Fetch the rules at startup unless a download is already scheduled (D34). */
 async function scheduleRules(): Promise<void> {

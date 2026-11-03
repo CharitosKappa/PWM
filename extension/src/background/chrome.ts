@@ -345,8 +345,11 @@ export function chromePlatform(): Platform {
     disk: new ChromeDisk(indexedDB, chrome.storage.local),
     session: new ChromeSession(chrome.storage.session),
     alarms: new ChromeAlarms(),
+    // Only Chromium has offscreen documents (D40 §1, D48 §4).
     clipboard:
-      PWM_TARGET === "firefox" ? new PageClipboard() : new OffscreenClipboard(),
+      PWM_TARGET === "chromium"
+        ? new OffscreenClipboard()
+        : new PageClipboard(),
     capabilities: { inlineUi: PWM_TARGET === "chromium" },
     pages: new ChromePages(),
     fetch: (url, init) => fetch(url, init),

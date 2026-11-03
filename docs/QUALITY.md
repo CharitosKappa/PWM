@@ -50,6 +50,8 @@ Edge, Brave and Opera get the same Chromium zip as Chrome and have no automated 
 
 Firefox: the same steps with `pwm-firefox-<version>.zip` from `about:debugging`. Step 4 offers saves on the toolbar button only, with no icon or card.
 
+Safari (D48): run the macOS app once (built after `just extension`), then turn on PWM in Safari, under Settings, Extensions (for an unsigned build, first allow unsigned extensions in Safari's Develop settings). Then the same steps, as for Firefox. Also check that signing in asks for access to the server.
+
 ### macOS app checklist (D48)
 
 For each release candidate, signed with the founder's Developer ID and notarized:

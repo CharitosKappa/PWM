@@ -20,6 +20,7 @@ const manifestOf = (target: string): Manifest =>
   JSON.parse(read(`manifests/${target}.json`)) as Manifest;
 const manifest = manifestOf("chromium");
 const firefox = manifestOf("firefox");
+const safari = manifestOf("safari");
 const pkg = JSON.parse(read("package.json")) as { version: string };
 
 describe("manifest", () => {
@@ -58,6 +59,28 @@ describe("manifest", () => {
     ).not.toEqual([]);
     // And the Chromium check refuses Firefox's manifest.
     expect(checkManifest(firefox, pkg.version, "chromium")).not.toEqual([]);
+  });
+
+  it("builds Safari like Firefox, without idle or gecko settings (D48 §4)", () => {
+    const strip = (m: Manifest, keys: string[]) =>
+      Object.fromEntries(Object.entries(m).filter(([k]) => !keys.includes(k)));
+    const differ = ["background", "permissions", "browser_specific_settings"];
+    expect(strip(safari, differ)).toEqual(strip(firefox, differ));
+    expect(safari.permissions).not.toContain("idle");
+    expect(safari.permissions).not.toContain("offscreen");
+    const changed = (patch: Record<string, unknown>) =>
+      checkManifest({ ...safari, ...patch }, pkg.version, "safari");
+    expect(changed({ permissions: firefox.permissions })).not.toEqual([]);
+    expect(changed({ background: firefox.background })).not.toEqual([]);
+    expect(
+      changed({ browser_specific_settings: firefox.browser_specific_settings }),
+    ).not.toEqual([]);
+    expect(
+      changed({
+        web_accessible_resources: manifest.web_accessible_resources,
+      }),
+    ).not.toEqual([]);
+    expect(checkManifest(safari, pkg.version, "firefox")).not.toEqual([]);
   });
 
   it("agrees with the code on version and hosted server", () => {

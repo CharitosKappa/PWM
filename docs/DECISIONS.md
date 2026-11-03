@@ -1750,6 +1750,18 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Signing:** a macOS App Group outside the App Store starts with the team id (`$(TeamIdentifierPrefix)`). A build signed to run locally (no team, as in CI) can't carry the Keychain group, App Group or AutoFill entitlements. CI builds it with `Mac/PWMMac-CI.entitlements`, which has none: a sandboxed app without a team id is refused by the Keychain, so the CI build is not sandboxed. It can't use the data-protection Keychain either, so `SharedStorage` falls back to the login keychain there (checked with a write, since reading can answer "not found" where writing is refused). A refused Keychain call logs its status only, never a value, under the `pwm` subsystem. A build signed with the team always uses the data-protection Keychain and the shared group.
   - **Tests:** a view-model test for ⌘N. In CI, the macOS app and its extension are built, and a macOS UI test signs up, adds a login with ⌘N, locks with ⇧⌘L, unlocks and signs out. A manual checklist for release candidates is in `QUALITY.md`.
   - **Not run on this machine:** all of the macOS code (no Xcode); CI builds it first. Touch ID, the Secure Enclave and the credential provider need a signed build on a Mac.
+
+  Implementation notes (M5.11):
+  - **The build:** `safari` is a third target in `scripts/build.mjs` (`dist/safari/` and `pwm-safari-<version>.zip`, minified, `safari17`). Its manifest (`manifests/safari.json`) differs from Firefox's in three places, and the build check enforces each:
+    - the background is an event page Safari wants spelled out (`persistent: false`)
+    - no `idle` permission, since Safari has no `idle` API
+    - `browser_specific_settings.safari` (17.0) instead of the gecko id
+  - **What Safari users get:** Firefox's capability set, so the inline icon and the save card are off, and fills are in the top frame only. Server access is asked at sign-in, as on Firefox. The clipboard is written from the background page. Passkeys follow D40 §2 (the switch says so if Safari refuses the page-world script).
+  - **No lock when the Mac locks** in Safari: without `idle`, the vault locks on its timer and when Safari quits. Logged as a platform gap.
+  - **The Xcode target:** `PWMSafari` (`apps/apple/Safari`), embedded in the macOS app. A build step copies `extension/dist/safari/` in. Without it the target still builds and warns, so CI's macOS job doesn't need Node or the WASM build; the Linux `wasm` job builds and checks `dist/safari/` itself. `SafariWebExtensionHandler` answers no native messages yet (M5.12).
+  - **Not done:** a Settings card in the Mac app that opens Safari's extension settings (`SFSafariApplication`). Safari lists the extension under Settings, Extensions once the app has run.
+  - **Tests:** the build check's Safari cases (Vitest). The extension's tests already run against Firefox's capability set, which Safari shares.
+  - **Not testable in CI:** Safari loading the extension; Safari's WebDriver can't drive extensions. A checklist step for release candidates is in `QUALITY.md`.
 - **D49 — Screenshots, screen recording and the app switcher on iOS and macOS** · settled 2026-11-03 · founder (approved as proposed).
   The roadmap says "Screenshot/screen-recording protection on unlock and revealed secrets". M5.2 and M5.3 left the Secret Key screen and the app-switcher cover here.
 
@@ -1810,4 +1822,3 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Tests:** 5 new package tests on Linux (recording, screenshots, the Secret Key and the generator, dropped listeners, the macOS switch).
   - **Not done as proposed:** a UI test for the switcher cover. XCUITest has no reliable way to hold the app in the inactive state. A manual step covers it in `QUALITY.md`, with recording, mirroring, screenshots and the macOS setting.
   - **Not run on this machine:** the views and the system feeds (no Xcode); CI builds them first.
-
