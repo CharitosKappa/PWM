@@ -13,7 +13,10 @@ struct PWMMacApp: App {
                 .frame(minWidth: 820, minHeight: 540)
                 .task { await model.start() }
         }
-        // Small enough to sit above the Dock on a 768-point screen.
+        // Sized from the content's minimum, not its full height (a long
+        // Settings form would make the window taller than the screen), and
+        // small enough to sit above the Dock on a 768-point screen.
+        .windowResizability(.contentMinSize)
         .defaultSize(width: 1000, height: 600)
         .commands {
             CommandGroup(replacing: .appSettings) {

@@ -79,6 +79,7 @@ final class MacUITests: XCTestCase {
         for delta in [-300.0, -300, -300, -300, 300, 300, 300, 300] where !button.isHittable {
             point.scroll(byDeltaX: 0, deltaY: delta)
         }
+        XCTAssertTrue(button.isHittable, "window \(window.frame), button \(button.frame)")
         click(button)
         click(app.buttons["confirmSignOut"].firstMatch)
     }
