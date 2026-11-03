@@ -1435,3 +1435,48 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Tests:** 7 background tests with the fake core; the WASM test checks the new calls on the real build; a Playwright test (`tests/manage.spec.ts`) renames this device on the local server and downloads a JSON export. The leak check is not run against the real HIBP in CI.
   - **Not run on this machine:** the Playwright test, since Playwright's Chromium is not installed here; it runs first in the `autofill-harness` CI job.
 
+- **D45 — Face ID / Touch ID unlock: what is wrapped, how the Secure Enclave holds it, and when the master password is still asked** · settled 2026-11-03 · founder (approved as proposed).
+  The roadmap says "Face ID / Touch ID unlock via Secure Enclave-wrapped key". `SECURITY.md` says "AUK (or sym_key) wrapped by a platform key (Secure Enclave …). Never store the master password." It also says the AutoFill extension (M5.5) never runs the KDF and uses this biometric-wrapped key. Open:
+  - what exactly is wrapped
+  - how a Secure Enclave key wraps it, given that enclave keys are P-256 only
+  - which side does what, given that all crypto lives in the core
+  - how it is turned on
+  - when the master password is still needed
+  - what happens when Face ID changes
+  - how it is tested without a device
+
+  Proposal:
+  1. **What is wrapped: the opened keyset, sealed by the core under a random 32-byte unlock key.**
+     - **Core:** `export_biometric_unlock()` returns a blob and its key. The blob is `v:u8 (= 1) || account_id:16 || envelope`. The envelope holds the keyset plaintext, sealed under the key with a new AAD label, `pwm/biometric-unlock`, and fields `version || account_id || device_id`.
+     - **Core:** `unlock_biometric(blob, key, access, refresh)` opens it, as `restore_session` does for the extension (D34). It refuses another account's blob, another device's blob, and a wrong key.
+     - **Why the keyset, not the AUK:** unlocking then needs no Argon2. That's what the AutoFill extension's memory limit asks for (`SECURITY.md`), and it's what the extension's session already does.
+     - **Vectors:** new test vectors in `core/test-vectors/biometric_unlock.json`, checked by Rust and the Node verifier, plus a fuzz case for the blob parser.
+  2. **The Secure Enclave holds the unlock key's protection, not the key.**
+     - **The enclave key:** at enabling, the app creates a P-256 key in the Secure Enclave. Its access control is `.privateKeyUsage` and `.biometryCurrentSet`, and its protection class is `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`. It never leaves the enclave and isn't backed up.
+     - **Wrapping:** the 32-byte unlock key is encrypted to that key's public half with Apple's `SecKeyCreateEncryptedData` (`eciesEncryptionCofactorVariableIVX963SHA256AESGCM`). Only the ciphertext is kept, in the Keychain (`ThisDeviceOnly`), next to the blob.
+     - **Unlocking:** `SecKeyCreateDecryptedData` needs Face ID or Touch ID in that moment. The enclave decrypts, the core gets the key, and the Swift copy is dropped at once.
+     - **The crypto rule:** this is the platform-key wrapping `SECURITY.md` names, done by the operating system's keystore. No primitive is written in Swift, and the core still does all the vault crypto. Android Keystore (M6.2) and Windows Hello (M7) will fill the same slot.
+  3. **Turning it on.**
+     - **Where:** a "Unlock with Face ID" switch in Settings, and one offer on the unlock screen after the first unlock with the master password ("Use Face ID next time?" with Turn on and Not now). The offer is shown once, never again after Not now, and never during autofill.
+     - **Confirming:** turning it on asks for Face ID once, so a face that doesn't work is found now, not at the next unlock.
+     - **When it's offered:** only on devices with Face ID or Touch ID enrolled and a passcode set. Otherwise the switch explains why it's unavailable.
+  4. **When the master password is still asked:**
+     - **Every 14 days:** after that, the next unlock asks for the master password once, so it isn't forgotten. This is common practice, and the Emergency Kit can't recover a forgotten password.
+     - **When Face ID changes:** a new face or finger enrolled makes `.biometryCurrentSet` refuse. The app says "Face ID changed. Enter your master password", deletes the old key and blob, and turns it back on after that unlock.
+     - **When Face ID fails:** if the system's attempt limit is reached or the user cancels, the master password field shows.
+     - **After signing in on a device:** Face ID starts off.
+     - **On each master password unlock:** the blob is made again, so it always matches the current keyset.
+  5. **Turning it off, and signing out,** delete the enclave key, the wrapped key and the blob. Locking keeps them. The lock timeout (D43 §5) is unchanged: Face ID only replaces typing the password.
+  6. **For the AutoFill extension (M5.5):** the same items move to the shared Keychain group with M5.5's App Group work (D42), so the extension unlocks with Face ID without the KDF.
+  7. **`Info.plist`:** `NSFaceIDUsageDescription`, "To unlock your vault with Face ID instead of your master password."
+  8. **Tests:**
+     - **Core (tests first):** round trip; another account's or device's blob refused; wrong key refused; wrong version refused; vectors; fuzz.
+     - **Swift (Linux and macOS):** the enclave sits behind a small protocol, `BiometricKeyStore` (create, wrap, unwrap, delete), with a fake that can "change biometrics", be cancelled, or be missing. The tests cover the switch, the one-time offer, the 14-day rule, Face ID changing, signing out, and a real round trip through the core.
+     - **Not testable in CI:** the Secure Enclave and Face ID. The simulator has no enclave (`SecureEnclave.isAvailable` is false), so the real `SecKey` code runs first on a device. On the simulator the switch says Face ID is unavailable, and the UI test checks that.
+  9. **Parity:** Touch ID on macOS comes with M5.6, from the same `PWMKit` code. Android is M6.2, Windows Hello is M7.1, and the extension unlocks through the desktop app (M5.6/M7.2, D34). These gaps are logged here.
+
+  Alternatives:
+  - **A Keychain item with a biometry access control holding the 32-byte key directly:** simpler and also enforced by the enclave. But the key would exist as a Keychain item, not under a non-exportable enclave key as the roadmap asks. The enclave-key wrap keeps the key's protection bound to hardware.
+  - **Wrapping the AUK instead of the keyset:** smaller, but every unlock would then open the sealed keyset with it. That rules out the AutoFill extension, which must not run Argon2, and gains nothing, since the keyset is what an attacker wants anyway.
+  - **No periodic master password:** fewer prompts, but people forget a password they never type, and nothing can reset it.
+  - **Turning it on by default after onboarding:** convenient, but the user should choose to tie their vault to their face.
