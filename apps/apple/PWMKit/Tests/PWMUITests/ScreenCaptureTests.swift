@@ -108,10 +108,9 @@ final class ScreenCaptureTests: XCTestCase {
         XCTAssertEqual(settings.browserTouchIDOn, false)
         XCTAssertNotNil(settings.error)
 
-        let elsewhere = SettingsModel(
-            server: nil, app: AppModel(makeAccount: { [unowned self] _ in self.account }, pasteboard: pasteboard, deviceName: "iPhone"),
-            account: account
-        )
+        // Settings holds the app unowned: keep it alive for the test.
+        let phone = AppModel(makeAccount: { [unowned self] _ in self.account }, pasteboard: pasteboard, deviceName: "iPhone")
+        let elsewhere = SettingsModel(server: nil, app: phone, account: account)
         await elsewhere.load()
         XCTAssertNil(elsewhere.browserTouchIDOn, "no switch without the Mac helper")
     }
