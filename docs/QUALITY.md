@@ -62,6 +62,15 @@ For each release candidate, signed with the founder's Developer ID and notarized
 4. Create a passkey on a WebAuthn test page in Safari, then sign in with it.
 5. Turn off "Suggest logins above the keyboard": no suggestions are left. Sign out: none either.
 
+### Browser Touch ID checklist (D48)
+
+On a Mac, with a signed build of the app and the extension's store id in `BrowserUnlock.chromiumOrigins`:
+
+1. In the app's Settings, turn on "Allow browser extensions to unlock with Touch ID".
+2. In Chrome, and then in Firefox and Safari: unlock the extension with the master password, turn on "Unlock with Touch ID" (Touch ID asks once), lock, then unlock with Touch ID.
+3. Cancel Touch ID: the master password still unlocks, and Touch ID stays on. Add a finger in System Settings: the next unlock turns Touch ID off.
+4. Turn the app's switch off: the extension says the Mac app is needed.
+
 ### Screen capture checklist (D49)
 
 On an iPhone and a Mac, for each release candidate:

@@ -509,7 +509,15 @@ Phase 3  Teams           months 16–24 M16–M19
     - **A check in Safari on a Mac:** loading the extension (manual, `QUALITY.md`).
     - **Locking when the Mac locks:** Safari has no `idle` API; the timer and quitting Safari lock it (gap logged in D48).
     - **A Settings card in the Mac app** that opens Safari's extension settings.
-- [ ] M5.12 Touch ID unlock for the extension in other browsers (D48 §5): a native-messaging helper in the macOS app keeps a key behind Touch ID that opens a sealed blob the extension holds. New AAD label `pwm/browser-unlock`, vectors, a versioned protocol. Windows and Linux in M7.2.
+- [x] M5.12 Touch ID unlock for the extension in other browsers (D48 §5): a native-messaging helper in the macOS app keeps a key behind Touch ID that opens a sealed blob the extension holds. New AAD label `pwm/browser-unlock`, vectors, a versioned protocol. Windows and Linux in M7.2.
+  - **The blob:** `pwm/browser-unlock` in the core, with vectors (Rust and Node) and fuzzing.
+  - **The helper:** `PWM Browser Helper.app` in the macOS app, and Safari's handler, answering a versioned protocol. Each enrolment has its own Secure Enclave key, and every unlock asks for Touch ID.
+  - **The Mac app:** "Allow browser extensions to unlock with Touch ID" writes the browsers' manifests.
+  - **The extension:** "Unlock with Touch ID" in Settings, which asks for `nativeMessaging` on the click, and on the unlock screen. The master password is still asked every 14 days.
+  - **Deferred:**
+    - **A check on a Mac:** Touch ID, the browsers starting the helper, Safari's messages, and where Opera reads its manifests.
+    - **The real extension ids:** at M10, from the stores.
+    - **Windows and Linux:** M7.2.
 - [x] M5.7 Screenshot/screen-recording protection on unlock and revealed secrets.
   - Per D49:
     - **iOS, while recorded, mirrored or captured:** revealed values, one-time codes, the Secret Key and the generator's password are hidden, and revealing is off; copying still works.
