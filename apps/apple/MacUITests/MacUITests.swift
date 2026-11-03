@@ -56,10 +56,18 @@ final class MacUITests: XCTestCase {
     }
 
     private func signOut() {
-        click(element("sidebar.settings"))
+        // The sidebar row, not its text; a click right after a screen
+        // change may not select it, so try again.
+        let row = app.outlines.outlineRows.containing(.staticText, identifier: "sidebar.settings").firstMatch
         let button = app.buttons["signOut"]
+        for _ in 0..<3 where !button.exists {
+            click(row.exists ? row : element("sidebar.settings"))
+            _ = button.waitForExistence(timeout: 3)
+        }
+        // The Settings form, not the sidebar, scrolls to it.
+        let form = app.scrollViews.containing(.button, identifier: "signOut").firstMatch
         for _ in 0..<6 where !button.isHittable {
-            app.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -600)
+            form.scroll(byDeltaX: 0, deltaY: -600)
         }
         click(button)
         click(app.buttons["confirmSignOut"].firstMatch)
