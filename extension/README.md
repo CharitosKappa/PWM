@@ -6,6 +6,7 @@ TypeScript Manifest V3 extension (D34). The background (a service worker on Chro
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/background/` | Service worker: `service.ts` (the logic, tested with fakes), `chrome.ts` (storage, alarms, clipboard), `http.ts` (the core's requests) |
 | `src/popup/`      | Popup and options page                                                                                                                 |
+| `src/manage/`     | The manage page (D44): password health, devices and export, in a tab                                                                   |
 | `src/offscreen/`  | Writes and clears the clipboard on Chromium (Firefox's background page does it itself)                                                 |
 | `src/shared/`     | Messages and helpers used by both sides                                                                                                |
 | `manifests/`      | One manifest per target                                                                                                                |

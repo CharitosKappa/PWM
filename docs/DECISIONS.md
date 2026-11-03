@@ -1382,3 +1382,56 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **WASM** has every call for M4.10 (`startListDevices`, `startRenameDevice`, `startRevokeDevice`, `healthReport`, `breachCheck`, `authorizeExport`, `exportFile`, `breachRangeUrl`). The background uses none yet.
   - **The UI test** renames this device from Settings and sees the new name come back from the server. Health and export are covered by view-model tests and by `ServerTests` against the real server, with a fake HIBP.
 
+- **D44 — The extension's health report, devices and export: a full page, the leak check's permission, and fixing passwords from the report** · settled 2026-11-03 · founder (approved as proposed).
+  The roadmap says "Health report, device list and export in the extension (D43), with the WASM calls from M5.10". The calls exist and are tested (M5.10). Open:
+  - **Where the screens go:** the popup is about 360 pixels wide and closes when it loses focus, which is wrong for a list of problems or a file save.
+  - **The leak check's permission:** the background must reach `api.pwnedpasswords.com`, and the manifest's required hosts list only our server.
+  - **Whether the leak check is on by default,** as on iOS (D22 §5).
+  - **What "Change" does,** since the popup does not edit items (D34).
+  - **How export works** with a service worker that can stop at any time.
+
+  Proposal:
+  1. **A full extension page, `manage.html`,** opened in a tab from the popup's Settings ("Password health, devices and export").
+     - **Three tabs:** Health, Devices and Export.
+     - **The same look as the popup:** the same design tokens, Preact and messages to the background. It never touches the core directly.
+     - **When the vault is locked,** the page shows the popup's unlock form, so it works on its own.
+     - **No new required permissions.** The page is an extension page, under the existing CSP.
+  2. **The leak check's permission, asked once, when it is first needed.**
+     - **The request:** `chrome.permissions.request({ origins: ["https://api.pwnedpasswords.com/*"] })` (`browser.permissions` on Firefox), from the click that turns the check on or runs it.
+     - **No manifest change:** the manifest's optional hosts (`https://*/*`) already cover it. Self-hosted servers are asked for the same way today (D34), so existing installs see no new warning when they update.
+     - **If the user says no,** the check stays off, and the page says one plain line: "Leak check is off. Turn it on to check without sending your passwords."
+  3. **On by default, as on iOS, with the D22 sentence beside the switch.** Since turning it on asks for the permission, the first time the Health tab opens it shows the switch already on and a "Check for leaks" button, and runs only after that click.
+     - **No prompt** pops up by itself.
+     - **The background fetches the ranges** one at a time with `Add-Padding: true`, `credentials: "omit"` and `cache: "no-store"`, straight to HIBP.
+     - **Results stay in the background's memory** until the vault locks.
+  4. **"Change" opens the site.** It opens the login's first website in a new tab.
+     - **Then the existing flow takes over:** the extension offers to update the saved password after the user changes it there (M4.4, D36).
+     - **A login with no website** shows "Change it on the site, then save it here" and no button.
+     - **Editing in the popup** stays out of scope, as before.
+  5. **Devices:** the list (name or "Unknown device", platform, last used, "This device"), Rename, and "Sign out" for any device but this one, after a confirmation. This device leaves with Sign out in the popup.
+  6. **Export, in one background request.** The page sends the master password, the format and the export password together, and the background checks the password and exports in one go.
+     - **Why:** a service worker can stop between two requests, which would drop the grant.
+     - **The file** comes back as bytes to the page, which saves it with a download link from a `Blob`, as the Emergency Kit does. No `downloads` permission is needed.
+     - **The rest is as on iOS:** the encrypted `.pwmx` with its own export password (entered twice, with the strength meter), or JSON/CSV after "I understand that anyone who gets this file can read all my passwords." The master password is asked every time, and export works on every plan.
+     - **The page drops** the file and the passwords as soon as the download starts.
+  7. **Tests:**
+     - **Background (Vitest, with the fake core):** the new requests and their errors, the permission checks, and the leak check's request shape (padding header, no credentials, one request per prefix). Also: export refuses a wrong master password and keeps no grant between requests.
+     - **WASM test on the real build:** health, devices and an export round trip on an unlocked client.
+     - **Page:** the Playwright harness (M4.7), which already loads the test build with an account on the local sync server, opens `manage.html`, renames this device and downloads a JSON export, then checks the file.
+  8. **Parity:** the extension then matches iOS on these three features, on Chromium and Firefox. Safari comes with M5.6. The gaps M5.10 logged for the extension close here.
+
+  Alternatives:
+  - **Inside the popup:** no new page, but lists are cramped, and the popup closes as soon as the save dialog or the HIBP permission prompt takes focus.
+  - **A required host permission for HIBP:** no prompt, but every existing install would see a new permission warning on update, and some browsers turn the extension off until it is accepted.
+  - **Off by default in the extension:** no permission request ever appears unless the user goes looking, but then most users never see leaked passwords (the reason D22 chose "on").
+  - **Editing items on the page:** "Change" would be done in one place, but it is the item editor D34 left out, with its own tests. It can come with the importers (M8), which need an item view anyway.
+
+  Implementation notes (M4.10):
+  - **The background side** is a `Manager` next to the `Saver` and `Reporter` (`src/background/manage.ts`). The manage page is a second trusted sender beside the popup: the background accepts `popup.html` and `manage.html` from this extension only.
+  - **The leak check:** the page asks for `https://api.pwnedpasswords.com/*` from the click on "Check for leaks"; the background checks the permission before any request. The one string is on the build's remote-URL allow-list; the range URLs come from the core.
+  - **Requests to HIBP** go one at a time with `Add-Padding: true`, `credentials: "omit"`, `cache: "no-store"`, `redirect: "error"` and no referrer. Leak counts are kept in memory and dropped on lock, or when the switch is turned off.
+  - **Export:** a weak `.pwmx` password is refused before the master password is checked, so the core never holds an unused grant. The file name is `PWM export <date>.<format>`.
+  - **This device** is never signed out from the page (`this_device`); the core cannot tell, so the background checks the device list first.
+  - **Tests:** 7 background tests with the fake core; the WASM test checks the new calls on the real build; a Playwright test (`tests/manage.spec.ts`) renames this device on the local server and downloads a JSON export. The leak check is not run against the real HIBP in CI.
+  - **Not run on this machine:** the Playwright test, since Playwright's Chromium is not installed here; it runs first in the `autofill-harness` CI job.
+

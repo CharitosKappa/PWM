@@ -87,14 +87,15 @@ export function App({
   }
 }
 
-function Unlock({
+/** Also the manage page's, when the vault is locked (D44 §1). */
+export function Unlock({
   email,
   onDone,
   onReport,
 }: {
   email: string;
   onDone: () => void;
-  onReport: () => void;
+  onReport?: () => void;
 }): JSX.Element {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -134,7 +135,7 @@ function Unlock({
           {busy ? "Unlocking…" : "Unlock"}
         </button>
       </form>
-      <ReportLink onOpen={onReport} />
+      {onReport && <ReportLink onOpen={onReport} />}
     </main>
   );
 }

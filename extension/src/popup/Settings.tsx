@@ -148,6 +148,19 @@ export function Settings({
 
       {!signedOut && (
         <button
+          id="open-manage"
+          onClick={() =>
+            void chrome.tabs.create({
+              url: chrome.runtime.getURL("manage.html"),
+            })
+          }
+        >
+          Password health, devices and export
+        </button>
+      )}
+
+      {!signedOut && (
+        <button
           class="danger"
           onClick={() =>
             void send({ kind: "signOut" }).then(() => {

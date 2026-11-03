@@ -1,9 +1,10 @@
 /**
- * Messages between the popup and the background service worker (D34).
- * The popup never receives keys, passwords or one-time codes: copying goes
- * through the background's clipboard. The only secrets it ever gets are the
- * Secret Key, once, right after sign-up, and the Emergency Kit PDF made from
- * it (D42), to save.
+ * Messages between the popup (and the manage page, D44) and the background
+ * service worker (D34). The pages never receive keys, passwords or one-time
+ * codes: copying goes through the background's clipboard. The only secrets
+ * they ever get are the Secret Key, once, right after sign-up, the
+ * Emergency Kit PDF made from it (D42), and an export the user asked for
+ * with the master password (D24), each to save.
  */
 
 import type { OfferView, Suggestion } from "./autofill.ts";
@@ -44,7 +45,55 @@ export type Request =
   | { kind: "passkeys" }
   | { kind: "setPasskeys"; on: boolean }
   | { kind: "reportPreview"; problem: ReportProblem }
-  | { kind: "reportSend" };
+  | { kind: "reportSend" }
+  // The manage page (D44).
+  | { kind: "devices" }
+  | { kind: "renameDevice"; deviceId: string; name: string }
+  | { kind: "revokeDevice"; deviceId: string }
+  | { kind: "health" }
+  | { kind: "checkLeaks" }
+  | { kind: "setLeakCheck"; on: boolean }
+  | {
+      kind: "exportVault";
+      masterPassword: string;
+      format: ExportFormat;
+      /** For `pwmx` only. */
+      exportPassword: string;
+    };
+
+export type ExportFormat = "pwmx" | "json" | "csv";
+
+/** One of the account's devices; times are Unix ms. */
+export interface DeviceView {
+  id: string;
+  platform: string;
+  /** `null` without a name, or when it does not open on this account. */
+  name: string | null;
+  createdAt: number;
+  lastSeenAt: number;
+  revokedAt: number | null;
+  current: boolean;
+}
+
+/** A login the health report names; never its password. */
+export interface HealthItem {
+  vaultId: string;
+  itemId: string;
+  title: string;
+  username: string;
+  /** Its first website, opened by "Change" (D44 §4); "" without one. */
+  url: string;
+}
+
+export interface HealthView {
+  weak: HealthItem[];
+  /** Groups of logins sharing a password. */
+  reused: HealthItem[][];
+  /** `null` until the leak check has run in this unlocked session. */
+  leaked: (HealthItem & { count: number })[] | null;
+  /** The leak check's switch (D22 §5): on unless turned off. */
+  leakCheck: boolean;
+}
 
 /** What the user says went wrong (D38 §3); no free text. */
 export type ReportProblem =
@@ -127,6 +176,14 @@ export interface Replies {
   setPasskeys: boolean;
   reportPreview: ReportPreview;
   reportSend: null;
+  devices: DeviceView[];
+  renameDevice: DeviceView[];
+  revokeDevice: DeviceView[];
+  health: HealthView;
+  checkLeaks: HealthView;
+  setLeakCheck: boolean;
+  /** The file as base64, with the name to save it under. */
+  exportVault: { file: string; name: string };
 }
 
 const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
@@ -159,6 +216,13 @@ const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "setPasskeys",
   "reportPreview",
   "reportSend",
+  "devices",
+  "renameDevice",
+  "revokeDevice",
+  "health",
+  "checkLeaks",
+  "setLeakCheck",
+  "exportVault",
 ]);
 
 /** A popup message, wrapped so the background can tell it from others. */

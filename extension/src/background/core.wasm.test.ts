@@ -55,27 +55,24 @@ const CORE_METHODS: (keyof Core)[] = [
   "passkeyCandidates",
   "passkeyGet",
   "autofillReport",
+  "startListDevices",
+  "startRenameDevice",
+  "startRevokeDevice",
+  "healthReport",
+  "breachCheck",
+  "authorizeExport",
+  "exportFile",
 ];
 
 describe("the WASM core", () => {
-  it("has the calls M4.10 needs: devices, health and export (D43)", () => {
-    // Typed here until the background uses them (M4.10).
-    interface Later {
-      healthReport(): string;
-      breachCheck(): unknown;
-      startListDevices(): unknown;
-      exportFile(format: string, password: string, now: number): Uint8Array;
-    }
-    const client = new wasm.WasmClient() as unknown as Later;
-    const { breachRangeUrl } = wasm as unknown as {
-      breachRangeUrl: (prefix: string) => string;
-    };
+  it("refuses the manage page's calls while locked (D44)", () => {
+    const core = fns.newCore();
     const locked = expect.objectContaining({ code: "locked" }) as Error;
-    expect(() => client.healthReport()).toThrow(locked);
-    expect(() => client.breachCheck()).toThrow(locked);
-    expect(() => client.startListDevices()).toThrow(locked);
-    expect(() => client.exportFile("json", "", Date.now())).toThrow(locked);
-    expect(breachRangeUrl("ABCDE")).toBe(
+    expect(() => core.healthReport()).toThrow(locked);
+    expect(() => core.breachCheck()).toThrow(locked);
+    expect(() => core.startListDevices()).toThrow(locked);
+    expect(() => core.exportFile("json", "", Date.now())).toThrow(locked);
+    expect(fns.breachRangeUrl("ABCDE")).toBe(
       "https://api.pwnedpasswords.com/range/ABCDE",
     );
   });

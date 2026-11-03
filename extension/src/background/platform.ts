@@ -31,7 +31,8 @@ export type DiskKey =
   | "inlineHidden"
   | "inlineIcon"
   | "saveNever"
-  | "passkeys";
+  | "passkeys"
+  | "leakCheck";
 
 /** Memory-only storage that survives worker restarts (`chrome.storage.session`). */
 export interface SessionStore {
@@ -81,6 +82,8 @@ export interface Pages {
   setInlineScripts(on: boolean): Promise<void>;
   /** Whether the optional site access for the inline icon is granted. */
   hasSiteAccess(): Promise<boolean>;
+  /** Whether the user granted this origin pattern (the leak check's, D44 §2). */
+  hasHostAccess(origin: string): Promise<boolean>;
   /** Registers or removes the passkey wrapper and bridge (D37). */
   setPasskeyScripts(on: boolean): Promise<void>;
   /** Opens an extension page in a small window of its own; returns its id. */

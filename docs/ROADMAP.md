@@ -387,7 +387,10 @@ Phase 3  Teams           months 16–24 M16–M19
     - **RUSTSEC-2026-0374:** `uniffi` 0.32.2, the latest, still pulls in `basic-toml` through `askama` 0.16.1.
       - It runs only inside a derive macro at build time.
       - `pwm-ffi` built on its own does not contain it.
-- [ ] M4.10 Health report, device list and export in the extension (D43), with the WASM calls from M5.10. Export must be done before the beta (M10).
+- [x] M4.10 Health report, device list and export in the extension (D43, D44: a full page, `manage.html`), with the WASM calls from M5.10. Export must be done before the beta (M10).
+  - Per D44: `manage.html`, opened from the popup's Settings, with Password health (leaked, weak, reused; "Change" opens the login's site, where the update offer saves the new password), Devices (rename, sign out another device) and Export (encrypted `.pwmx`, or JSON/CSV after the warning; the master password every time; a download).
+  - **The leak check** asks for HIBP access from a click, with no manifest change, and runs straight from the background.
+  - **Parity:** the extension now matches iOS on these three, on Chromium and Firefox (Safari with M5.6).
 
 **Done when:** fixture suite 100%; top-1,000 classification ≥ 90% (target 95% by launch); overlay attacks never fill. Since D39, the classification target is measured each night by the top-sites runner on a growing list, and gates the launch in M10, not the end of M4.
 
@@ -462,7 +465,7 @@ Phase 3  Teams           months 16–24 M16–M19
     - **Core:** device list, rename and revoke as sync-engine tasks; the device name sent at the end of login; `health_report`, `breach_check`, `authorize_export` and `export` in `pwm-client`, through UniFFI and WASM.
     - **iOS (`PWMUI`, from Settings):** Password health (leaked, weak, reused; each opens the item to change it), the leak-check switch, Devices (rename, sign out another device), Export (encrypted with its own password, or plaintext after a warning; the master password every time).
     - **Tests:** server tests for every `PATCH` answer; end to end through the client (named at login, renamed, a name moved to another device does not open, revoked); offline client tests for health, breaches and export; 6 Swift view-model tests; 2 Swift tests against the real server; the UI test renames this device.
-  - **Deferred:** the extension's screens (M4.10); macOS (M5.6); Android (M6.1).
+  - **Deferred:** the extension's screens (M4.10, done); macOS (M5.6); Android (M6.1).
 - [ ] M5.4 Face ID / Touch ID unlock via Secure Enclave-wrapped key.
 - [ ] M5.9 Approve a new device from an existing one (D42 split it from M5.2): the Secret Key sent over an authenticated X25519 channel (`SECURITY.md`), relay endpoints on the server, and the approving side on every signed-in platform, starting with the extension. Needs its own decision, test vectors and security review; reuses the M5.2 kit scanner.
 - [ ] M5.5 iOS AutoFill Credential Provider + passkeys + QuickType identity sync.

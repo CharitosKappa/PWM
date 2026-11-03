@@ -245,6 +245,10 @@ export class ChromePages implements Pages {
     return chrome.permissions.contains({ origins: SITE_ACCESS });
   }
 
+  hasHostAccess(origin: string): Promise<boolean> {
+    return chrome.permissions.contains({ origins: [origin] });
+  }
+
   async setPasskeyScripts(on: boolean): Promise<void> {
     const ids = ["passkeys-page", "passkeys-bridge"];
     const existing = await chrome.scripting.getRegisteredContentScripts({

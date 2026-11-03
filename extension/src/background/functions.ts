@@ -14,5 +14,6 @@ export function coreFunctions(wasm: typeof Wasm): CoreFunctions {
     passwordScore: (password, context) => wasm.passwordScore(password, context),
     emergencyKit: (email, secretKey, server, accountId, created, paper) =>
       wasm.emergencyKit(email, secretKey, server, accountId, created, paper),
+    breachRangeUrl: (prefix) => wasm.breachRangeUrl(prefix),
   };
 }

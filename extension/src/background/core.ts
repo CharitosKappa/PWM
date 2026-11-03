@@ -17,6 +17,16 @@ export interface CoreStep {
   readonly secretKey?: string;
   readonly vaultId?: string;
   readonly report: ArrayLike<number>;
+  /** After `devices`: JSON array of `{id, platform, name, created_at, last_seen_at, revoked_at, current}`. */
+  readonly devices?: string;
+}
+
+/** One leak check (D22 §4): fetch each prefix, add each body, then finish. */
+export interface CoreBreachCheck {
+  prefixes(): string[];
+  addResponse(prefix: string, body: string): void;
+  /** JSON array of `{item_id, count}`. */
+  finish(): string;
 }
 
 export interface Core {
@@ -150,6 +160,17 @@ export interface Core {
   ): string;
   /** Saves an item (D18 JSON with its `id`); returns the id. */
   saveItem(vaultId: string, json: string, nowMs: number): string;
+  /** Devices (D43 §6): end with `devices` or `device_updated`. */
+  startListDevices(): CoreStep;
+  startRenameDevice(deviceId: string, name: string): CoreStep;
+  startRevokeDevice(deviceId: string): CoreStep;
+  /** Weak and reused passwords (D22), as JSON `{weak: [{item_id, score}], reused: [[item_id]]}`. */
+  healthReport(): string;
+  breachCheck(): CoreBreachCheck;
+  /** The master password again; the next `exportFile` may run (D24). */
+  authorizeExport(password: string, secretKey: string, nowMs: number): void;
+  /** `pwmx` (with `exportPassword`), `json` or `csv`; uses up the grant. */
+  exportFile(format: string, exportPassword: string, nowMs: number): Uint8Array;
 }
 
 export interface CoreFunctions {
@@ -168,6 +189,8 @@ export interface CoreFunctions {
     created: string,
     paper: "a4" | "letter",
   ): Uint8Array;
+  /** The HIBP range URL for a 5-character prefix (D22 §4). */
+  breachRangeUrl(prefix: string): string;
 }
 
 /** The `code` a core error carries (D31), or `internal`. */

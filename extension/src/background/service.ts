@@ -17,6 +17,7 @@ import { errorCode } from "./core.ts";
 import { localDate, paperFor } from "./kit.ts";
 import { ServiceError } from "./errors.ts";
 import { Autofill } from "./fill.ts";
+import { Manager } from "./manage.ts";
 import { Passkeys } from "./passkeys.ts";
 import { Reporter } from "./report.ts";
 import { Saver } from "./save.ts";
@@ -91,6 +92,8 @@ export class Background {
   readonly passkeys: Passkeys;
   /** Autofill failure reports (D38). */
   readonly reporter: Reporter;
+  /** Devices, the health report and export (D44). */
+  readonly manager: Manager;
 
   private constructor(
     private readonly fns: CoreFunctions,
@@ -121,6 +124,15 @@ export class Background {
       core: () => this.core,
       platform,
       autofill: this.autofill,
+    });
+    this.manager = new Manager({
+      core: () => this.core,
+      platform,
+      fns,
+      run: (start) => this.run(start),
+      ended: (step) => this.handleOutcome(step),
+      secretKey: () => platform.disk.get("secretKey"),
+      touch: () => this.touch(),
     });
     this.passkeys = new Passkeys({
       core: () => this.core,
@@ -294,6 +306,24 @@ export class Background {
       case "activity":
         await this.touch();
         return null;
+      case "devices":
+        return this.manager.devices();
+      case "renameDevice":
+        return this.manager.rename(request.deviceId, request.name);
+      case "revokeDevice":
+        return this.manager.revoke(request.deviceId);
+      case "health":
+        return this.manager.health();
+      case "checkLeaks":
+        return this.manager.checkLeaks();
+      case "setLeakCheck":
+        return this.manager.setLeakCheck(request.on);
+      case "exportVault":
+        return this.manager.exportVault(
+          request.masterPassword,
+          request.format,
+          request.exportPassword,
+        );
     }
   }
 
@@ -476,6 +506,7 @@ export class Background {
 
   async lock(): Promise<void> {
     this.core.lock();
+    this.manager.clear();
     await this.saver.clear();
     await this.platform.session.clear();
     await this.platform.alarms.clear("autolock");
