@@ -31,7 +31,7 @@ type Generator = (&'static str, &'static str, fn() -> Vec<Value>);
 
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../test-vectors");
-    let files: [Generator; 14] = [
+    let files: [Generator; 15] = [
         ("aad", "AAD byte layouts (D11, D17)", aad),
         ("aead", "XChaCha20-Poly1305 v1 envelopes (D10)", aead),
         ("hkdf", "HKDF-SHA256, 32-byte output (D13)", hkdf),
@@ -73,6 +73,11 @@ fn main() {
             "session",
             "Extension session blob and sealed device secret v1 (D34)",
             session,
+        ),
+        (
+            "biometric_unlock",
+            "Face ID / Touch ID unlock blob v1 (D45)",
+            biometric_unlock,
         ),
     ];
     for (name, description, generate) in files {
@@ -407,6 +412,21 @@ fn session() -> Vec<Value> {
         "sym_key": h(&plaintext[1..33]), "device_secret": h(secret),
         "device_tokens_aad": h(Aad::device_tokens(1, &ACCOUNT_A).as_bytes()),
         "device_secret_envelope": h(&sealed_secret.to_bytes()),
+    })]
+}
+
+/// The biometric unlock blob: the keyset under a random key,
+/// `pwm/biometric-unlock`, bound to the account and the device (D45).
+fn biometric_unlock() -> Vec<Value> {
+    let auk = key(0x48);
+    let (keyset, sealed, plaintext) = known_keyset(&auk, &ACCOUNT_A, 0x49, 0x4A, 0x4B);
+    let (envelope, unlock_key) = keyset.export_biometric_unlock(&ACCOUNT_A, &DEVICE).unwrap();
+    vec![json!({
+        "auk": h(&[0x48; 32]), "account_id": h(&ACCOUNT_A), "device_id": h(&DEVICE),
+        "sealed_keyset": h(&sealed), "keyset_plaintext": h(&plaintext),
+        "unlock_key": h(unlock_key.expose_secret()),
+        "aad": h(Aad::biometric_unlock(1, &ACCOUNT_A, &DEVICE).as_bytes()),
+        "envelope": h(&envelope.to_bytes()),
     })]
 }
 

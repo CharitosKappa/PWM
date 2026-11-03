@@ -7,6 +7,7 @@
 
 mod auth;
 mod autofill;
+mod biometric;
 mod client;
 mod error;
 mod kit;
@@ -18,6 +19,7 @@ mod totp;
 
 pub use auth::id_text;
 pub use autofill::AutofillMatch;
+pub use biometric::BiometricUnlock;
 pub use client::{Client, Outcome, Step, new_id};
 pub use error::ClientError;
 pub use kit::{ScannedKit, emergency_kit, scan_kit};

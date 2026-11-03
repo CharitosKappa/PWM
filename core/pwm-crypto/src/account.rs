@@ -19,6 +19,8 @@ const KEYSET_LEN: usize = 1 + 3 * 32;
 const VAULT_KEY_VERSION: u8 = 1;
 /// Session blob format (D34): the keyset plaintext under a session key.
 const SESSION_VERSION: u8 = 1;
+/// Biometric unlock format (D45): the keyset plaintext under a random key.
+const BIOMETRIC_VERSION: u8 = 1;
 /// Device secret format (D34): the raw secret under `sym_key`.
 const DEVICE_SECRET_VERSION: u8 = 1;
 /// Device name plaintext format: UTF-8 padded to exactly 64 bytes (D26).
@@ -178,6 +180,45 @@ impl AccountKeyset {
             k.copy_from_slice(key.expose_secret());
         }));
         let plaintext = open(&key, envelope, &Aad::session(SESSION_VERSION, account_id))?;
+        Self::from_plaintext(plaintext.expose_secret())
+    }
+
+    /// The unlocked keyset for Face ID / Touch ID on one device (decision
+    /// D45): sealed under a fresh random key that is returned with it, AAD
+    /// `pwm/biometric-unlock` bound to the account and the device. The
+    /// platform keeps the envelope and only a hardware-wrapped copy of the key.
+    pub fn export_biometric_unlock(
+        &self,
+        account_id: &Id,
+        device_id: &Id,
+    ) -> Result<(Envelope, Secret<[u8; 32]>), CryptoError> {
+        let key_bytes = random_32()?;
+        let key = SymmetricKey::from_secret(Secret::<[u8; 32]>::new_with(|k| {
+            k.copy_from_slice(key_bytes.expose_secret());
+        }));
+        let envelope = seal(
+            &key,
+            self.plaintext().expose_secret(),
+            &Aad::biometric_unlock(BIOMETRIC_VERSION, account_id, device_id),
+        )?;
+        Ok((envelope, key_bytes))
+    }
+
+    /// Restores a keyset from [`export_biometric_unlock`](Self::export_biometric_unlock).
+    pub fn import_biometric_unlock(
+        envelope: &Envelope,
+        key: &Secret<[u8; 32]>,
+        account_id: &Id,
+        device_id: &Id,
+    ) -> Result<Self, CryptoError> {
+        let key = SymmetricKey::from_secret(Secret::<[u8; 32]>::new_with(|k| {
+            k.copy_from_slice(key.expose_secret());
+        }));
+        let plaintext = open(
+            &key,
+            envelope,
+            &Aad::biometric_unlock(BIOMETRIC_VERSION, account_id, device_id),
+        )?;
         Self::from_plaintext(plaintext.expose_secret())
     }
 

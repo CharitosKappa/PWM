@@ -145,6 +145,37 @@ actor FakeAccount: Account {
     var breachFailure: PWMError?
     var exportAuthorized = false
 
+    var biometric: BiometricState = .off(.faceID)
+    var biometricFailure: PWMError?
+
+    func setBiometric(_ state: BiometricState, failure: String? = nil) {
+        biometric = state
+        biometricFailure = failure.map(PWMError.init(code:))
+    }
+
+    func biometricState() -> BiometricState { biometric }
+
+    func enableBiometricUnlock(reason: String) throws {
+        if let biometricFailure, biometricFailure.code == "biometric_cancelled" { throw biometricFailure }
+        guard case let .off(kind) = biometric else { throw PWMError(code: "biometric_unavailable") }
+        biometric = .on(kind)
+        calls.append("enable biometric")
+    }
+
+    func disableBiometricUnlock() {
+        if case let .on(kind) = biometric { biometric = .off(kind) }
+        calls.append("disable biometric")
+    }
+
+    func unlockWithBiometrics(reason: String) throws {
+        if let biometricFailure {
+            if biometricFailure.code == "biometric_changed", case let .on(kind) = biometric { biometric = .off(kind) }
+            throw biometricFailure
+        }
+        guard case .on = biometric else { throw PWMError(code: "biometric_unavailable") }
+        calls.append("unlock biometric")
+    }
+
     func setDevices(_ devices: [DeviceEntry]) { deviceList = devices }
     func setHealth(_ health: PasswordHealth, breached: [String: UInt64] = [:], breachFailure: String? = nil) {
         self.health = health

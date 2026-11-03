@@ -127,8 +127,29 @@ public final class SettingsModel {
         breachCheck = app.breachCheckOn
     }
 
+    /// Face ID / Touch ID (D45); nil until loaded.
+    public private(set) var biometric: BiometricState?
+
     public func load() async {
         email = (try? await account.email()) ?? nil
+        biometric = try? await account.biometricState()
+    }
+
+    /// Turning it on asks for Face ID once; off deletes the keys.
+    public func setBiometric(_ on: Bool) async {
+        error = nil
+        do {
+            if on {
+                try await account.enableBiometricUnlock(reason: UnlockModel.enableReason)
+            } else {
+                try await account.disableBiometricUnlock()
+            }
+        } catch let failure as PWMError where failure.code == "biometric_cancelled" {
+            // Left as it was.
+        } catch {
+            self.error = message(for: error)
+        }
+        biometric = try? await account.biometricState()
     }
 
     public func setLockTimeout(_ timeout: LockTimeout) {

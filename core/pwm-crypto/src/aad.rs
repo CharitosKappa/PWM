@@ -101,6 +101,16 @@ impl Aad {
         aad
     }
 
+    /// Unlocked keyset kept on one device for Face ID / Touch ID, under a
+    /// random key the platform wraps with a hardware key (decision D45).
+    pub fn biometric_unlock(version: u8, account_id: &Id, device_id: &Id) -> Self {
+        let mut aad = Self::labelled("pwm/biometric-unlock");
+        aad.0.push(version);
+        aad.0.extend_from_slice(account_id);
+        aad.0.extend_from_slice(device_id);
+        aad
+    }
+
     /// A secret the device keeps on disk (the refresh token), under the
     /// account `sym_key` (decision D34).
     pub fn device_tokens(version: u8, account_id: &Id) -> Self {

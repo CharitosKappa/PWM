@@ -1480,3 +1480,11 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Wrapping the AUK instead of the keyset:** smaller, but every unlock would then open the sealed keyset with it. That rules out the AutoFill extension, which must not run Argon2, and gains nothing, since the keyset is what an attacker wants anyway.
   - **No periodic master password:** fewer prompts, but people forget a password they never type, and nothing can reset it.
   - **Turning it on by default after onboarding:** convenient, but the user should choose to tie their vault to their face.
+
+  Implementation notes (M5.4):
+  - **Core:** `AccountKeyset::export_biometric_unlock` / `import_biometric_unlock` in `pwm-crypto`, and `Client::export_biometric_unlock` / `unlock_biometric` in `pwm-client`, through UniFFI. Anything that does not open is the new code `biometric_unlock_failed`. Vectors: `core/test-vectors/biometric_unlock.json` (Rust and Node). The `keyset_plaintext` fuzz target also opens arbitrary bytes as a biometric blob. Not in WASM: the extension unlocks with biometrics through the desktop app (M5.6/M7.2).
+  - **Swift:** `BiometricKeyStore` with `SecureEnclaveKeyStore` (the enclave key, ECIES wrap and unwrap) and `NoBiometrics`. `Session` keeps the blob, the wrapped key and when the master password was last typed in the Keychain (`biometric-blob`, `biometric-key`, `password-unlocked-at`).
+  - **The one-time offer** is remembered in `UserDefaults` (`biometricOffered`). A Face ID change sets the unlock screen to turn it back on after the next master password unlock, without offering.
+  - **The unlock screen** tries Face ID once by itself each time it shows; a cancel leaves the password field, with no error.
+  - **Not verified anywhere yet:** the Secure Enclave and Face ID themselves. The simulator has none, so CI checks only that Settings says it is unavailable. `swift test` covers the flow with a fake enclave against the real core and server. The first device run is the first real check.
+

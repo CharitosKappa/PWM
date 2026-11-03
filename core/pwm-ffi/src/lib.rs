@@ -322,6 +322,34 @@ impl PwmClient {
         )?))
     }
 
+    /// The opened keyset for Face ID / Touch ID on this device (D45): keep
+    /// `blob`, and `key` only wrapped by a Secure Enclave key. Never log either.
+    pub fn export_biometric_unlock(&self, device_id: String) -> Result<BiometricUnlock, PwmError> {
+        let unlock = self.lock_inner().export_biometric_unlock(&device_id)?;
+        Ok(BiometricUnlock {
+            blob: unlock.blob,
+            key: unlock.key.expose_secret().to_vec(),
+        })
+    }
+
+    /// Unlocks with the blob and the unwrapped key; `biometric_unlock_failed`
+    /// means the master password is needed.
+    pub fn unlock_biometric(
+        &self,
+        blob: Vec<u8>,
+        key: Vec<u8>,
+        device_id: String,
+        access: String,
+        refresh: String,
+    ) -> Result<(), PwmError> {
+        Ok(self.lock_inner().unlock_biometric(
+            &blob,
+            &key,
+            &device_id,
+            Tokens::new(access, refresh),
+        )?)
+    }
+
     /// The account's devices; ends with `Devices`.
     pub fn start_list_devices(&self) -> Result<Step, PwmError> {
         Ok(step(self.lock_inner().start_list_devices()?))
@@ -1017,4 +1045,11 @@ pub fn breach_padding_header() -> Header {
         name: pwm_client::ADD_PADDING_HEADER.0.to_owned(),
         value: pwm_client::ADD_PADDING_HEADER.1.to_owned(),
     }
+}
+
+/// What biometric unlock keeps (D45): the blob, and the key to wrap.
+#[derive(uniffi::Record)]
+pub struct BiometricUnlock {
+    pub blob: Vec<u8>,
+    pub key: Vec<u8>,
 }

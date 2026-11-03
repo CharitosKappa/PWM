@@ -466,7 +466,17 @@ Phase 3  Teams           months 16–24 M16–M19
     - **iOS (`PWMUI`, from Settings):** Password health (leaked, weak, reused; each opens the item to change it), the leak-check switch, Devices (rename, sign out another device), Export (encrypted with its own password, or plaintext after a warning; the master password every time).
     - **Tests:** server tests for every `PATCH` answer; end to end through the client (named at login, renamed, a name moved to another device does not open, revoked); offline client tests for health, breaches and export; 6 Swift view-model tests; 2 Swift tests against the real server; the UI test renames this device.
   - **Deferred:** the extension's screens (M4.10, done); macOS (M5.6); Android (M6.1).
-- [ ] M5.4 Face ID / Touch ID unlock via Secure Enclave-wrapped key.
+- [x] M5.4 Face ID / Touch ID unlock via Secure Enclave-wrapped key.
+  - Per D45:
+    - **Core:** the keyset sealed under a random key (`pwm/biometric-unlock`, bound to the account and the device), through UniFFI, with vectors (Rust and Node) and fuzzing.
+    - **iOS:** that key wrapped by a Secure Enclave P-256 key that needs Face ID or Touch ID with the current enrolment.
+    - **Turning it on:** a Settings switch, and one offer after a master password unlock.
+    - **The master password** is still asked every 14 days, after a sign-in, and after Face ID changes, which turns it off until the next password unlock.
+  - **Tests:** core round trip, refusals and vectors; Swift with a fake enclave against the real server (the 14-day rule, a cancel, a changed face, signing out); 7 view-model tests; the UI test checks that the simulator says it is unavailable.
+  - **Deferred:**
+    - **The first real check** is on a device (no enclave in the simulator or CI).
+    - **The AutoFill extension's use of it,** through the shared Keychain group: M5.5.
+    - **Touch ID on macOS:** M5.6. **Android:** M6.2. **Windows Hello:** M7.1.
 - [ ] M5.9 Approve a new device from an existing one (D42 split it from M5.2): the Secret Key sent over an authenticated X25519 channel (`SECURITY.md`), relay endpoints on the server, and the approving side on every signed-in platform, starting with the extension. Needs its own decision, test vectors and security review; reuses the M5.2 kit scanner.
 - [ ] M5.5 iOS AutoFill Credential Provider + passkeys + QuickType identity sync.
 - [ ] M5.6 macOS app + Safari Web Extension; native-messaging host for other browsers' biometric unlock.

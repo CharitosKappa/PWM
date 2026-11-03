@@ -9,6 +9,12 @@ public enum KeyName: String, Sendable, CaseIterable {
     case refreshToken = "refresh-token"
     case deviceId = "device-id"
     case email
+    /// Face ID / Touch ID unlock (D45): the core's blob, the unlock key
+    /// wrapped by the Secure Enclave key (both base64), and when the master
+    /// password was last typed (Unix ms).
+    case biometricBlob = "biometric-blob"
+    case biometricKey = "biometric-key"
+    case passwordUnlockedAt = "password-unlocked-at"
 }
 
 /// Secure storage for `KeyName` values: the Keychain on Apple platforms,

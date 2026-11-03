@@ -118,7 +118,7 @@ public final class AppModel {
     private func showUnlock() async {
         guard let account else { return }
         let email = (try? await account.email()) ?? nil
-        unlock = UnlockModel(email: email, account: account, onUnlocked: { [unowned self] in
+        unlock = UnlockModel(email: email, account: account, defaults: defaults, onUnlocked: { [unowned self] in
             self.unlock = nil
             self.showVault()
         }, onSignedOut: { [unowned self] in

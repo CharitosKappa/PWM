@@ -29,6 +29,8 @@ public actor Session {
     private let transport: any HTTPTransport
     /// For the breach check only: straight to HIBP, never through our server.
     private let breachTransport: any HTTPTransport
+    /// Holds the biometric unlock key's protection (D45).
+    private let biometrics: any BiometricKeyStore
     private let now: @Sendable () -> Int64
     private let eventsContinuation: AsyncStream<SessionEvent>.Continuation
 
@@ -45,6 +47,7 @@ public actor Session {
         keys: any KeyStore,
         transport: any HTTPTransport = URLSessionTransport(),
         breachTransport: any HTTPTransport = URLSessionTransport(),
+        biometrics: any BiometricKeyStore = Biometrics.platform,
         now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }
     ) throws {
         client = try core {
@@ -54,6 +57,7 @@ public actor Session {
         self.keys = keys
         self.transport = transport
         self.breachTransport = breachTransport
+        self.biometrics = biometrics
         self.now = now
         let (stream, continuation) = AsyncStream.makeStream(of: SessionEvent.self)
         events = stream
@@ -78,6 +82,7 @@ public actor Session {
         }
         try keys.set(.secretKey, secretKey)
         try keys.set(.email, email)
+        try passwordTyped()
         _ = try await run(try core { try client.startEnsureVault() })
         return Redacted(secretKey)
     }
@@ -97,6 +102,9 @@ public actor Session {
         guard case .loggedIn = try await run(first) else { throw PWMError(code: "protocol") }
         try keys.set(.secretKey, secretKey.value)
         try keys.set(.email, email)
+        // A new sign-in starts with Face ID off (D45 §4).
+        try disableBiometricUnlock()
+        try passwordTyped()
         return try await sync()
     }
 
@@ -107,6 +115,11 @@ public actor Session {
               let refresh = try keys.get(.refreshToken)
         else { throw PWMError(code: "not_signed_in") }
         try core { try client.unlock(password: password.value, secretKey: secretKey, access: access, refresh: refresh) }
+        try passwordTyped()
+        // The blob is made again, so it always matches the keyset (D45 §4).
+        if try keys.get(.biometricBlob) != nil {
+            try storeBiometricUnlock(try makeBiometricUnlock())
+        }
     }
 
     /// Drops every key from memory; a running conversation is abandoned.
@@ -123,9 +136,94 @@ public actor Session {
     /// and email. The device id stays. Unsent changes are lost.
     public func signOut() throws {
         try core { try client.signOut() }
-        for name in [KeyName.secretKey, .accessToken, .refreshToken, .email] {
+        try disableBiometricUnlock()
+        for name in [KeyName.secretKey, .accessToken, .refreshToken, .email, .passwordUnlockedAt] {
             try keys.delete(name)
         }
+    }
+
+    // MARK: Face ID / Touch ID (D45)
+
+    public func biometricState() throws -> BiometricState {
+        switch biometrics.availability() {
+        case let .unavailable(reason): return .unavailable(reason: reason)
+        case let .available(kind): return try keys.get(.biometricBlob) == nil ? .off(kind) : .on(kind)
+        }
+    }
+
+    /// Turns biometric unlock on while unlocked. It asks for Face ID once,
+    /// so a face that doesn't work is found now.
+    public func enableBiometricUnlock(reason: String) async throws {
+        guard case .available = biometrics.availability() else { throw PWMError(code: "biometric_unavailable") }
+        let made = try makeBiometricUnlock()
+        do {
+            _ = try await biometrics.unwrap(made.wrapped, reason: reason)
+        } catch {
+            try? biometrics.delete()
+            throw error
+        }
+        try storeBiometricUnlock(made)
+        if try keys.get(.passwordUnlockedAt) == nil { try passwordTyped() }
+    }
+
+    /// Deletes the Secure Enclave key, the wrapped key and the blob.
+    public func disableBiometricUnlock() throws {
+        try biometrics.delete()
+        try keys.delete(.biometricBlob)
+        try keys.delete(.biometricKey)
+    }
+
+    /// Unlocks after Face ID. `master_password_due` every 14 days;
+    /// `biometric_changed` turns it off, and the master password unlocks.
+    public func unlockWithBiometrics(reason: String) async throws {
+        guard case .on = try biometricState() else { throw PWMError(code: "biometric_unavailable") }
+        let last = try keys.get(.passwordUnlockedAt).flatMap { Int64($0) } ?? 0
+        guard now() - last < Biometrics.masterPasswordEveryMs else { throw PWMError(code: "master_password_due") }
+        guard let blob = try keys.get(.biometricBlob).flatMap({ Data(base64Encoded: $0) }),
+              let wrapped = try keys.get(.biometricKey).flatMap({ Data(base64Encoded: $0) }),
+              let access = try keys.get(.accessToken),
+              let refresh = try keys.get(.refreshToken)
+        else {
+            try disableBiometricUnlock()
+            throw PWMError(code: "biometric_changed")
+        }
+        let key: Redacted<Data>
+        do {
+            key = try await biometrics.unwrap(wrapped, reason: reason)
+        } catch let error as PWMError where error.code == "biometric_changed" {
+            try disableBiometricUnlock()
+            throw error
+        }
+        let deviceId = try deviceId()
+        do {
+            try core {
+                try client.unlockBiometric(blob: blob, key: key.value, deviceId: deviceId, access: access, refresh: refresh)
+            }
+        } catch let error as PWMError where error.code == "biometric_unlock_failed" {
+            try disableBiometricUnlock()
+            throw PWMError(code: "biometric_changed")
+        }
+    }
+
+    private struct MadeUnlock {
+        let blob: Data
+        let wrapped: Data
+    }
+
+    private func makeBiometricUnlock() throws -> MadeUnlock {
+        let deviceId = try deviceId()
+        let unlock = try core { try client.exportBiometricUnlock(deviceId: deviceId) }
+        let wrapped = try biometrics.wrap(Redacted(unlock.key))
+        return MadeUnlock(blob: unlock.blob, wrapped: wrapped)
+    }
+
+    private func storeBiometricUnlock(_ made: MadeUnlock) throws {
+        try keys.set(.biometricBlob, made.blob.base64EncodedString())
+        try keys.set(.biometricKey, made.wrapped.base64EncodedString())
+    }
+
+    private func passwordTyped() throws {
+        try keys.set(.passwordUnlockedAt, String(now()))
     }
 
     /// The Emergency Kit PDF for the signed-in account, dated today.

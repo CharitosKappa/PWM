@@ -45,6 +45,9 @@ pub enum ClientError {
     /// Export needs the master password again first (D24).
     #[error("enter the master password to export")]
     ExportNotAuthorized,
+    /// The biometric unlock blob did not open: the master password is needed (D45).
+    #[error("biometric unlock failed")]
+    BiometricUnlockFailed,
     /// The master password was entered more than 5 minutes ago.
     #[error("enter the master password again to export")]
     ExportExpired,
@@ -106,6 +109,7 @@ impl ClientError {
             Self::InvalidDeviceName => "invalid_device_name",
             Self::UnknownDevice => "unknown_device",
             Self::ExportNotAuthorized => "export_not_authorized",
+            Self::BiometricUnlockFailed => "biometric_unlock_failed",
             Self::ExportExpired => "export_expired",
             Self::WeakExportPassword => "weak_export_password",
             Self::WeakPassword => "weak_password",
