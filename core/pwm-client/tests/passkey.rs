@@ -3,10 +3,12 @@
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use pwm_client::{Client, ClientError, MemoryStore, PasskeyCreateCheck, Store, Tokens, new_id};
+use pwm_client::{
+    Client, ClientError, CredentialIdentity, MemoryStore, PasskeyCreateCheck, Store, Tokens, new_id,
+};
 use pwm_crypto::{KdfParams, SymmetricKey, create_account};
 use pwm_store::{AccountRecord, VaultRecord};
-use pwm_vault::ItemId;
+use pwm_vault::{Item, ItemId, ItemKind, Login, LoginUrl, UrlMatch};
 use serde_json::{Value, json};
 
 const T0: i64 = 1_700_000_000_000;
@@ -269,4 +271,191 @@ fn refusals_have_codes() {
         code(client.passkey_create(&vault, ORIGIN, None, &create("a", &[]), T0)),
         "locked"
     );
+}
+
+// --- Hashed calls (D47 §6) and the identities iOS suggests (D47 §5) ---
+
+const HASH: [u8; 32] = [0x5A; 32];
+
+#[test]
+fn a_hashed_passkey_is_stored_and_signs() {
+    let (mut client, vault) = unlocked();
+    let created = client
+        .passkey_register_hashed(&vault, "example.com", "ada", b"handle-ada", T0)
+        .unwrap();
+    assert_eq!(created.credential_id.len(), 16);
+    // The attestation object carries the RP id hash and the credential id.
+    assert!(
+        created
+            .attestation_object
+            .windows(16)
+            .any(|w| w == created.credential_id.as_slice())
+    );
+
+    let all = items(&client, &vault);
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0]["title"], "example.com");
+    assert_eq!(all[0]["login"]["username"], "ada");
+    assert_eq!(all[0]["login"]["urls"][0]["url"], "https://example.com");
+    let passkey = &all[0]["login"]["passkeys"][0];
+    assert_eq!(passkey["credential_id"], b64(&created.credential_id));
+    assert_eq!(passkey["user_handle"], b64(b"handle-ada"));
+    let item_id = all[0]["id"].as_str().unwrap();
+
+    let signed = client
+        .passkey_assert_hashed(
+            &vault,
+            item_id,
+            &created.credential_id,
+            "example.com",
+            &HASH,
+        )
+        .unwrap();
+    assert_eq!(signed.authenticator_data.len(), 37);
+    assert!(!signed.signature.is_empty());
+    assert_eq!(signed.user_handle, b"handle-ada");
+    assert_eq!(signed.credential_id, created.credential_id);
+    // The browser path sees the same passkey.
+    assert_eq!(
+        client
+            .passkey_candidates("https://example.com", None, &get(&[]))
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn a_hashed_passkey_joins_the_saved_login() {
+    let (mut client, vault) = unlocked();
+    let login = client
+        .save_login(&vault, "https://example.com/login", "", "Ada", "pw", T0)
+        .unwrap();
+    client
+        .passkey_register_hashed(&vault, "example.com", "ada", b"h", T0 + 1)
+        .unwrap();
+    let all = items(&client, &vault);
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0]["id"], login);
+    assert_eq!(all[0]["login"]["passkeys"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn hashed_refusals_have_codes() {
+    let (mut client, vault) = unlocked();
+    assert_eq!(
+        code(client.passkey_register_hashed(&vault, "co.uk", "a", b"h", T0)),
+        "invalid_rp_id"
+    );
+    let created = client
+        .passkey_register_hashed(&vault, "example.com", "a", b"h", T0)
+        .unwrap();
+    let item_id = items(&client, &vault)[0]["id"].as_str().unwrap().to_owned();
+    assert_eq!(
+        code(client.passkey_assert_hashed(&vault, &item_id, &[1; 16], "example.com", &HASH)),
+        "unknown_item"
+    );
+    assert_eq!(
+        code(client.passkey_assert_hashed(
+            &vault,
+            &item_id,
+            &created.credential_id,
+            "other.example",
+            &HASH
+        )),
+        "invalid_rp_id"
+    );
+    assert_eq!(
+        code(client.passkey_assert_hashed(
+            &vault,
+            &item_id,
+            &created.credential_id,
+            "example.com",
+            &[0; 8]
+        )),
+        "invalid_passkey_request"
+    );
+    client.lock();
+    assert_eq!(
+        code(client.passkey_register_hashed(&vault, "example.com", "a", b"h", T0)),
+        "locked"
+    );
+    assert_eq!(code(client.credential_identities()), "locked");
+}
+
+fn identity<'a>(all: &'a [CredentialIdentity], service: &str) -> Vec<&'a CredentialIdentity> {
+    all.iter().filter(|i| i.service == service).collect()
+}
+
+#[test]
+fn identities_hold_domains_and_usernames_only() {
+    let (mut client, vault) = unlocked();
+    let shop = client
+        .save_login(
+            &vault,
+            "https://shop.example.com/login",
+            "",
+            "ada",
+            "pw1",
+            T0,
+        )
+        .unwrap();
+    client
+        .save_login(&vault, "https://mail.other.example/", "", "bob", "pw2", T0)
+        .unwrap();
+    client
+        .passkey_register_hashed(&vault, "example.com", "ada", b"h", T0)
+        .unwrap();
+    let all = client.credential_identities().unwrap();
+
+    // A login with the default (domain) match is suggested on its domain.
+    let shop_ids = identity(&all, "example.com");
+    let password = shop_ids.iter().find(|i| i.kind == "password").unwrap();
+    assert_eq!(password.item_id, shop);
+    assert_eq!(password.vault_id, vault);
+    assert_eq!(password.user, "ada");
+    assert!(password.credential_id.is_empty());
+    let passkey = shop_ids.iter().find(|i| i.kind == "passkey").unwrap();
+    assert_eq!(passkey.user, "ada");
+    assert_eq!(passkey.credential_id.len(), 16);
+    assert_eq!(passkey.user_handle, b"h");
+    assert_eq!(identity(&all, "other.example").len(), 1);
+    // Nothing else leaves the vault: the type has no password or title.
+    let text = format!("{all:?}");
+    assert!(!text.contains("pw1") && !text.contains("pw2"));
+}
+
+#[test]
+fn identities_follow_url_matching_and_skip_trash() {
+    let (mut client, vault) = unlocked();
+    let url = |url: &str, how: UrlMatch| {
+        let mut u = LoginUrl::default();
+        u.url = url.into();
+        u.r#match = how;
+        u
+    };
+    let mut login = Login::default();
+    login.username = "h".into();
+    login.password = "p".into();
+    login.urls = vec![
+        url("https://a.example.org/x", UrlMatch::Host),
+        url("https://a.example.org/y", UrlMatch::Exact),
+        url("^https://b\\.example\\.org", UrlMatch::Regex),
+        url("https://never.example.org", UrlMatch::Never),
+    ];
+    let json = Item::new(ItemKind::Login(login), "Host", T0)
+        .to_json_with_id(&ItemId::generate().unwrap())
+        .unwrap();
+    let id = client.save_item(&vault, json.expose_secret(), T0).unwrap();
+    let all = client.credential_identities().unwrap();
+    let services: Vec<&str> = all
+        .iter()
+        .filter(|i| i.item_id == id)
+        .map(|i| i.service.as_str())
+        .collect();
+    // One entry per distinct host; regex and never URLs are not suggested.
+    assert_eq!(services, ["a.example.org"]);
+
+    client.set_trashed(&vault, &id, true, T0 + 1).unwrap();
+    assert!(client.credential_identities().unwrap().is_empty());
 }

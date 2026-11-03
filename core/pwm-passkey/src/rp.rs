@@ -36,15 +36,29 @@ pub fn effective_rp_id(origin: &str, requested: Option<&str>) -> Result<String, 
     };
     let rp_id = match requested {
         None => return Ok(host),
-        Some(id) => id.trim_end_matches('.').to_ascii_lowercase(),
+        Some(id) => checked_rp_id(id)?,
     };
-    if rp_id.is_empty() || rp_id.contains(['/', ':', ' ']) {
-        return Err(PasskeyError::InvalidRpId);
-    }
     let belongs = host == rp_id || host.ends_with(&format!(".{rp_id}"));
     if !belongs {
         return Err(PasskeyError::InvalidRpId);
     }
+    Ok(rp_id)
+}
+
+/// An RP id given without a page, as a platform passes it after checking
+/// the app's or site's associated domains (D47 §6): lowercased, and a
+/// registrable domain or a name under one (or `localhost`), never a public
+/// suffix or an IP address.
+pub fn checked_rp_id(requested: &str) -> Result<String, PasskeyError> {
+    let rp_id = requested.trim_end_matches('.').to_ascii_lowercase();
+    if rp_id.is_empty() || rp_id.contains(['/', ':', ' ']) {
+        return Err(PasskeyError::InvalidRpId);
+    }
+    // The ASCII (IDNA) form; IP addresses are never RP ids.
+    let rp_id = match url::Host::parse(&rp_id) {
+        Ok(url::Host::Domain(domain)) => domain,
+        _ => return Err(PasskeyError::InvalidRpId),
+    };
     // `localhost` has no registrable domain but is its own RP id.
     if is_localhost(&rp_id) {
         return Ok(rp_id);
