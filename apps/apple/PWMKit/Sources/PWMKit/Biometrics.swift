@@ -186,7 +186,9 @@ public struct SecureEnclaveKeyStore: BiometricKeyStore {
         query[kSecUseDataProtectionKeychain] = true
         #endif
         let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
+        // A build that may not use the data-protection Keychain (unsigned,
+        // as in CI) can't have made a key there: nothing to delete.
+        guard status == errSecSuccess || status == errSecItemNotFound || status == errSecMissingEntitlement else {
             throw PWMError(code: "keychain")
         }
     }
