@@ -72,10 +72,14 @@ public struct KeychainKeyStore: KeyStore {
     }
 
     private func query(_ name: KeyName) -> [CFString: Any] {
+        query(account: name.rawValue)
+    }
+
+    private func query(account: String) -> [CFString: Any] {
         var query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
-            kSecAttrAccount: name.rawValue,
+            kSecAttrAccount: account,
         ]
         if dataProtection {
             query[kSecUseDataProtectionKeychain] = true
@@ -120,13 +124,21 @@ public struct KeychainKeyStore: KeyStore {
         }
     }
 
-    /// Whether this build may use the access group: a build signed without
-    /// it gets a missing-entitlement error.
+    /// Whether this build may store items here: a build signed without the
+    /// access group (or, on macOS, without any Keychain entitlement) is
+    /// refused. Reading alone can answer "not found" where writing is
+    /// refused, so this writes and deletes a probe item, which holds nothing.
     public func isReachable() -> Bool {
-        var query = query(.deviceId)
-        query[kSecMatchLimit] = kSecMatchLimitOne
-        let status = SecItemCopyMatching(query as CFDictionary, nil)
-        return status == errSecSuccess || status == errSecItemNotFound
+        let probe = query(account: "reachability-probe")
+        SecItemDelete(probe as CFDictionary)
+        var add = probe
+        add[kSecValueData] = Data()
+        if dataProtection {
+            add[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        }
+        guard SecItemAdd(add as CFDictionary, nil) == errSecSuccess else { return false }
+        SecItemDelete(probe as CFDictionary)
+        return true
     }
 }
 #endif

@@ -306,6 +306,13 @@ jobs:
         env:
           TEST_RUNNER_PWM_TEST_SERVER: http://127.0.0.1:8080
         run: |
+          # The app then uses the login keychain: make it one that is
+          # unlocked, so nothing waits for a password prompt.
+          security create-keychain -p ci "$RUNNER_TEMP/pwm-ci.keychain-db"
+          security set-keychain-settings "$RUNNER_TEMP/pwm-ci.keychain-db"
+          security unlock-keychain -p ci "$RUNNER_TEMP/pwm-ci.keychain-db"
+          security list-keychains -d user -s "$RUNNER_TEMP/pwm-ci.keychain-db" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -d user -s "$RUNNER_TEMP/pwm-ci.keychain-db"
           xcodebuild test -project PWM.xcodeproj -scheme PWMMac -destination "platform=macOS" -resultBundlePath "$RUNNER_TEMP/mac.xcresult" -quiet             CODE_SIGN_ENTITLEMENTS=Mac/PWMMac-CI.entitlements             -test-timeouts-enabled YES -default-test-execution-time-allowance 600 -maximum-test-execution-time-allowance 600
       - if: failure()
         run: cat target/pwm-server.log || true
