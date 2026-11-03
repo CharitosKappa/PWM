@@ -5,4 +5,9 @@ CODE_SIGN_STYLE = Automatic
 CODE_SIGN_IDENTITY[sdk=iphonesimulator*] = -
 DEVELOPMENT_TEAM =
 
+// Shared by the app and its AutoFill extension (D47 §1); placeholders until
+// D1 names the product.
+PWM_APP_GROUP = group.invalid.pwm
+PWM_KEYCHAIN_GROUP = invalid.pwm.shared
+
 #include? "Local.xcconfig"

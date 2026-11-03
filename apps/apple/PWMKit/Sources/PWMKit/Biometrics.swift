@@ -74,9 +74,14 @@ import Security
 /// that ciphertext is kept, and decrypting it needs the biometric check.
 public struct SecureEnclaveKeyStore: BiometricKeyStore {
     public let tag: String
+    /// The Keychain group shared with the AutoFill extension (D47 §2), so
+    /// it can ask for Face ID too. Finding and deleting the key look in
+    /// every group this app may use.
+    public let accessGroup: String?
 
-    public init(tag: String = "pwm.biometric-unlock") {
+    public init(tag: String = "pwm.biometric-unlock", accessGroup: String? = nil) {
         self.tag = tag
+        self.accessGroup = accessGroup
     }
 
     private static var algorithm: SecKeyAlgorithm { .eciesEncryptionCofactorVariableIVX963SHA256AESGCM }
@@ -107,15 +112,19 @@ public struct SecureEnclaveKeyStore: BiometricKeyStore {
         guard let access = SecAccessControlCreateWithFlags(
             nil, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly, [.privateKeyUsage, .biometryCurrentSet], &error
         ) else { throw PWMError(code: "biometric_unavailable") }
+        var keyAttributes: [CFString: Any] = [
+            kSecAttrIsPermanent: true,
+            kSecAttrApplicationTag: Data(tag.utf8),
+            kSecAttrAccessControl: access,
+        ]
+        if let accessGroup {
+            keyAttributes[kSecAttrAccessGroup] = accessGroup
+        }
         let attributes: [CFString: Any] = [
             kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
             kSecAttrKeySizeInBits: 256,
             kSecAttrTokenID: kSecAttrTokenIDSecureEnclave,
-            kSecPrivateKeyAttrs: [
-                kSecAttrIsPermanent: true,
-                kSecAttrApplicationTag: Data(tag.utf8),
-                kSecAttrAccessControl: access,
-            ] as [CFString: Any],
+            kSecPrivateKeyAttrs: keyAttributes,
         ]
         guard let privateKey = SecKeyCreateRandomKey(attributes as CFDictionary, &error),
               let publicKey = SecKeyCopyPublicKey(privateKey),

@@ -25,7 +25,9 @@ pub use biometric::BiometricUnlock;
 pub use client::{Client, Outcome, Step, new_id};
 pub use error::ClientError;
 pub use kit::{ScannedKit, emergency_kit, scan_kit};
-pub use passkey::{PasskeyCandidate, PasskeyCreateCheck};
+pub use passkey::{
+    CredentialIdentity, HashedAssertion, HashedPasskey, PasskeyCandidate, PasskeyCreateCheck,
+};
 pub use pwm_crypto::{KdfParams, Secret};
 pub use pwm_generator::{
     PassphraseOptions, PasswordOptions, Strength, generate_passphrase, generate_password, strength,

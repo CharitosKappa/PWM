@@ -386,6 +386,7 @@ extension LockTimeout {
 struct SettingsView: View {
     let model: SettingsModel
     @State private var confirmSignOut = false
+    @Environment(\.scenePhase) private var scenePhase
 
     private var lockTimeout: Binding<LockTimeout> {
         Binding(get: { model.lockTimeout }, set: { model.setLockTimeout($0) })
@@ -393,6 +394,10 @@ struct SettingsView: View {
 
     private var breachCheck: Binding<Bool> {
         Binding(get: { model.breachCheckOn }, set: { model.setBreachCheck($0) })
+    }
+
+    private var suggestLogins: Binding<Bool> {
+        Binding(get: { model.suggestLogins }, set: { on in Task { await model.setSuggestLogins(on) } })
     }
 
     var body: some View {
@@ -407,7 +412,22 @@ struct SettingsView: View {
                     }
                 }
             }
+            if model.autofillOn == false {
+                Section {
+                    Text("Turn on PWM in Settings, under General, AutoFill & Passwords, to fill passwords and passkeys in Safari and other apps.")
+                    Button("Open AutoFill settings") { Task { await model.openAutoFillSettings() } }
+                        .accessibilityIdentifier("openAutoFill")
+                } header: {
+                    Text("AutoFill")
+                }
+            }
             BiometricSetting(model: model)
+            Section {
+                Toggle("Suggest logins above the keyboard", isOn: suggestLogins)
+                    .accessibilityIdentifier("suggestLogins")
+            } footer: {
+                Text("iOS keeps the site and username of each login on this device to suggest them. Passwords stay in your vault.")
+            }
             Section {
                 NavigationLink("Password health") { HealthHost(settings: model) }
                     .accessibilityIdentifier("health")
@@ -473,6 +493,9 @@ struct SettingsView: View {
             await model.prepareKit()
         }
         .onDisappear { model.dropKit() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await model.loadAutoFill() } }
+        }
         .confirmationDialog("Sign out of this device?", isPresented: $confirmSignOut, titleVisibility: .visible) {
             Button("Sign out", role: .destructive) { Task { await model.signOut() } }
                 .accessibilityIdentifier("confirmSignOut")

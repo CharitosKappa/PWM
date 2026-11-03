@@ -10,7 +10,8 @@ use p256::pkcs8::DecodePublicKey;
 use pwm_crypto::Secret;
 use pwm_passkey::{
     AAGUID, Caller, Ceremony, CreateRequest, GetRequest, PasskeyError, StoredPasskey, authenticate,
-    client_data_json, effective_rp_id, is_secure_origin, register, register_random,
+    authenticate_hashed, client_data_json, effective_rp_id, is_secure_origin, register,
+    register_hashed, register_hashed_random, register_random,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -334,4 +335,116 @@ fn the_parser_has_limits() {
     )
     .unwrap();
     assert!(request.allow.is_empty());
+}
+
+// --- Hashed calls (D47 §6): iOS hands over the RP id and a client data hash ---
+
+const HASH: [u8; 32] = [0x5A; 32];
+
+#[test]
+fn a_hashed_registration_writes_the_same_attestation() {
+    let (registration, response) = registered();
+    let hashed = register_hashed(
+        "example.com",
+        b"user-handle-1",
+        "ada@example.com",
+        &Secret::new(SEED),
+        CRED,
+    )
+    .unwrap();
+    assert_eq!(
+        b64(&hashed.attestation_object),
+        response["response"]["attestationObject"].as_str().unwrap()
+    );
+    let stored = &hashed.passkey;
+    assert_eq!(stored.credential_id, CRED);
+    assert_eq!(stored.rp_id, "example.com");
+    assert_eq!(stored.user_handle, b"user-handle-1");
+    assert_eq!(stored.user_name, "ada@example.com");
+    assert_eq!(
+        stored.private_key.expose_secret(),
+        registration.passkey.private_key.expose_secret()
+    );
+}
+
+#[test]
+fn a_hashed_assertion_signs_the_given_hash() {
+    let (registration, response) = registered();
+    let assertion = authenticate_hashed("example.com", &HASH, &registration.passkey).unwrap();
+    let auth = &assertion.authenticator_data;
+    assert_eq!(auth.len(), 37);
+    assert_eq!(&auth[..32], Sha256::digest(b"example.com").as_slice());
+    assert_eq!(auth[32], 0x1d);
+    let spki = unb64(response["response"]["publicKey"].as_str().unwrap());
+    let key = VerifyingKey::from_public_key_der(&spki).unwrap();
+    let mut signed = auth.clone();
+    signed.extend_from_slice(&HASH);
+    key.verify(&signed, &Signature::from_der(&assertion.signature).unwrap())
+        .unwrap();
+    // Another hash gives a signature that does not verify for this one.
+    let other = authenticate_hashed("example.com", &[1; 32], &registration.passkey).unwrap();
+    assert!(
+        key.verify(&signed, &Signature::from_der(&other.signature).unwrap())
+            .is_err()
+    );
+}
+
+#[test]
+fn hashed_calls_check_the_rp_id_and_the_hash() {
+    let (registration, _) = registered();
+    let seed = Secret::new(SEED);
+    for bad in [
+        "",
+        "com",
+        "co.uk",
+        "github.io",
+        "exa mple.com",
+        "example.com/x",
+        "example.com:443",
+        "127.0.0.1",
+        "[::1]",
+    ] {
+        assert_eq!(
+            register_hashed(bad, b"u", "a", &seed, CRED).err(),
+            Some(PasskeyError::InvalidRpId),
+            "{bad}"
+        );
+    }
+    let upper = register_hashed("Login.Example.COM.", b"u", "a", &seed, CRED).unwrap();
+    assert_eq!(upper.passkey.rp_id, "login.example.com");
+    assert!(register_hashed("localhost", b"u", "a", &seed, CRED).is_ok());
+    assert_eq!(
+        authenticate_hashed("other.example", &HASH, &registration.passkey).err(),
+        Some(PasskeyError::InvalidRpId)
+    );
+    assert_eq!(
+        authenticate_hashed("example.com", &[0; 31], &registration.passkey).err(),
+        Some(PasskeyError::InvalidRequest)
+    );
+    let broken = StoredPasskey {
+        private_key: Secret::new(vec![1, 2, 3]),
+        ..stored_copy(&registration.passkey)
+    };
+    assert_eq!(
+        authenticate_hashed("example.com", &HASH, &broken).err(),
+        Some(PasskeyError::InvalidKey)
+    );
+}
+
+#[test]
+fn fresh_hashed_registrations_differ() {
+    let a = register_hashed_random("example.com", b"u", "a").unwrap();
+    let b = register_hashed_random("example.com", b"u", "a").unwrap();
+    assert_ne!(a.passkey.credential_id, b.passkey.credential_id);
+    assert_ne!(a.attestation_object, b.attestation_object);
+}
+
+fn stored_copy(p: &StoredPasskey) -> StoredPasskey {
+    StoredPasskey {
+        credential_id: p.credential_id.clone(),
+        rp_id: p.rp_id.clone(),
+        user_handle: p.user_handle.clone(),
+        user_name: p.user_name.clone(),
+        private_key: Secret::new(p.private_key.expose_secret().clone()),
+    }
 }

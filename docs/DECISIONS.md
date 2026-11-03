@@ -1565,3 +1565,77 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Tests:** crypto (6 + vectors + fuzz), relay (every step, order, single hand-out, cap, expiry, unknown email), the whole exchange through `pwm-client` against Postgres including a relay that swaps keys, 5 background tests, the WASM build, a Playwright test where the extension approves a request made through the core in Node, 5 Swift view-model tests and a Swift test where one session approves another against the real server.
   - **Not run on this machine:** the Playwright test (no Playwright Chromium here) and the SwiftUI screens (no Xcode); both run first in CI.
 
+- **D47 — The iOS AutoFill extension: shared storage, unlocking without the KDF, QuickType suggestions and passkeys** · settled 2026-11-03 · founder (approved as proposed).
+  The roadmap says "iOS AutoFill Credential Provider + passkeys + QuickType identity sync". `AUTOFILL.md` asks for `ASCredentialProviderViewController` and `ASCredentialIdentityStore`, kept in sync after every vault change. `SECURITY.md` says the extension never runs the KDF and uses the biometric-wrapped key (D45). D42 left the App Group and shared Keychain group for this task. Open:
+  - how the app and the extension share the cache and keys, and how existing installs move over
+  - how the extension unlocks
+  - what the extension shows, and what it fills
+  - what goes into the system's identity store, which is outside our encryption
+  - how passkeys work when iOS hands over only a hash of the client data
+  - how it is tested without a device
+
+  Proposal:
+  1. **A new app extension target, `PWMAutoFill`,** a credential provider built on `ASCredentialProviderViewController`, iOS 17.
+     - **Its code:** it uses `PWMKit` and the core like the app, plus a small `PWMAutoFillUI` part of `PWMUI` for its screens.
+     - **Entitlements, with placeholders until D1:**
+       - the AutoFill credential provider capability
+       - an App Group, `group.invalid.pwm`
+       - a shared Keychain group, `$(AppIdentifierPrefix)invalid.pwm.shared`
+     - **Signing:** simulator builds in CI keep ad-hoc signing. A device needs the Apple Developer account, as today.
+  2. **Shared storage, with a one-time migration:**
+     - **The cache** moves from the app's Application Support folder into the App Group container, with its `-wal` and `-shm` files. This happens once, at the first launch of the new version, before the core opens it.
+     - **The Keychain items** move into the shared group: the Secret Key, tokens, email, device id, and the D45 blob and wrapped key. Each is copied first, then the old item is deleted.
+     - **The Secure Enclave key:** made from now on in the shared group too. A key made before the move is turned off and made again at the next master password unlock.
+     - **Migration test:** fake stores in both places, and a run that is stopped halfway then started again.
+  3. **Unlocking in the extension: Face ID or Touch ID only, never the KDF.**
+     - **When Face ID unlock is on:** the extension asks for Face ID and opens the D45 blob, just as the app does.
+     - **When it is off, or the 14-day master password is due:** the extension says so in one line ("Turn on Face ID in PWM to fill here", or "Open PWM and enter your master password"). It never shows a master password field.
+     - **After the extension closes:** nothing stays unlocked. Keys live only for one request.
+  4. **What the extension shows and fills:**
+     - **The list:** after Face ID, the logins that match the page or app, using the core's matching (D33) on each service identifier iOS passes, with a search over all logins below.
+     - **Filling:** a tap fills, through `ASPasswordCredential`. Nothing fills without a tap.
+     - **One-time codes:** after a fill, the login's TOTP code is copied with the 30-second expiry (D42), as the extension's fill does.
+     - **Saving new logins:** stays in the app and the browser extension.
+  5. **QuickType suggestions (`ASCredentialIdentityStore`):**
+     - **What iOS gets:** each login's domains and username, plus an id (vault id and item id). iOS keeps these on the device, unencrypted by us, so the bar above the keyboard can suggest them before unlock. Passwords never go there.
+     - **The switch:** "Suggest logins above the keyboard" in Settings, on by default. Turning it off clears the store.
+     - **Keeping it current:** the store is replaced after every vault change in the app (save, delete, trash, sync), and emptied when signing out.
+     - **Choosing a suggestion:** the extension asks for Face ID, then fills. iOS's no-interaction path always answers "interaction required".
+  6. **Passkeys (iOS 17 passkey provider):**
+     - **What iOS hands over:** the relying party id, user, and a hash of the client data, not the client data JSON the browser extension signs (D37).
+     - **New core calls in `pwm-passkey` and `pwm-client`, through UniFFI:**
+       - `passkey_register_hashed(rp_id, user_name, user_handle, client_data_hash)` stores a new ES256 passkey in a login, as D37 does, and returns the credential id and attestation object.
+       - `passkey_assert_hashed(vault_id, item_id, credential_id, rp_id, client_data_hash)` returns the authenticator data and signature.
+     - **The relying party id:** iOS checks it against the app's or site's associated domains before it calls a provider, so the core takes it as given. The core still refuses an id that isn't a registrable domain.
+     - **Showing passkeys:** they appear in the identity store as `ASPasskeyCredentialIdentity`, and are chosen after Face ID.
+     - **Vectors:** new cases in `core/test-vectors/passkey.json` for the hashed calls, checked by Rust and the Node verifier.
+  7. **Turning it on:** iOS needs the user to pick PWM in Settings, under General, AutoFill & Passwords.
+     - **The card:** the app shows a card in Settings explaining this, with a button that opens the right place (`ASSettingsHelper`, iOS 17). The card shows until the provider is on.
+     - **No nagging:** no prompt elsewhere.
+  8. **Tests:**
+     - **Core (tests first):** the hashed register and assert, a signature verified with an independent ES256 check, an unknown credential refused, and vectors.
+     - **Swift (Linux and macOS):**
+       - the migration
+       - building the identity list from items, with the switch, sign-out and every kind of change
+       - the extension's model with fakes (Face ID off, master password due, matching, search, a fill, a cancel)
+     - **CI** builds the extension target and runs the app's UI test as before.
+     - **Not testable in CI:** iOS calling the provider, because turning it on needs the Settings app. Like the Secure Enclave, it is first checked on a device.
+  9. **Parity:** the macOS credential provider (Safari and other apps) comes with M5.6, using the same code. Android is M6.3. Both gaps are logged here.
+
+  Alternatives:
+  - **A master password field in the extension:** it works without Face ID, but Argon2 at 64 MiB in a memory-limited extension risks being killed, and `SECURITY.md` rules it out.
+  - **QuickType off by default:** iOS holds no usernames or domains, but the bar above the keyboard would stay empty for most users, and that bar is what makes AutoFill fast.
+  - **Recomputing the client data for passkeys:** impossible, since iOS passes only the hash. The hashed calls are the documented provider interface.
+  - **Leaving the cache where it is and copying it for the extension:** no migration, but two caches drift apart, and the extension would fill stale passwords.
+
+  Implementation notes (M5.5):
+  - **Core:** `register_hashed`, `register_hashed_random` and `authenticate_hashed` in `pwm-passkey`, with `checked_rp_id` for an RP id given without a page (lowercased, the IDNA form, never a public suffix or an IP address). In `pwm-client`: `passkey_register_hashed` stores the passkey as `passkey_create` does (the site's login for that username, or a new one), `passkey_assert_hashed`, and `credential_identities` for the suggestion list. All through UniFFI.
+  - **The registration call takes no client data hash:** with the `none` attestation nothing signs it, so the extension passes iOS's hash straight back in the registration credential.
+  - **Vectors** are in a new file, `core/test-vectors/passkey_hashed.json`, instead of new cases in `passkey.json`: the generator never rewrites a published file. Rust and `verify.mjs` check it (8 new Node checks), and the `passkey_request` fuzz target covers the hashed calls.
+  - **Storage:** `StorageMigration` moves the cache files (the main file last, so a stopped run is finished by the next) and copies then deletes each Keychain item. The wrapped Face ID key is not moved: the old enclave key is deleted, the blob stays, and Face ID answers `master_password_due` until the next master password unlock makes both again in the shared group. A build signed without the App Group or Keychain group keeps the app's own places, and the extension says to open the app.
+  - **Suggestions:** `Suggestions` sends the latest list one at a time after every save, trash, delete, sync with changes, new passkey and unlock, and an empty one when the switch is off or at sign-out. iOS refuses the list while PWM is not the provider, so it is sent again when Settings sees PWM turned on. The switch is kept in the App Group's defaults.
+  - **The extension** opens the shared cache without a server (it never syncs; the app does, M5.8 adds background sync). New passkeys go to the first vault. Only ES256 is offered; a site that asks for none is refused.
+  - **Settings:** the card "Turn on PWM in Settings, under General, AutoFill & Passwords" with a button that opens it (`ASSettingsHelper`), shown while PWM is not the provider, and the switch "Suggest logins above the keyboard".
+  - **Tests:** 4 new passkey crate tests and the vectors, 5 new `pwm-client` tests, 5 migration and suggestion tests, 9 extension model and Settings tests over fakes, and a Swift test through the real core against the server (suggestions, matching, filling, a passkey made and signed, the switch, Face ID after the move, trash and sign-out).
+  - **Not run on this machine:** the extension target and the SwiftUI screens (no Xcode); CI builds them with the app. iOS calling the provider needs it turned on in the Settings app, so it is first checked on a device, like the Secure Enclave.
+

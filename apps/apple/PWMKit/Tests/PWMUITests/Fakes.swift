@@ -176,6 +176,16 @@ actor FakeAccount: Account {
         calls.append("unlock biometric")
     }
 
+    // Suggestions above the keyboard (D47).
+    var suggestions = true
+
+    func suggestionsOn() -> Bool { suggestions }
+
+    func setSuggestions(on: Bool) {
+        suggestions = on
+        calls.append("suggestions \(on ? "on" : "off")")
+    }
+
     // Approving a new device.
     var approvalList: [ApprovalEntry] = []
     var askCode = "123 456"

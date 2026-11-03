@@ -18,7 +18,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 pub use request::{CreateRequest, ES256, GetRequest};
-pub use rp::{effective_rp_id, is_secure_origin};
+pub use rp::{checked_rp_id, effective_rp_id, is_secure_origin};
 
 /// PWM's authenticator model id, the same on every platform (D37 §3).
 pub const AAGUID: [u8; 16] = [
@@ -173,19 +173,7 @@ pub fn register(
     if !request.es256 {
         return Err(PasskeyError::UnsupportedAlgorithm);
     }
-    let key =
-        SigningKey::from_slice(key_seed.expose_secret()).map_err(|_| PasskeyError::InvalidKey)?;
-    let point = key.verifying_key().to_sec1_point(false);
-    let (Some(x), Some(y)) = (point.x(), point.y()) else {
-        return Err(PasskeyError::InvalidKey);
-    };
-    let cose = cose_key(x, y);
-    let mut attested = Vec::with_capacity(18 + credential_id.len() + cose.len());
-    attested.extend_from_slice(&AAGUID);
-    attested.extend_from_slice(&(credential_id.len() as u16).to_be_bytes());
-    attested.extend_from_slice(&credential_id);
-    attested.extend_from_slice(&cose);
-    let auth_data = authenticator_data(&rp_id, Some(&attested));
+    let (key, auth_data) = new_credential(&rp_id, key_seed, &credential_id)?;
     let client_data = client_data_json(
         Ceremony::Create,
         &request.challenge,
@@ -196,7 +184,6 @@ pub fn register(
         .verifying_key()
         .to_public_key_der()
         .map_err(|_| PasskeyError::InvalidKey)?;
-    let pkcs8 = key.to_pkcs8_der().map_err(|_| PasskeyError::InvalidKey)?;
     let id = request::b64_text(&credential_id);
     let response = json!({
         "id": id,
@@ -220,7 +207,7 @@ pub fn register(
             rp_id,
             user_handle: request.user_id.clone(),
             user_name: request.user_name.clone(),
-            private_key: Secret::new(pkcs8.as_bytes().to_vec()),
+            private_key: pkcs8(&key)?,
         },
     })
 }
@@ -230,17 +217,134 @@ pub fn register_random(
     caller: Caller<'_>,
     request: &CreateRequest,
 ) -> Result<Registration, PasskeyError> {
+    with_fresh_key(|seed, id| register(caller, request, seed, id))
+}
+
+/// A new key from `key_seed` and the `authenticatorData` that attests it.
+fn new_credential(
+    rp_id: &str,
+    key_seed: &Secret<[u8; 32]>,
+    credential_id: &[u8],
+) -> Result<(SigningKey, Vec<u8>), PasskeyError> {
+    let key =
+        SigningKey::from_slice(key_seed.expose_secret()).map_err(|_| PasskeyError::InvalidKey)?;
+    let point = key.verifying_key().to_sec1_point(false);
+    let (Some(x), Some(y)) = (point.x(), point.y()) else {
+        return Err(PasskeyError::InvalidKey);
+    };
+    let cose = cose_key(x, y);
+    let mut attested = Vec::with_capacity(18 + credential_id.len() + cose.len());
+    attested.extend_from_slice(&AAGUID);
+    attested.extend_from_slice(&(credential_id.len() as u16).to_be_bytes());
+    attested.extend_from_slice(credential_id);
+    attested.extend_from_slice(&cose);
+    Ok((key, authenticator_data(rp_id, Some(&attested))))
+}
+
+fn pkcs8(key: &SigningKey) -> Result<Secret<Vec<u8>>, PasskeyError> {
+    let der = key.to_pkcs8_der().map_err(|_| PasskeyError::InvalidKey)?;
+    Ok(Secret::new(der.as_bytes().to_vec()))
+}
+
+/// Runs `make` with a fresh key seed and credential id.
+fn with_fresh_key<T>(
+    make: impl Fn(&Secret<[u8; 32]>, [u8; 16]) -> Result<T, PasskeyError>,
+) -> Result<T, PasskeyError> {
     // A uniformly random 32-byte string is a valid P-256 scalar except with
     // negligible probability; retry in that case.
     for _ in 0..4 {
         let seed = pwm_crypto::random_seed().map_err(|_| PasskeyError::InvalidKey)?;
         let id = pwm_crypto::generate_id().map_err(|_| PasskeyError::InvalidKey)?;
-        match register(caller, request, &seed, id) {
+        match make(&seed, id) {
             Err(PasskeyError::InvalidKey) => continue,
             other => return other,
         }
     }
     Err(PasskeyError::InvalidKey)
+}
+
+/// Signs `authenticatorData || client_data_hash` (§6.3.3 step 11).
+fn sign(
+    rp_id: &str,
+    client_data_hash: &[u8],
+    passkey: &StoredPasskey,
+) -> Result<(Vec<u8>, Vec<u8>), PasskeyError> {
+    let key = SigningKey::from_pkcs8_der(passkey.private_key.expose_secret())
+        .map_err(|_| PasskeyError::InvalidKey)?;
+    let auth_data = authenticator_data(rp_id, None);
+    let mut signed = auth_data.clone();
+    signed.extend_from_slice(client_data_hash);
+    let signature: Signature = key.sign(&signed);
+    Ok((auth_data, signature.to_der().as_bytes().to_vec()))
+}
+
+/// A registration for a platform that builds `clientDataJSON` itself and
+/// hands over only its hash (iOS, D47 §6). With the `none` attestation
+/// nothing signs that hash at registration, so it is not taken here.
+pub struct HashedRegistration {
+    pub attestation_object: Vec<u8>,
+    pub passkey: StoredPasskey,
+}
+
+/// Creates a passkey for an RP id the platform already checked against the
+/// app or site (its associated domains). `key_seed` and `credential_id`
+/// are the randomness, as in [`register`].
+pub fn register_hashed(
+    rp_id: &str,
+    user_handle: &[u8],
+    user_name: &str,
+    key_seed: &Secret<[u8; 32]>,
+    credential_id: [u8; 16],
+) -> Result<HashedRegistration, PasskeyError> {
+    let rp_id = checked_rp_id(rp_id)?;
+    let (key, auth_data) = new_credential(&rp_id, key_seed, &credential_id)?;
+    Ok(HashedRegistration {
+        attestation_object: attestation_object(&auth_data),
+        passkey: StoredPasskey {
+            credential_id: credential_id.to_vec(),
+            rp_id,
+            user_handle: user_handle.to_vec(),
+            user_name: user_name.to_owned(),
+            private_key: pkcs8(&key)?,
+        },
+    })
+}
+
+/// [`register_hashed`] with fresh randomness.
+pub fn register_hashed_random(
+    rp_id: &str,
+    user_handle: &[u8],
+    user_name: &str,
+) -> Result<HashedRegistration, PasskeyError> {
+    with_fresh_key(|seed, id| register_hashed(rp_id, user_handle, user_name, seed, id))
+}
+
+/// What a platform puts in its assertion credential.
+pub struct HashedAssertion {
+    pub authenticator_data: Vec<u8>,
+    /// DER-encoded ES256 signature.
+    pub signature: Vec<u8>,
+}
+
+/// Signs a sign-in whose `clientDataJSON` the platform built, given its
+/// SHA-256 hash.
+pub fn authenticate_hashed(
+    rp_id: &str,
+    client_data_hash: &[u8],
+    passkey: &StoredPasskey,
+) -> Result<HashedAssertion, PasskeyError> {
+    let rp_id = checked_rp_id(rp_id)?;
+    if rp_id != passkey.rp_id {
+        return Err(PasskeyError::InvalidRpId);
+    }
+    if client_data_hash.len() != 32 {
+        return Err(PasskeyError::InvalidRequest);
+    }
+    let (authenticator_data, signature) = sign(&rp_id, client_data_hash, passkey)?;
+    Ok(HashedAssertion {
+        authenticator_data,
+        signature,
+    })
 }
 
 /// Signs a `get` with a stored passkey (§6.3.3): `AuthenticationResponseJSON`.
@@ -256,18 +360,13 @@ pub fn authenticate(
     if !request.allow.is_empty() && !request.allow.contains(&passkey.credential_id) {
         return Err(PasskeyError::InvalidRequest);
     }
-    let key = SigningKey::from_pkcs8_der(passkey.private_key.expose_secret())
-        .map_err(|_| PasskeyError::InvalidKey)?;
-    let auth_data = authenticator_data(&rp_id, None);
     let client_data = client_data_json(
         Ceremony::Get,
         &request.challenge,
         caller.origin,
         caller.top_origin,
     );
-    let mut signed = auth_data.clone();
-    signed.extend_from_slice(&sha256(&client_data));
-    let signature: Signature = key.sign(&signed);
+    let (auth_data, signature) = sign(&rp_id, &sha256(&client_data), passkey)?;
     let id = request::b64_text(&passkey.credential_id);
     Ok(json!({
         "id": id,
@@ -278,7 +377,7 @@ pub fn authenticate(
         "response": {
             "clientDataJSON": request::b64_text(&client_data),
             "authenticatorData": request::b64_text(&auth_data),
-            "signature": request::b64_text(signature.to_der().as_bytes()),
+            "signature": request::b64_text(&signature),
             "userHandle": request::b64_text(&passkey.user_handle),
         },
     })

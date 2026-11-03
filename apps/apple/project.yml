@@ -37,6 +37,7 @@ targets:
         PRODUCT_NAME: PWM
         PRODUCT_BUNDLE_IDENTIFIER: invalid.pwm.app
         INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/PWM.entitlements
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -47,6 +48,29 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: YES
         # The notices script reads files that may not exist.
         ENABLE_USER_SCRIPT_SANDBOXING: NO
+    dependencies:
+      - package: PWMKit
+        products: [PWMKit, PWMDesign, PWMUI]
+      - target: PWMAutoFill
+        embed: true
+  # The AutoFill credential provider (D47): passwords and passkeys in
+  # Safari and other apps, unlocked with Face ID or Touch ID only.
+  PWMAutoFill:
+    type: app-extension
+    platform: iOS
+    sources:
+      - AutoFill
+    settings:
+      base:
+        PRODUCT_NAME: PWMAutoFill
+        PRODUCT_BUNDLE_IDENTIFIER: invalid.pwm.app.autofill
+        INFOPLIST_FILE: AutoFill/Info.plist
+        CODE_SIGN_ENTITLEMENTS: AutoFill/PWMAutoFill.entitlements
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "6.0"
+        APPLICATION_EXTENSION_API_ONLY: YES
     dependencies:
       - package: PWMKit
         products: [PWMKit, PWMDesign, PWMUI]

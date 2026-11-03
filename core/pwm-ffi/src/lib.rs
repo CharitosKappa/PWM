@@ -293,6 +293,37 @@ pub struct PasskeyCandidate {
     pub title: String,
 }
 
+/// A passkey made from a platform request that gave only the client data
+/// hash (D47).
+#[derive(uniffi::Record)]
+pub struct HashedPasskey {
+    pub credential_id: Vec<u8>,
+    pub attestation_object: Vec<u8>,
+}
+
+/// What the platform puts in its passkey assertion (D47).
+#[derive(uniffi::Record)]
+pub struct HashedAssertion {
+    pub credential_id: Vec<u8>,
+    pub user_handle: Vec<u8>,
+    pub authenticator_data: Vec<u8>,
+    pub signature: Vec<u8>,
+}
+
+/// A suggestion the system may show above the keyboard before unlock
+/// (D47): a domain or RP id and a username, never a password.
+#[derive(uniffi::Record)]
+pub struct CredentialIdentity {
+    pub vault_id: String,
+    pub item_id: String,
+    /// `password` or `passkey`.
+    pub kind: String,
+    pub service: String,
+    pub user: String,
+    pub credential_id: Vec<u8>,
+    pub user_handle: Vec<u8>,
+}
+
 /// The item and step (`password` or `totp`) to offer next on a tab.
 #[derive(uniffi::Record)]
 pub struct AutofillNextStep {
@@ -714,6 +745,71 @@ impl PwmClient {
             &item_id,
             &credential_id,
         )?)
+    }
+
+    /// Creates and stores a passkey for a platform request that gave only
+    /// the client data hash (D47).
+    pub fn passkey_register_hashed(
+        &self,
+        vault_id: String,
+        rp_id: String,
+        user_name: String,
+        user_handle: Vec<u8>,
+        now_ms: i64,
+    ) -> Result<HashedPasskey, PwmError> {
+        let made = self.lock_inner().passkey_register_hashed(
+            &vault_id,
+            &rp_id,
+            &user_name,
+            &user_handle,
+            now_ms,
+        )?;
+        Ok(HashedPasskey {
+            credential_id: made.credential_id,
+            attestation_object: made.attestation_object,
+        })
+    }
+
+    /// Signs a platform sign-in given its client data hash (D47).
+    pub fn passkey_assert_hashed(
+        &self,
+        vault_id: String,
+        item_id: String,
+        credential_id: Vec<u8>,
+        rp_id: String,
+        client_data_hash: Vec<u8>,
+    ) -> Result<HashedAssertion, PwmError> {
+        let signed = self.lock_inner().passkey_assert_hashed(
+            &vault_id,
+            &item_id,
+            &credential_id,
+            &rp_id,
+            &client_data_hash,
+        )?;
+        Ok(HashedAssertion {
+            credential_id: signed.credential_id,
+            user_handle: signed.user_handle,
+            authenticator_data: signed.authenticator_data,
+            signature: signed.signature,
+        })
+    }
+
+    /// What the system may suggest above the keyboard (D47).
+    pub fn credential_identities(&self) -> Result<Vec<CredentialIdentity>, PwmError> {
+        Ok(self
+            .lock_inner()
+            .credential_identities()?
+            .into_iter()
+            .map(|i| CredentialIdentity {
+                vault_id: i.vault_id,
+                item_id: i.item_id,
+                kind: i.kind.to_owned(),
+                service: i.service,
+                user: i.user,
+                credential_id: i.credential_id,
+                user_handle: i.user_handle,
+            })
+            .collect())
     }
 
     /// What to offer after a sign-in on `page_url` (D36).

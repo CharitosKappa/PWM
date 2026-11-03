@@ -386,6 +386,30 @@ for (const v of load("passkey")) {
   check("passkey get client data", got.type === "webauthn.get" && got.origin === v.origin);
 }
 
+for (const v of load("passkey_hashed")) {
+  // A platform hands over the client data hash (D47): the same layouts, and
+  // the signature over authenticatorData || that hash.
+  const att = hex(v.attestation_object);
+  const head = Buffer.concat([Buffer.from([0xa3, 0x63]), Buffer.from("fmt"), Buffer.from([0x64]), Buffer.from("none"), Buffer.from([0x67]), Buffer.from("attStmt"), Buffer.from([0xa0, 0x68]), Buffer.from("authData"), Buffer.from([0x58])]);
+  check("hashed attestation head", eq(att.subarray(0, head.length), head));
+  const authData = att.subarray(head.length + 1);
+  check("hashed attestation length", att[head.length] === authData.length);
+  check("hashed rp id hash", eq(authData.subarray(0, 32), crypto.createHash("sha256").update(v.rp_id).digest()));
+  check("hashed create flags", authData[32] === 0x5d);
+  const idLen = authData.readUInt16BE(53);
+  check("hashed credential id", eq(authData.subarray(55, 55 + idLen), hex(v.credential_id)));
+  const cose = authData.subarray(55 + idLen);
+  const x = cose.subarray(10, 42);
+  const y = cose.subarray(45, 77);
+  const pub = crypto.createPublicKey({ key: { kty: "EC", crv: "P-256", x: x.toString("base64url"), y: y.toString("base64url") }, format: "jwk" });
+  const priv = crypto.createPrivateKey({ key: hex(v.private_key_pkcs8), format: "der", type: "pkcs8" });
+  check("hashed private key matches", eq(crypto.createPublicKey(priv).export({ format: "der", type: "spki" }), pub.export({ format: "der", type: "spki" })));
+  const aAuth = hex(v.authenticator_data);
+  check("hashed get flags", aAuth.length === 37 && aAuth[32] === 0x1d && eq(aAuth.subarray(0, 32), authData.subarray(0, 32)));
+  const signed = Buffer.concat([aAuth, hex(v.client_data_hash)]);
+  check("hashed signature", crypto.verify("sha256", signed, { key: pub, dsaEncoding: "der" }, hex(v.signature)));
+}
+
 // opaque.json is checked by the Rust checker only: the protocol itself is
 // covered by the RFC 9807 vectors in opaque-ke.
 

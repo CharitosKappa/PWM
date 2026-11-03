@@ -77,9 +77,11 @@ final class OnboardingUITests: XCTestCase {
         // The simulator has no Secure Enclave: Settings says so (D45 §8).
         tap(app.tabBars.buttons["Settings"])
         expect(app.staticTexts["biometricUnavailable"])
+        // PWM is not the AutoFill provider yet: the card says how (D47 §7).
+        expect(app.buttons["openAutoFill"])
 
         // Lock at once on leaving the app.
-        tap(app.buttons["lockTimeout"])
+        tap(scrolledTo(app.buttons["lockTimeout"]))
         tap(app.buttons["Immediately"])
         XCUIDevice.shared.press(.home)
         app.activate()
@@ -89,7 +91,7 @@ final class OnboardingUITests: XCTestCase {
 
         // Name this device; the server keeps the name sealed.
         tap(app.tabBars.buttons["Settings"])
-        tap(app.buttons["devices"])
+        tap(scrolledTo(app.buttons["devices"]))
         let current = app.descendants(matching: .any)["device.current"]
         expect(current, timeout: 30)
         current.swipeLeft()
@@ -113,7 +115,7 @@ final class OnboardingUITests: XCTestCase {
 
         // Lock, then unlock with the master password only.
         tap(app.tabBars.buttons["Settings"])
-        tap(app.buttons["lockNow"])
+        tap(scrolledTo(app.buttons["lockNow"]))
         paste(password, into: app.secureTextFields["password"])
         tap(app.buttons["unlock"], once: .enabled)
         expect(app.staticTexts["Bank"].firstMatch, timeout: 30)
@@ -124,18 +126,22 @@ final class OnboardingUITests: XCTestCase {
     /// Settings, Sign out, and the confirmation.
     private func signOut() {
         tap(app.tabBars.buttons["Settings"])
-        // At the bottom of Settings: rows off screen are not made yet.
-        let button = app.buttons["signOut"]
-        for _ in 0..<6 where !button.exists {
-            app.swipeUp()
-        }
-        tap(button)
+        tap(scrolledTo(app.buttons["signOut"]))
         let confirm = app.buttons["confirmSignOut"]
         if confirm.waitForExistence(timeout: 3) {
             confirm.tap()
         } else {
             tap(app.sheets.buttons["Sign out"])
         }
+    }
+
+    /// Swipes Settings up until `element` is there: rows off screen are not
+    /// made yet.
+    private func scrolledTo(_ element: XCUIElement) -> XCUIElement {
+        for _ in 0..<8 where !element.exists {
+            app.swipeUp()
+        }
+        return element
     }
 
     private enum State {

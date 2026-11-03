@@ -46,6 +46,10 @@ public protocol Account: AnyObject, Sendable {
     func enableBiometricUnlock(reason: String) async throws
     func disableBiometricUnlock() async throws
     func unlockWithBiometrics(reason: String) async throws
+
+    // Suggestions above the keyboard (D47 §5).
+    func suggestionsOn() async -> Bool
+    func setSuggestions(on: Bool) async
 }
 
 extension Session: Account {}
