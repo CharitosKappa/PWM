@@ -1,6 +1,7 @@
 //! Keyset plaintext parsing: arbitrary bytes sealed as a keyset under a known
-//! AUK, and as a biometric unlock blob under a known unlock key (D45). Only a
-//! 97-byte version-1 plaintext may open, and it must round-trip.
+//! AUK, and as a biometric (D45) or browser (D48) unlock blob under a known
+//! unlock key. Only a 97-byte version-1 plaintext may open, and it must
+//! round-trip.
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
@@ -42,4 +43,32 @@ fuzz_target!(|data: &[u8]| {
         }
         Err(_) => assert!(!valid),
     }
+
+    let browser = seal(
+        &unlock_key,
+        data,
+        &Aad::browser_unlock(1, &ACCOUNT, &DEVICE),
+    )
+    .unwrap();
+    match AccountKeyset::import_browser_unlock(&browser, &Secret::new([7u8; 32]), &ACCOUNT, &DEVICE)
+    {
+        Ok(keyset) => {
+            assert!(valid);
+            let (again, key) = keyset.export_browser_unlock(&ACCOUNT, &DEVICE).unwrap();
+            let reopened =
+                AccountKeyset::import_browser_unlock(&again, &key, &ACCOUNT, &DEVICE).unwrap();
+            assert_eq!(reopened.x25519_public(), keyset.x25519_public());
+        }
+        Err(_) => assert!(!valid),
+    }
+    // The two blobs never open each other.
+    assert!(
+        AccountKeyset::import_biometric_unlock(
+            &browser,
+            &Secret::new([7u8; 32]),
+            &ACCOUNT,
+            &DEVICE
+        )
+        .is_err()
+    );
 });

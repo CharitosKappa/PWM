@@ -48,6 +48,9 @@ pub enum ClientError {
     /// The biometric unlock blob did not open: the master password is needed (D45).
     #[error("biometric unlock failed")]
     BiometricUnlockFailed,
+    /// The extension's Touch ID blob did not open: the master password is needed (D48 §5).
+    #[error("browser unlock failed")]
+    BrowserUnlockFailed,
     /// Not one of the account's open approval requests, or out of order (D46).
     #[error("unknown approval request")]
     UnknownApproval,
@@ -116,6 +119,7 @@ impl ClientError {
             Self::UnknownDevice => "unknown_device",
             Self::ExportNotAuthorized => "export_not_authorized",
             Self::BiometricUnlockFailed => "biometric_unlock_failed",
+            Self::BrowserUnlockFailed => "browser_unlock_failed",
             Self::UnknownApproval => "unknown_approval",
             Self::ApprovalFailed => "approval_failed",
             Self::ExportExpired => "export_expired",

@@ -329,6 +329,15 @@ for (const v of load("biometric_unlock")) {
   check("biometric open", eq(openEnvelope(hex(v.unlock_key), hex(v.envelope), aad), keyset));
 }
 
+for (const v of load("browser_unlock")) {
+  const keyset = openKeyset(v);
+  check("browser unlock keyset", eq(keyset, hex(v.keyset_plaintext)));
+  const aad = labelled("pwm/browser-unlock", Buffer.from([1]), hex(v.account_id), hex(v.device_id));
+  check("browser unlock aad", eq(aad, hex(v.aad)));
+  // The envelope; pwm-client prefixes it with v (= 1) || account_id.
+  check("browser unlock open", eq(openEnvelope(hex(v.unlock_key), hex(v.envelope), aad), keyset));
+}
+
 for (const v of load("session")) {
   const account = hex(v.account_id);
   const keyset = openKeyset(v);

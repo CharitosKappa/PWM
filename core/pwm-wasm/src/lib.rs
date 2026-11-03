@@ -602,6 +602,31 @@ impl WasmClient {
         Ok(out)
     }
 
+    /// Touch ID unlock through the Mac app (D48 §5): a 32-byte key followed
+    /// by the blob. The extension keeps the blob on disk and hands the key
+    /// once to the helper, which keeps it behind Touch ID.
+    #[wasm_bindgen(js_name = exportBrowserUnlock)]
+    pub fn export_browser_unlock(&self, device_id: &str) -> Result<Vec<u8>, JsValue> {
+        let unlock = self.inner.export_browser_unlock(device_id).map_err(js_error)?;
+        let mut out = unlock.key.expose_secret().to_vec();
+        out.extend_from_slice(&unlock.blob);
+        Ok(out)
+    }
+
+    /// Unlocks with the blob and the key the helper returned after Touch ID.
+    #[wasm_bindgen(js_name = unlockBrowser)]
+    pub fn unlock_browser(
+        &mut self,
+        blob: &[u8],
+        key: &[u8],
+        device_id: &str,
+        sealed_tokens: Option<Vec<u8>>,
+    ) -> Result<(), JsValue> {
+        self.inner
+            .unlock_browser(blob, key, device_id, sealed_tokens.as_deref())
+            .map_err(js_error)
+    }
+
     /// Unlocks from `exportSession` output after the worker restarted.
     #[wasm_bindgen(js_name = restoreSession)]
     pub fn restore_session(

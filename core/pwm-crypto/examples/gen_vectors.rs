@@ -32,7 +32,7 @@ type Generator = (&'static str, &'static str, fn() -> Vec<Value>);
 
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../test-vectors");
-    let files: [Generator; 16] = [
+    let files: [Generator; 17] = [
         ("aad", "AAD byte layouts (D11, D17)", aad),
         ("aead", "XChaCha20-Poly1305 v1 envelopes (D10)", aead),
         ("hkdf", "HKDF-SHA256, 32-byte output (D13)", hkdf),
@@ -84,6 +84,11 @@ fn main() {
             "approval",
             "Approving a new device: commitment, code and sealed Secret Key v1 (D46)",
             approval,
+        ),
+        (
+            "browser_unlock",
+            "Touch ID unlock for the browser extension through the Mac app v1 (D48)",
+            browser_unlock,
         ),
     ];
     for (name, description, generate) in files {
@@ -432,6 +437,21 @@ fn biometric_unlock() -> Vec<Value> {
         "sealed_keyset": h(&sealed), "keyset_plaintext": h(&plaintext),
         "unlock_key": h(unlock_key.expose_secret()),
         "aad": h(Aad::biometric_unlock(1, &ACCOUNT_A, &DEVICE).as_bytes()),
+        "envelope": h(&envelope.to_bytes()),
+    })]
+}
+
+/// The browser unlock blob: the keyset under a random key,
+/// `pwm/browser-unlock`, bound to the account and the device (D48 §5).
+fn browser_unlock() -> Vec<Value> {
+    let auk = key(0x58);
+    let (keyset, sealed, plaintext) = known_keyset(&auk, &ACCOUNT_A, 0x59, 0x5A, 0x5B);
+    let (envelope, unlock_key) = keyset.export_browser_unlock(&ACCOUNT_A, &DEVICE).unwrap();
+    vec![json!({
+        "auk": h(&[0x58; 32]), "account_id": h(&ACCOUNT_A), "device_id": h(&DEVICE),
+        "sealed_keyset": h(&sealed), "keyset_plaintext": h(&plaintext),
+        "unlock_key": h(unlock_key.expose_secret()),
+        "aad": h(Aad::browser_unlock(1, &ACCOUNT_A, &DEVICE).as_bytes()),
         "envelope": h(&envelope.to_bytes()),
     })]
 }

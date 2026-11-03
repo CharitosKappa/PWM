@@ -127,6 +127,16 @@ impl Aad {
         aad
     }
 
+    /// The browser extension's unlocked keyset, under a random key the Mac's
+    /// helper keeps behind Touch ID (decision D48 §5).
+    pub fn browser_unlock(version: u8, account_id: &Id, device_id: &Id) -> Self {
+        let mut aad = Self::labelled("pwm/browser-unlock");
+        aad.0.push(version);
+        aad.0.extend_from_slice(account_id);
+        aad.0.extend_from_slice(device_id);
+        aad
+    }
+
     /// A secret the device keeps on disk (the refresh token), under the
     /// account `sym_key` (decision D34).
     pub fn device_tokens(version: u8, account_id: &Id) -> Self {
