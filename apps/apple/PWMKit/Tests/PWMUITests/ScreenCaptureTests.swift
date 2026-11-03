@@ -89,4 +89,45 @@ final class ScreenCaptureTests: XCTestCase {
         XCTAssertFalse(settings.hidesFromCaptureOn)
         XCTAssertFalse(AppModel(makeAccount: { [unowned self] _ in self.account }, defaults: defaults, pasteboard: pasteboard, deviceName: "Mac").hidesFromCapture)
     }
+
+    /// "Allow browser extensions to unlock with Touch ID" (D48 §5).
+    func testTheBrowserTouchIDSwitch() async throws {
+        let system = FakeBrowserTouchID()
+        let app = AppModel(
+            makeAccount: { [unowned self] _ in self.account }, pasteboard: pasteboard, deviceName: "Mac",
+            browserTouchID: system
+        )
+        let settings = SettingsModel(server: nil, app: app, account: account)
+        await settings.load()
+        XCTAssertEqual(settings.browserTouchIDOn, false)
+        settings.setBrowserTouchID(true)
+        XCTAssertEqual(settings.browserTouchIDOn, true)
+        system.fails = true
+        settings.setBrowserTouchID(false)
+        settings.setBrowserTouchID(true)
+        XCTAssertEqual(settings.browserTouchIDOn, false)
+        XCTAssertNotNil(settings.error)
+
+        let elsewhere = SettingsModel(
+            server: nil, app: AppModel(makeAccount: { [unowned self] _ in self.account }, pasteboard: pasteboard, deviceName: "iPhone"),
+            account: account
+        )
+        await elsewhere.load()
+        XCTAssertNil(elsewhere.browserTouchIDOn, "no switch without the Mac helper")
+    }
 }
+
+final class FakeBrowserTouchID: BrowserTouchID, @unchecked Sendable {
+    var on = false
+    var fails = false
+
+    var isOn: Bool { on }
+
+    func turnOn() throws {
+        if fails { throw PWMError(code: "storage") }
+        on = true
+    }
+
+    func turnOff() { on = false }
+}
+

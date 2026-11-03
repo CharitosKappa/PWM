@@ -42,6 +42,8 @@ public final class AppModel {
     private let deviceName: String
     /// Whether PWM is the AutoFill provider (D47 §7).
     let autofill: any AutoFillSystem
+    /// macOS: the browser extensions' Touch ID unlock (D48 §5); nil elsewhere.
+    let browserTouchID: (any BrowserTouchID)?
     private let clock: @MainActor () -> ContinuousClock.Instant
     private var backgroundedAt: ContinuousClock.Instant?
 
@@ -58,6 +60,7 @@ public final class AppModel {
         pasteboard: any SecretPasteboard,
         deviceName: String,
         autofill: any AutoFillSystem = NoAutoFillSystem(),
+        browserTouchID: (any BrowserTouchID)? = nil,
         clock: @escaping @MainActor () -> ContinuousClock.Instant = { ContinuousClock.now }
     ) {
         self.makeAccount = makeAccount
@@ -65,6 +68,7 @@ public final class AppModel {
         self.pasteboard = pasteboard
         self.deviceName = deviceName
         self.autofill = autofill
+        self.browserTouchID = browserTouchID
         self.clock = clock
     }
 

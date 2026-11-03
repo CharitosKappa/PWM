@@ -246,6 +246,30 @@ public protocol AutoFillSystem: Sendable {
     func openSettings() async
 }
 
+/// The browsers' manifests for Touch ID unlock through the Mac app
+/// (D48 §5): written when the user turns it on, removed when off.
+public protocol BrowserTouchID: Sendable {
+    var isOn: Bool { get }
+    func turnOn() throws
+    func turnOff()
+}
+
+#if os(macOS) && canImport(Security) && canImport(LocalAuthentication)
+public struct SystemBrowserTouchID: BrowserTouchID {
+    let hosts: BrowserHosts
+
+    public init(bundle: Bundle = .main) {
+        let helper = bundle.bundleURL
+            .appendingPathComponent("Contents/Library/LoginItems/PWM Browser Helper.app/Contents/MacOS/PWM Browser Helper")
+        hosts = BrowserHosts(home: BrowserHelperPlaces.realHome, helperPath: helper.path)
+    }
+
+    public var isOn: Bool { hosts.isInstalled }
+    public func turnOn() throws { try hosts.install() }
+    public func turnOff() { hosts.remove() }
+}
+#endif
+
 /// For platforms without an AutoFill provider yet (and previews): no card.
 public struct NoAutoFillSystem: AutoFillSystem {
     public init() {}

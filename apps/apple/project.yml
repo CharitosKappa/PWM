@@ -113,6 +113,13 @@ targets:
         embed: true
       - target: PWMSafari
         embed: true
+      # Where the browsers start it (D48 §5); a bundle, so it can carry the
+      # Keychain group.
+      - target: PWMBrowserHelper
+        embed: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Library/LoginItems
   # The Safari Web Extension (D48 §4): the shared web build, carried by the
   # macOS app. Build it first with `just extension`; without it the target
   # still builds, and says so, but Safari gets no extension.
@@ -131,6 +138,9 @@ targets:
           else
             echo "warning: no extension/dist/safari; run just extension first"
           fi
+    dependencies:
+      - package: PWMKit
+        products: [PWMKit]
     settings:
       base:
         PRODUCT_NAME: PWMSafari
@@ -143,6 +153,26 @@ targets:
         SWIFT_VERSION: "6.0"
         APPLICATION_EXTENSION_API_ONLY: YES
         ENABLE_USER_SCRIPT_SANDBOXING: NO
+  # Touch ID unlock for the extension in other browsers (D48 §5): started by
+  # Chrome, Edge, Brave, Opera or Firefox through native messaging.
+  PWMBrowserHelper:
+    type: application
+    platform: macOS
+    sources:
+      - BrowserHelper
+    settings:
+      base:
+        PRODUCT_NAME: PWM Browser Helper
+        PRODUCT_BUNDLE_IDENTIFIER: invalid.pwm.mac.browser-helper
+        INFOPLIST_FILE: BrowserHelper/Info.plist
+        CODE_SIGN_ENTITLEMENTS: BrowserHelper/PWMBrowserHelper.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+    dependencies:
+      - package: PWMKit
+        products: [PWMKit]
   PWMMacAutoFill:
     type: app-extension
     platform: macOS
