@@ -351,27 +351,102 @@ struct SignInView: View {
 
 // MARK: Unlock and vault
 
+extension BiometricKind {
+    var label: LocalizedStringKey {
+        switch self {
+        case .faceID: "Face ID"
+        case .touchID: "Touch ID"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .faceID: "faceid"
+        case .touchID: "touchid"
+        }
+    }
+}
+
 struct UnlockView: View {
     @Bindable var model: UnlockModel
+    /// Face ID is tried once by itself each time this screen shows.
+    @State private var triedBiometrics = false
 
     var body: some View {
         Page(title: "Unlock", subtitle: nil) {
             if let email = model.email {
                 Text(verbatim: email).textStyle(Tokens.Text.body).foregroundStyle(Tokens.Color.textMuted.color)
             }
-            SecureField("Master password", text: $model.password)
-                .textFieldStyle(.roundedBorder)
-                .field(.password)
-                .onSubmit { Task { await model.submit() } }
-                .accessibilityIdentifier("password")
-            PrimaryButton(title: model.busy ? "Unlocking…" : "Unlock", enabled: model.canSubmit) {
-                await model.submit()
+            if let kind = model.offer {
+                BiometricOffer(kind: kind, model: model)
+            } else {
+                unlockFields
             }
-            .accessibilityIdentifier("unlock")
-            Button("Sign out", role: .destructive) { Task { await model.signOut() } }
-                .accessibilityIdentifier("signOut")
-            ErrorText(text: model.error)
         }
+        .task {
+            await model.load()
+            if model.biometricKind != nil, !triedBiometrics {
+                triedBiometrics = true
+                await model.unlockWithBiometrics()
+            }
+        }
+    }
+
+    @ViewBuilder private var unlockFields: some View {
+        if let kind = model.biometricKind {
+            Button {
+                Task { await model.unlockWithBiometrics() }
+            } label: {
+                Label {
+                    Text("Unlock with \(Text(kind.label))")
+                } icon: {
+                    Image(systemName: kind.symbol)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .disabled(model.busy)
+            .accessibilityIdentifier("unlockBiometric")
+        }
+        SecureField("Master password", text: $model.password)
+            .textFieldStyle(.roundedBorder)
+            .field(.password)
+            .onSubmit { Task { await model.submit() } }
+            .accessibilityIdentifier("password")
+        PrimaryButton(title: model.busy ? "Unlocking…" : "Unlock", enabled: model.canSubmit) {
+            await model.submit()
+        }
+        .accessibilityIdentifier("unlock")
+        Button("Sign out", role: .destructive) { Task { await model.signOut() } }
+            .accessibilityIdentifier("signOut")
+        ErrorText(text: model.error)
+    }
+}
+
+/// Asked once, after a master password unlock (D45 §3); no nag after that.
+struct BiometricOffer: View {
+    let kind: BiometricKind
+    let model: UnlockModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Tokens.Space.s3) {
+            Label {
+                Text("Use \(Text(kind.label)) next time?").textStyle(Tokens.Text.bodyStrong)
+            } icon: {
+                Image(systemName: kind.symbol)
+            }
+            Text("Your master password is still asked every 14 days, so you don't forget it.")
+                .textStyle(Tokens.Text.caption)
+                .foregroundStyle(Tokens.Color.textMuted.color)
+            PrimaryButton(title: "Turn on", enabled: !model.busy) { await model.acceptOffer() }
+                .accessibilityIdentifier("acceptBiometric")
+            Button("Not now") { model.declineOffer() }
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("declineBiometric")
+        }
+        .padding(Tokens.Space.s4)
+        .background(Tokens.Color.surface.color, in: RoundedRectangle(cornerRadius: Tokens.Radius.md))
     }
 }
 

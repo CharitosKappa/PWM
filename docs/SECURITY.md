@@ -37,7 +37,7 @@ vault_key ──decrypts──▶ item blobs (each item: own random nonce, AAD b
 - Every envelope is bound to its context by AAD (see Encodings below); for items the fields are `version || vault_id || item_id || revision`.
 - The OPAQUE password input is derived separately: `HKDF(ikm=pw_key XOR sk_key, salt=account_id, info="pwm/auth/v1")`, so the server-auth secret and AUK are independent.
 - New device login needs master password + Secret Key (or approval from an existing device that transfers the Secret Key over an authenticated X25519 channel).
-- Biometric unlock: AUK (or sym_key) wrapped by a platform key (Secure Enclave / Android Keystore with `setUserAuthenticationRequired` / Windows Hello / TPM). Never store the master password.
+- Biometric unlock: the opened keyset sealed under a random key, which only a platform key can unwrap (Secure Enclave / Android Keystore with `setUserAuthenticationRequired` / Windows Hello / TPM). See **Biometric unlock (D45)** below. Never store the master password.
 
 ## Encodings (format v1)
 
@@ -58,8 +58,11 @@ Decisions D10–D15. All HKDF calls are HKDF-SHA256 with 32-byte output. All int
 | Server login state under the login-state key (D26) | `pwm/login-state` | `version:u8 \|\| account_id` |
 | Unlocked keyset in the extension's session store (D34) | `pwm/session` | `version:u8 \|\| account_id` |
 | Device tokens on disk under sym_key (D34) | `pwm/device-tokens` | `version:u8 \|\| account_id` |
+| Unlocked keyset for Face ID / Touch ID on one device (D45) | `pwm/biometric-unlock` | `version:u8 \|\| account_id \|\| device_id` |
 
 A new kind of envelope gets a new label; labels are never reused.
+
+**Biometric unlock (D45).** The core seals the account keyset plaintext under a fresh random 32-byte key (AAD `pwm/biometric-unlock`, version 1, bound to the account and the device). The app keeps the blob `v:u8 (= 1) || account_id:16 || envelope`, and the key only encrypted to a P-256 key in the Secure Enclave (system ECIES, `eciesEncryptionCofactorVariableIVX963SHA256AESGCM`). That enclave key never leaves the hardware, is usable only after Face ID or Touch ID with the current enrolment (`.biometryCurrentSet`), and is bound to this device (`WhenPasscodeSetThisDeviceOnly`). A new face or finger makes it refuse: the app deletes it, and the master password unlocks. The master password is asked every 14 days, at each sign-in, and whenever biometrics fail; each master password unlock makes the blob again. Turning it off or signing out deletes the enclave key, the wrapped key and the blob. Unlocking this way never runs the KDF, which the AutoFill extension needs (M5.5).
 
 **Extension session (D34).** Chrome stops an idle service worker and wipes its memory. So that the extension stays unlocked, the core seals the account keyset plaintext under a fresh random 32-byte key (AAD `pwm/session`, version 1, bound to the account). The blob `v:u8 (= 1) || account_id:16 || envelope` and its key go only into `chrome.storage.session`: memory-only, cleared when the browser closes, and not readable by content scripts. Locking, sign-out and a revoked device clear it. On disk the extension keeps the cache snapshot (ciphertext and ids), the Secret Key as is (D13: useless without the master password), and the access and refresh tokens as `v:u8 (= 1) || envelope(JSON {access, refresh})` sealed under `sym_key` (AAD `pwm/device-tokens`), so they are usable only after unlock. Never the master password, the keyset or any unlocked key.
 

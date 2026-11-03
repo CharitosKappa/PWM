@@ -74,8 +74,11 @@ final class OnboardingUITests: XCTestCase {
         tap(app.buttons["restore"])
         expect(app.buttons["trash"])
 
-        // Lock at once on leaving the app.
+        // The simulator has no Secure Enclave: Settings says so (D45 §8).
         tap(app.tabBars.buttons["Settings"])
+        expect(app.staticTexts["biometricUnavailable"])
+
+        // Lock at once on leaving the app.
         tap(app.buttons["lockTimeout"])
         tap(app.buttons["Immediately"])
         XCUIDevice.shared.press(.home)

@@ -33,6 +33,12 @@ public protocol Account: AnyObject, Sendable {
     func breachedPasswords() async throws -> [String: UInt64]
     func authorizeExport(password: Redacted<String>) async throws
     func export(_ format: ExportFile.Format) async throws -> Redacted<Data>
+
+    // Face ID / Touch ID (D45).
+    func biometricState() async throws -> BiometricState
+    func enableBiometricUnlock(reason: String) async throws
+    func disableBiometricUnlock() async throws
+    func unlockWithBiometrics(reason: String) async throws
 }
 
 extension Session: Account {}

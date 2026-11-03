@@ -118,3 +118,42 @@ final class SessionTests: XCTestCase {
         XCTAssertThrowsError(try Generator.password(length: 3))
     }
 }
+
+/// A Secure Enclave stand-in (D45): it keeps the secret in memory and can
+/// be cancelled, "change biometrics", or be missing.
+final class FakeBiometrics: BiometricKeyStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var secret: Data?
+    var available: BiometricAvailability = .available(.faceID)
+    var cancel = false
+    var changed = false
+    private(set) var prompts: [String] = []
+
+    func availability() -> BiometricAvailability { locked { available } }
+
+    func wrap(_ secret: Redacted<Data>) throws -> Data {
+        locked { self.secret = secret.value }
+        return Data("wrapped".utf8)
+    }
+
+    func unwrap(_ wrapped: Data, reason: String) async throws -> Redacted<Data> {
+        try locked {
+            prompts.append(reason)
+            if cancel { throw PWMError(code: "biometric_cancelled") }
+            guard !changed, wrapped == Data("wrapped".utf8), let secret else {
+                throw PWMError(code: "biometric_changed")
+            }
+            return Redacted(secret)
+        }
+    }
+
+    func delete() throws { locked { secret = nil } }
+
+    var hasKey: Bool { locked { secret != nil } }
+
+    private func locked<T>(_ body: () throws -> T) rethrows -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return try body()
+    }
+}

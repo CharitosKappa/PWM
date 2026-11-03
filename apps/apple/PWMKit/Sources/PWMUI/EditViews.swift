@@ -407,6 +407,7 @@ struct SettingsView: View {
                     }
                 }
             }
+            BiometricSetting(model: model)
             Section {
                 NavigationLink("Password health") { HealthHost(settings: model) }
                     .accessibilityIdentifier("health")
@@ -467,6 +468,39 @@ struct SettingsView: View {
                 .accessibilityIdentifier("confirmSignOut")
         } message: {
             Text("Your vault is removed from this device. Changes that haven't synced yet are lost.")
+        }
+    }
+}
+
+/// "Unlock with Face ID" (D45 §3): asks for Face ID once to turn on.
+struct BiometricSetting: View {
+    let model: SettingsModel
+
+    var body: some View {
+        switch model.biometric {
+        case let .off(kind), let .on(kind):
+            Section {
+                Toggle(isOn: Binding(
+                    get: { if case .on = model.biometric { true } else { false } },
+                    set: { on in Task { await model.setBiometric(on) } }
+                )) {
+                    Text("Unlock with \(Text(kind.label))")
+                }
+                .accessibilityIdentifier("biometricSwitch")
+            } footer: {
+                Text("Your master password is still asked every 14 days, and after Face ID or Touch ID changes.")
+            }
+        case let .unavailable(reason):
+            Section {
+                Text(verbatim: reason)
+                    .textStyle(Tokens.Text.caption)
+                    .foregroundStyle(Tokens.Color.textMuted.color)
+                    .accessibilityIdentifier("biometricUnavailable")
+            } header: {
+                Text("Face ID and Touch ID")
+            }
+        case nil:
+            EmptyView()
         }
     }
 }

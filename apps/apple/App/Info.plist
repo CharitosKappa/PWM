@@ -22,6 +22,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>To unlock your vault with Face ID instead of your master password.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>To scan the QR code on your Emergency Kit, or a site's two-factor setup code.</string>
 	<key>NSAppTransportSecurity</key>

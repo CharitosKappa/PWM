@@ -204,19 +204,43 @@ public final class UnlockModel {
     public var password = ""
     public private(set) var busy = false
     public private(set) var error: String?
+    /// Face ID / Touch ID for this account (D45); nil until loaded.
+    public private(set) var biometric: BiometricState?
+    /// After a master password unlock: "Use Face ID next time?", shown once.
+    public private(set) var offer: BiometricKind?
 
     private let account: any Account
+    private let defaults: UserDefaults
     private let onUnlocked: @MainActor () -> Void
     private let onSignedOut: @MainActor () -> Void
+    /// Face ID changed: turn it back on after this password unlock (D45 §4).
+    private var reenable = false
 
-    init(email: String?, account: any Account, onUnlocked: @escaping @MainActor () -> Void, onSignedOut: @escaping @MainActor () -> Void) {
+    static let offeredKey = "biometricOffered"
+    static let unlockReason = "Unlock your vault"
+    static let enableReason = "Turn on unlocking with your face or fingerprint"
+
+    init(
+        email: String?, account: any Account, defaults: UserDefaults = .standard,
+        onUnlocked: @escaping @MainActor () -> Void, onSignedOut: @escaping @MainActor () -> Void
+    ) {
         self.email = email
         self.account = account
+        self.defaults = defaults
         self.onUnlocked = onUnlocked
         self.onSignedOut = onSignedOut
     }
 
     public var canSubmit: Bool { !busy && !password.isEmpty }
+
+    /// Face ID or Touch ID can unlock now.
+    public var biometricKind: BiometricKind? {
+        if case let .on(kind) = biometric { kind } else { nil }
+    }
+
+    public func load() async {
+        biometric = try? await account.biometricState()
+    }
 
     public func submit() async {
         guard canSubmit else { return }
@@ -226,11 +250,57 @@ public final class UnlockModel {
         do {
             try await account.unlock(password: Redacted(password))
             password = ""
-            onUnlocked()
         } catch {
             password = ""
             self.error = message(for: error)
+            return
         }
+        if reenable {
+            reenable = false
+            try? await account.enableBiometricUnlock(reason: Self.enableReason)
+        } else if case let .off(kind) = biometric, !defaults.bool(forKey: Self.offeredKey) {
+            offer = kind
+            return
+        }
+        onUnlocked()
+    }
+
+    /// One try with Face ID or Touch ID; the password field stays for a cancel.
+    public func unlockWithBiometrics() async {
+        guard biometricKind != nil, !busy else { return }
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            try await account.unlockWithBiometrics(reason: Self.unlockReason)
+            onUnlocked()
+        } catch let failure as PWMError where failure.code == "biometric_cancelled" {
+            return
+        } catch let failure as PWMError where failure.code == "biometric_changed" {
+            reenable = true
+            biometric = try? await account.biometricState()
+            self.error = failure.message
+        } catch {
+            self.error = message(for: error)
+        }
+    }
+
+    /// The one-time offer, answered either way, is never shown again.
+    public func acceptOffer() async {
+        defaults.set(true, forKey: Self.offeredKey)
+        do {
+            try await account.enableBiometricUnlock(reason: Self.enableReason)
+        } catch {
+            // Left off; Settings can turn it on later.
+        }
+        offer = nil
+        onUnlocked()
+    }
+
+    public func declineOffer() {
+        defaults.set(true, forKey: Self.offeredKey)
+        offer = nil
+        onUnlocked()
     }
 
     public func signOut() async {

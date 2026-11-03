@@ -14,6 +14,18 @@ final class ServerTests: XCTestCase {
         server = try XCTUnwrap(URL(string: address))
     }
 
+    /// Signs `session` in to the account most tests share; returns its email
+    /// and Secret Key. Only tests that need a fresh account sign up, so a
+    /// run stays under the server's sign-up limit (10 requests an hour per IP).
+    @discardableResult
+    func logInShared(_ session: Session) async throws -> (email: String, secretKey: Redacted<String>) {
+        let account = try await SharedAccount.shared.get(server: server)
+        _ = try await session.logIn(
+            email: account.email, password: strong, secretKey: account.secretKey, deviceName: "Test device"
+        )
+        return account
+    }
+
     func testSignUpLogInOnASecondDeviceAndSync() async throws {
         let email = "swift-\(UUID().uuidString.lowercased())@example.com"
         let first = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
@@ -44,10 +56,9 @@ final class ServerTests: XCTestCase {
     }
 
     func testUnlockOfflineAfterLocking() async throws {
-        let email = "swift-\(UUID().uuidString.lowercased())@example.com"
         let keys = MemoryKeyStore()
         let session = try Session(cachePath: nil, server: server, keys: keys)
-        _ = try await session.signUp(email: email, password: strong, deviceName: "Mac")
+        let email = try await logInShared(session).email
         XCTAssertNotNil(keys.get(.accessToken))
         await session.lock()
         do {
@@ -64,10 +75,9 @@ final class ServerTests: XCTestCase {
     }
 
     func testTheKitAndSigningOut() async throws {
-        let email = "swift-\(UUID().uuidString.lowercased())@example.com"
         let keys = MemoryKeyStore()
         let session = try Session(cachePath: nil, server: server, keys: keys)
-        let secretKey = try await session.signUp(email: email, password: strong, deviceName: "iPhone")
+        let secretKey = try await logInShared(session).secretKey
         let kit = try await session.emergencyKit(paper: .a4)
         let text = String(decoding: kit.value, as: UTF8.self)
         XCTAssertTrue(text.hasPrefix("%PDF-1.4"))
@@ -128,7 +138,6 @@ extension ServerTests {
     }
 
     func testHealthBreachesAndExport() async throws {
-        let email = "swift-\(UUID().uuidString.lowercased())@example.com"
         // SHA-1 of "password123456": 98A16C09B0759E63EF7DF53592724E8EEDDB953A.
         let hibp = FakeTransport { request in
             let prefix = String(request.url.path.suffix(5))
@@ -138,7 +147,7 @@ extension ServerTests {
             return HTTPResponse(status: 200, body: Data(body.utf8))
         }
         let session = try Session(cachePath: nil, server: server, keys: MemoryKeyStore(), breachTransport: hibp)
-        _ = try await session.signUp(email: email, password: strong, deviceName: "iPhone")
+        try await logInShared(session)
         let vault = try await XCTUnwrapAsync(try await session.vaultIds().first)
         var ids: [String] = []
         for (title, password) in [("Old", "password123456"), ("Bank", "vivid-orbit-tundra-marble-42"), ("Shop", "vivid-orbit-tundra-marble-42")] {
@@ -180,6 +189,117 @@ extension ServerTests {
         }
         let file = try await session.export(.pwmx(password: Redacted("granite-sparrow-lattice-91")))
         XCTAssertFalse(String(decoding: file.value, as: UTF8.self).contains("password123456"))
+    }
+}
+
+/// Face ID unlock through the real core and server (D45 §8).
+extension ServerTests {
+    final class Clock: @unchecked Sendable {
+        var ms: Int64 = 1_767_225_600_000
+    }
+
+    func testFaceIDUnlocksUntilTheMasterPasswordIsDue() async throws {
+        let keys = MemoryKeyStore()
+        let biometrics = FakeBiometrics()
+        let clock = Clock()
+        let session = try Session(
+            cachePath: nil, server: server, keys: keys, biometrics: biometrics, now: { clock.ms }
+        )
+        try await logInShared(session)
+        var state = try await session.biometricState()
+        XCTAssertEqual(state, .off(.faceID))
+
+        try await session.enableBiometricUnlock(reason: "Turn on Face ID")
+        state = try await session.biometricState()
+        XCTAssertEqual(state, .on(.faceID))
+        XCTAssertEqual(biometrics.prompts, ["Turn on Face ID"], "asked once to confirm")
+        XCTAssertNotNil(keys.get(.biometricBlob))
+        XCTAssertEqual(keys.get(.biometricKey), Data("wrapped".utf8).base64EncodedString(), "only the wrapped key is kept")
+
+        await session.lock()
+        try await session.unlockWithBiometrics(reason: "Unlock")
+        var unlocked = await session.isUnlocked
+        XCTAssertTrue(unlocked)
+
+        // Cancelling keeps it on; the master password still works.
+        await session.lock()
+        biometrics.cancel = true
+        do {
+            try await session.unlockWithBiometrics(reason: "Unlock")
+            XCTFail("unlocked after a cancel")
+        } catch {
+            XCTAssertEqual(code(of: error), "biometric_cancelled")
+        }
+        biometrics.cancel = false
+        state = try await session.biometricState()
+        XCTAssertEqual(state, .on(.faceID))
+
+        // After 14 days the master password is asked once.
+        clock.ms += Biometrics.masterPasswordEveryMs
+        do {
+            try await session.unlockWithBiometrics(reason: "Unlock")
+            XCTFail("Face ID after 14 days")
+        } catch {
+            XCTAssertEqual(code(of: error), "master_password_due")
+        }
+        try await session.unlock(password: strong)
+        await session.lock()
+        try await session.unlockWithBiometrics(reason: "Unlock")
+        unlocked = await session.isUnlocked
+        XCTAssertTrue(unlocked)
+
+        // A face added to the device: off, and the master password unlocks.
+        await session.lock()
+        biometrics.changed = true
+        do {
+            try await session.unlockWithBiometrics(reason: "Unlock")
+            XCTFail("unlocked after biometrics changed")
+        } catch {
+            XCTAssertEqual(code(of: error), "biometric_changed")
+        }
+        state = try await session.biometricState()
+        XCTAssertEqual(state, .off(.faceID))
+        XCTAssertNil(keys.get(.biometricBlob))
+        XCTAssertFalse(biometrics.hasKey)
+        biometrics.changed = false
+        try await session.unlock(password: strong)
+
+        // Signing out deletes everything.
+        try await session.enableBiometricUnlock(reason: "Turn on Face ID")
+        try await session.signOut()
+        XCTAssertNil(keys.get(.biometricBlob))
+        XCTAssertNil(keys.get(.biometricKey))
+        XCTAssertFalse(biometrics.hasKey)
+    }
+
+    func testFaceIDIsOffAfterSigningInAndNeedsTheHardware() async throws {
+        let biometrics = FakeBiometrics()
+        biometrics.available = .unavailable(reason: "No Secure Enclave.")
+        let second = try Session(cachePath: nil, server: server, keys: MemoryKeyStore(), biometrics: biometrics)
+        try await logInShared(second)
+        let state = try await second.biometricState()
+        XCTAssertEqual(state, .unavailable(reason: "No Secure Enclave."))
+        do {
+            try await second.enableBiometricUnlock(reason: "Turn on")
+            XCTFail("turned on without the hardware")
+        } catch {
+            XCTAssertEqual(code(of: error), "biometric_unavailable")
+        }
+    }
+}
+
+/// The account the server tests share, signed up once per run.
+actor SharedAccount {
+    static let shared = SharedAccount()
+    private var account: (email: String, secretKey: Redacted<String>)?
+
+    func get(server: URL) async throws -> (email: String, secretKey: Redacted<String>) {
+        if let account { return account }
+        let email = "swift-shared-\(UUID().uuidString.lowercased())@example.com"
+        let session = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
+        let secretKey = try await session.signUp(email: email, password: strong, deviceName: "Setup")
+        account = (email, secretKey)
+        return (email, secretKey)
     }
 }
 
