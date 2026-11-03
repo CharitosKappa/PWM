@@ -1740,3 +1740,14 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The Mac App Store:** easier updates and trust, but no browser manifests. Possible later for a version without M5.12, with Safari only.
   - **One PR for all of M5.6:** fewer steps, but a very large change mixing three platforms and a new security channel.
   - **An XPC service in the running app instead of a helper bundle:** it works only while the app runs, and needs a login item anyway.
+
+  Implementation notes (M5.6):
+  - **The app:** `apps/apple/Mac` (`PWMMac`, macOS 14), one window. `MacMainView` in `PWMUI` is the sidebar (the vault's sections, then Generator and Settings, with the approvals count), the item list and the item. The other screens are the iOS ones. ⌘N opens a new login (through `VaultModel.requestNew`, so it also works from Generator, Settings or the trash) and ⇧⌘L locks.
+  - **Locking:** at sleep, when the screens sleep, and when the screen locks; switching to another app counts as leaving it, for the lock timeout.
+  - **⌘F** is left to the system's search field in the toolbar. SwiftUI on macOS 14 has no way to focus it from code; this is not checked yet.
+  - **Touch ID:** the D45 code. On macOS the Secure Enclave key and its queries use the data-protection Keychain.
+  - **The credential provider:** the iOS controller's file, hosted with `NSHostingController` on macOS, in a second extension target (`PWMMacAutoFill`). Suggestions and the Settings card (`ASSettingsHelper`) work on macOS too, with Mac wording.
+  - **Signing:** a macOS App Group outside the App Store starts with the team id (`$(TeamIdentifierPrefix)`). A build signed to run locally (no team, as in CI) can't carry the Keychain group, App Group or AutoFill entitlements. CI builds it with `Mac/PWMMac-CI.entitlements` (sandbox and network only). That build can't use the data-protection Keychain either, so `SharedStorage` falls back to the login keychain there. A build signed with the team always uses the data-protection Keychain and the shared group.
+  - **Tests:** a view-model test for ⌘N. In CI, the macOS app and its extension are built, and a macOS UI test signs up, adds a login with ⌘N, locks with ⇧⌘L, unlocks and signs out. A manual checklist for release candidates is in `QUALITY.md`.
+  - **Not run on this machine:** all of the macOS code (no Xcode); CI builds it first. Touch ID, the Secure Enclave and the credential provider need a signed build on a Mac.
+

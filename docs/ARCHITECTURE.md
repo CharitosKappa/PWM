@@ -30,9 +30,8 @@ pwm/
     test-vectors/           # JSON vectors for every crypto/format operation
   server/                   # Rust (axum) sync API, PostgreSQL, same binary for hosted + self-hosted
   apps/
-    apple/                  # Swift package shared by iOS + macOS; App/ and AutoFill/ (the credential provider, D47)
-    ios/                    # SwiftUI app + AutoFill Credential Provider extension
-    macos/                  # SwiftUI app + Safari Web Extension host
+    apple/                  # PWMKit (the Swift package shared by iOS + macOS), App/ (iOS), Mac/ (macOS, D48),
+                            # AutoFill/ (the credential provider for both, D47), and the UI tests
     android/                # Kotlin, Jetpack Compose, Autofill Service, Credential Manager
     desktop/                # Tauri app for Windows + Linux (decision D3)
   extension/                # TypeScript MV3: Chrome, Edge, Firefox, Brave, Opera (+ Safari via macOS host)

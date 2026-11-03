@@ -50,6 +50,16 @@ Edge, Brave and Opera get the same Chromium zip as Chrome and have no automated 
 
 Firefox: the same steps with `pwm-firefox-<version>.zip` from `about:debugging`. Step 4 offers saves on the toolbar button only, with no icon or card.
 
+### macOS app checklist (D48)
+
+For each release candidate, signed with the founder's Developer ID and notarized:
+
+1. Sign in, then turn on Touch ID unlock; lock with ⇧⌘L and unlock with Touch ID.
+2. Put the Mac to sleep, or lock the screen: the vault is locked on return.
+3. Turn on PWM in System Settings, under AutoFill & Passwords. In Safari and in another app, fill a login from the suggestions and from the list, and check that its one-time code is copied.
+4. Create a passkey on a WebAuthn test page in Safari, then sign in with it.
+5. Turn off "Suggest logins above the keyboard": no suggestions are left. Sign out: none either.
+
 ## Success metrics
 
 | Metric | Phase 1 | Phase 2 | Phase 3 |
