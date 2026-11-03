@@ -67,13 +67,14 @@ final class MacUITests: XCTestCase {
         // ⌘, shows Settings.
         app.typeKey(",", modifierFlags: .command)
         let button = app.buttons["signOut"]
-        // Scroll the Settings form, not the sidebar: the innermost element
-        // holding the button gets the scroll, which reaches the form behind
-        // it (macOS shows the form as groups, not as a scroll view).
+        // Scroll the Settings form: the scroll goes where the pointer is,
+        // so over a row always near its top (macOS shows the form as
+        // groups, not as a scroll view).
         expect(button)
-        let holder = app.groups.containing(.button, identifier: "signOut").allElementsBoundByIndex.last ?? app.windows.firstMatch
-        for _ in 0..<6 where !button.isHittable {
-            holder.scroll(byDeltaX: 0, deltaY: -600)
+        let top = app.buttons["health"]
+        expect(top)
+        for delta in [-400.0, -400, -400, 400, 400, 400] where !button.isHittable {
+            top.scroll(byDeltaX: 0, deltaY: delta)
         }
         click(button)
         click(app.buttons["confirmSignOut"].firstMatch)

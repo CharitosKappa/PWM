@@ -13,6 +13,7 @@ struct PWMMacApp: App {
                 .frame(minWidth: 820, minHeight: 540)
                 .task { await model.start() }
         }
+        .defaultSize(width: 1000, height: 720)
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") { model.requestSettings() }
