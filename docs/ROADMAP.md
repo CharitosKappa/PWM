@@ -497,7 +497,14 @@ Phase 3  Teams           months 16–24 M16–M19
     - **A check on a device:** iOS calling the provider, and the Secure Enclave key in the shared group. Not possible in CI.
     - **Fresh data in the extension** while the app hasn't run: background sync, M5.8.
     - **macOS:** M5.6. **Android:** M6.3.
-- [ ] M5.6 macOS app + Safari Web Extension; native-messaging host for other browsers' biometric unlock.
+- [x] M5.6 macOS app + Safari Web Extension; native-messaging host for other browsers' biometric unlock.
+  - Split by D48 into three tasks, one PR each. This one is the macOS app: the shared screens with a sidebar, Touch ID unlock, and the credential provider (passwords and passkeys in Safari and other apps) from the M5.5 code. Distributed with Developer ID outside the Mac App Store (D48 §3).
+  - **Deferred:**
+    - **A check on a Mac with a signed build:** Touch ID, the shared Keychain group and the credential provider. CI signs ad-hoc, so it runs the app without them.
+    - **Notarization and the Developer ID:** at release (M10), with the founder's account.
+    - **⌘F** for the search field: not checked yet (D48 notes).
+- [ ] M5.11 Safari Web Extension (D48 §4): a third extension build (`build.mjs --target safari`) inside the macOS app, with Firefox's capability set.
+- [ ] M5.12 Touch ID unlock for the extension in other browsers (D48 §5): a native-messaging helper in the macOS app keeps a key behind Touch ID that opens a sealed blob the extension holds. New AAD label `pwm/browser-unlock`, vectors, a versioned protocol. Windows and Linux in M7.2.
 - [ ] M5.7 Screenshot/screen-recording protection on unlock and revealed secrets.
 - [ ] M5.8 Background sync, from M3:
   - **Pulling while locked:** store new ciphertext in the cache without keys, and merge conflicts at the next unlock. This keeps the AutoFill extension's data fresh.

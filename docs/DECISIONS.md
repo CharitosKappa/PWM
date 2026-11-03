@@ -1638,4 +1638,116 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Settings:** the card "Turn on PWM in Settings, under General, AutoFill & Passwords" with a button that opens it (`ASSettingsHelper`), shown while PWM is not the provider, and the switch "Suggest logins above the keyboard".
   - **Tests:** 4 new passkey crate tests and the vectors, 5 new `pwm-client` tests, 5 migration and suggestion tests, 9 extension model and Settings tests over fakes, and a Swift test through the real core against the server (suggestions, matching, filling, a passkey made and signed, the switch, Face ID after the move, trash and sign-out).
   - **Not run on this machine:** the extension target and the SwiftUI screens (no Xcode); CI builds them with the app. iOS calling the provider needs it turned on in the Settings app, so it is first checked on a device, like the Secure Enclave.
+- **D48 — The macOS app, the Safari Web Extension, and Touch ID unlock for the other browsers** · settled 2026-11-03 · founder (approved as proposed).
+  The roadmap says "macOS app + Safari Web Extension; native-messaging host for other browsers' biometric unlock". Earlier decisions leave pieces here:
+  - the macOS screens (D42, D43)
+  - Touch ID (D45 §9)
+  - the macOS credential provider (D47 §9)
+  - Safari (D34 §10, D40 §5)
+  - the extension's Touch ID unlock, logged as a parity gap (D34 §8)
+
+  Open:
+  - how the task is split
+  - how the app is distributed and signed
+  - what the Safari build can do
+  - what crosses the native-messaging channel, and who may use it
+  - how each part is tested without Xcode here
+
+  Proposal:
+  1. **Three tasks, one PR each, in this order:**
+     - **M5.6 The macOS app:**
+       - the shared screens with a sidebar
+       - Touch ID unlock
+       - the credential provider (passwords and passkeys in Safari and other apps), from the M5.5 code
+     - **M5.11 The Safari Web Extension:** a third extension build, inside the macOS app.
+     - **M5.12 Touch ID unlock for the extension in other browsers:** a native-messaging helper in the macOS app. Windows and Linux follow in M7.2, using the same protocol.
+  2. **The macOS app (M5.6):**
+     - **A new target, `PWMMac`, macOS 14,** in `project.yml`. It uses `PWMKit` and `PWMUI` like iOS, with a placeholder bundle id until D1.
+     - **Layout:** `NavigationSplitView` with the same sections (Vault, Generator, Settings), as D42 planned.
+     - **Mac-specific behaviour:**
+       - **Shortcuts:** ⌘N for a new item and ⌘F for search.
+       - **Locking:** when the Mac sleeps or the screen locks, plus the lock timeout.
+       - **Copying:** through the pasteboard that's already there, which clears itself (D42).
+     - **Signing in on a Mac:** no QR scanner. The Secret Key is typed or pasted, and "Sign in with another device" (D46) is offered.
+     - **Touch ID:** the D45 code. On macOS the Secure Enclave key needs `kSecUseDataProtectionKeychain`, which gets added.
+     - **The credential provider:**
+       - **The same `AutoFillModel` and screens.** The controller hosts them with `NSHostingController` instead of `UIHostingController`.
+       - **The same shared places (D47 §2):** the App Group and the Keychain group. There is no migration, since no Mac install exists yet.
+       - **Suggestions:** they use `ASCredentialIdentityStore` as on iOS.
+  3. **Distribution: Developer ID and notarization, outside the Mac App Store at first.**
+     - **Why:** the M5.12 helper must write the browsers' native-messaging manifests into their folders, and an App Store app can't. 1Password and Bitwarden do the same.
+     - **The sandbox:** the app stays sandboxed with the hardened runtime. The one exception it gets is write access to those manifest folders (`temporary-exception.files.home-relative-path.read-write`), which Developer ID apps may use.
+     - **Before release:** CI builds ad-hoc signed. Notarization and the founder's Developer ID come at release (M10), as with the store accounts.
+     - **The Safari extension** ships inside this app. Safari accepts Developer ID extensions, and during development the "Allow unsigned extensions" setting.
+  4. **The Safari Web Extension (M5.11):**
+     - **A third target in `build.mjs`:** `--target safari` builds `dist/safari/` from the same source, with its own manifest.
+     - **The containing target:** a Safari Web Extension target in the macOS app copies that folder in at build time.
+     - **What Safari can't do, like Firefox (D40 §2):** it has no `offscreen` API and no `IntersectionObserver` v2. The `capabilities` switch from D40 covers both:
+       - **Background:** an event page, as on Firefox.
+       - **Clipboard:** written from the background page.
+       - **Inline icon and save card:** off.
+       - **Fills:** in the top frame only.
+       - **Passkeys:** through the page-world wrapper, if Safari allows `world: "MAIN"`; otherwise the switch says passkeys aren't available here. On a Mac, the credential provider also offers passkeys in Safari.
+     - **Logged as platform gaps:** the same three as Firefox.
+     - **iOS Safari:** not in M5.6. iOS fills through the credential provider (M5.5). A Safari extension on iOS can come later if users ask.
+  5. **Touch ID for the extension (M5.12): the browser keeps a sealed blob, the Mac keeps its key behind Touch ID.**
+     - **Turning it on:**
+       - **Where:** the extension's Settings, "Unlock with Touch ID (needs the PWM app)", while unlocked.
+       - **The permission:** `nativeMessaging` is optional and requested on that click (D44), so nothing changes at install.
+       - **The blob:** the core makes one as D45 does. It is the keyset sealed under a fresh 32-byte key K, with a new AAD label `pwm/browser-unlock`, version 1, bound to the account and this extension's device id.
+       - **What's stored where:** the blob goes to the extension's storage. K goes once to the helper, which asks for Touch ID to confirm and keeps K wrapped by a Secure Enclave key (`.biometryCurrentSet`), exactly as D45 does. K is then dropped from the browser.
+     - **Unlocking:** the popup offers "Unlock with Touch ID". The helper asks for Touch ID and returns K, and the core opens the blob. The KDF never runs.
+     - **The same rules as D45:**
+       - the master password every 14 days, and at each sign-in
+       - a changed face or finger deletes the key on the Mac
+       - turning it off, or signing out, deletes the blob and asks the helper to forget K
+     - **The Mac app doesn't need to be signed in, or even running.** The browser starts the helper itself. The helper only keeps keys for the extensions that enrolled.
+     - **The helper:** a small app bundle inside the macOS app, `Contents/Library/LoginItems/PWM Browser Helper.app`, signed with its own entitlements (the shared Keychain group).
+       - **Why a bundle:** a bare command-line tool can't carry the Keychain entitlement.
+       - **Its code:** a few files in `PWMKit` (the protocol and its handler) behind a protocol, so it is tested on Linux.
+     - **The manifests:** the app writes the native-messaging manifests for Chrome, Edge, Brave, Opera and Firefox only when the user turns on "Allow browser extensions to unlock with Touch ID" in its Settings. It removes them when that is turned off.
+       - **Who may use it:** each manifest's `allowed_origins` (or Firefox's `allowed_extensions`) names our extension ids only. These are placeholders until the stores give the real ids at M10.
+     - **The protocol, versioned:**
+       - **Framing:** the native-messaging framing (a 4-byte length, then JSON), with `"v": 1`.
+       - **Requests:** `enroll {account_id, device_id, key}`, `unlock {account_id, device_id}` and `forget {account_id, device_id}`.
+       - **Answers:** `ok`, `key`, or an error code (`cancelled`, `changed`, `unknown`, `unavailable`).
+       - **Where keys are kept:** under the calling extension's origin and the account and device ids.
+       - **Checking the caller:** the helper checks the origin the browser passes as its first argument (on Firefox, the extension id) against the same list, and refuses anything else.
+     - **What this guards against, and what it doesn't** (to add to `SECURITY.md`):
+       - **A copied browser profile** holds only the blob: it's useless without K, which needs Touch ID on this Mac.
+       - **A stolen helper key** is useless without the blob.
+       - **Every unlock shows a Touch ID prompt.**
+       - **Not covered:** malware running as the user that starts the helper and fakes the origin argument would still need the user to pass Touch ID for it, and also the blob. A compromised unlocked device is out of scope, as the threat model says.
+     - **Safari:** it uses the same handler. Safari's native messaging goes to the extension's own `SafariWebExtensionHandler`, so there are no manifests to write.
+  6. **Tests:**
+     - **Rust:** the browser-unlock blob (bound to account and device, wrong key refused, versioned), plus vectors (Rust and Node).
+     - **Swift on Linux and macOS:**
+       - the helper's handler with fake key stores: enroll, unlock, forget, a refused origin, a cancelled or changed Touch ID, an unknown account
+       - the framing
+       - the manifest writer (its JSON and folders)
+       - the macOS view models (shared with iOS)
+     - **Vitest:** the extension's side with a fake native port: turning it on, unlocking, the 14-day rule, the helper missing, cancel, and "changed" falling back to the password.
+     - **Playwright (Chromium on Linux):** a fake native host written in Node, registered for the test profile, so the extension's whole Touch ID path runs in a real browser. If Chromium under Playwright won't load a native host, Vitest covers it instead and the gap is noted.
+     - **CI, the `apple` job:** builds the macOS app, its credential provider, the Safari extension target and the helper, plus a short macOS UI test (sign up, lock, unlock, sign out). That adds about 5 macOS minutes.
+     - **Not testable in CI:** Safari loading the extension (Safari's driver can't drive extensions), Touch ID itself, and the browsers starting the real helper. A manual checklist goes in `QUALITY.md` for release candidates. The first real check is on a Mac.
+  7. **Parity:**
+     - **Windows and Linux:** the same helper protocol, in M7.2.
+     - **Android and iOS:** no native messaging is needed; they fill through their own providers.
+     - **The gap closes:** the extension's biometric unlock (D34 §8) on macOS with M5.12.
+
+  Alternatives:
+  - **The helper hands the app's own keyset to the extension:** no enrolment step, but it needs the Mac app signed in to the same account and unlocked. A key would also travel to a different device of the account. Rejected.
+  - **The Mac App Store:** easier updates and trust, but no browser manifests. Possible later for a version without M5.12, with Safari only.
+  - **One PR for all of M5.6:** fewer steps, but a very large change mixing three platforms and a new security channel.
+  - **An XPC service in the running app instead of a helper bundle:** it works only while the app runs, and needs a login item anyway.
+
+  Implementation notes (M5.6):
+  - **The app:** `apps/apple/Mac` (`PWMMac`, macOS 14), one window. `MacMainView` in `PWMUI` is the sidebar (the vault's sections, then Generator and Settings, with the approvals count), the item list and the item. The other screens are the iOS ones. ⌘N opens a new login (through `VaultModel.requestNew`, so it also works from Generator, Settings or the trash), ⇧⌘L locks, and ⌘, shows Settings.
+  - **Locking:** at sleep, when the screens sleep, and when the screen locks; switching to another app counts as leaving it, for the lock timeout.
+  - **⌘F** is left to the system's search field in the toolbar. SwiftUI on macOS 14 has no way to focus it from code; this is not checked yet.
+  - **Touch ID:** the D45 code. On macOS the Secure Enclave key and its queries use the data-protection Keychain.
+  - **The credential provider:** the iOS controller's file, hosted with `NSHostingController` on macOS, in a second extension target (`PWMMacAutoFill`). Suggestions and the Settings card (`ASSettingsHelper`) work on macOS too, with Mac wording.
+  - **Signing:** a macOS App Group outside the App Store starts with the team id (`$(TeamIdentifierPrefix)`). A build signed to run locally (no team, as in CI) can't carry the Keychain group, App Group or AutoFill entitlements. CI builds it with `Mac/PWMMac-CI.entitlements`, which has none: a sandboxed app without a team id is refused by the Keychain, so the CI build is not sandboxed. It can't use the data-protection Keychain either, so `SharedStorage` falls back to the login keychain there (checked with a write, since reading can answer "not found" where writing is refused). A refused Keychain call logs its status only, never a value, under the `pwm` subsystem. A build signed with the team always uses the data-protection Keychain and the shared group.
+  - **Tests:** a view-model test for ⌘N. In CI, the macOS app and its extension are built, and a macOS UI test signs up, adds a login with ⌘N, locks with ⇧⌘L, unlocks and signs out. A manual checklist for release candidates is in `QUALITY.md`.
+  - **Not run on this machine:** all of the macOS code (no Xcode); CI builds it first. Touch ID, the Secure Enclave and the credential provider need a signed build on a Mac.
 

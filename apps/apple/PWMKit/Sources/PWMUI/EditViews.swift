@@ -414,7 +414,11 @@ struct SettingsView: View {
             }
             if model.autofillOn == false {
                 Section {
+                    #if os(macOS)
+                    Text("Turn on PWM in System Settings, under AutoFill & Passwords, to fill passwords and passkeys in Safari and other apps.")
+                    #else
                     Text("Turn on PWM in Settings, under General, AutoFill & Passwords, to fill passwords and passkeys in Safari and other apps.")
+                    #endif
                     Button("Open AutoFill settings") { Task { await model.openAutoFillSettings() } }
                         .accessibilityIdentifier("openAutoFill")
                 } header: {
@@ -426,7 +430,7 @@ struct SettingsView: View {
                 Toggle("Suggest logins above the keyboard", isOn: suggestLogins)
                     .accessibilityIdentifier("suggestLogins")
             } footer: {
-                Text("iOS keeps the site and username of each login on this device to suggest them. Passwords stay in your vault.")
+                Text("The system keeps the site and username of each login on this device to suggest them. Passwords stay in your vault.")
             }
             Section {
                 NavigationLink("Password health") { HealthHost(settings: model) }

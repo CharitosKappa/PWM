@@ -27,6 +27,12 @@ public final class AppModel {
     public private(set) var vault: VaultModel?
     public private(set) var generator: GeneratorModel?
     public private(set) var settings: SettingsModel?
+    /// ⌘, on macOS: each request shows Settings (D48 §2).
+    public private(set) var settingsRequests = 0
+
+    public func requestSettings() {
+        settingsRequests += 1
+    }
 
     private var account: (any Account)?
     private var accountServer: URL?

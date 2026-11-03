@@ -12,6 +12,9 @@ struct MainView: View {
 
     var body: some View {
         if let vault = app.vault, let generator = app.generator, let settings = app.settings {
+            #if os(macOS)
+            MacMainView(app: app, vault: vault, generator: generator, settings: settings)
+            #else
             TabView {
                 VaultView(model: vault)
                     .tabItem { Label("Vault", systemImage: "lock.rectangle.stack") }
@@ -21,6 +24,7 @@ struct MainView: View {
                     .tabItem { Label("Settings", systemImage: "gearshape") }
                     .badge(settings.pendingApprovals)
             }
+            #endif
         }
     }
 }
@@ -157,6 +161,12 @@ struct ItemList: View {
         }
         .navigationTitle(title)
         .searchable(text: $model.query)
+        // ⌘N on macOS (D48 §2).
+        .task(id: model.pendingNew) {
+            guard let kind = model.pendingNew else { return }
+            editing = await model.newItem(kind)
+            model.pendingNew = nil
+        }
         .refreshable { await model.refresh() }
         .overlay {
             if model.loaded && model.visible.isEmpty {

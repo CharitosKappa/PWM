@@ -1,13 +1,16 @@
-// Signing (D42 §2). Simulator builds are signed to run locally with no team,
+// Signing (D42 §2). Simulator and Mac builds are signed to run locally with no team,
 // as in CI. For a real device, copy Local.example.xcconfig to Local.xcconfig
 // (gitignored) and set your Apple Developer team id there.
 CODE_SIGN_STYLE = Automatic
 CODE_SIGN_IDENTITY[sdk=iphonesimulator*] = -
+CODE_SIGN_IDENTITY[sdk=macosx*] = -
 DEVELOPMENT_TEAM =
 
 // Shared by the app and its AutoFill extension (D47 §1); placeholders until
 // D1 names the product.
 PWM_APP_GROUP = group.invalid.pwm
+// A macOS App Group outside the App Store starts with the team id.
+PWM_APP_GROUP[sdk=macosx*] = $(TeamIdentifierPrefix)invalid.pwm
 PWM_KEYCHAIN_GROUP = invalid.pwm.shared
 
 #include? "Local.xcconfig"

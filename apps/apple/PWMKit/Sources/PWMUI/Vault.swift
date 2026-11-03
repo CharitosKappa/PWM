@@ -32,6 +32,14 @@ public final class VaultModel {
 
     public var section: Section = .all
     public var query = ""
+    /// A new item asked for from the menu bar (⌘N on macOS); the list
+    /// opens the editor for it.
+    public var pendingNew: Item.Kind?
+
+    public func requestNew(_ kind: Item.Kind) {
+        if section == .trash { section = .all }
+        pendingNew = kind
+    }
     public private(set) var entries: [Entry] = []
     public private(set) var loaded = false
     public private(set) var syncing = false

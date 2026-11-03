@@ -52,7 +52,16 @@ public final class MemoryKeyStore: KeyStore, @unchecked Sendable {
 }
 
 #if canImport(Security)
+import os
 import Security
+
+/// Only the status of a refused Keychain call, and which key: never a value.
+private let keychainLog = Logger(subsystem: "pwm", category: "keychain")
+
+private func refused(_ status: OSStatus, _ call: String, _ name: String) -> PWMError {
+    keychainLog.error("\(call, privacy: .public) \(name, privacy: .public) refused: \(status, privacy: .public)")
+    return PWMError(code: "keychain")
+}
 
 /// The Keychain: generic passwords, this device only, readable after the
 /// first unlock (so AutoFill and background sync work), optionally in an
@@ -60,19 +69,30 @@ import Security
 public struct KeychainKeyStore: KeyStore {
     public let service: String
     public let accessGroup: String?
+    /// The data-protection Keychain, as on iOS. A Mac build signed without
+    /// a Keychain entitlement (CI's ad-hoc builds) can only use the login
+    /// keychain, which `SharedStorage` then picks (D48 §2).
+    public let dataProtection: Bool
 
-    public init(service: String = "pwm", accessGroup: String? = nil) {
+    public init(service: String = "pwm", accessGroup: String? = nil, dataProtection: Bool = true) {
         self.service = service
         self.accessGroup = accessGroup
+        self.dataProtection = dataProtection
     }
 
     private func query(_ name: KeyName) -> [CFString: Any] {
+        query(account: name.rawValue)
+    }
+
+    private func query(account: String) -> [CFString: Any] {
         var query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
-            kSecAttrAccount: name.rawValue,
-            kSecUseDataProtectionKeychain: true,
+            kSecAttrAccount: account,
         ]
+        if dataProtection {
+            query[kSecUseDataProtectionKeychain] = true
+        }
         if let accessGroup {
             query[kSecAttrAccessGroup] = accessGroup
         }
@@ -87,39 +107,51 @@ public struct KeychainKeyStore: KeyStore {
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = result as? Data else {
-            throw PWMError(code: "keychain")
+            throw refused(status, "get", name.rawValue)
         }
         return String(data: data, encoding: .utf8)
     }
 
     public func set(_ name: KeyName, _ value: String) throws {
         let data = Data(value.utf8)
-        let update: [CFString: Any] = [
-            kSecValueData: data,
-            kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-        ]
+        var update: [CFString: Any] = [kSecValueData: data]
+        if dataProtection {
+            update[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        }
         var status = SecItemUpdate(query(name) as CFDictionary, update as CFDictionary)
         if status == errSecItemNotFound {
             let add = query(name).merging(update) { $1 }
             status = SecItemAdd(add as CFDictionary, nil)
         }
-        guard status == errSecSuccess else { throw PWMError(code: "keychain") }
+        guard status == errSecSuccess else { throw refused(status, "set", name.rawValue) }
     }
 
     public func delete(_ name: KeyName) throws {
         let status = SecItemDelete(query(name) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw PWMError(code: "keychain")
+            throw refused(status, "delete", name.rawValue)
         }
     }
 
-    /// Whether this build may use the access group: a build signed without
-    /// it gets a missing-entitlement error.
+    /// Whether this build may store items here: a build signed without the
+    /// access group (or, on macOS, without any Keychain entitlement) is
+    /// refused. Reading alone can answer "not found" where writing is
+    /// refused, so this writes and deletes a probe item, which holds nothing.
     public func isReachable() -> Bool {
-        var query = query(.deviceId)
-        query[kSecMatchLimit] = kSecMatchLimitOne
-        let status = SecItemCopyMatching(query as CFDictionary, nil)
-        return status == errSecSuccess || status == errSecItemNotFound
+        let probe = query(account: "reachability-probe")
+        SecItemDelete(probe as CFDictionary)
+        var add = probe
+        add[kSecValueData] = Data()
+        if dataProtection {
+            add[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        }
+        let status = SecItemAdd(add as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            keychainLog.info("probe refused: \(status, privacy: .public), data protection \(dataProtection, privacy: .public)")
+            return false
+        }
+        SecItemDelete(probe as CFDictionary)
+        return true
     }
 }
 #endif

@@ -119,6 +119,10 @@ just tokens    # regenerate Sources/PWMDesign/Tokens.swift after changing design
   - **A self-hosted or local server:** choose "Other server" on the welcome screen. For a local server, enter `http://127.0.0.1:8080` after `just server`.
   - **A real device:** copy `apps/apple/Config/Local.example.xcconfig` to `Local.xcconfig` (gitignored) and set your team id. Simulators need no team.
 - **The UI test:** start `just server`, then in `apps/apple` run `TEST_RUNNER_PWM_TEST_SERVER=http://127.0.0.1:8080 xcodebuild test -project PWM.xcodeproj -scheme PWM -destination 'platform=iOS Simulator,name=iPhone 16'`. It is skipped without the variable.
+- **The macOS app:** the `PWMMac` scheme, run on "My Mac".
+  - **Without a team** it is signed to run locally, which can't carry the Keychain group, App Group or AutoFill entitlements. Build it as CI does, with `CODE_SIGN_ENTITLEMENTS=Mac/PWMMac-CI.entitlements` (no entitlements, not sandboxed): it then keeps its own login-keychain items and cache, and Touch ID and AutoFill are off.
+  - **With your team** in `Local.xcconfig` (it also sets the Mac signing identity), everything works, including the credential provider.
+  - **Its UI test:** `TEST_RUNNER_PWM_TEST_SERVER=http://127.0.0.1:8080 xcodebuild test -project PWM.xcodeproj -scheme PWMMac -destination 'platform=macOS' CODE_SIGN_ENTITLEMENTS=Mac/PWMMac-CI.entitlements`.
 
 - **Before Xcode opens the package:** run `just apple` first, after every core change. The package does not resolve without `Generated/`.
 - **The server tests** run when `PWM_TEST_SERVER=http://127.0.0.1:8080` is set (run `just server`), and are skipped otherwise.
