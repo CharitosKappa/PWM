@@ -1554,3 +1554,14 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **E signs the envelope with the account's Ed25519 key:** N can't check that key before it has logged in, so it adds nothing over the matching code.
   - **Sending the whole keyset, so N skips the master password:** a bigger prize for anyone who fools the user, and it breaks the rule that a new device needs the master password (`SECURITY.md`).
   - **Push instead of polling:** better, but it needs M5.8's APNs work. Polling every 2 seconds for the 10 minutes a request lives is cheap.
+
+  Implementation notes (M5.9):
+  - **Crypto:** `ApprovalKeys`, `ApprovalChannel`, `approval_commitment` and `check_approval_commitment` in `pwm-crypto`; vectors in `core/test-vectors/approval.json` (Rust and Node); the `approval_messages` fuzz target.
+  - **Relay:** migration `0005_approvals.sql`. The new device polls with a `pwmp_` token (a new `TokenKind`). The signed-in device denies with `POST /v1/approvals/{id}/deny`, and the new device gives up with `DELETE /v1/approvals/{id}`: the two sides authenticate differently, so they don't share one endpoint. Expired requests are deleted whenever a new one is made. Rate limits now look at the method too, so only the new device's side is limited per IP.
+  - **Client:** the new device's side is `ApprovalAsk`, a step machine of its own (no account, no `Client`). The signed-in side runs through the sync engine's new `start_call`, so token refresh and `device_revoked` work as for sync. A key that fails its commitment never gets a code. New codes: `unknown_approval`, `approval_failed`; `approval_ended` on the platforms.
+  - **iOS:** "Sign in with another device" on the sign-in screen; "Approve a new device" in Settings, with the count on the Settings tab, read when the app comes to the front.
+  - **Extension:** asking from the popup's sign-in (the popup polls; the Secret Key stays in the background until the password is typed); approving on the manage page's Devices tab; the count on the toolbar badge and as a notice in the popup, read after each sync.
+  - **The scanner** is not used, as proposed; D42's note about reusing it no longer applies.
+  - **Tests:** crypto (6 + vectors + fuzz), relay (every step, order, single hand-out, cap, expiry, unknown email), the whole exchange through `pwm-client` against Postgres including a relay that swaps keys, 5 background tests, the WASM build, a Playwright test where the extension approves a request made through the core in Node, 5 Swift view-model tests and a Swift test where one session approves another against the real server.
+  - **Not run on this machine:** the Playwright test (no Playwright Chromium here) and the SwiftUI screens (no Xcode); both run first in CI.
+

@@ -83,6 +83,7 @@ Extension ──native messaging──▶ desktop app (unlock, biometrics)   or 
 | `DELETE /v1/vaults/{id}/items/{item_id}` | Delete with `If-Match`, leaving a tombstone; ids are never reused (D27) |
 | `POST /v1/shares` / `GET /v1/shares/{id}` | One-time encrypted share links |
 | `GET /v1/devices` / `PATCH` / `DELETE /v1/devices/{id}` | Device list, rename (a sealed name, D43), revoke |
+| `POST` / `GET /v1/approvals`, `/v1/approvals/{id}` (`GET`, `DELETE`, `reveal`, `accept`, `complete`, `deny`) | Approving a new device from a signed-in one (D46): public keys, a commitment and one ciphertext |
 
 Limits (D29):
 - **Sizes:** bodies up to 16 KiB; item writes up to 384 KiB, with the blob at most 256 KiB once decoded. Larger gets 413 `too_large`.
