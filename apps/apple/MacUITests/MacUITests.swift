@@ -52,7 +52,8 @@ final class MacUITests: XCTestCase {
         expect(app.staticTexts["Bank"].firstMatch, timeout: 30)
 
         // The sidebar switches panes. Clicked by position: XCUITest calls
-        // these rows not hittable even when nothing covers them.
+        // these rows not hittable, and this shows whether the app still
+        // switches.
         let generator = sidebarRow("sidebar.generator")
         expect(generator)
         generator.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
