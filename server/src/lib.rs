@@ -4,6 +4,7 @@
 
 mod account;
 mod api;
+mod approvals;
 mod auth;
 mod config;
 mod db;

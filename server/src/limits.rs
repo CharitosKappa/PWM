@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use axum::extract::{ConnectInfo, Request, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, Method};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use uuid::Uuid;
@@ -49,6 +49,10 @@ pub struct Limits {
     pub account: Rate,
     /// Anonymous autofill reports (D38), per IP: 10 an hour.
     pub report: Rate,
+    /// New device approval requests (D46), per IP: 5 in 10 minutes.
+    pub approval_ask: Rate,
+    /// A new device polling its approval request, per IP.
+    pub approval_poll: Rate,
 }
 
 impl Default for Limits {
@@ -59,6 +63,8 @@ impl Default for Limits {
             refresh: Rate::new(10, MINUTE),
             account: Rate::new(600, MINUTE),
             report: Rate::new(10, HOUR),
+            approval_ask: Rate::new(5, Duration::from_secs(600)),
+            approval_poll: Rate::new(120, MINUTE),
         }
     }
 }
@@ -73,6 +79,8 @@ impl Limits {
             refresh: rate,
             account: rate,
             report: rate,
+            approval_ask: rate,
+            approval_poll: rate,
         }
     }
 }
@@ -118,6 +126,8 @@ pub(crate) enum Class {
     Refresh,
     Account,
     Report,
+    ApprovalAsk,
+    ApprovalPoll,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -156,6 +166,8 @@ impl RateLimiter {
             Class::Refresh => self.limits.refresh,
             Class::Account => self.limits.account,
             Class::Report => self.limits.report,
+            Class::ApprovalAsk => self.limits.approval_ask,
+            Class::ApprovalPoll => self.limits.approval_poll,
         }
     }
 
@@ -267,7 +279,19 @@ pub(crate) fn client_ip(
     }
 }
 
-fn class_of(path: &str) -> Option<Class> {
+fn class_of(method: &Method, path: &str) -> Option<Class> {
+    // The new device's side of an approval (D46). The signed-in side is
+    // limited per account, like any authenticated request.
+    if let Some(rest) = path.strip_prefix("/v1/approvals") {
+        let parts: Vec<&str> = rest.split('/').skip(1).collect();
+        return match (method, parts.as_slice()) {
+            (&Method::POST, []) => Some(Class::ApprovalAsk),
+            (&Method::GET | &Method::DELETE, [_]) | (&Method::POST, [_, "reveal"]) => {
+                Some(Class::ApprovalPoll)
+            }
+            _ => None,
+        };
+    }
     match path {
         "/v1/auth/register/start" | "/v1/auth/register/finish" => Some(Class::Register),
         "/v1/auth/prelogin" | "/v1/auth/login/start" | "/v1/auth/login/finish" => {
@@ -282,7 +306,7 @@ fn class_of(path: &str) -> Option<Class> {
 /// Per-IP limits for the unauthenticated endpoints (auth and reports). Authenticated
 /// requests are limited per account in the `Authenticated` extractor.
 pub(crate) async fn by_ip(State(state): State<AppState>, request: Request, next: Next) -> Response {
-    if let Some(class) = class_of(request.uri().path()) {
+    if let Some(class) = class_of(request.method(), request.uri().path()) {
         let peer = request
             .extensions()
             .get::<ConnectInfo<SocketAddr>>()
@@ -337,5 +361,25 @@ mod tests {
         assert!(same_prefix(ip("192.0.2.1"), ip("192.0.2.1"), 32));
         assert!(!same_prefix(ip("::ffff:10.0.0.1"), ip("10.0.0.1"), 8));
         assert!(same_prefix(ip("2001:db8::"), ip("2001:db8::99"), 32));
+    }
+
+    #[test]
+    fn only_the_new_devices_side_of_an_approval_is_limited_per_ip() {
+        let id = "/v1/approvals/00000000-0000-4000-8000-000000000001";
+        assert_eq!(
+            class_of(&Method::POST, "/v1/approvals"),
+            Some(Class::ApprovalAsk)
+        );
+        assert_eq!(class_of(&Method::GET, id), Some(Class::ApprovalPoll));
+        assert_eq!(class_of(&Method::DELETE, id), Some(Class::ApprovalPoll));
+        assert_eq!(
+            class_of(&Method::POST, &format!("{id}/reveal")),
+            Some(Class::ApprovalPoll)
+        );
+        // The signed-in device's requests: per account instead.
+        assert_eq!(class_of(&Method::GET, "/v1/approvals"), None);
+        assert_eq!(class_of(&Method::POST, &format!("{id}/accept")), None);
+        assert_eq!(class_of(&Method::POST, &format!("{id}/complete")), None);
+        assert_eq!(class_of(&Method::POST, &format!("{id}/deny")), None);
     }
 }

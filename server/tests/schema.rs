@@ -21,6 +21,8 @@ const TEXT_COLUMNS: &[(&str, &str)] = &[
         "accounts.email",
         "login lookup and the notices PRICING.md requires",
     ),
+    ("approvals.platform", "enum, CHECK constraint (D46)"),
+    ("approvals.state", "enum, CHECK constraint (D46)"),
     (
         "autofill_reports.report",
         "anonymous failure reports (D38): form structure only, schema-checked, no account",
