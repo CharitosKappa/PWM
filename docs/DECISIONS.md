@@ -1742,7 +1742,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **An XPC service in the running app instead of a helper bundle:** it works only while the app runs, and needs a login item anyway.
 
   Implementation notes (M5.6):
-  - **The app:** `apps/apple/Mac` (`PWMMac`, macOS 14), one window. `MacMainView` in `PWMUI` is the sidebar (the vault's sections, then Generator and Settings, with the approvals count), the item list and the item. The other screens are the iOS ones. ⌘N opens a new login (through `VaultModel.requestNew`, so it also works from Generator, Settings or the trash) and ⇧⌘L locks.
+  - **The app:** `apps/apple/Mac` (`PWMMac`, macOS 14), one window. `MacMainView` in `PWMUI` is the sidebar (the vault's sections, then Generator and Settings, with the approvals count), the item list and the item. The other screens are the iOS ones. ⌘N opens a new login (through `VaultModel.requestNew`, so it also works from Generator, Settings or the trash), ⇧⌘L locks, and ⌘, shows Settings.
   - **Locking:** at sleep, when the screens sleep, and when the screen locks; switching to another app counts as leaving it, for the lock timeout.
   - **⌘F** is left to the system's search field in the toolbar. SwiftUI on macOS 14 has no way to focus it from code; this is not checked yet.
   - **Touch ID:** the D45 code. On macOS the Secure Enclave key and its queries use the data-protection Keychain.

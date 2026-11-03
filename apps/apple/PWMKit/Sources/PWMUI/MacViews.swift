@@ -6,6 +6,7 @@ import PWMKit
 import SwiftUI
 
 struct MacMainView: View {
+    let app: AppModel
     let vault: VaultModel
     let generator: GeneratorModel
     let settings: SettingsModel
@@ -79,6 +80,7 @@ struct MacMainView: View {
             await vault.load()
             await vault.refresh()
         }
+        .onChange(of: app.settingsRequests) { row = .settings }
         // ⌘N from another pane, or from the trash: back to the list.
         .onChange(of: vault.pendingNew) { _, kind in
             guard kind != nil else { return }

@@ -51,19 +51,18 @@ final class MacUITests: XCTestCase {
         click(app.buttons["unlock"], once: .enabled)
         expect(app.staticTexts["Bank"].firstMatch, timeout: 30)
 
+        // The sidebar switches panes.
+        click(sidebarRow("sidebar.generator"))
+        expect(app.staticTexts["generated"])
+
         signOut()
         expect(app.buttons["createAccount"])
     }
 
     private func signOut() {
-        // The sidebar row, not its text; a click right after a screen
-        // change may not select it, so try again.
-        let row = app.outlines.outlineRows.containing(.staticText, identifier: "sidebar.settings").firstMatch
+        // ⌘, shows Settings.
+        app.typeKey(",", modifierFlags: .command)
         let button = app.buttons["signOut"]
-        for _ in 0..<3 where !button.exists {
-            click(row.exists ? row : element("sidebar.settings"))
-            _ = button.waitForExistence(timeout: 3)
-        }
         // Scroll the Settings form, not the sidebar: the innermost element
         // holding the button gets the scroll, which reaches the form behind
         // it (macOS shows the form as groups, not as a scroll view).
@@ -74,6 +73,10 @@ final class MacUITests: XCTestCase {
         }
         click(button)
         click(app.buttons["confirmSignOut"].firstMatch)
+    }
+
+    private func sidebarRow(_ identifier: String) -> XCUIElement {
+        app.outlines.outlineRows.containing(.staticText, identifier: identifier).firstMatch
     }
 
     private func element(_ identifier: String) -> XCUIElement {

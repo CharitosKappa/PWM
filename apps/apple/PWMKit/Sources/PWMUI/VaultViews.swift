@@ -13,7 +13,7 @@ struct MainView: View {
     var body: some View {
         if let vault = app.vault, let generator = app.generator, let settings = app.settings {
             #if os(macOS)
-            MacMainView(vault: vault, generator: generator, settings: settings)
+            MacMainView(app: app, vault: vault, generator: generator, settings: settings)
             #else
             TabView {
                 VaultView(model: vault)
