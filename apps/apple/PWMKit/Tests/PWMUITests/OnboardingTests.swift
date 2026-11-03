@@ -3,79 +3,6 @@ import XCTest
 @testable import PWMKit
 @testable import PWMUI
 
-/// An account with no server: records what the screens ask for.
-actor FakeAccount: Account {
-    var signedIn = false
-    var storedEmail: String?
-    var calls: [String] = []
-    var unlockPassword = "correct horse battery staple 42"
-    var failure: PWMError?
-    var count = 0
-
-    func setSignedIn(email: String) {
-        signedIn = true
-        storedEmail = email
-    }
-
-    func fail(with code: String?) {
-        failure = code.map(PWMError.init(code:))
-    }
-
-    private func check() throws {
-        if let failure { throw failure }
-    }
-
-    func isSignedIn() -> Bool { signedIn }
-    func email() -> String? { storedEmail }
-
-    func signUp(email: String, password: Redacted<String>, deviceName: String) throws -> Redacted<String> {
-        try check()
-        calls.append("signUp \(email) \(deviceName)")
-        setSignedIn(email: email)
-        return Redacted("A1-014D2P-F2DBSQ-QZXQ5T-K1V58C-GGA")
-    }
-
-    func logIn(email: String, password: Redacted<String>, secretKey: Redacted<String>) throws -> SyncResult {
-        try check()
-        calls.append("logIn \(email) \(password.value) \(secretKey.value)")
-        setSignedIn(email: email)
-        return .synced(pulled: 0, pushed: 0, conflicts: 0, failed: 0)
-    }
-
-    func unlock(password: Redacted<String>) throws {
-        guard password.value == unlockPassword else { throw PWMError(code: "wrong_password") }
-        calls.append("unlock")
-    }
-
-    func lock() { calls.append("lock") }
-
-    func signOut() {
-        calls.append("signOut")
-        signedIn = false
-        storedEmail = nil
-    }
-
-    func emergencyKit(paper: EmergencyKit.Paper) throws -> Redacted<Data> {
-        try check()
-        calls.append("kit \(paper)")
-        return Redacted(Data("%PDF-fake".utf8))
-    }
-
-    func itemCount() -> Int { count }
-}
-
-@MainActor
-final class FakePasteboard: SecretPasteboard {
-    var copied: [(String, TimeInterval)] = []
-
-    func copy(_ value: Redacted<String>, clearAfter seconds: TimeInterval) {
-        copied.append((value.value, seconds))
-    }
-}
-
-let strong = "correct horse battery staple 42"
-let kitKey = "A1-014D2P-F2DBSQ-QZXQ5T-K1V58C-GGA"
-
 @MainActor
 final class OnboardingTests: XCTestCase {
     var account: FakeAccount!
@@ -266,12 +193,16 @@ final class OnboardingTests: XCTestCase {
         unlock.password = strong
         await unlock.submit()
         XCTAssertEqual(app.screen, .vault)
-        let vault = try XCTUnwrap(app.vault)
-        await vault.load()
-        XCTAssertEqual(vault.itemCount, 0)
+        XCTAssertNotNil(app.vault)
+        XCTAssertNotNil(app.generator)
+        let settings = try XCTUnwrap(app.settings)
+        await settings.load()
+        XCTAssertEqual(settings.email, "ada@example.com")
 
-        await vault.lock()
+        await settings.lockNow()
         XCTAssertEqual(app.screen, .unlock)
+        XCTAssertNil(app.vault, "the vault's items go with the lock")
+        XCTAssertNil(app.settings)
         await app.unlock?.signOut()
         XCTAssertEqual(app.screen, .welcome)
         let calls = await account.calls

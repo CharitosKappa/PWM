@@ -817,3 +817,12 @@ pub fn scan_kit(text: String) -> Result<ScannedKit, PwmError> {
         server: kit.server,
     })
 }
+
+/// What to store as a login's one-time code for what the user entered
+/// (D23 §3); `invalid_totp` if it is not a code setup.
+#[uniffi::export]
+pub fn normalize_totp(input: String, title: String) -> Result<String, PwmError> {
+    Ok(pwm_client::normalize_totp(&input, &title)?
+        .expose_secret()
+        .clone())
+}

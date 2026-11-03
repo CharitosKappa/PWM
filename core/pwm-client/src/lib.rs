@@ -13,6 +13,7 @@ mod kit;
 mod passkey;
 mod save;
 mod session;
+mod totp;
 
 pub use auth::id_text;
 pub use autofill::AutofillMatch;
@@ -29,6 +30,7 @@ pub use pwm_store::{MemoryStore, SNAPSHOT_VERSION, Store};
 pub use pwm_sync::{HttpRequest, HttpResponse, Method, SyncEvent, SyncReport, Tokens};
 pub use save::{SaveCandidate, SaveOffer};
 pub use session::SessionExport;
+pub use totp::normalize_totp;
 
 /// The platforms a device can be (D26).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
