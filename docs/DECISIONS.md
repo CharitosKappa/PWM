@@ -1488,3 +1488,69 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The unlock screen** tries Face ID once by itself each time it shows; a cancel leaves the password field, with no error.
   - **Not verified anywhere yet:** the Secure Enclave and Face ID themselves. The simulator has none, so CI checks only that Settings says it is unavailable. `swift test` covers the flow with a fake enclave against the real core and server. The first device run is the first real check.
 
+- **D46 — Approving a new device from a signed-in one: the exchange, the matching code, the relay on the server, and which apps do what** · settled 2026-11-03 · founder (approved as proposed).
+  The roadmap says: "the Secret Key sent over an authenticated X25519 channel (`SECURITY.md`), relay endpoints on the server, and the approving side on every signed-in platform, starting with the extension. Needs its own decision, test vectors and security review; reuses the M5.2 kit scanner." `SECURITY.md` names only the channel. Open:
+  - how the channel is authenticated when the server relays it and is not trusted (zero-knowledge, S2)
+  - what is sent
+  - the relay's endpoints and abuse limits
+  - which apps ask and which approve
+  - how it is tested
+
+  Proposal:
+  1. **What it does.** A new device ("N") gets the Secret Key from a signed-in, unlocked device ("E") after the user confirms on E. N still needs the master password: approval only replaces typing the Secret Key. The server relays public keys and one ciphertext, and never sees the Secret Key.
+  2. **How it is authenticated: a 6-digit code both screens show, which the user compares.**
+     - **Why not a QR code alone:** the first approver is the extension, which has no camera. A matching code works between any two devices.
+     - **The commitment:** without one, a server in the middle could try many keys until the two codes match. So N first sends only a commitment to its key, and reveals the key after E has sent its own. Neither side can then be steered toward a chosen code, and an attacker has a one-in-a-million chance per attempt.
+     - **The scanner:** not used. D42 expected M5.9 to reuse it, but the matching code works everywhere, which keeps a single path to review.
+  3. **The exchange (v1, normative, goes into `SECURITY.md`):**
+     ```
+     N: n_secret, n_pub   = fresh X25519 key pair
+        commitment        = SHA-256(len || "pwm/approval-commit" || n_pub)
+        → server: email, commitment, platform               (unauthenticated)
+     E: e_secret, e_pub   = fresh X25519 key pair            (after the user picks the request)
+        → server: e_pub                                      (authenticated)
+     N: → server: n_pub                                      (E and N both check it against the commitment)
+     both: dh   = X25519(own secret, other pub)              # all-zero result rejected
+           key  = HKDF(ikm = dh, salt = approval_id || n_pub || e_pub, info = "pwm/approval/v1")
+           code = HKDF(…, info = "pwm/approval-code/v1") → u32 mod 1,000,000, shown as "123 456"
+     E: the user sees the same code on both screens and taps "Codes match"; then
+        envelope = seal(key, secret_key_text, AAD "pwm/approval": version:u8 || approval_id || n_pub || e_pub)
+        → server: envelope
+     N: opens it, then logs in with the master password and that Secret Key (the normal login).
+     ```
+     - **Keys:** every key is fresh and used once; nothing of the account keyset is involved.
+     - **If the codes differ,** E's user taps "Codes don't match", which ends the request.
+     - **Vectors:** `core/test-vectors/approval.json` covers the commitment, the code, the envelope and refusals, checked by Rust and the Node verifier. A new fuzz target, `approval_messages`, covers the parsers.
+  4. **The relay on the server (new migration with a migration test):**
+     - **The table:** `approvals` with id, account (null for an unknown email), platform, commitment, `e_pub`, `n_pub`, envelope, state, poll-token hash, and a creation time.
+     - **The endpoints:**
+       - `POST /v1/approvals {email, commitment, platform}` → 201 `{id, poll_token, expires_in}`. It is unauthenticated, with the same answer for an unknown email, so it reveals nothing about accounts.
+       - `GET /v1/approvals` (authenticated) lists the account's pending requests: id, platform, creation time and state.
+       - `POST /v1/approvals/{id}/accept {e_pub}` (authenticated, E).
+       - `POST /v1/approvals/{id}/reveal {n_pub}` (N, with `Authorization: Approval <poll_token>`). The server checks it against the commitment.
+       - `POST /v1/approvals/{id}/complete {envelope}` (authenticated, E).
+       - `GET /v1/approvals/{id}` (N, with its poll token) returns the state and whatever N needs next. The envelope is handed out once, then deleted.
+       - `DELETE /v1/approvals/{id}` (either side) ends it.
+     - **Order:** each step is accepted once and in order. A request expires 10 minutes after it is made; expired rows are deleted on read and by housekeeping.
+     - **Abuse limits:** at most 3 pending requests per account, and a new rate-limit class, `approval`, of 5 requests per IP per 10 minutes.
+     - **Plaintext:** the server stores the platform and times, as for devices; never names or the email beyond looking up the account.
+  5. **Which apps do what:**
+     - **Asking (N):** "Sign in with another device" on the iOS sign-in screen and in the extension's sign-in. N shows the code, then asks for the master password.
+     - **Approving (E):** the extension's manage page and iOS Settings get "Approve a new device".
+       - **Where requests show:** the extension shows a badge and a notice in the popup when a request is pending, read at sync. iOS checks when the app comes to the front. Push comes with M5.8.
+       - **The screen:** each request shows its platform and how long ago it was made, then the code and the two buttons.
+     - **macOS (M5.6) and Android (M6):** they get both sides with their apps.
+  6. **What the approver needs:** the vault unlocked. Approving asks for nothing more, as with 1Password and Bitwarden. A person at an unlocked device could approve a stranger's device, but that device would still need the master password.
+  7. **Tests:**
+     - **Core (tests first):** the full exchange between two clients; a broken commitment, swapped keys, a wrong code path, a reused message and an all-zero key all refused; vectors; fuzz.
+     - **Server:** every endpoint, the order of steps, the single hand-out, expiry, the 3-pending cap, the rate limit, the same answer for unknown emails, and only ciphertext and public keys stored.
+     - **End to end through `pwm-client`:** one client approves another against real Postgres, and a server swapping keys is caught by mismatched codes.
+     - **Extension:** background tests, and the Playwright harness approving an iOS-like request made through the core.
+     - **iOS:** view-model tests, plus `ServerTests` approving between two sessions.
+  8. **Security review:** this decision and its implementation get a written review before the beta (M10.3's external audit includes it). A short threat note goes into `SECURITY.md` with the exchange.
+
+  Alternatives:
+  - **A QR code shown by N and scanned by E:** strong and simple when E has a camera, but not for the extension, and two methods double what has to be reviewed. A QR option can come later on top of the same relay.
+  - **E signs the envelope with the account's Ed25519 key:** N can't check that key before it has logged in, so it adds nothing over the matching code.
+  - **Sending the whole keyset, so N skips the master password:** a bigger prize for anyone who fools the user, and it breaks the rule that a new device needs the master password (`SECURITY.md`).
+  - **Push instead of polling:** better, but it needs M5.8's APNs work. Polling every 2 seconds for the 10 minutes a request lives is cheap.
