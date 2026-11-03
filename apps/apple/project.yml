@@ -18,17 +18,19 @@ targets:
     platform: iOS
     sources:
       - App
-      # The licences of the core's dependencies and data (S6), made by
-      # `just notices`; a build without them says so in Settings.
-      - path: ../../THIRD_PARTY_NOTICES/rust.html
-        optional: true
-        buildPhase: resources
-      - path: ../../THIRD_PARTY_NOTICES/data.md
-        optional: true
-        buildPhase: resources
-      - path: ../../THIRD_PARTY_NOTICES/data-autofill.md
-        optional: true
-        buildPhase: resources
+    # The licences of the core's dependencies and data (S6), made by
+    # `just notices`, are copied in when they exist; a build without them
+    # says so in Settings. Signing runs after this.
+    postBuildScripts:
+      - name: Third-party notices
+        basedOnDependencyAnalysis: false
+        script: |
+          for name in rust.html data.md data-autofill.md; do
+            file="$SRCROOT/../../THIRD_PARTY_NOTICES/$name"
+            if [ -f "$file" ]; then
+              cp "$file" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/"
+            fi
+          done
     settings:
       base:
         # Placeholders until D1 names the product.
@@ -43,6 +45,8 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         LOCALIZATION_PREFERS_STRING_CATALOGS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
+        # The notices script reads files that may not exist.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
     dependencies:
       - package: PWMKit
         products: [PWMKit, PWMDesign, PWMUI]
