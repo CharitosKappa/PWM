@@ -30,6 +30,16 @@ struct DevicesHost: View {
     var body: some View { DevicesView(model: model) }
 }
 
+struct ApprovalsHost: View {
+    @State private var model: ApprovalsModel
+
+    init(settings: SettingsModel) {
+        _model = State(initialValue: settings.makeApprovals())
+    }
+
+    var body: some View { ApprovalsView(model: model) }
+}
+
 struct ExportHost: View {
     @State private var model: ExportModel
 
@@ -213,15 +223,17 @@ struct DeviceRow: View {
         }
     }
 
-    private var platform: String {
-        switch device.platform {
+    private var platform: String { Self.platformName(device.platform) }
+
+    static func platformName(_ platform: String) -> String {
+        switch platform {
         case "ios": "iOS"
         case "android": "Android"
         case "macos": "macOS"
         case "windows": "Windows"
         case "linux": "Linux"
         case "extension": String(localized: "Browser extension")
-        default: device.platform
+        default: platform
         }
     }
 
@@ -260,6 +272,77 @@ struct DeviceRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(device.isCurrent ? "device.current" : "device")
+    }
+}
+
+// MARK: Approving a new device (D46)
+
+struct ApprovalsView: View {
+    let model: ApprovalsModel
+
+    var body: some View {
+        List {
+            if let id = model.approving {
+                Section {
+                    if let code = model.code {
+                        Text("Does the new device show this code?")
+                        Text(verbatim: code)
+                            .font(.system(.largeTitle, design: .monospaced).weight(.semibold))
+                            .accessibilityIdentifier("approvalCode")
+                        Button("Codes match") { Task { await model.codesMatch() } }
+                            .disabled(model.busy)
+                            .accessibilityIdentifier("codesMatch")
+                        Button("Codes don't match", role: .destructive) { Task { await model.deny(id) } }
+                            .accessibilityIdentifier("codesDiffer")
+                    } else {
+                        HStack(spacing: Tokens.Space.s2) {
+                            ProgressView()
+                            Text("Waiting for the new device…")
+                        }
+                    }
+                } footer: {
+                    Text("Only approve a device you are setting up yourself. It still needs your master password.")
+                }
+                .task(id: id) { await model.waitForCode() }
+            } else {
+                if model.done {
+                    Section {
+                        Label("Approved. Enter your master password on the new device.", systemImage: "checkmark.seal")
+                            .foregroundStyle(Tokens.Color.success.color)
+                    }
+                }
+                Section {
+                    ForEach(model.requests) { request in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(verbatim: DeviceRow.platformName(request.platform))
+                                    .textStyle(Tokens.Text.bodyStrong)
+                                Text("Asked \(request.created.formatted(.relative(presentation: .named)))")
+                                    .textStyle(Tokens.Text.caption)
+                                    .foregroundStyle(Tokens.Color.textMuted.color)
+                            }
+                            Spacer()
+                            Button("Approve") { Task { await model.approve(request) } }
+                                .buttonStyle(.borderless)
+                                .disabled(model.busy)
+                                .accessibilityIdentifier("approve")
+                            Button("Deny", role: .destructive) { Task { await model.deny(request.id) } }
+                                .buttonStyle(.borderless)
+                        }
+                    }
+                } footer: {
+                    if model.loaded && model.requests.isEmpty {
+                        Text("No device is asking. On the new device, choose Sign in with another device.")
+                    }
+                }
+            }
+            if let error = model.error {
+                Section { ErrorText(text: error) }
+            }
+        }
+        .navigationTitle("Approve a new device")
+        .task { await model.load() }
+        .refreshable { await model.load() }
     }
 }
 

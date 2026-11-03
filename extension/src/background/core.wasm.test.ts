@@ -62,6 +62,10 @@ const CORE_METHODS: (keyof Core)[] = [
   "breachCheck",
   "authorizeExport",
   "exportFile",
+  "startListApprovals",
+  "startAcceptApproval",
+  "startCompleteApproval",
+  "startDenyApproval",
 ];
 
 describe("the WASM core", () => {
@@ -72,6 +76,7 @@ describe("the WASM core", () => {
     expect(() => core.breachCheck()).toThrow(locked);
     expect(() => core.startListDevices()).toThrow(locked);
     expect(() => core.exportFile("json", "", Date.now())).toThrow(locked);
+    expect(() => core.startListApprovals()).toThrow(locked);
     expect(fns.breachRangeUrl("ABCDE")).toBe(
       "https://api.pwnedpasswords.com/range/ABCDE",
     );
@@ -213,5 +218,24 @@ describe("the WASM core", () => {
         email: "ada@example.com",
       }),
     ).toBe(4);
+  });
+
+  it("makes a new device's approval request (D46)", () => {
+    const ask = fns.newApprovalAsk("ada@example.com");
+    const first = ask.firstRequest();
+    expect(first?.method).toBe("POST");
+    expect(first?.path).toBe("/v1/approvals");
+    const body = JSON.parse(new TextDecoder().decode(first?.body)) as {
+      email: string;
+      commitment: string;
+      platform: string;
+    };
+    expect(body.email).toBe("ada@example.com");
+    expect(body.platform).toBe("extension");
+    expect(body.commitment).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(ask.firstRequest()).toBeUndefined();
+    expect(() => ask.poll()).toThrow(
+      expect.objectContaining({ code: "not_running" }) as Error,
+    );
   });
 });

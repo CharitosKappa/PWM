@@ -34,6 +34,26 @@ public struct DeviceEntry: Sendable, Equatable, Identifiable {
     }
 }
 
+/// A request from a new device to sign in (D46).
+public struct ApprovalEntry: Sendable, Equatable, Identifiable {
+    public let id: String
+    public let platform: String
+    public let created: Date
+    /// `pending`, `accepted` or `revealed`.
+    public let state: String
+    /// The code to compare, once this device accepted and the new device
+    /// revealed its key.
+    public let code: String?
+
+    public init(id: String, platform: String, created: Date, state: String, code: String?) {
+        self.id = id
+        self.platform = platform
+        self.created = created
+        self.state = state
+        self.code = code
+    }
+}
+
 /// The local health checks (D22): weak passwords by item id with their
 /// score (below 3), and groups of item ids sharing a password.
 public struct PasswordHealth: Sendable, Equatable {

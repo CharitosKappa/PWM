@@ -53,6 +53,16 @@ export type Request =
   | { kind: "health" }
   | { kind: "checkLeaks" }
   | { kind: "setLeakCheck"; on: boolean }
+  // Asking a signed-in device (D46), from the popup while signed out.
+  | { kind: "askApproval"; email: string }
+  | { kind: "askApprovalPoll" }
+  | { kind: "askApprovalCancel" }
+  | { kind: "signInApproved"; password: string }
+  // Approving a new device (D46), from the manage page.
+  | { kind: "approvals" }
+  | { kind: "acceptApproval"; id: string }
+  | { kind: "completeApproval"; id: string }
+  | { kind: "denyApproval"; id: string }
   | {
       kind: "exportVault";
       masterPassword: string;
@@ -62,6 +72,23 @@ export type Request =
     };
 
 export type ExportFormat = "pwmx" | "json" | "csv";
+
+/** Where asking a signed-in device stands. The Secret Key stays in the background. */
+export interface AskView {
+  state: "waiting" | "code" | "approved" | "ended";
+  /** The code to compare on the signed-in device. */
+  code: string | null;
+}
+
+/** A request from a new device, as the signed-in one shows it. */
+export interface ApprovalView {
+  id: string;
+  platform: string;
+  createdAt: number;
+  state: string;
+  /** Once this device accepted and the new device revealed its key. */
+  code: string | null;
+}
 
 /** One of the account's devices; times are Unix ms. */
 export interface DeviceView {
@@ -121,6 +148,8 @@ export type Status =
       email: string;
       syncedAt: number | null;
       syncError: string | null;
+      /** Requests from new devices, read at sync (D46 §5). */
+      approvals: number;
     };
 
 export interface ItemSummary {
@@ -184,6 +213,14 @@ export interface Replies {
   setLeakCheck: boolean;
   /** The file as base64, with the name to save it under. */
   exportVault: { file: string; name: string };
+  askApproval: AskView;
+  askApprovalPoll: AskView;
+  askApprovalCancel: null;
+  signInApproved: null;
+  approvals: ApprovalView[];
+  acceptApproval: ApprovalView[];
+  completeApproval: ApprovalView[];
+  denyApproval: ApprovalView[];
 }
 
 const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
@@ -223,6 +260,14 @@ const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "checkLeaks",
   "setLeakCheck",
   "exportVault",
+  "askApproval",
+  "askApprovalPoll",
+  "askApprovalCancel",
+  "signInApproved",
+  "approvals",
+  "acceptApproval",
+  "completeApproval",
+  "denyApproval",
 ]);
 
 /** A popup message, wrapped so the background can tell it from others. */

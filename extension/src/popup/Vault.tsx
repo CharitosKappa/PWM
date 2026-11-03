@@ -79,6 +79,21 @@ export function Vault({
 
   return (
     <main class="stack">
+      {status.approvals > 0 && (
+        <p class="notice info row" role="status" id="approval-notice">
+          <span>A new device is asking to sign in.</span>
+          <button
+            class="link"
+            onClick={() =>
+              void chrome.tabs.create({
+                url: chrome.runtime.getURL("manage.html#devices"),
+              })
+            }
+          >
+            Review
+          </button>
+        </p>
+      )}
       <header class="row">
         <input
           class="search"

@@ -349,6 +349,8 @@ jobs:
       - run: cargo install wasm-bindgen-cli --version 0.2.130 --locked
       - run: cargo build --locked --release -p pwm-wasm --target wasm32-unknown-unknown
       - run: wasm-bindgen --target web --out-dir extension/core target/wasm32-unknown-unknown/release/pwm_wasm.wasm
+      # The new device in the approval test (D46) runs the core in Node.
+      - run: wasm-bindgen --target nodejs --out-dir target/wasm/node target/wasm32-unknown-unknown/release/pwm_wasm.wasm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @pwm/extension build:test
       - run: docker compose build

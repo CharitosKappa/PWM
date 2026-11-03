@@ -3,7 +3,7 @@
  * which `tsconfig.json` maps `pwm-core` to. Only what the background uses;
  * `src/background/core.wasm.test.ts` checks them against the real build.
  */
-import type { Core } from "./background/core.ts";
+import type { Core, CoreApprovalAsk } from "./background/core.ts";
 
 export default function init(input: {
   module_or_path: string | URL;
@@ -16,6 +16,9 @@ export declare const WasmClient: {
 
 export function newId(): string;
 export function breachRangeUrl(prefix: string): string;
+export declare const WasmApprovalAsk: {
+  new (email: string, platform: string): CoreApprovalAsk;
+};
 export function generatePassword(
   length: number,
   lowercase: boolean,

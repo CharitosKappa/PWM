@@ -320,13 +320,33 @@ struct SignInView: View {
                 .plainInput()
                 .field(.email)
                 .accessibilityIdentifier("email")
+            if model.asking {
+                AskingPanel(model: model)
+            } else if !model.approved {
+                Button {
+                    model.startAsking()
+                } label: {
+                    Label("Sign in with another device", systemImage: "iphone.and.arrow.forward").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(!model.canAsk)
+                .accessibilityIdentifier("askDevice")
+            }
             SecureField("Master password", text: $model.password)
                 .field(.password)
                 .accessibilityIdentifier("password")
-            TextField("Secret Key", text: $model.secretKey)
-                .plainInput()
-                .font(.system(.body, design: .monospaced))
-                .accessibilityIdentifier("secretKey")
+            if model.approved {
+                Label("Secret Key received from your other device.", systemImage: "checkmark.seal")
+                    .textStyle(Tokens.Text.caption)
+                    .foregroundStyle(Tokens.Color.success.color)
+                    .accessibilityIdentifier("approved")
+            } else {
+                TextField("Secret Key", text: $model.secretKey)
+                    .plainInput()
+                    .font(.system(.body, design: .monospaced))
+                    .accessibilityIdentifier("secretKey")
+            }
             if app.usesOtherServer {
                 Text("Server: \(app.otherServer)")
                     .textStyle(Tokens.Text.caption)
@@ -421,6 +441,36 @@ struct UnlockView: View {
         Button("Sign out", role: .destructive) { Task { await model.signOut() } }
             .accessibilityIdentifier("signOut")
         ErrorText(text: model.error)
+    }
+}
+
+/// While a signed-in device is asked (D46): the code to compare there.
+struct AskingPanel: View {
+    let model: SignInModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Tokens.Space.s3) {
+            Text("On a device where you're signed in, open Settings, then Approve a new device.")
+                .textStyle(Tokens.Text.body)
+            if let code = model.approvalCode {
+                Text("Check that it shows this code:")
+                    .textStyle(Tokens.Text.caption)
+                    .foregroundStyle(Tokens.Color.textMuted.color)
+                Text(verbatim: code)
+                    .font(.system(.largeTitle, design: .monospaced).weight(.semibold))
+                    .accessibilityIdentifier("approvalCode")
+            } else {
+                HStack(spacing: Tokens.Space.s2) {
+                    ProgressView()
+                    Text("Waiting for your other device…").textStyle(Tokens.Text.caption)
+                }
+            }
+            Button("Cancel", role: .cancel) { model.cancelAsking() }
+                .accessibilityIdentifier("cancelAsk")
+        }
+        .padding(Tokens.Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Tokens.Color.surface.color, in: RoundedRectangle(cornerRadius: Tokens.Radius.md))
     }
 }
 

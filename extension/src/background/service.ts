@@ -16,6 +16,7 @@ import { HOSTED_SERVER } from "../shared/config.ts";
 import { errorCode } from "./core.ts";
 import { localDate, paperFor } from "./kit.ts";
 import { ServiceError } from "./errors.ts";
+import { Approvals } from "./approvals.ts";
 import { Autofill } from "./fill.ts";
 import { Manager } from "./manage.ts";
 import { Passkeys } from "./passkeys.ts";
@@ -94,6 +95,8 @@ export class Background {
   readonly reporter: Reporter;
   /** Devices, the health report and export (D44). */
   readonly manager: Manager;
+  /** Approving a new device from a signed-in one (D46). */
+  readonly approvals: Approvals;
 
   private constructor(
     private readonly fns: CoreFunctions,
@@ -133,6 +136,17 @@ export class Background {
       ended: (step) => this.handleOutcome(step),
       secretKey: () => platform.disk.get("secretKey"),
       touch: () => this.touch(),
+    });
+    this.approvals = new Approvals({
+      core: () => this.core,
+      fns,
+      platform,
+      server: () => this.settings.serverUrl,
+      run: (start) => this.run(start),
+      ended: (step) => this.handleOutcome(step),
+      secretKey: () => platform.disk.get("secretKey"),
+      signIn: (email, password, secretKey) =>
+        this.signIn(email, password, secretKey),
     });
     this.passkeys = new Passkeys({
       core: () => this.core,
@@ -318,6 +332,28 @@ export class Background {
         return this.manager.checkLeaks();
       case "setLeakCheck":
         return this.manager.setLeakCheck(request.on);
+      case "askApproval":
+        return this.approvals.ask(request.email);
+      case "askApprovalPoll":
+        return this.approvals.poll();
+      case "askApprovalCancel":
+        this.approvals.cancel();
+        return null;
+      case "signInApproved":
+        await this.approvals.signInApproved(request.password);
+        return null;
+      case "approvals":
+        await this.touch();
+        return this.approvals.list();
+      case "acceptApproval":
+        await this.touch();
+        return this.approvals.accept(request.id);
+      case "completeApproval":
+        await this.touch();
+        return this.approvals.complete(request.id);
+      case "denyApproval":
+        await this.touch();
+        return this.approvals.deny(request.id);
       case "exportVault":
         return this.manager.exportVault(
           request.masterPassword,
@@ -336,6 +372,7 @@ export class Background {
       email,
       syncedAt: this.syncedAt,
       syncError: this.syncError,
+      approvals: this.approvals.pending,
     };
   }
 
@@ -636,6 +673,9 @@ export class Background {
       await this.handleOutcome(await this.run(() => this.core.startSync()));
     } catch (error) {
       this.syncError = error instanceof ServiceError ? error.code : "internal";
+    }
+    if (this.core.isUnlocked() && this.syncError === null) {
+      await this.approvals.refresh();
     }
     return this.status();
   }

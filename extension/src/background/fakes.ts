@@ -2,7 +2,7 @@
  * Test doubles: a scripted core and an in-memory platform. The real core is
  * tested in Rust and, through WASM, in `wasm.test.ts`.
  */
-import type { Core, CoreFunctions, CoreStep } from "./core.ts";
+import type { Core, CoreAskStep, CoreFunctions, CoreStep } from "./core.ts";
 import type {
   ContentMessage,
   FieldInfo,
@@ -652,6 +652,58 @@ export class FakeCore implements Core {
     this.exportGrant = true;
   }
 
+  // Device approvals (D46), the signed-in side.
+
+  approvals_: {
+    id: string;
+    platform: string;
+    created_at: number;
+    state: string;
+    code: string | null;
+  }[] = [];
+  completedWith: string | null = null;
+
+  startListApprovals(): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    this.next = () =>
+      done("approvals", { approvals: JSON.stringify(this.approvals_) });
+    return send("/v1/approvals");
+  }
+
+  startAcceptApproval(approvalId: string): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    this.next = () => {
+      const approval = this.approvals_.find((a) => a.id === approvalId);
+      if (!approval) throw coreError("unknown_approval");
+      approval.state = "revealed";
+      approval.code = "654 321";
+      return done("approval_updated");
+    };
+    return send(`/v1/approvals/${approvalId}/accept`);
+  }
+
+  startCompleteApproval(approvalId: string, secretKey: string): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    const approval = this.approvals_.find((a) => a.id === approvalId);
+    if (approval?.code === null || approval === undefined)
+      throw coreError("unknown_approval");
+    this.next = () => {
+      this.completedWith = secretKey;
+      this.approvals_ = this.approvals_.filter((a) => a.id !== approvalId);
+      return done("approval_updated");
+    };
+    return send(`/v1/approvals/${approvalId}/complete`);
+  }
+
+  startDenyApproval(approvalId: string): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    this.next = () => {
+      this.approvals_ = this.approvals_.filter((a) => a.id !== approvalId);
+      return done("approval_updated");
+    };
+    return send(`/v1/approvals/${approvalId}/deny`);
+  }
+
   exportFile(format: string, exportPassword: string): Uint8Array {
     if (!this.unlocked) throw coreError("locked");
     if (!this.exportGrant) throw coreError("export_not_authorized");
@@ -689,6 +741,44 @@ export class FakeCore implements Core {
   }
 }
 
+/**
+ * A new device's request (D46) whose relay is scripted: each `receive`
+ * gives the next of `steps`. Requests go to `/v1/approvals...`.
+ */
+export class FakeApprovalAsk {
+  steps: { kind: string; code?: string; secretKey?: string }[];
+  cancelled = false;
+
+  constructor(steps: { kind: string; code?: string; secretKey?: string }[]) {
+    this.steps = steps;
+  }
+
+  firstRequest(): CoreStep {
+    return send("/v1/approvals");
+  }
+
+  poll(): CoreStep {
+    return { ...send("/v1/approvals/ask-1"), method: "GET" };
+  }
+
+  cancel(): CoreStep {
+    this.cancelled = true;
+    return { ...send("/v1/approvals/ask-1"), method: "DELETE" };
+  }
+
+  receive(): CoreAskStep {
+    const next = this.steps.shift() ?? { kind: "wait" };
+    return {
+      kind: next.kind,
+      delayMs: 2000,
+      ...(next.code === undefined ? {} : { code: next.code }),
+      ...(next.secretKey === undefined ? {} : { secretKey: next.secretKey }),
+      request: () =>
+        next.kind === "send" ? send("/v1/approvals/ask-1/reveal") : undefined,
+    };
+  }
+}
+
 export interface FakeDevice {
   id: string;
   platform: string;
@@ -719,7 +809,11 @@ export class FakeBreachCheck {
 }
 
 /** Core functions that hand out `FakeCore`s; `cores` keeps every one made. */
-export function fakeFunctions(): CoreFunctions & { cores: FakeCore[] } {
+export function fakeFunctions(): CoreFunctions & {
+  cores: FakeCore[];
+  asks: FakeApprovalAsk[];
+  nextAsk: { kind: string; code?: string; secretKey?: string }[];
+} {
   const cores: FakeCore[] = [];
   const make = (): FakeCore => {
     const core = new FakeCore();
@@ -727,8 +821,25 @@ export function fakeFunctions(): CoreFunctions & { cores: FakeCore[] } {
     return core;
   };
   let ids = 0;
+  const asks: FakeApprovalAsk[] = [];
+  const fns = {
+    nextAsk: [] as { kind: string; code?: string; secretKey?: string }[],
+  };
   return {
     cores,
+    asks,
+    get nextAsk() {
+      return fns.nextAsk;
+    },
+    set nextAsk(steps) {
+      fns.nextAsk = steps;
+    },
+    newApprovalAsk: (email: string) => {
+      if (email === "") throw coreError("invalid_email");
+      const ask = new FakeApprovalAsk(fns.nextAsk);
+      asks.push(ask);
+      return ask;
+    },
     newCore: make,
     loadCore: (snapshot) => {
       const core = make();
@@ -890,9 +1001,15 @@ export class FakePages implements Pages {
   }
 
   badges = new Map<number, string>();
+  globalBadge = "";
 
   setBadge(tabId: number, text: string) {
     this.badges.set(tabId, text);
+    return Promise.resolve();
+  }
+
+  setGlobalBadge(text: string) {
+    this.globalBadge = text;
     return Promise.resolve();
   }
 }

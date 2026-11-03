@@ -185,13 +185,17 @@ public final class AppModel {
         }
     }
 
-    /// The app is coming back: lock first if it was away too long.
+    /// The app is coming back: lock first if it was away too long, then
+    /// look for requests from new devices.
     public func willEnterForeground() async {
-        guard let since = backgroundedAt else { return }
-        backgroundedAt = nil
-        if clock() - since >= lockTimeout.duration {
-            await lock()
+        if let since = backgroundedAt {
+            backgroundedAt = nil
+            if clock() - since >= lockTimeout.duration {
+                await lock()
+                return
+            }
         }
+        await settings?.checkApprovals()
     }
 
     /// The device is locking: the vault locks too, whatever the timeout.

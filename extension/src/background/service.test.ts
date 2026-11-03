@@ -473,13 +473,15 @@ describe("sync", () => {
 
   it("shares one run between concurrent requests", async () => {
     const { background, platform } = await signedUp();
-    const before = platform.requests.length;
+    const syncs = () =>
+      platform.requests.filter((r) => r.url.endsWith("/v1/sync")).length;
+    const before = syncs();
     await Promise.all([
       background.sync(),
       background.sync(),
       background.handle({ kind: "sync" }),
     ]);
-    expect(platform.requests.length - before).toBe(1);
+    expect(syncs() - before).toBe(1);
   });
 
   it("forgets the account on this device when it was revoked", async () => {

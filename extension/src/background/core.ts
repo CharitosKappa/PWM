@@ -19,6 +19,27 @@ export interface CoreStep {
   readonly report: ArrayLike<number>;
   /** After `devices`: JSON array of `{id, platform, name, created_at, last_seen_at, revoked_at, current}`. */
   readonly devices?: string;
+  /** After `approvals`: JSON array of `{id, platform, created_at, state, code}` (D46). */
+  readonly approvals?: string;
+}
+
+/** What a new device does next while asking a signed-in one (D46). */
+export interface CoreAskStep {
+  /** `send`, `wait`, `code`, `approved` or `ended`. */
+  readonly kind: string;
+  /** After `send`: the request, as a `send` step. */
+  request(): CoreStep | undefined;
+  readonly delayMs: number;
+  readonly code?: string;
+  readonly secretKey?: string;
+}
+
+/** A new device's side of one approval. */
+export interface CoreApprovalAsk {
+  firstRequest(): CoreStep | undefined;
+  poll(): CoreStep;
+  cancel(): CoreStep | undefined;
+  receive(status: number, headers: string[], body: Uint8Array): CoreAskStep;
 }
 
 /** One leak check (D22 §4): fetch each prefix, add each body, then finish. */
@@ -171,6 +192,11 @@ export interface Core {
   authorizeExport(password: string, secretKey: string, nowMs: number): void;
   /** `pwmx` (with `exportPassword`), `json` or `csv`; uses up the grant. */
   exportFile(format: string, exportPassword: string, nowMs: number): Uint8Array;
+  /** Device approvals (D46), the signed-in side: end with `approvals` or `approval_updated`. */
+  startListApprovals(): CoreStep;
+  startAcceptApproval(approvalId: string): CoreStep;
+  startCompleteApproval(approvalId: string, secretKey: string): CoreStep;
+  startDenyApproval(approvalId: string): CoreStep;
 }
 
 export interface CoreFunctions {
@@ -191,6 +217,8 @@ export interface CoreFunctions {
   ): Uint8Array;
   /** The HIBP range URL for a 5-character prefix (D22 §4). */
   breachRangeUrl(prefix: string): string;
+  /** A new device's request to a signed-in one (D46). */
+  newApprovalAsk(email: string): CoreApprovalAsk;
 }
 
 /** The `code` a core error carries (D31), or `internal`. */

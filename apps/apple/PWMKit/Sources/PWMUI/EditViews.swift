@@ -419,6 +419,16 @@ struct SettingsView: View {
             Section {
                 NavigationLink("Devices") { DevicesHost(settings: model) }
                     .accessibilityIdentifier("devices")
+                NavigationLink {
+                    ApprovalsHost(settings: model)
+                } label: {
+                    LabeledContent("Approve a new device") {
+                        if model.pendingApprovals > 0 {
+                            Text(verbatim: String(model.pendingApprovals))
+                        }
+                    }
+                }
+                .accessibilityIdentifier("approvals")
                 NavigationLink("Export vault") { ExportHost(settings: model) }
                     .accessibilityIdentifier("exportVault")
             } footer: {

@@ -137,8 +137,15 @@ public final class SignInModel {
     public var secretKey = ""
     public private(set) var busy = false
     public private(set) var error: String?
+    /// Asking a signed-in device (D46): the code to compare there.
+    public private(set) var approvalCode: String?
+    public private(set) var asking = false
+    /// The Secret Key came from a signed-in device; only the master
+    /// password is left to type.
+    public private(set) var approved = false
 
     private let deviceName: String
+    private var askTask: Task<Void, Never>?
     private let account: @MainActor () throws -> any Account
     private let onScannedServer: @MainActor (URL?) -> Void
     private let onSignedIn: @MainActor () -> Void
@@ -159,6 +166,43 @@ public final class SignInModel {
 
     public var canSubmit: Bool {
         !busy && trimmedEmail.contains("@") && !password.isEmpty && !secretKey.isEmpty
+    }
+
+    public var canAsk: Bool { !busy && !asking && trimmedEmail.contains("@") }
+
+    /// "Sign in with another device": waits for a signed-in device to
+    /// approve, showing the code to compare, then fills in the Secret Key.
+    public func askAnotherDevice() async {
+        guard canAsk else { return }
+        asking = true
+        approvalCode = nil
+        error = nil
+        defer {
+            asking = false
+            approvalCode = nil
+        }
+        do {
+            let key = try await account().askForApproval(email: trimmedEmail) { [weak self] code in
+                await MainActor.run { self?.approvalCode = code }
+            }
+            secretKey = key.value
+            approved = true
+        } catch is CancellationError {
+            return
+        } catch {
+            self.error = message(for: error)
+        }
+    }
+
+    /// Starts asking in a task the screen can cancel.
+    public func startAsking() {
+        askTask?.cancel()
+        askTask = Task { await askAnotherDevice() }
+    }
+
+    public func cancelAsking() {
+        askTask?.cancel()
+        askTask = nil
     }
 
     /// A scanned QR code: a kit fills in the email, Secret Key and server,
