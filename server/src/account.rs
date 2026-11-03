@@ -1,14 +1,15 @@
-//! `GET /v1/account` and `/v1/devices` (D26).
+//! `GET /v1/account` and `/v1/devices` (D26, D43).
 
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::routing::{delete, get};
+use axum::routing::get;
 use axum::{Json, Router};
-use serde::Serialize;
+use pwm_crypto::{Envelope, SEALED_DEVICE_NAME_LEN};
+use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::api::{ApiError, ApiPath, ApiRouter, AppState, b64};
+use crate::api::{ApiError, ApiJson, ApiPath, ApiRouter, AppState, b64};
 use crate::auth::Kdf;
 use crate::session::Authenticated;
 
@@ -16,7 +17,10 @@ pub fn routes() -> ApiRouter {
     Router::new()
         .route("/v1/account", get(account))
         .route("/v1/devices", get(devices))
-        .route("/v1/devices/{id}", delete(revoke_device))
+        .route(
+            "/v1/devices/{id}",
+            axum::routing::patch(rename_device).delete(revoke_device),
+        )
 }
 
 #[derive(Serialize)]
@@ -133,4 +137,40 @@ async fn revoke_device(
     }
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Rename {
+    #[serde(with = "b64")]
+    name_sealed: Vec<u8>,
+}
+
+/// Renames one of the account's devices (D43 §6). The name arrives sealed
+/// under the account's key and padded, so the server stores only an
+/// envelope of one fixed size. A revoked device keeps its last name.
+async fn rename_device(
+    State(state): State<AppState>,
+    auth: Authenticated,
+    ApiPath(id): ApiPath<Uuid>,
+    ApiJson(req): ApiJson<Rename>,
+) -> Result<StatusCode, ApiError> {
+    if req.name_sealed.len() != SEALED_DEVICE_NAME_LEN
+        || Envelope::from_bytes(&req.name_sealed).is_err()
+    {
+        return Err(ApiError::InvalidRequest);
+    }
+    let row = sqlx::query(
+        "UPDATE devices SET name_sealed = CASE WHEN revoked_at IS NULL THEN $3 ELSE name_sealed END          WHERE id = $1 AND account_id = $2 RETURNING revoked_at IS NOT NULL",
+    )
+    .bind(id)
+    .bind(auth.account_id)
+    .bind(&req.name_sealed)
+    .fetch_optional(&state.pool)
+    .await?;
+    match row.map(|r| r.get::<bool, _>(0)) {
+        None => Err(ApiError::NotFound),
+        Some(true) => Err(ApiError::Conflict("device_revoked")),
+        Some(false) => Ok(StatusCode::NO_CONTENT),
+    }
 }

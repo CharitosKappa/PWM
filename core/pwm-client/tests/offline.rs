@@ -97,7 +97,14 @@ fn sign_up_checks_its_input_and_starts_the_conversation() {
     assert!(body["account_id"].is_string() && body["registration_request"].is_string());
     // One conversation at a time.
     assert_eq!(
-        code(client.start_login("a@example.com", PASSWORD, "A1-x", &device, Platform::Linux)),
+        code(client.start_login(
+            "a@example.com",
+            PASSWORD,
+            "A1-x",
+            &device,
+            Platform::Linux,
+            "Laptop"
+        )),
         "busy"
     );
     assert_eq!(code(client.network_failed()), "network");
@@ -107,7 +114,8 @@ fn sign_up_checks_its_input_and_starts_the_conversation() {
             PASSWORD,
             "not a key",
             &device,
-            Platform::Linux
+            Platform::Linux,
+            "Laptop"
         )),
         "invalid_secret_key"
     );

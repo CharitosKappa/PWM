@@ -405,7 +405,14 @@ export class Background {
   ): Promise<void> {
     const deviceId = await this.deviceId();
     const done = await this.run(() =>
-      this.core.startLogin(email, password, secretKey, deviceId, "extension"),
+      this.core.startLogin(
+        email,
+        password,
+        secretKey,
+        deviceId,
+        "extension",
+        DEVICE_NAME,
+      ),
     );
     if (done.outcome !== "logged_in") throw new ServiceError("internal");
     await this.signedIn(email, secretKey);

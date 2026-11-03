@@ -7,7 +7,7 @@ public protocol Account: AnyObject, Sendable {
     func isSignedIn() async throws -> Bool
     func email() async throws -> String?
     func signUp(email: String, password: Redacted<String>, deviceName: String) async throws -> Redacted<String>
-    func logIn(email: String, password: Redacted<String>, secretKey: Redacted<String>) async throws -> SyncResult
+    func logIn(email: String, password: Redacted<String>, secretKey: Redacted<String>, deviceName: String) async throws -> SyncResult
     func unlock(password: Redacted<String>) async throws
     func lock() async
     func signOut() async throws
@@ -24,6 +24,15 @@ public protocol Account: AnyObject, Sendable {
     func delete(_ itemId: String, in vaultId: String) async throws
     func purgeTrash() async throws -> Int
     func currentCode(_ itemId: String, in vaultId: String) async throws -> (code: Redacted<String>, secondsLeft: UInt64)?
+
+    // Devices, health and export (D43 §6-8).
+    func devices() async throws -> [DeviceEntry]
+    func renameDevice(_ deviceId: String, to name: String) async throws
+    func revokeDevice(_ deviceId: String) async throws
+    func passwordHealth() async throws -> PasswordHealth
+    func breachedPasswords() async throws -> [String: UInt64]
+    func authorizeExport(password: Redacted<String>) async throws
+    func export(_ format: ExportFile.Format) async throws -> Redacted<Data>
 }
 
 extension Session: Account {}

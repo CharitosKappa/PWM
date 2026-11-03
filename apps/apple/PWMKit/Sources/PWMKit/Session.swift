@@ -27,6 +27,8 @@ public actor Session {
     private let server: URL
     private let keys: any KeyStore
     private let transport: any HTTPTransport
+    /// For the breach check only: straight to HIBP, never through our server.
+    private let breachTransport: any HTTPTransport
     private let now: @Sendable () -> Int64
     private let eventsContinuation: AsyncStream<SessionEvent>.Continuation
 
@@ -36,11 +38,13 @@ public actor Session {
     /// - Parameters:
     ///   - cachePath: the cache file (see `CacheLocation`), or nil for memory only.
     ///   - server: the sync server's base URL.
+    ///   - breachTransport: sends the breach check's range requests (D22 §4).
     public init(
         cachePath: String?,
         server: URL,
         keys: any KeyStore,
         transport: any HTTPTransport = URLSessionTransport(),
+        breachTransport: any HTTPTransport = URLSessionTransport(),
         now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }
     ) throws {
         client = try core {
@@ -49,6 +53,7 @@ public actor Session {
         self.server = server
         self.keys = keys
         self.transport = transport
+        self.breachTransport = breachTransport
         self.now = now
         let (stream, continuation) = AsyncStream.makeStream(of: SessionEvent.self)
         events = stream
@@ -77,13 +82,16 @@ public actor Session {
         return Redacted(secretKey)
     }
 
-    /// Signs in on this device with all three secrets, then syncs.
-    public func logIn(email: String, password: Redacted<String>, secretKey: Redacted<String>) async throws -> SyncResult {
+    /// Signs in on this device with all three secrets, then syncs. The core
+    /// sends `deviceName`, sealed, once the keys are open (D43 §6).
+    public func logIn(
+        email: String, password: Redacted<String>, secretKey: Redacted<String>, deviceName: String
+    ) async throws -> SyncResult {
         let deviceId = try self.deviceId()
         let first = try core {
             try client.startLogin(
                 email: email, password: password.value, secretKey: secretKey.value,
-                deviceId: deviceId, platform: Session.platform
+                deviceId: deviceId, platform: Session.platform, deviceName: deviceName
             )
         }
         guard case .loggedIn = try await run(first) else { throw PWMError(code: "protocol") }
@@ -200,6 +208,98 @@ public actor Session {
     public func currentCode(_ itemId: String, in vaultId: String) throws -> (code: Redacted<String>, secondsLeft: UInt64)? {
         try core { try client.currentCode(vaultId: vaultId, itemId: itemId, nowMs: now()) }
             .map { (code: Redacted($0.code), secondsLeft: $0.secondsLeft) }
+    }
+
+    // MARK: Devices (D43 §6)
+
+    /// The account's devices, this one marked `isCurrent`.
+    public func devices() async throws -> [DeviceEntry] {
+        guard case let .devices(devices) = try await runOnline(try core { try client.startListDevices() }) else {
+            throw PWMError(code: "protocol")
+        }
+        return devices.map(DeviceEntry.init)
+    }
+
+    /// Renames one of the account's devices (63 bytes at most).
+    public func renameDevice(_ deviceId: String, to name: String) async throws {
+        try await expectUpdated(try core { try client.startRenameDevice(deviceId: deviceId, name: name) })
+    }
+
+    /// Revokes another device; to leave this one, sign out.
+    public func revokeDevice(_ deviceId: String) async throws {
+        try await expectUpdated(try core { try client.startRevokeDevice(deviceId: deviceId) })
+    }
+
+    private func expectUpdated(_ first: Step) async throws {
+        guard case .deviceUpdated = try await runOnline(first) else { throw PWMError(code: "protocol") }
+    }
+
+    /// A device conversation: a failed run is `network`, and this device
+    /// being revoked meanwhile is `device_revoked`.
+    private func runOnline(_ first: Step) async throws -> Outcome {
+        let outcome: Outcome
+        do {
+            outcome = try await run(first)
+        } catch RunEnd.wait {
+            throw PWMError(code: "network")
+        }
+        switch outcome {
+        case .deviceRevoked: throw PWMError(code: "device_revoked")
+        case .signedOut: throw PWMError(code: "signed_out")
+        default: return outcome
+        }
+    }
+
+    // MARK: Health (D22, D43 §7)
+
+    /// Weak and reused passwords across every vault; local only.
+    public func passwordHealth() throws -> PasswordHealth {
+        let report = try core { try client.healthReport() }
+        return PasswordHealth(
+            weak: Dictionary(report.weak.map { ($0.itemId, Int($0.score)) }, uniquingKeysWith: { first, _ in first }),
+            reused: report.reused
+        )
+    }
+
+    /// Logins whose password is in known breaches, with how often it was
+    /// seen. Only the first 5 characters of each password's SHA-1 leave the
+    /// device, straight to HIBP with padding; each prefix is asked once.
+    public func breachedPasswords() async throws -> [String: UInt64] {
+        let check = try core { try client.breachCheck() }
+        let header = breachPaddingHeader()
+        for prefix in check.prefixes() {
+            guard let url = URL(string: breachRangeUrl(prefix: prefix)) else { throw PWMError(code: "internal") }
+            let request = HTTPRequest(method: "GET", url: url, headers: [(name: header.name, value: header.value)], body: nil)
+            let response: HTTPResponse
+            do {
+                response = try await breachTransport.send(request)
+            } catch {
+                throw PWMError(code: "network")
+            }
+            guard response.status == 200 else { throw PWMError(code: "breach_check") }
+            let body = String(decoding: response.body, as: UTF8.self)
+            try core { try check.addResponse(prefix: prefix, body: body) }
+        }
+        return Dictionary(check.finish().map { ($0.itemId, $0.count) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    // MARK: Export (D24, D43 §8)
+
+    /// The master password again; the next `export` within 5 minutes may
+    /// run. Face ID never counts.
+    public func authorizeExport(password: Redacted<String>) throws {
+        guard let secretKey = try keys.get(.secretKey) else { throw PWMError(code: "not_signed_in") }
+        try core { try client.authorizeExport(password: password.value, secretKey: secretKey, nowMs: now()) }
+    }
+
+    /// Every vault as a file, on every plan. Keep the bytes only until saved.
+    public func export(_ format: ExportFile.Format) throws -> Redacted<Data> {
+        let coreFormat: PWMCore.ExportFormat = switch format {
+        case let .pwmx(password): .pwmx(password: password.value)
+        case .json: .json
+        case .csv: .csv
+        }
+        return Redacted(Data(try core { try client.export(format: coreFormat, nowMs: now()) }))
     }
 
     // MARK: The step loop

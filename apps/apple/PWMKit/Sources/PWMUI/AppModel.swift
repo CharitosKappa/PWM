@@ -95,6 +95,7 @@ public final class AppModel {
     public func showSignIn() {
         error = nil
         signIn = SignInModel(
+            deviceName: deviceName,
             account: { [unowned self] in try self.chosenAccount() },
             onScannedServer: { [unowned self] server in
                 self.usesOtherServer = server != nil
@@ -151,6 +152,14 @@ public final class AppModel {
     }
 
     // MARK: Locking (D43 §5)
+
+    /// The breach check runs in the health report; on by default (D22 §5).
+    public var breachCheckOn: Bool {
+        get { defaults.object(forKey: Self.breachCheckKey) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Self.breachCheckKey) }
+    }
+
+    static let breachCheckKey = "breachCheck"
 
     public var lockTimeout: LockTimeout {
         get { LockTimeout.saved(in: defaults) }

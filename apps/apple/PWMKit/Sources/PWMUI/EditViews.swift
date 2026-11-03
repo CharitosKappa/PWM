@@ -391,6 +391,10 @@ struct SettingsView: View {
         Binding(get: { model.lockTimeout }, set: { model.setLockTimeout($0) })
     }
 
+    private var breachCheck: Binding<Bool> {
+        Binding(get: { model.breachCheckOn }, set: { model.setBreachCheck($0) })
+    }
+
     var body: some View {
         Form {
             Section("Account") {
@@ -402,6 +406,22 @@ struct SettingsView: View {
                         Text("Hosted by us")
                     }
                 }
+            }
+            Section {
+                NavigationLink("Password health") { HealthHost(settings: model) }
+                    .accessibilityIdentifier("health")
+                Toggle("Check for leaked passwords", isOn: breachCheck)
+                    .accessibilityIdentifier("breachCheck")
+            } footer: {
+                Text("Checks your passwords against known leaks without sending them: only the first 5 characters of a hash leave your device.")
+            }
+            Section {
+                NavigationLink("Devices") { DevicesHost(settings: model) }
+                    .accessibilityIdentifier("devices")
+                NavigationLink("Export vault") { ExportHost(settings: model) }
+                    .accessibilityIdentifier("exportVault")
+            } footer: {
+                Text("Export works on every plan.")
             }
             Section {
                 Picker("Lock the vault", selection: lockTimeout) {

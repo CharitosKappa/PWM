@@ -13,6 +13,7 @@ mod kit;
 mod passkey;
 mod save;
 mod session;
+mod tools;
 mod totp;
 
 pub use auth::id_text;
@@ -25,11 +26,13 @@ pub use pwm_crypto::{KdfParams, Secret};
 pub use pwm_generator::{
     PassphraseOptions, PasswordOptions, Strength, generate_passphrase, generate_password, strength,
 };
+pub use pwm_health::{ADD_PADDING_HEADER, HIBP_RANGE_URL};
 pub use pwm_kit::Paper;
 pub use pwm_store::{MemoryStore, SNAPSHOT_VERSION, Store};
 pub use pwm_sync::{HttpRequest, HttpResponse, Method, SyncEvent, SyncReport, Tokens};
 pub use save::{SaveCandidate, SaveOffer};
 pub use session::SessionExport;
+pub use tools::{BreachCheck, BreachedItem, DeviceInfo, ExportFormat, HealthReport, WeakItem};
 pub use totp::normalize_totp;
 
 /// The platforms a device can be (D26).

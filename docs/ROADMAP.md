@@ -451,12 +451,18 @@ Phase 3  Teams           months 16–24 M16–M19
     - **Re-login after a refused refresh token,** keeping unsent changes: M5.8.
     - **Screenshot protection and the app-switcher cover:** M5.7.
     - **A minimum length for bare one-time-code keys:** needs a decision (D43 notes).
-- [ ] M5.10 Health report, device list with rename and revoke, and export, on iOS (D43). Needs core and server work:
+- [x] M5.10 Health report, device list with rename and revoke, and export, on iOS (D43). Needs core and server work:
   - **Health:** the D22 checks through `pwm-client`, UniFFI and WASM, and the iOS HIBP fetcher.
   - **Devices:**
     - **Rename needs a new endpoint** (`PATCH /v1/devices/{id}` with a sealed name, D26 format).
     - **A newly signed-in device** sets its name right after login, because today only sign-up sends one.
   - **Export:** the D24 flows through `pwm-client`, with re-auth, in Settings.
+  - Done per D43 (implementation notes there):
+    - **Server:** `PATCH /v1/devices/{id}`: 204, 404 (not the account's), 409 `device_revoked`, 400 for anything but a 105-byte v1 envelope. Only ciphertext is stored; logs show the route, not the id.
+    - **Core:** device list, rename and revoke as sync-engine tasks; the device name sent at the end of login; `health_report`, `breach_check`, `authorize_export` and `export` in `pwm-client`, through UniFFI and WASM.
+    - **iOS (`PWMUI`, from Settings):** Password health (leaked, weak, reused; each opens the item to change it), the leak-check switch, Devices (rename, sign out another device), Export (encrypted with its own password, or plaintext after a warning; the master password every time).
+    - **Tests:** server tests for every `PATCH` answer; end to end through the client (named at login, renamed, a name moved to another device does not open, revoked); offline client tests for health, breaches and export; 6 Swift view-model tests; 2 Swift tests against the real server; the UI test renames this device.
+  - **Deferred:** the extension's screens (M4.10); macOS (M5.6); Android (M6.1).
 - [ ] M5.4 Face ID / Touch ID unlock via Secure Enclave-wrapped key.
 - [ ] M5.9 Approve a new device from an existing one (D42 split it from M5.2): the Secret Key sent over an authenticated X25519 channel (`SECURITY.md`), relay endpoints on the server, and the approving side on every signed-in platform, starting with the extension. Needs its own decision, test vectors and security review; reuses the M5.2 kit scanner.
 - [ ] M5.5 iOS AutoFill Credential Provider + passkeys + QuickType identity sync.

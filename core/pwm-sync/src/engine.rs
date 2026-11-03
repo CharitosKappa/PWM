@@ -11,6 +11,7 @@ use pwm_vault::{Item, ItemId, decrypt_item, encrypt_item_fitting};
 use crate::SyncError;
 use crate::apply::{apply_change, merge, move_to_copy, put, reseal, reupload_missing};
 use crate::backoff::{backoff_delay_ms, parse_retry_after, random_fraction};
+use crate::devices::{DeviceRecord, DeviceTask, device_list};
 use crate::http::{HttpRequest, HttpResponse, Method};
 use crate::tokens::Tokens;
 use crate::wire::{self, b64, id_text};
@@ -42,6 +43,10 @@ pub enum SyncOutcome {
     SignedOut,
     /// This device was revoked; the cache has been cleared.
     DeviceRevoked,
+    /// The account's devices, from [`DeviceTask::List`].
+    Devices(Vec<DeviceRecord>),
+    /// A [`DeviceTask::Rename`] or [`DeviceTask::Revoke`] was done.
+    DeviceUpdated,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -116,6 +121,7 @@ enum Task {
         queue: VecDeque<Pending>,
         current: Option<Sent>,
     },
+    Device(DeviceTask),
 }
 
 #[derive(Clone, Copy)]
@@ -313,6 +319,12 @@ impl<S: Store> SyncEngine<S> {
         Ok((vault_id, step))
     }
 
+    /// Starts a device request (D43 §6); it needs a connection. A 404 or
+    /// 409 (not the account's, or revoked) ends it with `UnknownDevice`.
+    pub fn start_device_task(&mut self, task: DeviceTask) -> Result<Step, SyncError> {
+        self.start(Task::Device(task))
+    }
+
     fn start(&mut self, task: Task) -> Result<Step, SyncError> {
         if self.run.is_some() {
             return Err(SyncError::Busy);
@@ -389,6 +401,7 @@ impl<S: Store> SyncEngine<S> {
                     let request = HttpRequest::new(Method::Get, "/v1/vaults".to_owned());
                     return Ok(Step::Send(self.authorized(request)));
                 }
+                Task::Device(task) => return Ok(Step::Send(self.authorized(task.request()))),
                 Task::Pull {
                     vaults,
                     index,
@@ -513,6 +526,24 @@ impl<S: Store> SyncEngine<S> {
             Task::ListVaults => self.on_vault_list(run, response),
             Task::Pull { .. } => self.on_page(run, response, now_ms),
             Task::Push { .. } => self.on_pushed(run, response, now_ms),
+            Task::Device(_) => self.on_device(run, response),
+        }
+    }
+
+    fn on_device(&mut self, run: &Run, response: &HttpResponse) -> Result<Step, SyncError> {
+        let Task::Device(task) = &run.task else {
+            unreachable!("checked by the caller");
+        };
+        match (task, response.status) {
+            (DeviceTask::List, 200) => match device_list(&response.body) {
+                Some(devices) => Ok(self.done(SyncOutcome::Devices(devices))),
+                None => Ok(self.wait(None)),
+            },
+            (DeviceTask::Rename { .. } | DeviceTask::Revoke { .. }, 204) => {
+                Ok(self.done(SyncOutcome::DeviceUpdated))
+            }
+            (_, 404 | 409) => Err(SyncError::UnknownDevice),
+            (_, status) => Err(SyncError::Refused(status)),
         }
     }
 

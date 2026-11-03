@@ -137,7 +137,7 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(app.screen, .vault)
         XCTAssertEqual(servers.last, URL(string: "https://vault.example.org")!)
         let calls = await account.calls
-        XCTAssertEqual(calls, ["logIn ada@example.com \(strong) \(kitKey)"])
+        XCTAssertEqual(calls, ["logIn ada@example.com \(strong) \(kitKey) iPhone"])
         XCTAssertEqual(signIn.password, "")
         XCTAssertEqual(signIn.secretKey, "")
     }

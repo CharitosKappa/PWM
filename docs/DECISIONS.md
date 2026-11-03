@@ -1372,3 +1372,13 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The scanner** is now `QRScanner`, shared by the kit and the one-time code. The camera text says both.
   - **Third-party notices:** the app bundles `THIRD_PARTY_NOTICES/rust.html`, `data.md` and `data-autofill.md` when `just notices` has made them; without them, Settings says so. The release pipeline (M10.1) must run `just notices` first.
   - **Not verified on this machine:** there is no Xcode here. The view models and 56 package tests run on Linux in the `swift` Docker image. The SwiftUI views and the UI test run first in the macOS job.
+
+  Implementation notes (M5.10):
+  - **Devices run in the sync engine:** list, rename and revoke are engine tasks, so they share its token refresh and the `device_revoked` handling. A 404 or 409 answer is `unknown_device`.
+  - **The name after login** is the login flow's last step, a `PATCH` once the keyset is open. It is best-effort: its answer, or no answer, still ends in `LoggedIn`. `start_login` takes the device name on every platform; the extension sends the same name as at sign-up.
+  - **The sealed size** is `SEALED_DEVICE_NAME_LEN` (105 bytes) in `pwm-crypto`. The server refuses any other size, and leaves a revoked device's name as it was.
+  - **Export:** the grant lives in the client, is used up by one export and is dropped when locking. A weak `.pwmx` password is refused before the grant is used. New codes: `export_not_authorized`, `export_expired`, `weak_export_password`, `invalid_device_name`, `unknown_device`.
+  - **Health:** the breach check is an object the platform drives: its prefixes, each range body, then the result. On iOS the requests go one at a time through an ephemeral `URLSession` (no cookies, no cache) with `Add-Padding: true`, straight to `api.pwnedpasswords.com`. The switch is in Settings, on by default.
+  - **WASM** has every call for M4.10 (`startListDevices`, `startRenameDevice`, `startRevokeDevice`, `healthReport`, `breachCheck`, `authorizeExport`, `exportFile`, `breachRangeUrl`). The background uses none yet.
+  - **The UI test** renames this device from Settings and sees the new name come back from the server. Health and export are covered by view-model tests and by `ServerTests` against the real server, with a fake HIBP.
+

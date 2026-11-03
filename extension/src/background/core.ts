@@ -36,6 +36,7 @@ export interface Core {
     secretKey: string,
     deviceId: string,
     platform: string,
+    deviceName: string,
   ): CoreStep;
   startSync(): CoreStep;
   startEnsureVault(): CoreStep;

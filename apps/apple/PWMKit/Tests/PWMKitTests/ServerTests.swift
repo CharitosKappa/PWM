@@ -35,7 +35,7 @@ final class ServerTests: XCTestCase {
         XCTAssertEqual(failed, 0)
 
         let second = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
-        guard case .synced = try await second.logIn(email: email, password: strong, secretKey: secretKey) else {
+        guard case .synced = try await second.logIn(email: email, password: strong, secretKey: secretKey, deviceName: "Mac") else {
             return XCTFail("the second device did not sync")
         }
         let copy = try await second.item(itemId, in: vault)
@@ -93,6 +93,93 @@ final class ServerTests: XCTestCase {
         }
         let vaults = try? await session.vaultIds()
         XCTAssertNil(vaults, "locked, and the cache is empty")
+    }
+}
+
+/// Devices, health and export against the real server (D43 §9).
+extension ServerTests {
+    func testDevicesAreNamedAtLoginRenamedAndRevoked() async throws {
+        let email = "swift-\(UUID().uuidString.lowercased())@example.com"
+        let laptop = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
+        let secretKey = try await laptop.signUp(email: email, password: strong, deviceName: "Mac")
+        let phone = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
+        _ = try await phone.logIn(email: email, password: strong, secretKey: secretKey, deviceName: "iPhone")
+
+        var devices = try await phone.devices()
+        XCTAssertEqual(devices.map(\.name), ["Mac", "iPhone"], "named right after login")
+        XCTAssertEqual(devices.map(\.isCurrent), [false, true])
+        let mac = try XCTUnwrap(devices.first)
+        try await phone.renameDevice(mac.id, to: "Work Mac")
+        devices = try await laptop.devices()
+        XCTAssertEqual(devices.first?.name, "Work Mac")
+        do {
+            try await phone.renameDevice(mac.id, to: String(repeating: "x", count: 64))
+            XCTFail("a long name was sent")
+        } catch {
+            XCTAssertEqual(code(of: error), "invalid_device_name")
+        }
+
+        let phoneId = try XCTUnwrap(devices.last?.id)
+        try await laptop.revokeDevice(phoneId)
+        devices = try await laptop.devices()
+        XCTAssertNotNil(devices.last?.revoked)
+        let result = try await phone.sync()
+        XCTAssertEqual(result, .deviceRevoked)
+    }
+
+    func testHealthBreachesAndExport() async throws {
+        let email = "swift-\(UUID().uuidString.lowercased())@example.com"
+        // SHA-1 of "password123456": 98A16C09B0759E63EF7DF53592724E8EEDDB953A.
+        let hibp = FakeTransport { request in
+            let prefix = String(request.url.path.suffix(5))
+            let body = prefix == "98A16"
+                ? "C09B0759E63EF7DF53592724E8EEDDB953A:3730471\r\n"
+                : "0000000000000000000000000000000000A:0\r\n"
+            return HTTPResponse(status: 200, body: Data(body.utf8))
+        }
+        let session = try Session(cachePath: nil, server: server, keys: MemoryKeyStore(), breachTransport: hibp)
+        _ = try await session.signUp(email: email, password: strong, deviceName: "iPhone")
+        let vault = try await XCTUnwrapAsync(try await session.vaultIds().first)
+        var ids: [String] = []
+        for (title, password) in [("Old", "password123456"), ("Bank", "vivid-orbit-tundra-marble-42"), ("Shop", "vivid-orbit-tundra-marble-42")] {
+            var item = try await session.newItem(.login, title: title)
+            item.login?.password = password
+            ids.append(try await session.save(item, in: vault))
+        }
+
+        let health = try await session.passwordHealth()
+        XCTAssertEqual(Array(health.weak.keys), [ids[0]])
+        XCTAssertEqual(health.reused.map(Set.init), [Set([ids[1], ids[2]])])
+        let breached = try await session.breachedPasswords()
+        XCTAssertEqual(breached, [ids[0]: 3_730_471])
+        XCTAssertTrue(hibp.requests.allSatisfy { $0.url.host == "api.pwnedpasswords.com" && $0.url.path.count == 12 })
+        XCTAssertTrue(hibp.requests.allSatisfy { $0.headers.contains { $0.name == "Add-Padding" && $0.value == "true" } })
+        XCTAssertEqual(Set(hibp.requests.map(\.url)).count, hibp.requests.count, "each prefix once")
+
+        do {
+            _ = try await session.export(.json)
+            XCTFail("exported without the master password")
+        } catch {
+            XCTAssertEqual(code(of: error), "export_not_authorized")
+        }
+        do {
+            try await session.authorizeExport(password: Redacted("not the password at all"))
+            XCTFail("a wrong password was accepted")
+        } catch {
+            XCTAssertEqual(code(of: error), "wrong_password")
+        }
+        try await session.authorizeExport(password: strong)
+        let json = try await session.export(.json)
+        XCTAssertTrue(String(decoding: json.value, as: UTF8.self).contains("password123456"))
+        try await session.authorizeExport(password: strong)
+        do {
+            _ = try await session.export(.pwmx(password: Redacted("password")))
+            XCTFail("a weak export password was accepted")
+        } catch {
+            XCTAssertEqual(code(of: error), "weak_export_password")
+        }
+        let file = try await session.export(.pwmx(password: Redacted("granite-sparrow-lattice-91")))
+        XCTAssertFalse(String(decoding: file.value, as: UTF8.self).contains("password123456"))
     }
 }
 

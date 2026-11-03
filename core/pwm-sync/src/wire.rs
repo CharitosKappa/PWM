@@ -12,7 +12,7 @@ pub(crate) fn b64(bytes: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
-fn unb64(text: &str) -> Option<Vec<u8>> {
+pub(crate) fn unb64(text: &str) -> Option<Vec<u8>> {
     URL_SAFE_NO_PAD.decode(text).ok()
 }
 
@@ -28,7 +28,7 @@ pub(crate) fn id_text(id: &Id) -> String {
     ItemId::from_bytes(*id).to_string()
 }
 
-fn parse_id(text: &str) -> Option<ItemId> {
+pub(crate) fn parse_id(text: &str) -> Option<ItemId> {
     ItemId::from_str(text).ok()
 }
 

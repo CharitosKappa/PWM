@@ -15,6 +15,12 @@ pub enum SyncError {
     UnknownVault,
     #[error("the item is deleted")]
     ItemDeleted,
+    /// Not one of the account's devices, or revoked already.
+    #[error("unknown device")]
+    UnknownDevice,
+    /// The server refused a device request with this status.
+    #[error("the server refused the request ({0})")]
+    Refused(u16),
     #[error(transparent)]
     Store(#[from] StoreError),
     #[error(transparent)]

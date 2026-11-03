@@ -138,15 +138,18 @@ public final class SignInModel {
     public private(set) var busy = false
     public private(set) var error: String?
 
+    private let deviceName: String
     private let account: @MainActor () throws -> any Account
     private let onScannedServer: @MainActor (URL?) -> Void
     private let onSignedIn: @MainActor () -> Void
 
     init(
+        deviceName: String,
         account: @escaping @MainActor () throws -> any Account,
         onScannedServer: @escaping @MainActor (URL?) -> Void,
         onSignedIn: @escaping @MainActor () -> Void
     ) {
+        self.deviceName = deviceName
         self.account = account
         self.onScannedServer = onScannedServer
         self.onSignedIn = onSignedIn
@@ -181,7 +184,9 @@ public final class SignInModel {
         error = nil
         defer { busy = false }
         do {
-            _ = try await account().logIn(email: trimmedEmail, password: Redacted(password), secretKey: Redacted(secretKey))
+            _ = try await account().logIn(
+                email: trimmedEmail, password: Redacted(password), secretKey: Redacted(secretKey), deviceName: deviceName
+            )
             password = ""
             secretKey = ""
             onSignedIn()

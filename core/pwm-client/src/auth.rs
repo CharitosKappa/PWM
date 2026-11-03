@@ -113,6 +113,9 @@ pub(crate) enum AuthFlow {
     LoginStart(Box<LoginState>),
     LoginFinish(Box<LoginState>),
     FetchAccount(Box<LoginState>, Tokens),
+    /// Logged in; the device's name is being sent (D43 §6). Its answer, or
+    /// no answer, does not change the outcome.
+    NameDevice(Box<(AccountRecord, AccountKeyset, Tokens)>),
 }
 
 pub(crate) struct Registration {
@@ -295,8 +298,8 @@ pub(crate) fn advance(flow: AuthFlow, response: &HttpResponse) -> Result<Next, C
             let finalization = opaque
                 .finish(state.keys.auth_secret(), &state.account_id, &credential)
                 .map_err(|_| ClientError::InvalidCredentials)?;
-            // A new device has no keyset yet, so it cannot seal its name: the
-            // name is sent at its next login.
+            // A new device has no keyset yet, so it cannot seal its name: it
+            // is sent once the keyset is open (`NameDevice`).
             let body = json!({
                 "login_id": answer["login_id"], "credential_finalization": b64(&finalization),
                 "device": device_json(&state.device, None),
@@ -339,10 +342,52 @@ pub(crate) fn advance(flow: AuthFlow, response: &HttpResponse) -> Result<Next, C
                 kdf_params: kdf.into(),
                 sealed_keyset: sealed,
             };
-            Ok(Next::Done(Box::new(Finished::LoggedIn(
-                record, keyset, tokens,
-            ))))
+            // The keyset is open now, so the device can seal its name. A
+            // name that cannot be sealed is left out, as before D43.
+            let named = (!state.device.name.is_empty())
+                .then(|| {
+                    keyset.seal_device_name(&state.account_id, &state.device.id, &state.device.name)
+                })
+                .and_then(Result::ok);
+            match named {
+                Some(name) => {
+                    let request = HttpRequest {
+                        method: Method::Patch,
+                        path: format!("/v1/devices/{}", id_text(&state.device.id)),
+                        headers: vec![
+                            ("authorization", format!("Bearer {}", tokens.access())),
+                            ("content-type", "application/json".to_owned()),
+                        ],
+                        body: Some(
+                            json!({ "name_sealed": b64(&name.to_bytes()) })
+                                .to_string()
+                                .into_bytes(),
+                        ),
+                    };
+                    Ok(Next::Send(
+                        AuthFlow::NameDevice(Box::new((record, keyset, tokens))),
+                        request,
+                    ))
+                }
+                None => Ok(Next::Done(Box::new(Finished::LoggedIn(
+                    record, keyset, tokens,
+                )))),
+            }
         }
+        AuthFlow::NameDevice(done) => Ok(Next::Done(Box::new(named(done)))),
+    }
+}
+
+fn named(done: Box<(AccountRecord, AccountKeyset, Tokens)>) -> Finished {
+    let (record, keyset, tokens) = *done;
+    Finished::LoggedIn(record, keyset, tokens)
+}
+
+/// The login is done even when its device name got no answer.
+pub(crate) fn after_network_failure(flow: AuthFlow) -> Option<Finished> {
+    match flow {
+        AuthFlow::NameDevice(done) => Some(named(done)),
+        _ => None,
     }
 }
 
