@@ -6,7 +6,7 @@ The iOS app and `PWMKit`, the Swift package it shares with its AutoFill extensio
 | --- | --- |
 | `project.yml` | The Xcode project (XcodeGen): the `PWM` app and its UI tests. Ids are placeholders until D1 |
 | `App/` | The app shell: `PWMApp`, `Info.plist`, assets, the String Catalog |
-| `UITests/` | Onboarding against a real server (`TEST_RUNNER_PWM_TEST_SERVER`) |
+| `UITests/` | Onboarding and the vault against a real server (`TEST_RUNNER_PWM_TEST_SERVER`) |
 | `Config/` | Signing: `App.xcconfig`, and your team id in `Local.xcconfig` (gitignored) |
 | `PWMKit/Sources/PWMCore` | The UniFFI Swift file over `pwm_ffiFFI.xcframework`, generated and never edited |
 | `PWMKit/Sources/PWMKit` | `Session` (sign-up, login, unlock, sync, items, sign-out, the Emergency Kit), `Item`, `PWMError`, `Redacted`, `Generator`, `KeyStore` (Keychain), `CacheLocation` |

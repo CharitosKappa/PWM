@@ -193,10 +193,11 @@ final class VaultTests: XCTestCase {
         let edit = try XCTUnwrap(editMade)
         XCTAssertTrue(edit.isNew)
         XCTAssertFalse(edit.canSave, "needs a title")
+        XCTAssertFalse(edit.hasChanges, "an untouched new item closes without asking")
         edit.title = "  Bank  "
         edit.login.username = "ada"
         edit.addURL()
-        edit.login.urls[0].url = "https://bank.example"
+        edit.urls[0].value.url = "https://bank.example"
         edit.addURL()
         edit.use(Redacted("generated-password"))
         edit.totp = "JBSW Y3DP EHPK 3PXP"
@@ -262,8 +263,8 @@ final class VaultTests: XCTestCase {
         XCTAssertEqual(card.error, PWMError(code: "invalid_expiry_month").message)
         card.expiryMonth = "7"
         card.addField(.hidden)
-        card.customFields[0].name = "PIN"
-        card.customFields[0].value = "9876"
+        card.customFields[0].value.name = "PIN"
+        card.customFields[0].value.value = "9876"
         card.addField(.text)
         saved = await card.save()
         XCTAssertTrue(saved)

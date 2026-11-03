@@ -318,7 +318,9 @@ public final class ItemEditModel {
     public var identity: Identity
     /// One address line per line.
     public var address: String
-    public var customFields: [CustomField]
+    /// The login's websites; rows have ids so lists can add and delete them.
+    public var urls: [Row<LoginURL>]
+    public var customFields: [Row<CustomField>]
     public private(set) var folders: [Entry]
     public private(set) var busy = false
     public private(set) var error: String?
@@ -345,7 +347,18 @@ public final class ItemEditModel {
         expiryYear = item.card?.expiryYear.map(String.init) ?? ""
         identity = item.identity ?? Identity()
         address = item.identity?.addressLines.joined(separator: "\n") ?? ""
-        customFields = item.customFields
+        urls = (item.login?.urls ?? []).map(Row.init)
+        customFields = item.customFields.map(Row.init)
+    }
+
+    /// A list row with a stable id.
+    public struct Row<Value: Sendable & Equatable>: Identifiable, Sendable, Equatable {
+        public let id = UUID()
+        public var value: Value
+
+        init(_ value: Value) {
+            self.value = value
+        }
     }
 
     public var kind: Item.Kind? { original.kind }
@@ -362,11 +375,16 @@ public final class ItemEditModel {
     }
 
     public func addURL() {
-        login.urls.append(LoginURL(url: ""))
+        urls.append(Row(LoginURL(url: "")))
     }
 
     public func addField(_ kind: CustomField.Kind) {
-        customFields.append(CustomField(name: "", value: "", kind: kind))
+        customFields.append(Row(CustomField(name: "", value: "", kind: kind)))
+    }
+
+    /// A generator for the password field's sheet.
+    func makeGenerator() -> GeneratorModel {
+        GeneratorModel(pasteboard: vault.pasteboard)
     }
 
     /// A password from the generator sheet.
@@ -417,11 +435,11 @@ public final class ItemEditModel {
         item.favorite = favorite
         item.folderId = folderId
         item.tags = tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        item.customFields = customFields.filter { !($0.name.isEmpty && $0.value.isEmpty) }
+        item.customFields = customFields.map(\.value).filter { !($0.name.isEmpty && $0.value.isEmpty) }
         switch original.kind {
         case .login:
             var login = self.login
-            login.urls = login.urls.filter { !$0.url.trimmingCharacters(in: .whitespaces).isEmpty }
+            login.urls = urls.map(\.value).filter { !$0.url.trimmingCharacters(in: .whitespaces).isEmpty }
             let code = totp.trimmingCharacters(in: .whitespacesAndNewlines)
             if code.isEmpty {
                 login.totp = nil

@@ -1,15 +1,15 @@
 import UIKit
 import XCTest
 
-/// The onboarding flow in the simulator against a real local server
-/// (D42 §6): `PWM_TEST_SERVER` is passed by xcodebuild as
-/// `TEST_RUNNER_PWM_TEST_SERVER`. Skipped when it is not set.
+/// The app in the simulator against a real local server (D42 §6, D43 §9):
+/// `PWM_TEST_SERVER` is passed by xcodebuild as `TEST_RUNNER_PWM_TEST_SERVER`.
+/// Skipped when it is not set.
 @MainActor
 final class OnboardingUITests: XCTestCase {
     let password = "correct horse battery staple 42"
     var app: XCUIApplication!
 
-    func testCreateAnAccountThenSignInAgainWithTheSecretKey() throws {
+    func testCreateAnAccountUseTheVaultThenSignInAgainWithTheSecretKey() throws {
         guard let server = ProcessInfo.processInfo.environment["PWM_TEST_SERVER"] else {
             throw XCTSkip("PWM_TEST_SERVER is not set")
         }
@@ -40,24 +40,79 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertFalse(app.buttons["saved"].isEnabled)
         tap(app.buttons["copy"])
         tap(app.buttons["saved"], once: .enabled)
-        expect(app.staticTexts["itemCount"], timeout: 30)
+        expect(app.buttons["newItem"], timeout: 30)
 
-        // Sign out, then sign in again as on a new device.
-        tap(app.buttons["signOut"])
+        // Add a login with a generated password.
+        tap(app.buttons["newItem"])
+        tap(app.buttons["Login"])
+        type("Bank", into: app.textFields["title"])
+        type("ada", into: app.textFields["username"])
+        tap(app.buttons["generate"])
+        expect(app.staticTexts["generated"])
+        tap(app.buttons["useGenerated"], once: .enabled)
+        tap(app.buttons["addURL"])
+        type("https://bank.example", into: app.textFields["url"])
+        tap(app.buttons["save"], once: .enabled)
+
+        // Find it, check the password, edit it.
+        let search = app.searchFields.firstMatch
+        tap(search)
+        search.typeText("bank")
+        tap(app.staticTexts["Bank"].firstMatch)
+        tap(app.buttons["show.password"])
+        let revealed = app.staticTexts["value.password"]
+        expect(revealed)
+        XCTAssertEqual(revealed.label.count, 20, "the generator's default length")
+        tap(app.buttons["edit"])
+        tap(app.textFields["username"])
+        app.textFields["username"].typeText("2")
+        tap(app.buttons["save"], once: .enabled)
+        expect(app.staticTexts["ada2"].firstMatch)
+
+        // Trash it, then restore it.
+        tap(app.buttons["trash"])
+        tap(app.buttons["restore"])
+        expect(app.buttons["trash"])
+
+        // Lock at once on leaving the app.
+        tap(app.tabBars.buttons["Settings"])
+        tap(app.buttons["lockTimeout"])
+        tap(app.buttons["Immediately"])
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        paste(password, into: app.secureTextFields["password"])
+        tap(app.buttons["unlock"], once: .enabled)
+        expect(app.buttons["newItem"], timeout: 30)
+
+        // Sign out, then sign in again as on a new device: the login synced.
+        signOut()
         tap(app.buttons["signIn"])
         type(email, into: app.textFields["email"])
         paste(password, into: app.secureTextFields["password"])
         type(secretKey, into: app.textFields["secretKey"])
         tap(app.buttons["submit"], once: .enabled)
-        expect(app.staticTexts["itemCount"], timeout: 60)
+        expect(app.staticTexts["Bank"].firstMatch, timeout: 60)
 
         // Lock, then unlock with the master password only.
-        tap(app.buttons["lock"])
+        tap(app.tabBars.buttons["Settings"])
+        tap(app.buttons["lockNow"])
         paste(password, into: app.secureTextFields["password"])
         tap(app.buttons["unlock"], once: .enabled)
-        expect(app.staticTexts["itemCount"], timeout: 30)
-        tap(app.buttons["signOut"])
+        expect(app.staticTexts["Bank"].firstMatch, timeout: 30)
+        signOut()
         expect(app.buttons["createAccount"], timeout: 10)
+    }
+
+    /// Settings, Sign out, and the confirmation.
+    private func signOut() {
+        tap(app.tabBars.buttons["Settings"])
+        tap(app.buttons["signOut"])
+        let confirm = app.buttons["confirmSignOut"]
+        if confirm.waitForExistence(timeout: 3) {
+            confirm.tap()
+        } else {
+            tap(app.sheets.buttons["Sign out"])
+        }
     }
 
     private enum State {

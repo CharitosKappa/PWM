@@ -18,6 +18,17 @@ targets:
     platform: iOS
     sources:
       - App
+      # The licences of the core's dependencies and data (S6), made by
+      # `just notices`; a build without them says so in Settings.
+      - path: ../../THIRD_PARTY_NOTICES/rust.html
+        optional: true
+        buildPhase: resources
+      - path: ../../THIRD_PARTY_NOTICES/data.md
+        optional: true
+        buildPhase: resources
+      - path: ../../THIRD_PARTY_NOTICES/data-autofill.md
+        optional: true
+        buildPhase: resources
     settings:
       base:
         # Placeholders until D1 names the product.

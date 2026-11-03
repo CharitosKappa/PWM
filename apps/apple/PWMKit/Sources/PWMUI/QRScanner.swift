@@ -1,13 +1,13 @@
-// Scanning the Emergency Kit's QR code with the camera (D42 §4), through
-// VisionKit. The text goes to the core's parser and nowhere else; M5.9's
-// device approval reuses this scanner.
+// Scanning a QR code with the camera, through VisionKit: the Emergency Kit
+// (D42 §4) and one-time-code setups (D43 §2). The text goes to the core's
+// parsers and nowhere else; M5.9's device approval reuses this scanner.
 #if canImport(SwiftUI)
 import SwiftUI
 
 #if os(iOS)
 import VisionKit
 
-struct KitScanner: UIViewControllerRepresentable {
+struct QRScanner: UIViewControllerRepresentable {
     /// Called with each QR code's text until the sheet is closed.
     let found: @MainActor (String) -> Void
 
@@ -53,7 +53,7 @@ struct KitScanner: UIViewControllerRepresentable {
 }
 #else
 /// No camera scanner on this platform yet; the Secret Key is typed.
-struct KitScanner: View {
+struct QRScanner: View {
     let found: @MainActor (String) -> Void
 
     static var isAvailable: Bool { false }

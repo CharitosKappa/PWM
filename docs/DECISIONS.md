@@ -1361,3 +1361,14 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Website icons in the list:** they look better, but fetching them leaks the vault's sites. If they come later, they'd be an opt-in through our own proxy.
   - **Counting idle time in the foreground:** it matches the extension more closely, but on a phone the screen lock already covers it, and it needs a global touch monitor.
   - **Leaving extension export until M10:** it meets the rule only on paper. M4.10 closes the gap sooner, with WASM calls M5.10 already makes.
+
+  Implementation notes (M5.3):
+  - **One-time-code setup is checked by the core:** a new `normalize_totp` in `pwm-client` (and UniFFI) runs D23's parser when an item is saved and refuses other text with the new code `invalid_totp`. The WASM gets it when the popup edits items.
+    - **D23's rule accepts any letters as a bare secret:** `hello` is a valid base32 key. A minimum length would catch typos, but it changes D23, so it is left for a decision.
+  - **Lock timeout:** from leaving the app until the timeout check is done, the vault is covered. The Secret Key screen never locks: it is shown once and stays until "I saved it". The app-switcher snapshot is M5.7.
+  - **A refused refresh token** (`signed_out` from a sync) shows a notice; the user signs out and in again. A re-login screen that keeps unsent changes is M5.8.
+  - **Websites keep their match mode**, with a picker (`AUTOFILL.md`). A mode from a newer app version shows as it is and is kept.
+  - **The edit screen's lists** (websites, other fields) give each row an id, so adding and deleting rows is safe in SwiftUI.
+  - **The scanner** is now `QRScanner`, shared by the kit and the one-time code. The camera text says both.
+  - **Third-party notices:** the app bundles `THIRD_PARTY_NOTICES/rust.html`, `data.md` and `data-autofill.md` when `just notices` has made them; without them, Settings says so. The release pipeline (M10.1) must run `just notices` first.
+  - **Not verified on this machine:** there is no Xcode here. The view models and 56 package tests run on Linux in the `swift` Docker image. The SwiftUI views and the UI test run first in the macOS job.

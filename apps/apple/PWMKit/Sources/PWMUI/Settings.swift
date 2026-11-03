@@ -38,6 +38,14 @@ public final class GeneratorModel {
         self.pasteboard = pasteboard
     }
 
+    /// Changes whenever an option does, for the screen to regenerate.
+    public var options: String {
+        switch mode {
+        case .password: "p\(length)\(lowercase)\(uppercase)\(digits)\(symbols)\(avoidLookalikes)"
+        case .passphrase: "w\(words)\(separator)\(capitalize)\(addDigit)"
+        }
+    }
+
     /// A new value for the current options; the screen calls it when an
     /// option changes.
     public func regenerate() async {
@@ -109,19 +117,22 @@ public final class SettingsModel {
     private unowned let app: AppModel
     private let account: any Account
 
+    public private(set) var lockTimeout: LockTimeout
+
     init(server: URL?, app: AppModel, account: any Account) {
         self.server = server
         self.app = app
         self.account = account
+        lockTimeout = app.lockTimeout
     }
 
     public func load() async {
         email = (try? await account.email()) ?? nil
     }
 
-    public var lockTimeout: LockTimeout {
-        get { app.lockTimeout }
-        set { app.lockTimeout = newValue }
+    public func setLockTimeout(_ timeout: LockTimeout) {
+        app.lockTimeout = timeout
+        lockTimeout = timeout
     }
 
     /// The app's version, from its Info.plist.
