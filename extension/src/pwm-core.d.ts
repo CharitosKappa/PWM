@@ -15,6 +15,7 @@ export declare const WasmClient: {
 };
 
 export function newId(): string;
+export function breachRangeUrl(prefix: string): string;
 export function generatePassword(
   length: number,
   lowercase: boolean,

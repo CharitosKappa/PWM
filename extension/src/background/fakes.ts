@@ -23,6 +23,7 @@ export const PASSWORD = "correct horse battery staple";
 export const SECRET_KEY = "A3-ABCDEF-GHJKLM-NPQRST-UVWXYZ-23456-789AB";
 export const ITEM_PASSWORD = "hunter2-item-password";
 export const TOTP_SECRET = "JBSWY3DPEHPK3PXP";
+export const EXPORT_PASSWORD = "granite sparrow lattice 91";
 
 function coreError(code: string): Error {
   return Object.assign(new Error(code), { code });
@@ -572,6 +573,94 @@ export class FakeCore implements Core {
     this.steps.delete(tab);
   }
 
+  // Devices, health and export (D43, D44).
+
+  devices_: FakeDevice[] = [
+    {
+      id: "device-1",
+      platform: "extension",
+      name: "Browser extension",
+      created_at: 1_000,
+      last_seen_at: 2_000,
+      revoked_at: null,
+      current: true,
+    },
+    {
+      id: "device-2",
+      platform: "ios",
+      name: "iPhone",
+      created_at: 1_500,
+      last_seen_at: 1_800,
+      revoked_at: null,
+      current: false,
+    },
+  ];
+  health_: { weak: { item_id: string; score: number }[]; reused: string[][] } =
+    { weak: [], reused: [] };
+  breachPrefixes = ["ABCDE", "12345"];
+  breached: { item_id: string; count: number }[] = [];
+  breachBodies: [string, string][] = [];
+  exportGrant = false;
+  authorizations = 0;
+
+  startListDevices(): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    this.next = () =>
+      done("devices", { devices: JSON.stringify(this.devices_) });
+    return send("/v1/devices");
+  }
+
+  startRenameDevice(deviceId: string, name: string): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    if (name.length > 63) throw coreError("invalid_device_name");
+    this.next = () => {
+      const device = this.devices_.find((d) => d.id === deviceId);
+      if (!device || device.revoked_at !== null)
+        throw coreError("unknown_device");
+      device.name = name;
+      return done("device_updated");
+    };
+    return send(`/v1/devices/${deviceId}`);
+  }
+
+  startRevokeDevice(deviceId: string): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    this.next = () => {
+      const device = this.devices_.find((d) => d.id === deviceId);
+      if (!device) throw coreError("unknown_device");
+      device.revoked_at = 3_000;
+      return done("device_updated");
+    };
+    return send(`/v1/devices/${deviceId}`);
+  }
+
+  healthReport(): string {
+    if (!this.unlocked) throw coreError("locked");
+    return JSON.stringify(this.health_);
+  }
+
+  breachCheck(): FakeBreachCheck {
+    if (!this.unlocked) throw coreError("locked");
+    return new FakeBreachCheck(this);
+  }
+
+  authorizeExport(password: string, secretKey: string): void {
+    if (!this.unlocked) throw coreError("locked");
+    this.authorizations += 1;
+    if (password !== PASSWORD || secretKey !== SECRET_KEY)
+      throw coreError("wrong_password");
+    this.exportGrant = true;
+  }
+
+  exportFile(format: string, exportPassword: string): Uint8Array {
+    if (!this.unlocked) throw coreError("locked");
+    if (!this.exportGrant) throw coreError("export_not_authorized");
+    this.exportGrant = false;
+    return new TextEncoder().encode(
+      `export:${format}${format === "pwmx" ? `:${exportPassword}` : ""}`,
+    );
+  }
+
   /**
    * Adds an item in the core's JSON shape (D18): login fields go under
    * `login`, as `items()` lists them. Same id replaces.
@@ -597,6 +686,35 @@ export class FakeCore implements Core {
     );
     list.push(JSON.stringify(json));
     this.items_.set(vaultId, list);
+  }
+}
+
+export interface FakeDevice {
+  id: string;
+  platform: string;
+  name: string | null;
+  created_at: number;
+  last_seen_at: number;
+  revoked_at: number | null;
+  current: boolean;
+}
+
+/** Records each range body; finishes with the core's `breached` list. */
+export class FakeBreachCheck {
+  constructor(private readonly core: FakeCore) {}
+
+  prefixes(): string[] {
+    return this.core.breachPrefixes;
+  }
+
+  addResponse(prefix: string, body: string): void {
+    if (!this.core.breachPrefixes.includes(prefix)) throw coreError("protocol");
+    if (body === "not a range") throw coreError("protocol");
+    this.core.breachBodies.push([prefix, body]);
+  }
+
+  finish(): string {
+    return JSON.stringify(this.core.breached);
   }
 }
 
@@ -626,7 +744,10 @@ export function fakeFunctions(): CoreFunctions & { cores: FakeCore[] } {
     generatePassword: (length) => "x".repeat(length),
     generatePassphrase: (words) =>
       Array.from({ length: words }, () => "word").join("-"),
-    passwordScore: (password) => (password === PASSWORD ? 4 : 1),
+    passwordScore: (password) =>
+      password === PASSWORD || password === EXPORT_PASSWORD ? 4 : 1,
+    breachRangeUrl: (prefix) =>
+      `https://api.pwnedpasswords.com/range/${prefix}`,
     emergencyKit: (email, secretKey, server, accountId, created, paper) =>
       new TextEncoder().encode(
         `%PDF-fake ${[email, secretKey, server ?? "hosted", accountId, created, paper].join(" ")}`,
@@ -689,6 +810,8 @@ export class FakePages implements Pages {
   popups = 0;
   inlineScripts = false;
   siteAccess = false;
+  /** Origins the user granted (the leak check's, D44 §2). */
+  hostAccess = new Set<string>();
   injections = 0;
 
   activeTab() {
@@ -736,6 +859,10 @@ export class FakePages implements Pages {
 
   hasSiteAccess() {
     return Promise.resolve(this.siteAccess);
+  }
+
+  hasHostAccess(origin: string) {
+    return Promise.resolve(this.hostAccess.has(origin));
   }
 
   passkeyScripts = false;

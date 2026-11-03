@@ -50,6 +50,8 @@ const ALLOWED_URLS = [
   /^https:\/\/api\.pwm\.invalid\b/,
   /^http:\/\/(localhost|127\.0\.0\.1)\b/,
   /^http:\/\/www\.w3\.org\//,
+  // The leak check's permission pattern (D44 §2); the core builds the URLs.
+  /^https:\/\/api\.pwnedpasswords\.com\/\*$/,
 ];
 
 /**

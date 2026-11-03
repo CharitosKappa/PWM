@@ -34,11 +34,15 @@ const ready: Promise<Background> = init({
 // here; the release build compiles this out (and its check makes sure).
 if (PWM_TEST) Object.assign(globalThis, { pwmTest: { ready } });
 
-/** Only the extension's own popup (or options) page may talk to the background. */
+/** Only the extension's own popup (or options) and manage pages may talk to the background. */
 function fromPopup(sender: chrome.runtime.MessageSender): boolean {
   if (sender.id !== chrome.runtime.id || sender.url === undefined) return false;
   // The options page is the popup page in a tab, at #settings.
-  return sender.url.split("#")[0] === chrome.runtime.getURL("popup.html");
+  const page = sender.url.split("#")[0];
+  return (
+    page === chrome.runtime.getURL("popup.html") ||
+    page === chrome.runtime.getURL("manage.html")
+  );
 }
 
 /** The passkey confirmation window (D37 §4), an extension page in its own window. */

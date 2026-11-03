@@ -56,6 +56,17 @@ const MESSAGES: Record<string, string> = {
   passkeys_unsupported: "This browser cannot pass passkey requests to PWM yet.",
   no_server_access: "PWM needs permission to reach the server to sign in.",
   signed_in: "Sign out to change the server.",
+  no_leak_access:
+    "PWM needs permission to reach the leak check. Only hash prefixes are sent.",
+  leak_check_off: "Turn on the leak check first.",
+  breach_check: "The leak check is not answering. Try again later.",
+  this_device: "To leave this device, use Sign out in Settings.",
+  invalid_device_name: "Use a shorter name, up to 63 characters.",
+  unknown_device: "That device was removed already.",
+  weak_export_password: "Choose a stronger export password.",
+  export_not_authorized: "Enter your master password to export.",
+  export_expired: "Enter your master password again to export.",
+  locked: "Unlock first.",
 };
 
 /** Plain words for an error code. */

@@ -93,6 +93,7 @@ async function buildTarget(target, dist) {
     entryPoints: {
       background: "src/background/index.ts",
       popup: "src/popup/main.tsx",
+      manage: "src/manage/main.tsx",
       passkey: "src/passkeys/window.ts",
       ...(chromium
         ? { offscreen: "src/offscreen/index.ts", inline: "src/inline/index.ts" }

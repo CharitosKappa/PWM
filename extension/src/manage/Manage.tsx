@@ -1,0 +1,514 @@
+/**
+ * The manage page (D44): password health, devices and export, in a tab of
+ * its own. Like the popup it only sends messages to the background; it
+ * receives an export only when the user asks for one with the master
+ * password, and drops it once the download starts.
+ */
+import { useEffect, useState } from "preact/hooks";
+import type { JSX } from "preact";
+import type {
+  DeviceView,
+  ExportFormat,
+  HealthItem,
+  HealthView,
+  Status,
+} from "../shared/messages.ts";
+import { fromBase64 } from "../shared/bytes.ts";
+import { RequestError, describe, describeCode, send } from "../popup/api.ts";
+import { Unlock } from "../popup/App.tsx";
+import { Field, Notice } from "../popup/ui.tsx";
+
+/** The leak check's origin, asked for from a click (D44 §2). */
+const LEAK_CHECK_ORIGIN = "https://api.pwnedpasswords.com/*";
+
+type Tab = "health" | "devices" | "export";
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "health", label: "Password health" },
+  { id: "devices", label: "Devices" },
+  { id: "export", label: "Export" },
+];
+
+export function Manage(): JSX.Element {
+  const [status, setStatus] = useState<Status | null>(null);
+  const [tab, setTab] = useState<Tab>(
+    (["health", "devices", "export"] as const).find(
+      (t) => `#${t}` === location.hash,
+    ) ?? "health",
+  );
+
+  const refresh = (): void => {
+    send({ kind: "status" })
+      .then(setStatus)
+      .catch(() => {
+        setStatus({ state: "signedOut" });
+      });
+  };
+  useEffect(refresh, []);
+
+  if (status === null) return <main class="stack" aria-busy="true" />;
+  if (status.state === "signedOut") {
+    return (
+      <main class="stack">
+        <h1>PWM</h1>
+        <p>Sign in from the extension's toolbar button first.</p>
+      </main>
+    );
+  }
+  if (status.state === "locked")
+    return <Unlock email={status.email} onDone={refresh} />;
+
+  return (
+    <main class="stack">
+      <h1>PWM</h1>
+      <p class="muted">{status.email}</p>
+      <div class="tabs" role="tablist">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            id={`tab-${t.id}`}
+            aria-selected={tab === t.id}
+            onClick={() => {
+              setTab(t.id);
+              history.replaceState(null, "", `#${t.id}`);
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <section role="tabpanel" aria-labelledby={`tab-${tab}`} class="stack">
+        {tab === "health" && <Health onLocked={refresh} />}
+        {tab === "devices" && <Devices onLocked={refresh} />}
+        {tab === "export" && <Export onLocked={refresh} />}
+      </section>
+    </main>
+  );
+}
+
+/** Runs a request; a locked vault sends the page back to Unlock. */
+function useRequest(onLocked: () => void) {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const run = async <T,>(work: () => Promise<T>): Promise<T | undefined> => {
+    setBusy(true);
+    setError(null);
+    try {
+      return await work();
+    } catch (err) {
+      if (err instanceof RequestError && err.code === "locked") onLocked();
+      else setError(describe(err));
+      return undefined;
+    } finally {
+      setBusy(false);
+    }
+  };
+  return { error, busy, run };
+}
+
+// --- Health ---
+
+function Health({ onLocked }: { onLocked: () => void }): JSX.Element {
+  const [health, setHealth] = useState<HealthView | null>(null);
+  const { error, busy, run } = useRequest(onLocked);
+  const [denied, setDenied] = useState(false);
+
+  useEffect(() => {
+    void run(() => send({ kind: "health" })).then((h) => {
+      if (h) setHealth(h);
+    });
+  }, []);
+
+  if (health === null) return <p class="muted">{error ?? "Loading…"}</p>;
+
+  const check = async (): Promise<void> => {
+    // The permission prompt needs this click (D44 §2).
+    const granted = await chrome.permissions.request({
+      origins: [LEAK_CHECK_ORIGIN],
+    });
+    setDenied(!granted);
+    if (!granted) return;
+    const h = await run(() => send({ kind: "checkLeaks" }));
+    if (h) setHealth(h);
+  };
+
+  const toggle = async (on: boolean): Promise<void> => {
+    const value = await run(() => send({ kind: "setLeakCheck", on }));
+    if (value !== undefined) {
+      const h = await run(() => send({ kind: "health" }));
+      if (h) setHealth(h);
+    }
+  };
+
+  const clean =
+    health.weak.length === 0 &&
+    health.reused.length === 0 &&
+    (health.leaked?.length ?? 0) === 0;
+
+  return (
+    <div class="stack">
+      <label class="row">
+        <input
+          type="checkbox"
+          checked={health.leakCheck}
+          onChange={(e) => void toggle(e.currentTarget.checked)}
+        />
+        Check for leaked passwords
+      </label>
+      <p class="caption muted">
+        Checks your passwords against known leaks without sending them: only the
+        first 5 characters of a hash leave your device.
+      </p>
+      {health.leakCheck ? (
+        <button disabled={busy} onClick={() => void check()}>
+          {busy ? "Checking…" : "Check for leaks"}
+        </button>
+      ) : (
+        <Notice kind="info">
+          Leak check is off. Turn it on to check without sending your passwords.
+        </Notice>
+      )}
+      {denied && (
+        <Notice kind="danger">{describeCode("no_leak_access")}</Notice>
+      )}
+      {error && <Notice kind="danger">{error}</Notice>}
+
+      {health.leaked !== null && health.leaked.length > 0 && (
+        <Group
+          title="Leaked"
+          note="These passwords appear in known data breaches. Change them first."
+          items={health.leaked.map((i) => ({
+            item: i,
+            detail: `Seen ${i.count.toLocaleString()} times in leaks`,
+          }))}
+        />
+      )}
+      {health.weak.length > 0 && (
+        <Group
+          title="Weak"
+          items={health.weak.map((i) => ({ item: i, detail: "Easy to guess" }))}
+        />
+      )}
+      {health.reused.length > 0 && (
+        <Group
+          title="Reused"
+          note="A leak on one site would open the others. Give each its own password."
+          items={health.reused.flatMap((group) =>
+            group.map((i) => ({
+              item: i,
+              detail: `Same password as ${String(group.length - 1)} other`,
+            })),
+          )}
+        />
+      )}
+      {clean && (
+        <p id="health-clean">
+          No problems found
+          {health.leaked === null ? " (leaks not checked yet)." : "."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Group({
+  title,
+  note,
+  items,
+}: {
+  title: string;
+  note?: string;
+  items: { item: HealthItem; detail: string }[];
+}): JSX.Element {
+  return (
+    <section class="stack">
+      <h2>{title}</h2>
+      {note !== undefined && <p class="caption muted">{note}</p>}
+      <ul class="list">
+        {items.map(({ item, detail }) => (
+          <li key={`${title}-${item.itemId}`}>
+            <span class="stack">
+              <strong>{item.title || item.username}</strong>
+              <span class="caption muted">{detail}</span>
+            </span>
+            <ChangeLink item={item} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Opens the site; the extension offers to update the login there (D44 §4). */
+function ChangeLink({ item }: { item: HealthItem }): JSX.Element {
+  const url = URL.canParse(item.url) ? new URL(item.url) : null;
+  if (url === null || !/^https?:$/.test(url.protocol)) {
+    return (
+      <span class="caption muted">
+        Change it on the site, then save it here
+      </span>
+    );
+  }
+  return (
+    <a href={url.href} target="_blank" rel="noreferrer noopener">
+      Change
+    </a>
+  );
+}
+
+// --- Devices ---
+
+const PLATFORMS: Record<string, string> = {
+  ios: "iOS",
+  android: "Android",
+  macos: "macOS",
+  windows: "Windows",
+  linux: "Linux",
+  extension: "Browser extension",
+};
+
+function Devices({ onLocked }: { onLocked: () => void }): JSX.Element {
+  const [devices, setDevices] = useState<DeviceView[] | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const { error, busy, run } = useRequest(onLocked);
+
+  useEffect(() => {
+    void run(() => send({ kind: "devices" })).then((d) => {
+      if (d) setDevices(d);
+    });
+  }, []);
+
+  if (devices === null) return <p class="muted">{error ?? "Loading…"}</p>;
+
+  const rename = async (deviceId: string): Promise<void> => {
+    const d = await run(() => send({ kind: "renameDevice", deviceId, name }));
+    if (d) {
+      setDevices(d);
+      setRenaming(null);
+    }
+  };
+
+  const revoke = async (device: DeviceView): Promise<void> => {
+    const label = device.name ?? "this device";
+    if (
+      !confirm(
+        `Sign out ${label}? It loses access at once and deletes its copy of your vault the next time it connects.`,
+      )
+    )
+      return;
+    const d = await run(() =>
+      send({ kind: "revokeDevice", deviceId: device.id }),
+    );
+    if (d) setDevices(d);
+  };
+
+  return (
+    <div class="stack">
+      <ul class="list">
+        {devices.map((device) => (
+          <li
+            key={device.id}
+            id={device.current ? "device-current" : undefined}
+          >
+            <span class="stack">
+              <strong>
+                {device.name ?? "Unknown device"}
+                {device.current && (
+                  <span class="caption muted"> · This device</span>
+                )}
+              </strong>
+              <span class="caption muted">
+                {PLATFORMS[device.platform] ?? device.platform} ·{" "}
+                {device.revokedAt === null
+                  ? `Last used ${new Date(device.lastSeenAt).toLocaleString()}`
+                  : `Signed out ${new Date(device.revokedAt).toLocaleDateString()}`}
+              </span>
+              {renaming === device.id && (
+                <form
+                  class="row"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void rename(device.id);
+                  }}
+                >
+                  <Field label="Name" value={name} onInput={setName} />
+                  <button class="primary" disabled={busy || name.trim() === ""}>
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRenaming(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </form>
+              )}
+            </span>
+            {device.revokedAt === null && renaming !== device.id && (
+              <span class="row">
+                <button
+                  onClick={() => {
+                    setName(device.name ?? "");
+                    setRenaming(device.id);
+                  }}
+                >
+                  Rename
+                </button>
+                {!device.current && (
+                  <button
+                    class="danger"
+                    disabled={busy}
+                    onClick={() => void revoke(device)}
+                  >
+                    Sign out
+                  </button>
+                )}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p class="caption muted">
+        Only your devices can read their names. To leave this device, use Sign
+        out in the extension's settings.
+      </p>
+      {error && <Notice kind="danger">{error}</Notice>}
+    </div>
+  );
+}
+
+// --- Export ---
+
+const FORMAT_NOTES: Record<ExportFormat, string> = {
+  pwmx: "Opens with the export password alone, without your account. Every item, folder and history entry.",
+  json: "Every item, folder and history entry, readable by anyone who has the file.",
+  csv: "Logins, notes, cards and identities as a spreadsheet, readable by anyone who has the file.",
+};
+
+function Export({ onLocked }: { onLocked: () => void }): JSX.Element {
+  const [format, setFormat] = useState<ExportFormat>("pwmx");
+  const [masterPassword, setMasterPassword] = useState("");
+  const [exportPassword, setExportPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [understood, setUnderstood] = useState(false);
+  const [score, setScore] = useState(0);
+  const [saved, setSaved] = useState<string | null>(null);
+  const { error, busy, run } = useRequest(onLocked);
+
+  useEffect(() => {
+    if (exportPassword === "") {
+      setScore(0);
+      return;
+    }
+    void send({ kind: "score", password: exportPassword, email: "" }).then(
+      setScore,
+    );
+  }, [exportPassword]);
+
+  const ready =
+    masterPassword !== "" &&
+    (format === "pwmx"
+      ? score >= 3 && exportPassword === confirmPassword
+      : understood);
+
+  const submit = async (event: Event): Promise<void> => {
+    event.preventDefault();
+    setSaved(null);
+    const result = await run(() =>
+      send({ kind: "exportVault", masterPassword, format, exportPassword }),
+    );
+    setMasterPassword("");
+    if (!result) return;
+    // Saved as a download, like the Emergency Kit; nothing is kept here.
+    const url = URL.createObjectURL(
+      new Blob([fromBase64(result.file)], {
+        type: "application/octet-stream",
+      }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = result.name;
+    link.click();
+    URL.revokeObjectURL(url);
+    setExportPassword("");
+    setConfirmPassword("");
+    setUnderstood(false);
+    setSaved(result.name);
+  };
+
+  return (
+    <form class="stack" onSubmit={(e) => void submit(e)}>
+      <label class="field">
+        <span class="label">Format</span>
+        <select
+          id="export-format"
+          value={format}
+          onChange={(e) => {
+            setFormat(e.currentTarget.value as ExportFormat);
+            setUnderstood(false);
+          }}
+        >
+          <option value="pwmx">Encrypted (.pwmx)</option>
+          <option value="json">JSON, not encrypted</option>
+          <option value="csv">CSV, not encrypted</option>
+        </select>
+        <span class="caption muted">{FORMAT_NOTES[format]}</span>
+      </label>
+      <Field
+        label="Master password"
+        type="password"
+        value={masterPassword}
+        onInput={setMasterPassword}
+        autoComplete="current-password"
+        hint="Every export asks for it again."
+      />
+      {format === "pwmx" ? (
+        <>
+          <Field
+            label="Export password"
+            type="password"
+            value={exportPassword}
+            onInput={setExportPassword}
+            autoComplete="new-password"
+            hint={
+              exportPassword === "" || score >= 3
+                ? "Needed to open the file."
+                : "Too easy to guess."
+            }
+          />
+          <Field
+            label="Export password again"
+            type="password"
+            value={confirmPassword}
+            onInput={setConfirmPassword}
+            autoComplete="new-password"
+          />
+        </>
+      ) : (
+        <label class="row">
+          <input
+            id="export-understood"
+            type="checkbox"
+            checked={understood}
+            onChange={(e) => {
+              setUnderstood(e.currentTarget.checked);
+            }}
+          />
+          I understand that anyone who gets this file can read all my passwords.
+        </label>
+      )}
+      <div class="slot">
+        {error && <Notice kind="danger">{error}</Notice>}
+        {saved && <Notice kind="info">Saved {saved}.</Notice>}
+      </div>
+      <button class="primary" id="export" disabled={busy || !ready}>
+        {busy ? "Exporting…" : "Export"}
+      </button>
+      <p class="caption muted">Export works on every plan.</p>
+    </form>
+  );
+}

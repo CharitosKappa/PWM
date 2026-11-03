@@ -1425,3 +1425,13 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **A required host permission for HIBP:** no prompt, but every existing install would see a new permission warning on update, and some browsers turn the extension off until it is accepted.
   - **Off by default in the extension:** no permission request ever appears unless the user goes looking, but then most users never see leaked passwords (the reason D22 chose "on").
   - **Editing items on the page:** "Change" would be done in one place, but it is the item editor D34 left out, with its own tests. It can come with the importers (M8), which need an item view anyway.
+
+  Implementation notes (M4.10):
+  - **The background side** is a `Manager` next to the `Saver` and `Reporter` (`src/background/manage.ts`). The manage page is a second trusted sender beside the popup: the background accepts `popup.html` and `manage.html` from this extension only.
+  - **The leak check:** the page asks for `https://api.pwnedpasswords.com/*` from the click on "Check for leaks"; the background checks the permission before any request. The one string is on the build's remote-URL allow-list; the range URLs come from the core.
+  - **Requests to HIBP** go one at a time with `Add-Padding: true`, `credentials: "omit"`, `cache: "no-store"`, `redirect: "error"` and no referrer. Leak counts are kept in memory and dropped on lock, or when the switch is turned off.
+  - **Export:** a weak `.pwmx` password is refused before the master password is checked, so the core never holds an unused grant. The file name is `PWM export <date>.<format>`.
+  - **This device** is never signed out from the page (`this_device`); the core cannot tell, so the background checks the device list first.
+  - **Tests:** 7 background tests with the fake core; the WASM test checks the new calls on the real build; a Playwright test (`tests/manage.spec.ts`) renames this device on the local server and downloads a JSON export. The leak check is not run against the real HIBP in CI.
+  - **Not run on this machine:** the Playwright test, since Playwright's Chromium is not installed here; it runs first in the `autofill-harness` CI job.
+
