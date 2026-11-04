@@ -11,7 +11,8 @@
 //                                             background, never shipped
 //
 // Chromium is one package for Chrome, Edge, Brave and Opera. Firefox's is
-// not minified, so AMO reviewers can read it.
+// not minified, so AMO reviewers can read it. Safari's goes inside the macOS
+// app (D48 §4), which copies dist/safari/ in when Xcode builds it.
 
 import { build } from "esbuild";
 import { zipSync } from "fflate";
@@ -70,18 +71,23 @@ function files(dir, base = dir, out = {}) {
 
 async function buildTarget(target, dist) {
   const chromium = target === "chromium";
+  const readable = target === "firefox";
   const define = { PWM_TEST: String(test), PWM_TARGET: JSON.stringify(target) };
   const common = {
     absWorkingDir: root,
     outdir: dist,
     bundle: true,
     define,
-    target: chromium ? "chrome127" : "firefox128",
+    target: {
+      chromium: "chrome127",
+      firefox: "firefox128",
+      safari: "safari17",
+    }[target],
     // Firefox stays readable for AMO review, but its dead code (the test
     // hook) is still removed.
     minifySyntax: true,
-    minifyWhitespace: chromium,
-    minifyIdentifiers: chromium,
+    minifyWhitespace: !readable,
+    minifyIdentifiers: !readable,
     legalComments: "none",
     logLevel: "warning",
   };

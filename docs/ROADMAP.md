@@ -503,7 +503,12 @@ Phase 3  Teams           months 16–24 M16–M19
     - **A check on a Mac with a signed build:** Touch ID, the shared Keychain group and the credential provider. CI signs ad-hoc, so it runs the app without them.
     - **Notarization and the Developer ID:** at release (M10), with the founder's account.
     - **⌘F** for the search field: not checked yet (D48 notes).
-- [ ] M5.11 Safari Web Extension (D48 §4): a third extension build (`build.mjs --target safari`) inside the macOS app, with Firefox's capability set.
+- [x] M5.11 Safari Web Extension (D48 §4): a third extension build (`build.mjs --target safari`) inside the macOS app, with Firefox's capability set.
+  - **The build:** `dist/safari/` and its zip, checked like the others (event-page background, no `idle`, Safari 17). The macOS app carries it in a Safari Web Extension target, `PWMSafari`.
+  - **Deferred:**
+    - **A check in Safari on a Mac:** loading the extension (manual, `QUALITY.md`).
+    - **Locking when the Mac locks:** Safari has no `idle` API; the timer and quitting Safari lock it (gap logged in D48).
+    - **A Settings card in the Mac app** that opens Safari's extension settings.
 - [ ] M5.12 Touch ID unlock for the extension in other browsers (D48 §5): a native-messaging helper in the macOS app keeps a key behind Touch ID that opens a sealed blob the extension holds. New AAD label `pwm/browser-unlock`, vectors, a versioned protocol. Windows and Linux in M7.2.
 - [x] M5.7 Screenshot/screen-recording protection on unlock and revealed secrets.
   - Per D49:

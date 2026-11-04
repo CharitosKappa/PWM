@@ -1,11 +1,17 @@
-// Checks on the built extension (D34, D35, D40): only the listed
+// Checks on the built extension (D34, D35, D40, D48): only the listed
 // permissions for each target, no remote code, nothing the store review
 // would flag.
 
-/** The builds (D40): one for Chrome, Edge, Brave and Opera, one for Firefox. */
-export const TARGETS = ["chromium", "firefox"];
+/**
+ * The builds (D40, D48 §4): one for Chrome, Edge, Brave and Opera, one for
+ * Firefox, and one that the macOS app carries into Safari.
+ */
+export const TARGETS = ["chromium", "firefox", "safari"];
 
-/** Firefox has no offscreen documents; its background page writes the clipboard. */
+/**
+ * Firefox and Safari have no offscreen documents; their background page
+ * writes the clipboard. Safari has no `idle` API either.
+ */
 export const PERMISSIONS = {
   chromium: [
     "storage",
@@ -24,6 +30,7 @@ export const PERMISSIONS = {
     "activeTab",
     "scripting",
   ],
+  safari: ["storage", "alarms", "clipboardWrite", "activeTab", "scripting"],
 };
 
 /** The Firefox add-on id, a placeholder until D1 names the product. */
@@ -57,7 +64,7 @@ const ALLOWED_URLS = [
 /**
  * @param {any} manifest the parsed manifest.json
  * @param {string} version the package version
- * @param {"chromium" | "firefox"} target
+ * @param {"chromium" | "firefox" | "safari"} target
  * @returns {string[]} problems, empty when fine
  */
 export function checkManifest(manifest, version, target = "chromium") {
@@ -73,7 +80,8 @@ export function checkManifest(manifest, version, target = "chromium") {
     problems.push("host permissions beyond the hosted API");
   if (!same(manifest.optional_host_permissions, OPTIONAL_HOSTS))
     problems.push("optional host permissions");
-  // Firefox has no inline icon or save card (D40 §2): pages load nothing.
+  // Firefox and Safari have no inline icon or save card (D40 §2, D48 §4):
+  // pages load nothing.
   const accessible = target === "chromium" ? WEB_ACCESSIBLE : undefined;
   if (!same(manifest.web_accessible_resources, accessible))
     problems.push("web-accessible resources beyond the inline icon");
@@ -87,16 +95,24 @@ export function checkManifest(manifest, version, target = "chromium") {
   ]) {
     if (key in manifest) problems.push(`unexpected ${key}`);
   }
-  const background =
-    target === "chromium"
-      ? { service_worker: "background.js", type: "module" }
-      : { scripts: ["background.js"], type: "module" };
+  const background = {
+    chromium: { service_worker: "background.js", type: "module" },
+    firefox: { scripts: ["background.js"], type: "module" },
+    // An event page, as on Firefox; Safari wants it said.
+    safari: { scripts: ["background.js"], type: "module", persistent: false },
+  }[target];
   if (!same(manifest.background, background)) problems.push("background");
   if (target === "firefox") {
     const gecko = manifest.browser_specific_settings?.gecko;
     if (gecko?.id !== GECKO_ID) problems.push("gecko id");
     if (gecko?.strict_min_version !== "128.0")
       problems.push("gecko strict_min_version");
+  } else if (target === "safari") {
+    const safari = manifest.browser_specific_settings?.safari;
+    if (safari?.strict_min_version !== "17.0")
+      problems.push("safari strict_min_version");
+    if (manifest.browser_specific_settings?.gecko !== undefined)
+      problems.push("gecko settings in the Safari build");
   } else if (manifest.minimum_chrome_version !== "127") {
     problems.push("minimum_chrome_version");
   }
