@@ -6,7 +6,7 @@ use pwm_crypto::{Secret, ServerSecrets};
 
 use crate::ServerError;
 use crate::limits::TrustedProxies;
-use crate::push::PushConfig;
+use crate::push::{FcmConfig, PushConfig};
 
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:8080";
 
@@ -21,6 +21,8 @@ pub struct Config {
     pub trusted_proxies: TrustedProxies,
     /// APNs (D50 §3), from `PWM_APNS_*`; `None` leaves push off.
     pub push: Option<PushConfig>,
+    /// FCM (D60), from `PWM_FCM_*`; `None` leaves Android push off.
+    pub fcm: Option<FcmConfig>,
 }
 
 impl Config {
@@ -54,12 +56,14 @@ impl Config {
             ServerError::Config("PWM_TRUSTED_PROXIES is not a list like 10.0.0.0/8, 192.0.2.1")
         })?;
         let push = PushConfig::from_vars(&var)?;
+        let fcm = FcmConfig::from_vars(&var)?;
         Ok(Self {
             database_url: Secret::new(database_url),
             listen,
             server_secrets,
             trusted_proxies,
             push,
+            fcm,
         })
     }
 }

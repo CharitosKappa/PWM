@@ -255,6 +255,53 @@ fn the_push_token_is_sent_while_locked() {
     assert!(client.start_push_token(tokens(), None).is_ok());
 }
 
+/// A synthetic FCM registration token: its shape, not a real one.
+const FCM: &str = "dGVzdC1pbnN0YW5jZS1pZA:APA91bH_synthetic-token-for-tests_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_0123456789abcdefghijklmnopqrstuvwxyz";
+
+fn android(token: &str) -> Option<pwm_client::PushToken> {
+    Some(pwm_client::PushToken {
+        app: "android".to_owned(),
+        token: token.to_owned(),
+        // FCM has no sandbox: always production (D60 §5).
+        sandbox: true,
+    })
+}
+
+#[test]
+fn an_fcm_token_goes_as_text_and_always_production() {
+    let (store, _) = signed_in_store();
+    let mut client = Client::new(store);
+    let request = sent(client.start_push_token(tokens(), android(FCM)).unwrap());
+    assert_eq!(path(&request), "PUT /v1/devices/self/push");
+    let body: serde_json::Value = serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+    assert_eq!(
+        body,
+        json!({ "app": "android", "token": FCM, "environment": "production" })
+    );
+    client
+        .receive(HttpResponse::new(204, Vec::new(), Vec::new()), T0)
+        .unwrap();
+
+    let long = "a".repeat(1025);
+    let spaced = format!("{} x", &FCM[..120]);
+    let slashed = format!("{}/x", &FCM[..120]);
+    for token in [&FCM[..99], long.as_str(), spaced.as_str(), slashed.as_str()] {
+        assert_eq!(
+            client
+                .start_push_token(tokens(), android(token))
+                .unwrap_err()
+                .code(),
+            "invalid_push_token",
+            "{token}"
+        );
+    }
+    assert!(
+        client
+            .start_push_token(tokens(), android(&"a".repeat(1024)))
+            .is_ok()
+    );
+}
+
 #[test]
 fn a_push_token_that_is_not_hex_is_refused() {
     let (store, secret_key) = signed_in_store();
@@ -269,6 +316,7 @@ fn a_push_token_that_is_not_hex_is_refused() {
             "invalid_push_token"
         );
     }
+    // An APNs-length token is too short for FCM.
     let mut android = push(APNS).unwrap();
     android.app = "android".to_owned();
     assert_eq!(

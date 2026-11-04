@@ -22,6 +22,8 @@ class Copied(val value: String, val clearAfterMs: Long)
 class Harness(scope: TestScope, val prefs: MemoryPrefs = MemoryPrefs()) {
     val accounts = mutableListOf<FakeAccount>()
     val files = FakeFiles()
+    val push = FakePush()
+    val notices = FakeNotices()
     var nextAccount: (URL) -> FakeAccount = { FakeAccount(it) }
     val copied = mutableListOf<Copied>()
     var now = 1_000_000L
@@ -41,8 +43,14 @@ class Harness(scope: TestScope, val prefs: MemoryPrefs = MemoryPrefs()) {
             override fun cancel() {
                 scheduled += "cancel"
             }
+
+            override fun syncNow() {
+                scheduled += "syncNow"
+            }
         },
         importFiles = files,
+        push = push,
+        notices = notices,
     )
     val screen get() = app.state.value.screen
     val home get() = (screen as AppModel.Screen.Vault).model
@@ -275,6 +283,15 @@ class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = 
         return syncResult
     }
 
+    /** The push tokens sent, in order; null removes it. */
+    val pushTokens = mutableListOf<String?>()
+    var pushTokenError: PwmError? = null
+
+    override suspend fun setPushToken(token: String?) {
+        pushTokenError?.let { throw it }
+        pushTokens += token
+    }
+
     // Health, export and import.
     var health = pwm.kit.PasswordHealth(emptyMap(), emptyList())
     var breached: Map<String, Long> = emptyMap()
@@ -371,5 +388,25 @@ class FakeFiles : ImportFiles {
     override fun delete(uri: String): Boolean {
         if (!deletable) return false
         return files.remove(uri) != null
+    }
+}
+
+/** FCM as the app would see it; off unless a test turns it on. */
+class FakePush : PushService {
+    override var available = false
+    var current: String? = "fcm-token-1"
+
+    override suspend fun token(): String? = current
+}
+
+/** The notices shown, and whether Android allows them. */
+class FakeNotices : Notices {
+    var allowed = true
+    var shown = 0
+
+    override fun allowed(): Boolean = allowed
+
+    override fun showApprovalNotice() {
+        shown += 1
     }
 }

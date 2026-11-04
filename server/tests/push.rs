@@ -1,6 +1,6 @@
-//! Push over APNs (D50 §3), against a fake APNs over HTTP/2: who gets a
-//! push, what it says, at most one a minute, the approval notice, and
-//! tokens that APNs refuses or that a device no longer needs.
+//! Push over APNs (D50 §3) and FCM (D60), against fakes: who gets a
+//! push, what it says, at most one a minute, the approval notice, FCM's
+//! signed assertion, and tokens a provider refuses or a device no longer needs.
 
 mod common;
 
@@ -20,7 +20,8 @@ use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use p256::pkcs8::{EncodePrivateKey, LineEnding};
 use pwm_crypto::{ServerSecrets, SymmetricKey};
 use pwm_server::{
-    APPROVAL_NOTICE, AppState, BACKGROUND_PAYLOAD, Limits, Push, PushConfig, app, system_clock,
+    APPROVAL_NOTICE, AppState, BACKGROUND_PAYLOAD, FCM_APPROVAL_DATA, FCM_SCOPE, FCM_SYNC_DATA,
+    FcmConfig, Limits, Push, PushConfig, app, system_clock,
 };
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -109,7 +110,7 @@ async fn setup() -> Option<(TestDb, Router, Apns)> {
     .unwrap();
     let state = AppState::new(db.pool.clone(), ServerSecrets::generate().unwrap())
         .with_limits(Limits::unlimited(), system_clock())
-        .with_push(Push::start(db.pool.clone(), config));
+        .with_push(Push::start(db.pool.clone(), Some(config), None));
     Some((db, app(state), apns))
 }
 
@@ -398,5 +399,258 @@ async fn signing_out_or_revoking_a_device_deletes_its_token() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert_eq!(push_rows(&db).await, 0);
+    db.drop().await;
+}
+
+// --- FCM (D60) ---
+
+/// A synthetic FCM registration token: its shape, not a real one.
+const FCM_TOKEN: &str = "dGVzdC1pbnN0YW5jZS1pZA:APA91bH_synthetic-token-for-tests_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_0123456789abcdefghijklmnopqrstuvwxyz";
+/// A throwaway RSA key made for these tests, never used anywhere else.
+const TEST_RSA_KEY: &str = include_str!("fixtures/fcm-test-key.pem");
+
+type Messages = Arc<Mutex<Vec<(HeaderMap, Value)>>>;
+
+/// Records the token requests and the messages; answers 404 for tokens in `gone`.
+#[derive(Clone, Default)]
+struct Fcm {
+    assertions: Arc<Mutex<Vec<String>>>,
+    messages: Messages,
+    gone: Arc<Mutex<Vec<String>>>,
+}
+
+impl Fcm {
+    async fn start() -> (Self, String) {
+        let fcm = Self::default();
+        let tokens = fcm.clone();
+        let sends = fcm.clone();
+        let router = Router::new()
+            .route(
+                "/token",
+                post(move |body: String| {
+                    let tokens = tokens.clone();
+                    async move {
+                        tokens.assertions.lock().unwrap().push(body);
+                        axum::Json(json!({ "access_token": "access-1", "expires_in": 3599, "token_type": "Bearer" }))
+                    }
+                }),
+            )
+            .route(
+                "/v1/projects/{project}/messages:send",
+                post(
+                    move |Path(project): Path<String>, headers: HeaderMap, body: String| {
+                        let sends = sends.clone();
+                        async move {
+                            assert_eq!(project, "pwm-test");
+                            let body: Value = serde_json::from_str(&body).unwrap();
+                            let token = body["message"]["token"].as_str().unwrap().to_owned();
+                            let gone = sends.gone.lock().unwrap().contains(&token);
+                            sends.messages.lock().unwrap().push((headers, body));
+                            if gone {
+                                (
+                                    StatusCode::NOT_FOUND,
+                                    r#"{"error":{"status":"NOT_FOUND","details":[{"errorCode":"UNREGISTERED"}]}}"#,
+                                )
+                            } else {
+                                (StatusCode::OK, r#"{"name":"projects/pwm-test/messages/1"}"#)
+                            }
+                        }
+                    },
+                ),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, router).await });
+        (fcm, url)
+    }
+
+    async fn wait_for(&self, n: usize) -> Vec<(HeaderMap, Value)> {
+        for _ in 0..100 {
+            if self.messages.lock().unwrap().len() >= n {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        self.messages.lock().unwrap().clone()
+    }
+}
+
+async fn setup_fcm() -> Option<(TestDb, Router, Fcm)> {
+    let db = migrated_db().await?;
+    let (fcm, url) = Fcm::start().await;
+    let credentials = json!({
+        "type": "service_account",
+        "project_id": "pwm-test",
+        "client_email": "push@pwm-test.iam.gserviceaccount.com",
+        "private_key": TEST_RSA_KEY,
+    });
+    let token_url = format!("{url}/token");
+    let config = FcmConfig::new(&credentials.to_string(), Some(&url), Some(&token_url)).unwrap();
+    let state = AppState::new(db.pool.clone(), ServerSecrets::generate().unwrap())
+        .with_limits(Limits::unlimited(), system_clock())
+        .with_push(Push::start(db.pool.clone(), None, Some(config)));
+    Some((db, app(state), fcm))
+}
+
+async fn set_android(app: &Router, access: &str, token: &str, environment: &str) -> StatusCode {
+    call(
+        app,
+        "PUT",
+        "/v1/devices/self/push",
+        Some(access),
+        Some(json!({ "app": "android", "token": token, "environment": environment })),
+    )
+    .await
+    .0
+}
+
+/// The test key's public half, for checking the assertion.
+fn test_public_key() -> ring::signature::UnparsedPublicKey<Vec<u8>> {
+    let body: String = TEST_RSA_KEY
+        .lines()
+        .filter(|l| !l.starts_with("-----"))
+        .collect();
+    let der = base64::engine::general_purpose::STANDARD
+        .decode(body)
+        .unwrap();
+    let pair = ring::signature::RsaKeyPair::from_pkcs8(&der).unwrap();
+    ring::signature::UnparsedPublicKey::new(
+        &ring::signature::RSA_PKCS1_2048_8192_SHA256,
+        pair.public().as_ref().to_vec(),
+    )
+}
+
+#[tokio::test]
+async fn an_android_token_is_checked_and_kept_as_its_text() {
+    let Some((db, app, _)) = setup_fcm().await else {
+        return;
+    };
+    let account = register(&app, "push@example.com").await;
+    let access = account.access();
+    let spaced = format!("{} x", &FCM_TOKEN[..120]);
+    for (token, environment) in [
+        (FCM_TOKEN, "sandbox"),
+        (&FCM_TOKEN[..99], "production"),
+        (spaced.as_str(), "production"),
+        (PHONE_TOKEN, "production"),
+    ] {
+        assert_eq!(
+            set_android(&app, access, token, environment).await,
+            StatusCode::BAD_REQUEST,
+            "{token}"
+        );
+    }
+    assert_eq!(
+        set_android(&app, access, FCM_TOKEN, "production").await,
+        StatusCode::NO_CONTENT
+    );
+    let stored: Vec<u8> = sqlx::query_scalar("SELECT token FROM push_tokens")
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, FCM_TOKEN.as_bytes());
+    db.drop().await;
+}
+
+#[tokio::test]
+async fn fcm_gets_a_data_message_with_nothing_in_it_and_a_signed_assertion() {
+    let Some((db, app, fcm)) = setup_fcm().await else {
+        return;
+    };
+    let (account, phone, vault, key) = two_devices(&app).await;
+    assert_eq!(
+        set_android(&app, &phone, FCM_TOKEN, "production").await,
+        StatusCode::NO_CONTENT
+    );
+
+    write_item(&app, account.access(), &vault, &key).await;
+    let got = fcm.wait_for(1).await;
+    assert_eq!(got.len(), 1);
+    let (headers, body) = &got[0];
+    assert_eq!(headers["authorization"], "Bearer access-1");
+    assert_eq!(
+        *body,
+        json!({ "message": {
+            "token": FCM_TOKEN,
+            "data": { "t": "sync" },
+            "android": { "priority": "normal", "ttl": "3600s", "collapse_key": "sync" },
+        }})
+    );
+    assert_eq!(
+        body["message"]["data"],
+        serde_json::from_str::<Value>(FCM_SYNC_DATA).unwrap()
+    );
+
+    // The token request: the JWT-bearer grant, with an RS256 assertion from the service account.
+    let assertions = fcm.assertions.lock().unwrap().clone();
+    assert_eq!(assertions.len(), 1);
+    let assertion = assertions[0]
+        .strip_prefix("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=")
+        .unwrap();
+    let parts: Vec<&str> = assertion.split('.').collect();
+    let claims: Value = serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[1]).unwrap()).unwrap();
+    assert_eq!(claims["iss"], "push@pwm-test.iam.gserviceaccount.com");
+    assert_eq!(claims["scope"], FCM_SCOPE);
+    assert!(claims["aud"].as_str().unwrap().ends_with("/token"));
+    let signature = URL_SAFE_NO_PAD.decode(parts[2]).unwrap();
+    let signed = format!("{}.{}", parts[0], parts[1]);
+    assert!(
+        test_public_key()
+            .verify(signed.as_bytes(), &signature)
+            .is_ok()
+    );
+
+    // A new device's request: high priority, the kind only, and the access token reused.
+    let (status, _) = call(
+        &app,
+        "POST",
+        "/v1/approvals",
+        None,
+        Some(json!({ "email": "push@example.com", "commitment": b64(&[1u8; 32]), "platform": "android" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let got = fcm.wait_for(2).await;
+    assert_eq!(got.len(), 2);
+    assert_eq!(
+        got[1].1["message"]["data"],
+        serde_json::from_str::<Value>(FCM_APPROVAL_DATA).unwrap()
+    );
+    assert_eq!(got[1].1["message"]["android"]["priority"], "high");
+    assert!(!got[1].1.to_string().contains("push@example.com"));
+    assert_eq!(
+        fcm.assertions.lock().unwrap().len(),
+        1,
+        "the access token is reused"
+    );
+    db.drop().await;
+}
+
+#[tokio::test]
+async fn an_unregistered_fcm_token_is_deleted_and_apns_tokens_wait_for_apns() {
+    let Some((db, app, fcm)) = setup_fcm().await else {
+        return;
+    };
+    let (account, phone, vault, key) = two_devices(&app).await;
+    set_android(&app, &phone, FCM_TOKEN, "production").await;
+    // APNs is off on this server: the Mac's token is kept and sent nothing.
+    set_push(&app, account.access(), "macos", LAPTOP_TOKEN).await;
+    fcm.gone.lock().unwrap().push(FCM_TOKEN.to_owned());
+    // The Mac wrote it: only the phone is asked.
+    write_item(&app, account.access(), &vault, &key).await;
+    fcm.wait_for(1).await;
+    for _ in 0..50 {
+        if push_rows(&db).await == 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(push_rows(&db).await, 1);
+    let left: String = sqlx::query_scalar("SELECT app FROM push_tokens")
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    assert_eq!(left, "macos");
     db.drop().await;
 }

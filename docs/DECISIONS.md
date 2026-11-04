@@ -2633,3 +2633,67 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Import:** the picked file is read through the content resolver, at most 50 MB whatever its size said, and kept only in the model. "Delete export file" calls `DocumentsContract.deleteDocument`; a place that can't delete says `delete_failed`. Leaving the page or locking cancels a preview.
   - **The device test** passes the file's address to the import screen and writes the export where "Save to" would, since the system's pickers aren't the app's to drive; the pickers are on the `QUALITY.md` checklist.
   - **Run on this machine:** the JVM tests (5 new), the server test (health with a fake breach service, export, a CSV import seen on the second session) against a local server, the build and licence check, `just check`, and the 5 device tests on an Android 16 emulator.
+
+- **D60 — Push for Android: FCM, the licence exception, and the server's RS256 signer** · settled 2026-11-05 · founder (approved as proposed).
+  M6.9 is D50 §3's push on Android: a content-free "your vault changed" push, and the fixed-text notice for a new device's request (D46). D57 §1 left three things open: Google Play services' licence, the Firebase project, and how the server signs for FCM. What was checked:
+  - **The client's licences:** `firebase-messaging` 26.0.1 (the latest) is Apache-2.0. It needs five Play services libraries: `play-services-base` 18.9.0, `-basement` 18.9.0, `-tasks` 18.4.0, `-cloud-messaging` 17.4.0 and `-stats` 17.0.2. Each one's Maven file names the "Android Software Development Kit License", which isn't on the allow-list (S6). Every Android app that uses FCM ships them under those terms. The rest of the tree (`firebase-*`, `transport-*`, AndroidX) is to be confirmed by the licence check at build time.
+  - **FCM's send API (HTTP v1):** an OAuth access token with the `firebase.messaging` scope. Without Google's libraries, the server gets one by signing a JWT with the service account's RSA key (RS256) and exchanging it at Google's token endpoint. A token that's no longer valid answers `UNREGISTERED` (404). Data-only messages take a priority (normal or high), a TTL and a collapse key.
+  - **RS256 on the server:** the RustCrypto `rsa` crate still has the open timing advisory for private-key operations (RUSTSEC-2023-0071). `ring` 0.17.14 is already compiled into the server through `rustls` and `sqlx` (Apache-2.0 AND ISC, both allowed), and signs RSA with BoringSSL's constant-time code. Using it adds no new download, but it isn't on the vetted list.
+  - **UnifiedPush,** the open alternative: its spec requires RFC 8291 encryption for every message, so even a content-free push needs AES-GCM on the server, a new crate. It also needs a distributor app that most users don't have. Its fallback for phones without one, the embedded FCM distributor, needs Play services anyway.
+  - **Android 13+** needs the `POST_NOTIFICATIONS` permission before the app shows a notification it builds itself.
+
+  Open: whether to take the licence exception, which signer the server uses, what the pushes carry, and when the app asks to show notifications.
+
+  Proposal:
+  1. **FCM, with a narrow licence exception:**
+     - **The exception:** "Android Software Development Kit License" is allowed for exactly the five `com.google.android.gms` libraries above, by name, in `allowed-licenses.json`. Anything else under that licence still fails the check. S6's allow-list in this file gets the same line, as D21 did for the wordlist.
+     - **Why it's acceptable:** the app stays closed source and these are binary libraries Google licenses for distribution in apps. No GPL-style terms apply.
+     - **Nothing else from Firebase:** no Analytics, Crashlytics or the `google-services` Gradle plugin. Firebase starts from code, with its settings from Gradle properties (`pwm.firebase.projectId`, `.appId`, `.apiKey`, `.senderId`). Without them, as in CI and local builds, push is off and the app behaves as now. Auto-init and delivery-metrics export stay off.
+  2. **The server signs with `ring`:**
+     - **Vetted for one use:** RS256 for FCM's OAuth token, and nothing else. `CLAUDE.md`'s vetted list says so.
+     - **Why not `rsa`:** the open advisory. The exposure would be small, since the server signs on its own schedule at most once every 50 minutes. But `cargo deny` would need an ignore for it, and `ring` is already in the build.
+     - **The settings:** `PWM_FCM_CREDENTIALS_FILE` (the service account's JSON file, read at start and never logged), plus optional `PWM_FCM_URL` and `PWM_FCM_TOKEN_URL` for tests. Neither set: FCM is off. APNs and FCM are each on or off by themselves.
+     - **The access token** is cached until 5 minutes before it expires.
+  3. **What the pushes carry:**
+     - **A change:** a data-only message, `{"t":"sync"}`. Normal priority, a 1-hour TTL, collapse key `sync`. At most one a minute per device, as on Apple.
+     - **A new device's request:** `{"t":"approval"}`, high priority, a 10-minute TTL (the request's lifetime). It holds no email, device or code.
+     - **Google learns** that some token had a change, and when, as Apple does. That goes in the threat model beside APNs.
+     - **A dead token** (`UNREGISTERED`) is deleted, as APNs' 410 is.
+  4. **The app:**
+     - **A change:** the push starts the background sync job at once (expedited work), the same locked sync as D57.
+     - **A request:** shows "A new device wants to sign in. Open PWM to compare the code." The words come from the app, not the push. Tapping it opens Settings, then Approve a new device.
+     - **Asking permission:** only from a switch in Settings, "Notify me when a new device asks to sign in", off until turned on, as on Apple (D50 §3). On Android 13+ turning it on asks for `POST_NOTIFICATIONS`. If that's refused, the switch stays off and says how to allow it in system settings. No prompt at launch. The pushes still arrive with the switch off; the app just shows nothing.
+     - **The notification channel:** "New devices", for these notices only.
+     - **Registering:** the app sends its FCM token after sign-in and when FCM gives it a new one, through the core's existing `start_push_token`, which also works locked. Signing out removes it, as now.
+  5. **The server and core, with migrations:**
+     - **Migration 0007:** `push_tokens` also takes `app = 'android'`, with tokens up to 4,096 bytes; FCM tokens are longer than APNs tokens. Its migration test checks existing APNs rows still pass.
+     - **The core and the route:** `start_push_token` and `PUT /v1/devices/self/push` take `"android"` with the FCM token as its text (letters, digits, `_`, `-` and `:`), always `production`.
+  6. **Phones without Play services** keep D57's 15-minute background sync and get no push. That's logged as a gap; UnifiedPush can be weighed again with its encryption later.
+  7. **The founder's side,** before push reaches real phones:
+     - a Firebase project with the Android app registered, under the final package name (D1)
+     - its four settings in the release build
+     - a service account allowed to send, whose file goes to the server
+     - Until then everything ships off.
+  8. **Tests:**
+     - **Server:** a fake FCM and token endpoint. The JWT's signature verifies with the service account's public key; the bodies are exactly the two payloads; a 404 `UNREGISTERED` deletes the token; the one-a-minute limit holds.
+     - **Migration 0007's test.**
+     - **Core:** Android token validation, accepted and refused.
+     - **JVM:** the app's push handling with a fake. A change runs the sync. A request shows the notice only with the switch on and permission given. The switch and its refused permission. The token is registered after sign-in and on a new token.
+     - **On the emulator:** a message handed to the service starts the job, and the request notice shows with the permission granted. No real FCM in CI.
+     - **By hand (`QUALITY.md`):** with a real Firebase project, a change on another device wakes a locked phone within a minute, and a request shows the notice.
+  9. **Downloads:** the first build fetches `firebase-messaging` 26.0.1 and its dependencies, including the five Play services libraries. The founder approves that here. `ring` is already in the lockfile.
+
+  Alternatives:
+  - **UnifiedPush only:** no Google code. But most users have no distributor app, so most phones would get no push. The server also needs RFC 8291 encryption (a new AES-GCM crate) and VAPID.
+  - **UnifiedPush and FCM together:** reaches everyone, and phones without Play services too when they have a distributor. But it's both systems' work at once. Better as a later addition once FCM works.
+  - **The `rsa` crate for RS256:** pure Rust and from RustCrypto. But its timing advisory is still open, and `cargo deny` would need an ignore.
+  - **No push on Android:** no Google libraries at all. The 15-minute sync and the approving screen's polling already work. But approval notices never reach a phone that's in a pocket, and changes wait up to 15 minutes or longer in Doze.
+
+  Implementation notes (M6.9):
+  - **Two more libraries in the exception,** approved by the founder on 2026-11-05: the licence check found `com.google.firebase:firebase-iid-interop` 17.1.0 and `firebase-measurement-connector` 19.0.0 under the same licence. They are small interface libraries `firebase-messaging` loads at start-up. Each of the seven is allowed by name; anything else under that licence still fails. "The 3-Clause BSD License" (protobuf's name for BSD-3-Clause) is added as a name the check reads.
+  - **Tokens up to 1,024 bytes,** not 4,096: the unique index on `push_tokens.token` can't hold an entry much above 2.7 KB. FCM tokens are about 150 to 250 characters. The core, the route and the table all check 100 to 1,024.
+  - **The sender:** one task for both providers. A device whose provider is off on this server is skipped, not counted as failed. A 401 drops the cached access token. A 404 deletes the device's token.
+  - **The app:** Firebase's own start-up provider is removed from the manifest, so nothing of Firebase starts without the four settings. Delivery-metrics export and Analytics are switched off in the manifest. A `sync` push queues one network-bound sync (`pwm.sync.now`, kept if already waiting), not expedited work, which would need a foreground notice on older Android.
+  - **Signing out** removes the token from the server first (5 seconds at most), as on Apple (D50 notes). No app calls the server's logout at sign-out yet, so the session itself stays valid until it expires; that is a separate follow-up.
+  - **The device test** calls the model the way the messaging service does, since CI has no Firebase project; a real phone is on the `QUALITY.md` checklist.
+  - **Run on this machine:** the core's tests, the server's tests (the FCM tests against fakes, migration 0007's test) against a local Postgres, the JVM tests and the server test against a local server, the build and licence check (161 libraries), and the 5 device tests on an Android 16 emulator.

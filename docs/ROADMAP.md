@@ -610,7 +610,14 @@ Phase 3  Teams           months 16–24 M16–M19
     - **`:app`:** Settings' Devices and "Approve a new device" pages (the list read every 3 seconds while it shows), and "Sign in again to sync" over the vault list.
     - **Tests:** 5 JVM view-model tests; the server test lists and renames devices, runs an approval end to end between two sessions, and signs in again; the UI test renames this device.
   - **Deferred:** health, export and import (M6.11); approval notices (M6.9, push); approving from a real phone (`QUALITY.md`).
-- [ ] M6.9 Push for Android (D57 §1), after M6.3 and M6.8: needs a decision on Google Play services' licence (an allow-list exception) or UnifiedPush, a Firebase project, and the server's RS256 signer for FCM.
+- [x] M6.9 Push for Android (D57 §1), after M6.3 and M6.8: needs a decision on Google Play services' licence (an allow-list exception) or UnifiedPush, a Firebase project, and the server's RS256 signer for FCM.
+  - Done per D60 (implementation notes there):
+    - **Server:** migration 0007 takes Android's FCM tokens; the sender speaks FCM's HTTP v1 API with an RS256 assertion signed with `ring`, beside APNs, each on or off by itself (`PWM_FCM_CREDENTIALS_FILE`).
+    - **Core:** `start_push_token` takes `"android"` with the FCM token's text.
+    - **`:kit`:** the token is sent when it changes and removed at sign-out; a `sync` push starts the background job, an `approval` push shows the notice when its switch is on; tapping it opens Approve a new device.
+    - **`:app`:** Firebase from the build's settings only (messaging, nothing else), the messaging service, the "New devices" channel, and the Settings switch that asks for the permission.
+    - **Tests:** core token checks; server unit tests and three against a fake FCM and token endpoint; migration 0007's test; 5 JVM view-model tests; the server test registers a token; the UI test runs a push of each kind.
+  - **Deferred:** the Firebase project and its settings (the founder, D60 §7); phones without Play services (D60 §6); a real phone (`QUALITY.md`).
 - [ ] M6.10 The Credential Manager provider for Android 14+ (D58 §1): passwords and passkeys, with its own decision on the passkey request format for apps (the provider builds the client data with an `android:apk-key-hash` origin), checking an app against the site's Digital Asset Links file, and the browsers allowed to pass a client data hash.
 - [x] M6.11 Health, export and import on Android (D59 §1, §5-7): the health report with the breach check, export through the system's "Save to", and import through its file picker with the delete line.
   - Done per D59 (implementation notes there):

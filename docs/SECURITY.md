@@ -93,10 +93,11 @@ A new kind of envelope gets a new label; labels are never reused.
 **Local cache (D20).** Each device caches only what the server also holds: account id, salt, KDF params, sealed keyset, wrapped vault keys, item envelopes with revisions, plus local sync state. The Secret Key and unlocked keys are never written to it (platform secure storage only). Deleted rows are overwritten (`secure_delete`); the schema is versioned and a newer or foreign database is refused.
 
 **Syncing while locked and push (D50).** A locked app syncs with its tokens only: it stores pulled item envelopes as they are and uploads queued changes that are already sealed. A change that needs the vault key (two versions to merge, an unsent edit to move, a restored server) waits for the next unlocked sync, so no key is ever needed while locked. On iOS and macOS the tokens are in the Keychain, readable after the device's first unlock; the extension's tokens stay sealed (D34) and it syncs only while unlocked.
-- **Push tokens:** one APNs token per device (`push_tokens`, as bytes, never logged), deleted at sign-out, revoke and logout, or when APNs calls it invalid.
-- **What a push says:** a vault change sends `{"aps":{"content-available":1}}` and nothing else, at most once a minute per device, never to the device that made the change. An approval request sends a fixed notice that names no email or device.
-- **What Apple learns:** that some change happened for a device token, and when. Nothing about the account, vault or item.
-- **Provider token:** ES256 over the `.p8` key (`p256`), made again every 50 minutes. The key is a server setting, like `PWM_SERVER_SECRETS`.
+- **Push tokens:** one APNs or FCM token per device (`push_tokens`, as bytes, never logged), deleted at sign-out, revoke and logout, or when APNs or FCM calls it invalid.
+- **What a push says:** a vault change sends `{"aps":{"content-available":1}}` over APNs, or the FCM data `{"t":"sync"}`, and nothing else, at most once a minute per device, never to the device that made the change. An approval request sends a fixed notice over APNs, or `{"t":"approval"}` over FCM, whose app has the words; neither names an email or device.
+- **What Apple and Google learn:** that some change happened for a device token, and when. Nothing about the account, vault or item.
+- **Provider tokens:** for APNs, ES256 over the `.p8` key (`p256`), made again every 50 minutes. For FCM (D60), an RS256 assertion over the service account's key (`ring`), exchanged at Google's token endpoint for an access token that is kept until 5 minutes before it expires. Both keys are server settings, like `PWM_SERVER_SECRETS`.
+- **On Android,** Firebase starts only with the build's settings and brings messaging alone: no Analytics, no delivery data, no `google-services` plugin. The new-device notice shows only after the user turns on its switch and Android allows notifications.
 
 **Importing (D51).** Imports run in memory in the core (`pwm-import`); the file is never copied, values are zeroized after parsing, nothing is logged, and errors never quote the file. Items get new ids and sync like any new item.
 - **Hostile files:** at most 50 MB, ZIPs at most 10,000 entries and 200 MB unpacked (only the expected entries are read), JSON nesting stops at 128 levels, at most 50,000 items. Every refusal has its own code.
@@ -188,7 +189,7 @@ The recipient verifies the signature with the sender's Ed25519 public key before
 | Compromised unlocked device / malware | No (document it) | Auto-lock, clipboard clearing (30s), memory zeroize |
 | Screen recording, screen sharing, screenshots, the app switcher | Partial | iOS hides secrets while the screen is captured and masks them again after a screenshot (iOS can't block one); the switcher is covered; macOS leaves the window out of captures (D49). No API in browsers or on Linux |
 | Lost/stolen locked device | Yes | Full-disk + vault encryption, biometric bound to hardware keys, remote device revoke |
-| Push service (APNs) observing timing | Accepted | Pushes carry no content or ids; Apple sees only that a device token had a change, and when (D50) |
+| Push service (APNs, FCM) observing timing | Accepted | Pushes carry no content or ids; Apple and Google see only that a device token had a change, and when (D50, D60) |
 | Weak master password | Partial | Secret Key; zxcvbn ≥ 3 required at signup |
 
 ## Security program

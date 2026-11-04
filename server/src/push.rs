@@ -1,9 +1,11 @@
-//! Push over APNs (D50 §3). After an item write or delete commits, the
-//! other devices of the vault's members get a content-free background push
-//! (`{"aps":{"content-available":1}}`), at most one a minute per device. A
-//! device approval request sends a visible notice with fixed text to the
-//! account's devices. Best effort: nothing is retried or queued on disk, and
-//! logs hold counts and statuses only, never a token.
+//! Push over APNs (D50 §3) and FCM (D60). After an item write or delete
+//! commits, the other devices of the vault's members get a content-free
+//! background push (`{"aps":{"content-available":1}}`, or FCM data
+//! `{"t":"sync"}`), at most one a minute per device. A device approval
+//! request sends a notice to the account's devices: fixed text over APNs,
+//! `{"t":"approval"}` over FCM, whose app has the words. Best effort:
+//! nothing is retried or queued on disk, and logs hold counts and statuses
+//! only, never a token.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -43,6 +45,100 @@ const PRODUCTION_URL: &str = "https://api.push.apple.com";
 const SANDBOX_URL: &str = "https://api.sandbox.push.apple.com";
 /// Events waiting for the sender; more are dropped.
 const QUEUE: usize = 1024;
+/// FCM's send API (HTTP v1).
+const FCM_URL: &str = "https://fcm.googleapis.com";
+/// Google's OAuth token endpoint, which takes the signed assertion.
+const FCM_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
+/// The only scope asked for.
+pub const FCM_SCOPE: &str = "https://www.googleapis.com/auth/firebase.messaging";
+/// FCM's data for a change, byte for byte (D60 §3).
+pub const FCM_SYNC_DATA: &str = r#"{"t":"sync"}"#;
+/// FCM's data for a new device's request; the app has the words.
+pub const FCM_APPROVAL_DATA: &str = r#"{"t":"approval"}"#;
+/// An access token is made again this long before it expires.
+const ACCESS_MARGIN: Duration = Duration::from_secs(5 * 60);
+
+/// The FCM settings, from the service account's file. `Debug` shows
+/// neither the key nor the account.
+pub struct FcmConfig {
+    key: ring::signature::RsaKeyPair,
+    client_email: String,
+    project_id: String,
+    send_url: String,
+    token_url: String,
+}
+
+impl std::fmt::Debug for FcmConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("FcmConfig { .. }")
+    }
+}
+
+impl FcmConfig {
+    /// From the service account's JSON file (`project_id`, `client_email`
+    /// and `private_key`); the URLs replace Google's (tests).
+    pub fn new(
+        credentials: &str,
+        send_url: Option<&str>,
+        token_url: Option<&str>,
+    ) -> Result<Self, ServerError> {
+        let bad =
+            || ServerError::Config("PWM_FCM_CREDENTIALS_FILE is not a service account's JSON file");
+        let file: serde_json::Value = serde_json::from_str(credentials).map_err(|_| bad())?;
+        let field = |name: &str| {
+            file[name]
+                .as_str()
+                .filter(|v| !v.is_empty())
+                .ok_or_else(bad)
+        };
+        let project_id = field("project_id")?;
+        let client_email = field("client_email")?;
+        let der = pem_private_key(field("private_key")?).ok_or_else(bad)?;
+        let key = ring::signature::RsaKeyPair::from_pkcs8(&der).map_err(|_| bad())?;
+        let plain = |s: &str| {
+            s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-_.@".contains(&b))
+        };
+        if !plain(project_id) || !plain(client_email) {
+            return Err(bad());
+        }
+        let url =
+            |u: Option<&str>, default: &str| u.unwrap_or(default).trim_end_matches('/').to_owned();
+        Ok(Self {
+            key,
+            client_email: client_email.to_owned(),
+            project_id: project_id.to_owned(),
+            send_url: url(send_url, FCM_URL),
+            token_url: url(token_url, FCM_TOKEN_URL),
+        })
+    }
+
+    /// `PWM_FCM_CREDENTIALS_FILE`, and the optional `PWM_FCM_URL` and
+    /// `PWM_FCM_TOKEN_URL`. Not set: FCM is off.
+    pub fn from_vars(var: impl Fn(&str) -> Option<String>) -> Result<Option<Self>, ServerError> {
+        let get = |name| var(name).filter(|v| !v.is_empty());
+        let Some(path) = get("PWM_FCM_CREDENTIALS_FILE") else {
+            return Ok(None);
+        };
+        let text = std::fs::read_to_string(path)
+            .map_err(|_| ServerError::Config("PWM_FCM_CREDENTIALS_FILE cannot be read"))?;
+        Self::new(
+            &text,
+            get("PWM_FCM_URL").as_deref(),
+            get("PWM_FCM_TOKEN_URL").as_deref(),
+        )
+        .map(Some)
+    }
+}
+
+/// The DER inside a `PRIVATE KEY` PEM block (PKCS#8, as Google writes it).
+fn pem_private_key(pem: &str) -> Option<Vec<u8>> {
+    let start = "-----BEGIN PRIVATE KEY-----";
+    let end = "-----END PRIVATE KEY-----";
+    let body = pem.split_once(start)?.1.split_once(end)?.0;
+    let text: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+    base64::engine::general_purpose::STANDARD.decode(text).ok()
+}
 
 /// The APNs settings. `Debug` shows neither the key nor the ids.
 pub struct PushConfig {
@@ -141,10 +237,14 @@ impl Push {
         Self::default()
     }
 
-    /// Starts the sender on the current Tokio runtime. Without the
-    /// system's root certificates, push stays off.
-    pub fn start(pool: PgPool, config: PushConfig) -> Self {
-        let Some(sender) = Sender::new(pool, config) else {
+    /// Starts the sender on the current Tokio runtime, with APNs, FCM or
+    /// both. Without either, or the system's root certificates, push stays
+    /// off.
+    pub fn start(pool: PgPool, apns: Option<PushConfig>, fcm: Option<FcmConfig>) -> Self {
+        if apns.is_none() && fcm.is_none() {
+            return Self::off();
+        }
+        let Some(sender) = Sender::new(pool, apns, fcm) else {
             tracing::warn!("push: no root certificates, so push is off");
             return Self::off();
         };
@@ -189,14 +289,17 @@ enum Kind {
 
 struct Sender {
     pool: PgPool,
-    config: Arc<PushConfig>,
+    apns: Option<Arc<PushConfig>>,
+    fcm: Option<Arc<FcmConfig>>,
     client: Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>,
     jwt: Option<(String, Instant)>,
+    /// FCM's OAuth access token, and when to make a new one.
+    access: Option<(String, Instant)>,
     last: HashMap<Uuid, Instant>,
 }
 
 impl Sender {
-    fn new(pool: PgPool, config: PushConfig) -> Option<Self> {
+    fn new(pool: PgPool, apns: Option<PushConfig>, fcm: Option<FcmConfig>) -> Option<Self> {
         let connector = hyper_rustls::HttpsConnectorBuilder::new()
             .with_native_roots()
             .ok()?
@@ -208,9 +311,11 @@ impl Sender {
             .build(connector);
         Some(Self {
             pool,
-            config: Arc::new(config),
+            apns: apns.map(Arc::new),
+            fcm: fcm.map(Arc::new),
             client,
             jwt: None,
+            access: None,
             last: HashMap::new(),
         })
     }
@@ -285,6 +390,8 @@ impl Sender {
                         .await;
                 }
                 Answer::Failed => failed += 1,
+                // Its provider is off on this server.
+                Answer::Skipped => {}
             }
         }
         if sent + failed + dropped > 0 {
@@ -293,10 +400,104 @@ impl Sender {
     }
 
     async fn send_one(&mut self, target: &Target, kind: Kind) -> Answer {
-        let Some(jwt) = self.jwt() else {
+        if target.app == "android" {
+            self.send_fcm(target, kind).await
+        } else {
+            self.send_apns(target, kind).await
+        }
+    }
+
+    /// One FCM data message (D60 §3): `{"t":"sync"}` at normal priority, or
+    /// `{"t":"approval"}` at high priority, with nothing else in it.
+    async fn send_fcm(&mut self, target: &Target, kind: Kind) -> Answer {
+        let Some(config) = self.fcm.clone() else {
+            return Answer::Skipped;
+        };
+        let Ok(token) = std::str::from_utf8(&target.token) else {
+            return Answer::Gone;
+        };
+        let Some(access) = self.access_token(&config).await else {
             return Answer::Failed;
         };
-        let config = self.config.clone();
+        let body = fcm_message(token, kind).to_string();
+        let request = hyper::Request::post(format!(
+            "{}/v1/projects/{}/messages:send",
+            config.send_url, config.project_id
+        ))
+        .header("authorization", format!("Bearer {access}"))
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(body)));
+        let Ok(request) = request else {
+            return Answer::Failed;
+        };
+        let response =
+            match tokio::time::timeout(Duration::from_secs(10), self.client.request(request)).await
+            {
+                Ok(Ok(response)) => response,
+                _ => return Answer::Failed,
+            };
+        match response.status().as_u16() {
+            200 => Answer::Sent,
+            // UNREGISTERED: the app was removed or the token replaced.
+            404 => Answer::Gone,
+            401 => {
+                // The access token was refused: make a new one next time.
+                self.access = None;
+                Answer::Failed
+            }
+            _ => Answer::Failed,
+        }
+    }
+
+    /// FCM's OAuth access token, from an RS256 assertion signed with the
+    /// service account's key; kept until shortly before it expires.
+    async fn access_token(&mut self, config: &FcmConfig) -> Option<String> {
+        if let Some((token, until)) = &self.access
+            && Instant::now() < *until
+        {
+            return Some(token.clone());
+        }
+        let assertion = fcm_assertion(config, unix_secs())?;
+        let body = format!(
+            "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion={assertion}"
+        );
+        let request = hyper::Request::post(&config.token_url)
+            .header("content-type", "application/x-www-form-urlencoded")
+            .body(Full::new(Bytes::from(body)))
+            .ok()?;
+        let response = tokio::time::timeout(Duration::from_secs(10), self.client.request(request))
+            .await
+            .ok()?
+            .ok()?;
+        if response.status() != hyper::StatusCode::OK {
+            tracing::warn!(
+                "push: FCM's token endpoint answered {}",
+                response.status().as_u16()
+            );
+            return None;
+        }
+        let bytes = response.into_body().collect().await.ok()?.to_bytes();
+        let answer: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+        let token = answer["access_token"]
+            .as_str()
+            .filter(|t| !t.is_empty())?
+            .to_owned();
+        let lasts = Duration::from_secs(answer["expires_in"].as_u64().unwrap_or(3600));
+        let until = Instant::now()
+            + lasts
+                .saturating_sub(ACCESS_MARGIN)
+                .max(Duration::from_secs(60));
+        self.access = Some((token.clone(), until));
+        Some(token)
+    }
+
+    async fn send_apns(&mut self, target: &Target, kind: Kind) -> Answer {
+        let Some(config) = self.apns.clone() else {
+            return Answer::Skipped;
+        };
+        let Some(jwt) = self.jwt(&config) else {
+            return Answer::Failed;
+        };
         let base = match (&config.url, target.sandbox) {
             (Some(url), _) => url.as_str(),
             (None, true) => SANDBOX_URL,
@@ -360,13 +561,13 @@ impl Sender {
     }
 
     /// The ES256 provider token, made again every 50 minutes.
-    fn jwt(&mut self) -> Option<String> {
+    fn jwt(&mut self, config: &PushConfig) -> Option<String> {
         if let Some((jwt, at)) = &self.jwt
             && at.elapsed() < JWT_EVERY
         {
             return Some(jwt.clone());
         }
-        let jwt = provider_token(&self.config, unix_secs())?;
+        let jwt = provider_token(config, unix_secs())?;
         self.jwt = Some((jwt.clone(), Instant::now()));
         Some(jwt)
     }
@@ -376,6 +577,53 @@ enum Answer {
     Sent,
     Gone,
     Failed,
+    Skipped,
+}
+
+/// The whole FCM message: the token, the data and Android's delivery
+/// settings, and nothing else (D60 §3).
+fn fcm_message(token: &str, kind: Kind) -> serde_json::Value {
+    match kind {
+        Kind::Background => serde_json::json!({ "message": {
+            "token": token,
+            "data": { "t": "sync" },
+            "android": { "priority": "normal", "ttl": format!("{BACKGROUND_EXPIRES_SECS}s"), "collapse_key": "sync" },
+        }}),
+        Kind::Approval => serde_json::json!({ "message": {
+            "token": token,
+            "data": { "t": "approval" },
+            "android": { "priority": "high", "ttl": format!("{APPROVAL_EXPIRES_SECS}s") },
+        }}),
+    }
+}
+
+/// The service account's assertion for Google's token endpoint: an RS256
+/// JWT for the messaging scope, valid an hour.
+fn fcm_assertion(config: &FcmConfig, iat: u64) -> Option<String> {
+    let header = serde_json::json!({ "alg": "RS256", "typ": "JWT" });
+    let claims = serde_json::json!({
+        "iss": config.client_email,
+        "scope": FCM_SCOPE,
+        "aud": config.token_url,
+        "iat": iat,
+        "exp": iat + 3600,
+    });
+    let signed = format!(
+        "{}.{}",
+        URL_SAFE_NO_PAD.encode(header.to_string()),
+        URL_SAFE_NO_PAD.encode(claims.to_string())
+    );
+    let mut signature = vec![0; config.key.public().modulus_len()];
+    config
+        .key
+        .sign(
+            &ring::signature::RSA_PKCS1_SHA256,
+            &ring::rand::SystemRandom::new(),
+            signed.as_bytes(),
+            &mut signature,
+        )
+        .ok()?;
+    Some(format!("{signed}.{}", URL_SAFE_NO_PAD.encode(signature)))
 }
 
 fn target(row: &sqlx::postgres::PgRow) -> Target {
@@ -416,6 +664,96 @@ mod tests {
     use p256::ecdsa::VerifyingKey;
     use p256::ecdsa::signature::Verifier;
     use p256::pkcs8::{EncodePrivateKey, LineEnding};
+
+    /// A throwaway RSA key made for these tests, never used anywhere else.
+    const TEST_RSA_KEY: &str = include_str!("../tests/fixtures/fcm-test-key.pem");
+
+    fn credentials() -> String {
+        serde_json::json!({
+            "type": "service_account",
+            "project_id": "pwm-test",
+            "client_email": "push@pwm-test.iam.gserviceaccount.com",
+            "private_key": TEST_RSA_KEY,
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn the_fcm_assertion_is_rs256_for_the_messaging_scope() {
+        let config = FcmConfig::new(&credentials(), None, None).unwrap();
+        let jwt = fcm_assertion(&config, 1_700_000_000).unwrap();
+        let parts: Vec<&str> = jwt.split('.').collect();
+        assert_eq!(parts.len(), 3);
+        let header: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[0]).unwrap()).unwrap();
+        let claims: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[1]).unwrap()).unwrap();
+        assert_eq!(header, serde_json::json!({ "alg": "RS256", "typ": "JWT" }));
+        assert_eq!(
+            claims,
+            serde_json::json!({
+                "iss": "push@pwm-test.iam.gserviceaccount.com",
+                "scope": "https://www.googleapis.com/auth/firebase.messaging",
+                "aud": "https://oauth2.googleapis.com/token",
+                "iat": 1_700_000_000,
+                "exp": 1_700_003_600,
+            })
+        );
+        let public = ring::signature::UnparsedPublicKey::new(
+            &ring::signature::RSA_PKCS1_2048_8192_SHA256,
+            config.key.public().as_ref().to_vec(),
+        );
+        let signed = format!("{}.{}", parts[0], parts[1]);
+        let signature = URL_SAFE_NO_PAD.decode(parts[2]).unwrap();
+        assert!(public.verify(signed.as_bytes(), &signature).is_ok());
+        let mut tampered = signed.into_bytes();
+        tampered[0] ^= 1;
+        assert!(public.verify(&tampered, &signature).is_err());
+    }
+
+    #[test]
+    fn fcm_messages_carry_only_the_token_and_the_kind() {
+        assert_eq!(
+            fcm_message("tok", Kind::Background),
+            serde_json::json!({ "message": {
+                "token": "tok",
+                "data": { "t": "sync" },
+                "android": { "priority": "normal", "ttl": "3600s", "collapse_key": "sync" },
+            }})
+        );
+        assert_eq!(
+            fcm_message("tok", Kind::Approval),
+            serde_json::json!({ "message": {
+                "token": "tok",
+                "data": { "t": "approval" },
+                "android": { "priority": "high", "ttl": "600s" },
+            }})
+        );
+        assert_eq!(FCM_SYNC_DATA, r#"{"t":"sync"}"#);
+        assert_eq!(FCM_APPROVAL_DATA, r#"{"t":"approval"}"#);
+    }
+
+    #[test]
+    fn fcm_settings_are_checked_and_never_printed() {
+        let config =
+            FcmConfig::new(&credentials(), Some("http://fcm/"), Some("http://token/")).unwrap();
+        assert_eq!(format!("{config:?}"), "FcmConfig { .. }");
+        assert_eq!(config.send_url, "http://fcm");
+        assert_eq!(config.token_url, "http://token");
+        assert!(FcmConfig::new("not json", None, None).is_err());
+        assert!(FcmConfig::new(r#"{"project_id":"p","client_email":"e"}"#, None, None).is_err());
+        let wrong_key = credentials().replace("MII", "MIJ");
+        assert!(FcmConfig::new(&wrong_key, None, None).is_err());
+        let odd_project = credentials().replace("pwm-test\"", "pwm test\"");
+        assert!(FcmConfig::new(&odd_project, None, None).is_err());
+        assert!(FcmConfig::from_vars(|_| None).unwrap().is_none());
+        assert!(
+            FcmConfig::from_vars(
+                |n| (n == "PWM_FCM_CREDENTIALS_FILE").then(|| "/nonexistent".into())
+            )
+            .is_err()
+        );
+    }
 
     fn config() -> (PushConfig, VerifyingKey) {
         let key = SigningKey::from_slice(&[7u8; 32]).unwrap();
@@ -521,7 +859,7 @@ mod tests {
         let pem = key.to_pkcs8_pem(LineEnding::LF).unwrap();
         let config = PushConfig::new(&pem, "K", "T", "a.ios", "a.mac", Some(&url)).unwrap();
         let pool = PgPool::connect_lazy("postgres://unused@127.0.0.1:1/unused").unwrap();
-        let mut sender = Sender::new(pool, config).unwrap();
+        let mut sender = Sender::new(pool, Some(config), None).unwrap();
         let target = |byte: &str, app: &str| Target {
             device_id: Uuid::nil(),
             app: app.to_owned(),

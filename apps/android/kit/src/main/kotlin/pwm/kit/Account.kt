@@ -59,6 +59,9 @@ interface Account {
     /** The background job's sync: locked or not, with the stored tokens (D57 §2). */
     suspend fun backgroundSync(): SyncResult
 
+    /** Registers this device's FCM token with the server, or removes it with null (D60 §4); works locked. */
+    suspend fun setPushToken(token: String?)
+
     // --- Devices and approvals (D59 §2-3) ---
 
     /** The account's devices, this one marked. */
