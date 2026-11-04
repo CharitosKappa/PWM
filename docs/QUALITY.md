@@ -104,6 +104,12 @@ Fingerprint and face unlock (D55), with the same build:
 4. Remove the screen lock: Settings says to set one, and the unlock screen asks for the master password.
 5. Sign out and sign in again: it starts off.
 
+Screenshots and screen sharing (D56), with the same build:
+
+1. On the vault and the Secret Key screen: a screenshot and a screen recording come out black, and casting shows black. On welcome and unlock they show.
+2. The app switcher shows no picture of the vault.
+3. Settings, turn off "Hide PWM from screenshots and screen sharing": the vault shows in a screenshot; on Android 13+ the switcher still shows no picture. The Secret Key screen stays black.
+
 ### Import checklist (D51)
 
 Before the beta, with a real export from each manager (made with a throwaway account holding synthetic items, never real ones):

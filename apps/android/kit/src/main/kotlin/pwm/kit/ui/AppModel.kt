@@ -55,10 +55,29 @@ class AppModel(
         val usesOtherServer: Boolean = false,
         val otherServer: String = "",
         val error: String? = null,
-    )
+        /** The Settings switch (D56 §2). */
+        val hideFromCapture: Boolean = true,
+    ) {
+        /**
+         * The window is left out of screenshots, recordings and screen sharing
+         * (D56 §1): always on the Secret Key screen, and on the vault unless
+         * the switch is off. The locked screens show only masked passwords.
+         */
+        val secureWindow: Boolean
+            get() = screen is Screen.SecretKey || (screen is Screen.Vault && hideFromCapture)
 
-    private val mutable = MutableStateFlow(State())
+        /** No picture in the app switcher (D56 §3), whatever the switch says. */
+        val hideFromRecents: Boolean get() = screen is Screen.SecretKey || screen is Screen.Vault
+    }
+
+    private val mutable = MutableStateFlow(State(hideFromCapture = prefs.hideFromCapture))
     val state: StateFlow<State> = mutable
+
+    /** The Settings switch: kept in the app's preferences. */
+    fun setHideFromCapture(hide: Boolean) {
+        prefs.hideFromCapture = hide
+        mutable.update { it.copy(hideFromCapture = hide) }
+    }
 
     private var account: Account? = null
     private var accountServer: String? = null
@@ -162,7 +181,10 @@ class AppModel(
         val home = HomeModel(
             vault = vault,
             generator = GeneratorModel(scope, work, clipboard).also { it.regenerate() },
-            settings = SettingsModel(scope, account, prefs, paper, onLock = { lock(account) }, onSignedOut = ::didSignOut),
+            settings = SettingsModel(
+                scope, account, prefs, paper, onLock = { lock(account) }, onSignedOut = ::didSignOut,
+                onHideFromCapture = ::setHideFromCapture,
+            ),
         )
         show(Screen.Vault(home))
         scope.launch {

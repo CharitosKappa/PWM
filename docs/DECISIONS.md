@@ -2378,3 +2378,41 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - the JVM tests, the server test's round trip, the build and licence check, and the 5 device tests on an Android 16 emulator
     - **the real key and prompt, by hand on the emulator:** with a PIN set and a fingerprint enrolled through the emulator's simulated sensor, turning it on and unlocking with a finger both worked. The PIN and fingerprint were removed afterwards, so later runs match CI.
   - **Not run:** a real phone, and a new enrollment invalidating the key (the `QUALITY.md` checklist).
+
+- **D56 — Screenshots, screen recording and the app switcher on Android** · settled 2026-11-04 · founder (approved as proposed).
+  M6.4 says "FLAG_SECURE on sensitive screens". D49 settled what counts as secret and logged Android's `FLAG_SECURE` as the way to protect it. That flag works per window: while it's set, screenshots and recordings show the window black, screen sharing and casting show it black, and the app switcher shows no picture of it. Android can't apply it to part of a screen. M6.6 already sets it on the Secret Key screen. Open:
+  - which screens get it, given it's all or nothing for the window
+  - the app-switcher preview
+  - whether the user can turn it off, as on the Mac (D49 §5)
+
+  Proposal:
+  1. **The whole window is secure while the vault is unlocked, and on the Secret Key screen.**
+     - **Covers:** every tab, item and edit screen, the generator, and Settings.
+     - **Why the whole vault, not only revealed values:** the flag can't cover part of a window. Setting it only while a value shows would leave the list, the one-time codes and the generator's password visible.
+     - **Not covered:** welcome, create account, sign in and unlock. Their passwords are always masked and only the email shows, as D49 §1 says of the unlock screen, so screen sharing still shows that the app is locked.
+  2. **A switch, as on the Mac:** "Hide PWM from screenshots and screen sharing" in Settings, on by default.
+     - **Turning it off** asks nothing; its line says what it changes.
+     - **Why a switch:** someone sharing their screen for help may need to show the app (D49 §5).
+     - **The Secret Key screen stays secure** whatever the switch says: it shows before Settings exists, and its key is shown once.
+     - **Kept in the app's preferences,** not synced.
+  3. **The app switcher:** on Android 13 and later, the vault never shows in the switcher, even with the switch off (`setRecentsScreenshotEnabled(false)`, as the iOS cover does, D49 §4). On Android 9 to 12 only `FLAG_SECURE` hides it, so the switch turns that off too; Settings says so.
+  4. **Where it's decided:** `AppModel` says whether the window should be secure, from the screen and the switch. The Activity applies it, in one place, and the Secret Key screen's own flag from M6.6 goes. So the rule is tested on the JVM.
+  5. **Tests:**
+     - **JVM:**
+       - secure on the vault and the Secret Key screen
+       - not secure on welcome, sign in and unlock
+       - the switch's effect, and that it never applies to the Secret Key screen
+       - it's kept, and on by default
+     - **On the emulator:** the window's flags on the welcome and vault screens, and after turning the switch off. The UI test checks this.
+     - **By hand (`QUALITY.md`):** a screenshot and a screen recording come out black on the vault, casting shows black, and the switcher shows no picture.
+  6. **No new libraries.**
+
+  Alternatives:
+  - **Always on, no switch:** simpler, but honest screen sharing for support would be impossible, which D49 avoided on the Mac.
+  - **Secure only while a value is revealed:** less in the way, but the flag can't cover part of a window, so codes, the generator and the list would show.
+  - **Watching for screenshots instead** (Android 14's capture callback): it only reports after the fact, like iOS. `FLAG_SECURE` stops them.
+
+  Implementation notes (M6.4):
+  - **`AppModel.State`** has `secureWindow` and `hideFromRecents`, worked out from the screen and the switch. `MainActivity` applies them whenever they change. The Secret Key screen no longer sets the flag itself.
+  - **The switch** is `hideFromCapture` in the app's preferences, on by default. Settings words its line for Android 13+ or older, since only 13+ keeps the switcher covered with the switch off.
+  - **Run on this machine:** the JVM tests, the build, and the 4 device tests on an Android 16 emulator against a local server. Not run: a real phone's screenshots, recording and casting (the `QUALITY.md` checklist).

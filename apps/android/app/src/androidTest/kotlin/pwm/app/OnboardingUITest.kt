@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import android.view.WindowManager
 import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -40,6 +41,7 @@ class OnboardingUITest {
         if (exists("unlockScreen")) tap("signOut")
         if (exists("vaultScreen")) signOut()
         compose.waitUntil(10_000) { exists("welcome") }
+        check(!secure()) { "the welcome screen shows in screenshots (D56 §1)" }
     }
 
     @Test
@@ -79,9 +81,11 @@ class OnboardingUITest {
         check(secretKey.startsWith("A1-")) { "not a Secret Key" }
         compose.waitUntil(10_000) { enabled("saveKit") }
         compose.onNodeWithTag("saved").assertIsNotEnabled()
+        check(secure()) { "the Secret Key screen is left out of screenshots" }
         tap("copy")
         tap("saved")
         compose.waitUntil(60_000) { exists("itemList") }
+        check(secure()) { "the vault is left out of screenshots" }
 
         // A login with a generated password (D54 §9).
         tap("newItem")
@@ -128,6 +132,12 @@ class OnboardingUITest {
         tap("tab.settings")
         compose.waitUntil(10_000) { exists("biometricUnavailable") }
 
+        // The switch lets the vault show in screenshots and screen sharing (D56 §2).
+        tap("hideFromCaptureSwitch")
+        compose.waitUntil(5_000) { !secure() }
+        tap("hideFromCaptureSwitch")
+        compose.waitUntil(5_000) { secure() }
+
         // Lock now, then unlock with the master password only.
         tap("lockNow")
         unlock()
@@ -155,6 +165,14 @@ class OnboardingUITest {
         tap("signOut")
         tap("confirmSignOut")
         compose.waitUntil(10_000) { exists("welcome") }
+    }
+
+    /** Whether the window is left out of screenshots and screen sharing. */
+    private fun secure(): Boolean {
+        compose.waitForIdle()
+        var flags = 0
+        compose.activityRule.scenario.onActivity { flags = it.window.attributes.flags }
+        return flags and WindowManager.LayoutParams.FLAG_SECURE != 0
     }
 
     private fun exists(tag: String) = compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty()

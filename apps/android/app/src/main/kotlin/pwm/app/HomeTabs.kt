@@ -174,6 +174,22 @@ internal fun SettingsTab(app: AppModel, model: SettingsModel) {
         Text(stringResource(R.string.lock_timeout_hint), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))
         Secondary(stringResource(R.string.lock_now), tag = "lockNow", onClick = model::lockNow)
 
+        // Screenshots and screen sharing (D56 §2).
+        Heading(stringResource(R.string.hide_from_capture))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                stringResource(
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) R.string.hide_from_capture_hint
+                    else R.string.hide_from_capture_hint_old,
+                ),
+                style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted), modifier = Modifier.weight(1f),
+            )
+            Switch(
+                checked = state.hideFromCapture, onCheckedChange = model::setHideFromCapture,
+                modifier = Modifier.testTag("hideFromCaptureSwitch"),
+            )
+        }
+
         // Fingerprint and face unlock (D55): the switch, or why it can't be used.
         Heading(stringResource(R.string.biometric_switch))
         when (val biometric = state.biometric) {

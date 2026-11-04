@@ -566,7 +566,12 @@ Phase 3  Teams           months 16–24 M16–M19
     - **On a real phone:** the checklist in `QUALITY.md` (a new finger, removing the screen lock).
     - **The autofill service** unlocks with the same key in M6.3.
 - [ ] M6.3 AutofillService + Credential Manager provider (passwords + passkeys), inline suggestions.
-- [ ] M6.4 FLAG_SECURE on sensitive screens.
+- [x] M6.4 FLAG_SECURE on sensitive screens.
+  - Done per D56 (implementation notes there):
+    - **`AppModel`** says whether the window is left out of capture (the Secret Key screen always; the vault unless the switch is off) and out of the app switcher (both, whatever the switch). The Activity applies `FLAG_SECURE` and, on Android 13+, `setRecentsScreenshotEnabled`.
+    - **Settings:** "Hide PWM from screenshots and screen sharing", on by default.
+    - **Tests:** 3 JVM tests of the rule and the switch; the UI test checks the window's flag on welcome, the Secret Key, the vault, and with the switch off and on.
+  - **Deferred:** a real phone's screenshots, recording and casting: the checklist in `QUALITY.md`.
 - [ ] M6.5 Background sync and push (FCM) for Android, the same as M5.8 (WorkManager for periodic refresh).
 - [x] M6.6 Onboarding, as M5.2: create an account, the Emergency Kit, sign in, and asking another device to approve (D52 §1).
   - Done per D53 (implementation notes there):
