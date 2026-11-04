@@ -550,12 +550,12 @@ Phase 3  Teams           months 16–24 M16–M19
     - **`apps/android`:** Gradle 9.3.1 with the Android Gradle Plugin 9.1 and Kotlin 2.4. `:core` generates the UniFFI Kotlin from the host build of `pwm-ffi`; `:app` builds the core for `arm64-v8a`, `armeabi-v7a` and `x86_64` with `cargo-ndk` before every build. Android 9 to 16.
     - **`:kit`:** `Session` (the step loop over `HttpURLConnection`, one call at a time), `Item` (D18 JSON, unknown fields kept), `PwmError` with the shared messages, `Redacted`, `KeyStore`, the design tokens.
     - **`:app`:** `KeystoreKeys` (each key sealed with AES-GCM under a non-exportable Android Keystore key, bound to its name) and a placeholder screen that shows the core loaded. Backups and device transfer are off.
-    - **Shared files:** `design/messages.json` and `scripts/tokens-kotlin.mjs` / `messages-kotlin.mjs`; `just check` fails when the Kotlin files are stale.
+    - **Shared files:** `design/messages.json` and `scripts/tokens-kotlin.mjs` / `messages.mjs`; `just check` fails when the generated files are stale.
     - **Checks:** a Gradle licence check against the allow-list (85 shipped libraries, all Apache-2.0); a new `android` CI job.
     - **Tests:** 5 JVM tests of `:kit` over the real core through JNA, 1 against a real server (CI), and 2 on an emulator (the core loads; the Keystore seals and returns keys), run here on Android 16.
   - **Deferred:**
     - **The screens:** M6.6 to M6.8.
-    - **The Apple app's messages** move to `design/messages.json` once M8's open PRs merge (D52 notes).
+    - **The Apple app's messages** move to `design/messages.json` once M8's open PRs merge (D52 notes). Done after M8 merged: both apps' lists are generated from it.
     - **A real phone's Keystore hardware:** the manual checklist in `QUALITY.md`.
 - [ ] M6.2 BiometricPrompt + Keystore-wrapped key.
 - [ ] M6.3 AutofillService + Credential Manager provider (passwords + passkeys), inline suggestions.

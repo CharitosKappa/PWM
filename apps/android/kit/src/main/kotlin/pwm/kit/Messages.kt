@@ -1,7 +1,7 @@
-// Generated from design/messages.json by scripts/messages-kotlin.mjs. Do not edit.
+// Generated from design/messages.json by scripts/messages.mjs. Do not edit.
 package pwm.kit
 
-/** What to show for each of the core's error codes; never a value. */
+/** What to show for each error code; never a value. */
 internal object Messages {
     const val FALLBACK = "Something went wrong. Try again."
 
@@ -32,8 +32,8 @@ internal object Messages {
         "unknown_approval" to "That request ended. Ask the new device to try again.",
         "approval_failed" to "The approval didn't arrive safely. Sign in with your Secret Key.",
         "biometric_cancelled" to "Unlock with your master password, or try again.",
-        "biometric_changed" to "Face ID or Touch ID changed. Enter your master password to turn it back on.",
-        "biometric_unavailable" to "Face ID or Touch ID is not available on this device.",
+        "biometric_changed" to "Your fingerprint or face unlock changed. Enter your master password to turn it back on.",
+        "biometric_unavailable" to "Fingerprint or face unlock is not available on this device.",
         "biometric_unlock_failed" to "Enter your master password.",
         "master_password_due" to "Enter your master password. It's asked every 14 days so you don't forget it.",
         "invalid_device_name" to "Use a shorter name, up to 63 characters.",
@@ -41,9 +41,20 @@ internal object Messages {
         "export_not_authorized" to "Enter your master password to export.",
         "export_expired" to "Enter your master password again to export.",
         "weak_export_password" to "Choose a stronger export password.",
+        "import_too_large" to "This file is too large to import.",
+        "import_unreadable" to "This file can't be read as that format. Check the format, or export again.",
+        "import_password_needed" to "Enter the password this export was made with.",
+        "import_wrong_password" to "Wrong password for this export.",
+        "import_bitwarden_account_restricted" to "This Bitwarden export is locked to the Bitwarden account. Export again as “Password protected” or unencrypted.",
+        "import_proton_encrypted" to "This Proton Pass export is encrypted. Export again without encryption.",
+        "not_running" to "Check the file again, then import.",
+        "import_keepass_kdb" to "This is a KeePass 1 database. Open it in KeePass 2 or KeePassXC and save it as a .kdbx first.",
+        "import_keepass_version" to "This KeePass database uses a version or setting PWM can't open yet.",
+        "import_keepass_too_costly" to "This database's key settings would take too long here. Lower them in KeePass, then try again.",
+        "delete_failed" to "The file couldn't be deleted. Delete it yourself in your Files app.",
         "not_signed_in" to "Sign in on this device first.",
         "storage" to "The vault on this device could not be opened.",
-        "keychain" to "The keychain refused to store this device's keys.",
+        "keychain" to "This device refused to store its keys.",
         "invalid_email" to "Enter a valid email address.",
         "invalid_server" to "Enter the server's address, starting with https://.",
         "not_a_kit" to "That's not an Emergency Kit code.",
