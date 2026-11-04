@@ -63,6 +63,21 @@ class ServerTest {
         assertEquals("Example", copy.title)
         assertEquals("hunter2-synthetic", copy.password)
 
+        // Locked, the background sync stores a change from the first device
+        // and uploads one queued here (D57 §2).
+        val queued = second.newItem(Item.Kind.NOTE, "Queued on the second device")
+        val queuedId = second.save(queued, vault)
+        second.lock()
+        val fromFirst = first.save(first.newItem(Item.Kind.NOTE, "Made while the second was locked"), vault)
+        assertTrue((first.sync() as SyncResult.Synced).pushed >= 1)
+        val locked = second.backgroundSync() as SyncResult.Synced
+        assertTrue("pulled while locked", locked.pulled >= 1)
+        assertEquals("the queued note went up", 1L, locked.pushed)
+        second.unlock(password)
+        assertEquals("Made while the second was locked", second.items(vault).first { it.id == fromFirst }.title)
+        first.sync()
+        assertEquals("Queued on the second device", first.items(vault).first { it.id == queuedId }.title)
+
         // Locked, then unlocked offline with the stored keys.
         second.lock()
         second.unlock(password)

@@ -13,6 +13,11 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import android.view.WindowManager
 import androidx.lifecycle.Lifecycle
+import androidx.work.ListenableWorker
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.testing.TestListenableWorkerBuilder
+import kotlinx.coroutines.runBlocking
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
@@ -128,6 +133,12 @@ class OnboardingUITest {
         tap("submit")
         compose.waitUntil(60_000) { exists("item.Bank") }
 
+        // The background sync is scheduled, and a run succeeds (D57 §4).
+        // Scheduling is asynchronous, and the first run may start at once.
+        compose.waitUntil(10_000) { syncJob() in setOf(WorkInfo.State.ENQUEUED, WorkInfo.State.RUNNING) }
+        val worker = TestListenableWorkerBuilder<SyncWorker>(InstrumentationRegistry.getInstrumentation().targetContext.applicationContext).build()
+        check(runBlocking { worker.doWork() } == ListenableWorker.Result.success()) { "the background sync failed" }
+
         // No finger enrolled on the emulator: Settings says why (D55 §7).
         tap("tab.settings")
         compose.waitUntil(10_000) { exists("biometricUnavailable") }
@@ -151,7 +162,12 @@ class OnboardingUITest {
         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
         unlock()
         signOut()
+        compose.waitUntil(10_000) { syncJob() == WorkInfo.State.CANCELLED }
     }
+
+    private fun syncJob(): WorkInfo.State? =
+        WorkManager.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
+            .getWorkInfosForUniqueWork(WorkManagerScheduler.NAME).get().lastOrNull()?.state
 
     private fun unlock() {
         compose.waitUntil(10_000) { exists("unlockScreen") }

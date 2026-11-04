@@ -2416,3 +2416,45 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **`AppModel.State`** has `secureWindow` and `hideFromRecents`, worked out from the screen and the switch. `MainActivity` applies them whenever they change. The Secret Key screen no longer sets the flag itself.
   - **The switch** is `hideFromCapture` in the app's preferences, on by default. Settings words its line for Android 13+ or older, since only 13+ keeps the switcher covered with the switch off.
   - **Run on this machine:** the JVM tests, the build, and the 4 device tests on an Android 16 emulator against a local server. Not run: a real phone's screenshots, recording and casting (the `QUALITY.md` checklist).
+
+- **D57 — Background sync on Android, and whether push comes now** · settled 2026-11-04 · founder (approved as proposed).
+  M6.5 says "Background sync and push (FCM) for Android, the same as M5.8 (WorkManager for periodic refresh)". D50 settled the shared parts: the core's locked sync (`start_locked_sync`, already in UniFFI), and a content-free push that only wakes the device. On Apple, push goes through APNs, which the operating system provides. On Android, push means Firebase Cloud Messaging (FCM), and that brings things the rest of the plan has avoided:
+  - **Licences:** the FCM client needs Google Play services libraries (`play-services-basement`, `-base`, `-tasks`, `-cloud-messaging`). Their Maven files name the Android SDK licence, Google's own terms, which isn't on the allow-list (S6). The licence check would refuse them.
+  - **Phones without Play services** (some Huawei phones, GrapheneOS and other privacy-minded setups) get no push at all.
+  - **The founder's side:** a Firebase project and its config file in the app, plus a service account for the server.
+  - **The server's side:** FCM's HTTP v1 API takes an OAuth token signed with RS256. The RustCrypto `rsa` crate has an open timing advisory for signing (RUSTSEC-2023-0071, the Marvin attack), and `ring` and `aws-lc-rs` aren't on the vetted list. So the server would need a new crypto dependency and its own decision.
+  - **What push adds on Android before M6.3 and M6.8:** little. With no autofill service yet, fresh data in the background only saves a sync at the next unlock. Approval alerts (D46) come with M6.8's approving screen.
+
+  Open: whether push is part of M6.5, and how background sync runs.
+
+  Proposal:
+  1. **M6.5 does background sync now, and push waits for its own decision.**
+     - **The split:** push becomes a new task, **M6.9**, after M6.3 and M6.8, when there's an autofill service and an approving screen for it to serve.
+     - **M6.9 then needs a decision on:** Play services' licence (an allow-list exception, or UnifiedPush below), the Firebase project, and the server's RS256 signer.
+     - **Until then,** it's logged as a parity gap.
+  2. **Background sync with WorkManager** (AndroidX `work-runtime`, Apache-2.0):
+     - **What runs:** a periodic job every 15 minutes, the shortest Android allows, only with a network connection. Android may run it later, in Doze or to save battery, as iOS does with background refresh.
+     - **What it does:** the core's locked sync with the stored tokens, so it needs no master password. As D50 §1 says, it stores what needs no key, uploads queued changes, and leaves the rest for the next unlocked sync. If the vault is unlocked at that moment, it's a normal sync.
+     - **When it doesn't run:** with nobody signed in, the job is cancelled.
+     - **A refused refresh token** is kept, so the vault shows "Sign in again to sync" at the next open (D50 §5). The sign-in-again screen itself is M6.8.
+     - **A revoked device** is signed out, as when unlocked.
+     - **Unchanged:** syncing at unlock, after each save, and with pull to refresh.
+  3. **Storage:** none new. The tokens are already in the Keystore-sealed key files, readable without a fingerprint, and the cache is a normal file.
+  4. **Tests:**
+     - **JVM:**
+       - a locked sync through `Session` against the real server: an item from another device arrives while locked, and a queued change uploads
+       - the scheduler's rules with a fake: scheduled at sign-in, cancelled at sign-out
+     - **On the emulator:** WorkManager's test driver runs the job once, and the server sees the sync.
+     - **By hand (`QUALITY.md`):** leave a real phone locked for an hour, make a change on another device, and see it on unlock without waiting.
+  5. **Downloads:** the first build fetches AndroidX `work-runtime` and its dependencies. The founder approves that here.
+
+  Alternatives:
+  - **FCM now, as the roadmap says:** push matches the Apple apps sooner. But it needs everything listed above: an allow-list exception for Google's libraries, a Firebase project, a new crypto dependency on the server, and no push on phones without Play services. All of that for little gain before M6.3 and M6.8.
+  - **UnifiedPush:** an open protocol (its Android library is Apache-2.0), where the user picks a "distributor" app, such as ntfy, that delivers pushes. There's no Google dependency, and it works without Play services. But most users have no distributor installed, so it needs FCM beside it to reach everyone. The server would also need Web Push's encryption (P-256, HKDF, AES-GCM) and VAPID signing. Worth weighing in M6.9, as an addition to FCM.
+  - **No background sync at all:** simpler, but changes from other devices wait for the next unlock, and queued changes wait for the app to open.
+
+  Implementation notes (M6.5):
+  - **The job:** `SyncWorker`, a `CoroutineWorker`, through WorkManager 2.10.0 as unique periodic work (`pwm.sync`, kept if already there). Every run reports success: an offline or failed run waits for the next period, rather than WorkManager's backoff.
+  - **A run with the app's process gone** starts it: `PwmApplication` builds the model and opens the account as at launch, and the run uses it while the screen stays on unlock.
+  - **Versions:** `work-runtime-ktx` 2.10.0 (Apache-2.0), which brings Room and SQLite for its own queue; the licence check covers 118 libraries, all allowed. `work-testing` is in the device tests only.
+  - **Run on this machine:** the JVM tests, the server test's locked sync against a local server, the build and licence check, and the 4 device tests on an Android 16 emulator. Not run: a real phone's scheduling over hours (the `QUALITY.md` checklist).

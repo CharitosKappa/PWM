@@ -32,6 +32,23 @@ class MemoryPrefs(
     override var hideFromCapture: Boolean = true,
 ) : AppPrefs
 
+/** The periodic background sync (D57 §2): WorkManager in the app, a fake in tests. */
+interface BackgroundScheduler {
+    /** While someone is signed in on this device. */
+    fun schedule()
+
+    fun cancel()
+}
+
+object NoBackgroundScheduler : BackgroundScheduler {
+    override fun schedule() = Unit
+
+    override fun cancel() = Unit
+}
+
+/** What a background run found, for the job's result. */
+enum class BackgroundResult { NEW_DATA, NO_DATA, FAILED }
+
 /** A copy that is hidden from the clipboard preview and cleared after a while. */
 fun interface SecretClipboard {
     fun copy(value: Redacted<String>, clearAfterMs: Long)
