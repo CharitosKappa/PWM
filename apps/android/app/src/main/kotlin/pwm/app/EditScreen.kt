@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -70,12 +72,17 @@ internal fun ItemEdit(app: AppModel, vault: VaultModel, model: ItemEditModel) {
     }
     generator?.let { sheet ->
         ModalBottomSheet(onDismissRequest = { generator = null }) {
-            Column(Modifier.padding(Tokens.Space.s5.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s3.dp)) {
-                GeneratorOptions(sheet)
+            // Scrolls, so every option can be reached on a small screen.
+            Column(
+                Modifier.verticalScroll(rememberScrollState()).padding(Tokens.Space.s5.dp),
+                verticalArrangement = Arrangement.spacedBy(Tokens.Space.s3.dp),
+            ) {
                 val value by sheet.state.collectAsState()
-                Primary(stringResource(R.string.use_password), enabled = value.value != null, tag = "useGenerated") {
-                    value.value?.let(model::use)
-                    generator = null
+                GeneratorOptions(sheet) {
+                    Primary(stringResource(R.string.use_password), enabled = value.value != null, tag = "useGenerated") {
+                        value.value?.let(model::use)
+                        generator = null
+                    }
                 }
             }
         }

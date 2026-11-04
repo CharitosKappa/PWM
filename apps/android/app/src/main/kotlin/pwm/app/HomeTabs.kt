@@ -48,9 +48,13 @@ internal fun GeneratorTab(model: GeneratorModel) {
     }
 }
 
-/** The value, its strength, Copy and Regenerate, then the options; for the tab and the password field's sheet. */
+/**
+ * The value, its strength, Copy and Regenerate, then [actions] (the sheet's
+ * "Use this password", kept near the top so a small screen shows it), then
+ * the options; for the tab and the password field's sheet.
+ */
 @Composable
-internal fun GeneratorOptions(model: GeneratorModel) {
+internal fun GeneratorOptions(model: GeneratorModel, actions: @Composable () -> Unit = {}) {
     val state by model.state.collectAsState()
     Surface(color = color(Tokens.Color.surface), shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
         Text(
@@ -66,6 +70,7 @@ internal fun GeneratorOptions(model: GeneratorModel) {
         OutlinedButton(onClick = model::regenerate, modifier = Modifier.testTag("regenerate")) { Text(stringResource(R.string.regenerate)) }
     }
     ErrorLine(state.error)
+    actions()
     Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s2.dp)) {
         for ((mode, label) in listOf(GeneratorModel.Mode.PASSWORD to R.string.mode_password, GeneratorModel.Mode.PASSPHRASE to R.string.mode_passphrase)) {
             FilterChip(selected = state.mode == mode, onClick = { model.options { it.copy(mode = mode) } }, label = { Text(stringResource(label)) })

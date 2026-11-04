@@ -90,6 +90,7 @@ class OnboardingUITest {
         type("username", "ada")
         tap("generate")
         tap("useGenerated")
+        compose.waitUntil(10_000) { !exists("useGenerated") }
         tap("save")
         compose.waitUntil(30_000) { exists("item.Bank") }
 
@@ -100,8 +101,9 @@ class OnboardingUITest {
         replace("username", "grace")
         tap("save")
         compose.waitUntil(30_000) { exists("detailScreen") && text("value.username") == "grace" }
-        tap("copy.password")
         tap("reveal.password")
+        check(text("value.password").length == 20) { "the generated password wasn't saved" }
+        tap("copy.password")
 
         // Trashed and restored.
         tap("trash")
