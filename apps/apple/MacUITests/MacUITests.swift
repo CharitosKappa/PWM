@@ -67,17 +67,22 @@ final class MacUITests: XCTestCase {
         // ⌘, shows Settings.
         app.typeKey(",", modifierFlags: .command)
         let button = app.buttons["signOut"]
-        // Scroll the Settings form: the scroll goes where the pointer is, so
-        // from a fixed point in the button's column, halfway down the
-        // window (macOS shows the form as groups, not as a scroll view;
-        // a row would scroll away from under the pointer).
+        // Scroll the Settings form: a scroll goes to the control under the
+        // pointer, so each round uses the lowest control still in view (a
+        // fixed point did not reach the form on CI), and turns round when
+        // Sign out does not move up.
         expect(button)
         let window = app.windows.firstMatch
-        let point = window.coordinate(withNormalizedOffset: .zero).withOffset(
-            CGVector(dx: button.frame.midX - window.frame.minX, dy: window.frame.height / 2)
-        )
-        for delta in [-300.0, -300, -300, -300, 300, 300, 300, 300] where !button.isHittable {
-            point.scroll(byDeltaX: 0, deltaY: delta)
+        let anchors = [
+            "lockNow", "lockTimeout", "exportVault", "approvals", "devices", "breachCheck",
+            "health", "suggestLogins", "hideFromCapture", "browserTouchID",
+        ]
+        var delta = -200.0
+        for _ in 0..<12 where !button.isHittable {
+            guard let anchor = anchors.lazy.map({ self.element($0) }).first(where: { $0.exists && $0.isHittable }) else { break }
+            let before = button.frame.minY
+            anchor.scroll(byDeltaX: 0, deltaY: delta)
+            if button.frame.minY >= before { delta = -delta }
         }
         XCTAssertTrue(button.isHittable, "window \(window.frame), button \(button.frame)")
         click(button)
