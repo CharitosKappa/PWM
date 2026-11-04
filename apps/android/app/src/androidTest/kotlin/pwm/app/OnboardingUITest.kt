@@ -134,7 +134,8 @@ class OnboardingUITest {
         compose.waitUntil(60_000) { exists("item.Bank") }
 
         // The background sync is scheduled, and a run succeeds (D57 §4).
-        check(syncJob() == WorkInfo.State.ENQUEUED) { "the background sync isn't scheduled" }
+        // Scheduling is asynchronous, and the first run may start at once.
+        compose.waitUntil(10_000) { syncJob() in setOf(WorkInfo.State.ENQUEUED, WorkInfo.State.RUNNING) }
         val worker = TestListenableWorkerBuilder<SyncWorker>(InstrumentationRegistry.getInstrumentation().targetContext.applicationContext).build()
         check(runBlocking { worker.doWork() } == ListenableWorker.Result.success()) { "the background sync failed" }
 
@@ -161,7 +162,7 @@ class OnboardingUITest {
         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
         unlock()
         signOut()
-        check(syncJob() == WorkInfo.State.CANCELLED) { "the background sync wasn't cancelled at sign-out" }
+        compose.waitUntil(10_000) { syncJob() == WorkInfo.State.CANCELLED }
     }
 
     private fun syncJob(): WorkInfo.State? =
