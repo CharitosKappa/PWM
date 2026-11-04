@@ -71,6 +71,17 @@ On a Mac, with a signed build of the app and the extension's store id in `Browse
 3. Cancel Touch ID: the master password still unlocks, and Touch ID stays on. Add a finger in System Settings: the next unlock turns Touch ID off.
 4. Turn the app's switch off: the extension says the Mac app is needed.
 
+### Background sync and push checklist (D50)
+
+On a device with a signed build, and a server with the `PWM_APNS_*` settings:
+
+1. Lock the app on the phone. On another device, add a login. Within a minute the phone gets a push (the server log counts it); open AutoFill in Safari: the new login is listed.
+2. With the server's push off, leave the phone locked for an hour: background refresh brings the login in (iOS decides when).
+3. On the Mac, with the window open and locked, the same within 15 minutes.
+4. Ask to sign in from a new device: with "Notify me when a new device asks to sign in" on, the notice shows on the phone and the Mac, with no email or device name.
+5. End the phone's session on the server, edit an item on the phone, and pull to refresh: "Sign in again to sync" shows. Sign in with the master password: the edit reaches the other device, and Face ID still unlocks.
+6. Sign out on the phone: the server's `push_tokens` has no row for it.
+
 ### Screen capture checklist (D49)
 
 On an iPhone and a Mac, for each release candidate:

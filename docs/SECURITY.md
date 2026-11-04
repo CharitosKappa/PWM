@@ -92,6 +92,12 @@ A new kind of envelope gets a new label; labels are never reused.
 
 **Local cache (D20).** Each device caches only what the server also holds: account id, salt, KDF params, sealed keyset, wrapped vault keys, item envelopes with revisions, plus local sync state. The Secret Key and unlocked keys are never written to it (platform secure storage only). Deleted rows are overwritten (`secure_delete`); the schema is versioned and a newer or foreign database is refused.
 
+**Syncing while locked and push (D50).** A locked app syncs with its tokens only: it stores pulled item envelopes as they are and uploads queued changes that are already sealed. A change that needs the vault key (two versions to merge, an unsent edit to move, a restored server) waits for the next unlocked sync, so no key is ever needed while locked. On iOS and macOS the tokens are in the Keychain, readable after the device's first unlock; the extension's tokens stay sealed (D34) and it syncs only while unlocked.
+- **Push tokens:** one APNs token per device (`push_tokens`, as bytes, never logged), deleted at sign-out, revoke and logout, or when APNs calls it invalid.
+- **What a push says:** a vault change sends `{"aps":{"content-available":1}}` and nothing else, at most once a minute per device, never to the device that made the change. An approval request sends a fixed notice that names no email or device.
+- **What Apple learns:** that some change happened for a device token, and when. Nothing about the account, vault or item.
+- **Provider token:** ES256 over the `.p8` key (`p256`), made again every 50 minutes. The key is a server setting, like `PWM_SERVER_SECRETS`.
+
 **Health checks (D22).** Reuse is found by HMAC-SHA256 under a random key made per report run and dropped afterwards. The breach check sends only the first 5 hex characters of each password's SHA-1 straight from the device to the HIBP range API (`Add-Padding: true`, no cookies or account ids), never through our server; SHA-1 is used for nothing else. Results stay in memory.
 
 **Export (D24).** Every export, encrypted or plaintext, needs the master password again: the core exports only with a single-use grant, valid for 5 minutes, made by re-deriving the AUK and opening the sealed keyset. A `.pwmx` file is `"PWMX" || v:u8 (= 1) || m:u32 || t:u32 || p:u32 || salt:16 || envelope`. Its key is `HKDF(ikm = Argon2id(export password, salt, m/t/p), salt = salt, info = "pwm/export/v1")`. The export password is normalized as in D16 and must score ≥ 3 in zxcvbn, and the params must pass the account KDF bounds. The envelope (AAD `pwm/export`, binding the header) holds the JSON export padded to a multiple of 4 KiB (ISO/IEC 7816-4). The JSON export holds each item's D18 JSON unchanged plus its id. The CSV export holds logins, notes, cards and identities that are not in the trash, without history, passkeys or custom fields. The server has no export endpoint.
@@ -176,6 +182,7 @@ The recipient verifies the signature with the sender's Ed25519 public key before
 | Compromised unlocked device / malware | No (document it) | Auto-lock, clipboard clearing (30s), memory zeroize |
 | Screen recording, screen sharing, screenshots, the app switcher | Partial | iOS hides secrets while the screen is captured and masks them again after a screenshot (iOS can't block one); the switcher is covered; macOS leaves the window out of captures (D49). No API in browsers or on Linux |
 | Lost/stolen locked device | Yes | Full-disk + vault encryption, biometric bound to hardware keys, remote device revoke |
+| Push service (APNs) observing timing | Accepted | Pushes carry no content or ids; Apple sees only that a device token had a change, and when (D50) |
 | Weak master password | Partial | Secret Key; zxcvbn ≥ 3 required at signup |
 
 ## Security program
