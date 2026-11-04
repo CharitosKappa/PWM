@@ -2031,3 +2031,18 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **CSV only for every source:** simpler, but it loses folders, history, one-time codes and passkeys, and leaves plaintext on disk, which `PRODUCT.md` promises to avoid where the source offers better.
   - **Asking for the master password before importing:** consistent with export, but importing reveals nothing new, so it would be friction without protection.
   - **Opening Proton's PGP export:** possible with an OpenPGP crate, but that is a large dependency for one vendor's optional encryption.
+
+  Implementation notes (M8.1):
+  - **The crate:** one module per format, with shared helpers for the D51 §3 rules (empty titles, URLs, one-time codes through `normalize_totp`, custom fields, password history, the trash, nested folders and the report). JSON documents and CSV tables are wiped when dropped. ZIP entries are read up to the unpacked limit, so a ZIP bomb stops there.
+  - **Formats as built:**
+    - **Bitwarden:** folders named `Parent/Child` nest. Linked custom fields are skipped (they only point at another field). A GUID or `b64.` credential id both work for passkeys.
+    - **1Password and Proton Pass:** with more than one vault, each becomes a folder; with one, items stay at the top. D51 said each Proton vault becomes a folder; one folder holding everything added nothing.
+    - **Proton Pass passkeys:** left out and counted, not imported as D51 proposed, because Proton doesn't document their content format.
+    - **Keeper:** folder paths use `\`, shared folders first. `$paymentCard`, `$address` and the cardholder text map; other typed fields keep their label.
+    - **Our own CSV export** is detected by its exact header and read with `pwm-export`'s reader.
+  - **Duplicates** are checked by the client against the target vault: logins by title, username, password and URLs; cards by title and number; identities by title, name and email; notes by title and text. Repeats within one file count too. Folders with the same name and parent are reused instead of made twice, so a second import of the same file adds nothing at all.
+  - **Too large:** an item over the sync limit even without history is left out when saving and counted as `too_large`; items in a folder that couldn't be saved stay at the top.
+  - **New crates:** `aes`, `cbc`, `pbkdf2`, `zip` (deflate through `flate2`'s pure-Rust backend). `cargo deny` passes.
+  - **The vector:** `core/test-vectors/bitwarden_export.mjs` makes `bitwarden_export.json` with Node's crypto; `verify.mjs` checks it in Node and `pwm-import` reads it. The Argon2id variant is tested in Rust with the vetted `argon2`, since Node 22 has no Argon2.
+  - **Not done as proposed:** Proton passkeys (above).
+  - **Not run on this machine:** the fuzz targets (libFuzzer doesn't build on Windows); CI runs them.

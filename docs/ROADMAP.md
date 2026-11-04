@@ -557,7 +557,16 @@ Phase 3  Teams           months 16–24 M16–M19
 - [ ] M7.3 Signed installers (MSIX/EXE, AppImage, .deb, .rpm, Flatpak).
 
 ### M8 — Importers (`pwm-import`)
-- [ ] M8.1 Bitwarden JSON (incl. encrypted export), 1Password `.1pux`, Keeper JSON, NordPass CSV, Proton Pass ZIP/JSON, Dashlane CSV/JSON, LastPass CSV, generic CSV with column mapper, and our own `.pwmx`/JSON into any account (D51). KeePass is M8.4.
+- [x] M8.1 Bitwarden JSON (incl. encrypted export), 1Password `.1pux`, Keeper JSON, NordPass CSV, Proton Pass ZIP/JSON, Dashlane CSV/JSON, LastPass CSV, generic CSV with column mapper, and our own `.pwmx`/JSON into any account (D51). KeePass is M8.4.
+  - Done per D51 (implementation notes there):
+    - **`pwm-import`:** `detect` from the content, `parse` into D18 items with new ids, folders first, and a report of what was left out. Bitwarden's password-protected export (PBKDF2 or Argon2id, AES-CBC-HMAC) with a vector made by Node's crypto (`bitwarden_export.json`). Limits on file size, ZIPs, nesting and item count.
+    - **The client:** `prepare_import` previews against a vault, skips items already there and reuses folders of the same name; `finish_import` saves and leaves out items too large to sync. Through UniFFI and WASM.
+    - **Tests:** 28 on synthetic fixtures in `core/pwm-import/fixtures/` (every format, every refusal, the limits, a ZIP bomb, our own `.pwmx`, JSON and CSV round trip), 5 client tests, and two fuzz targets (`import_files`, `import_bitwarden_encrypted`).
+  - **Deferred:**
+    - **The import screens:** M8.2.
+    - **KeePass:** M8.4.
+    - **Proton Pass passkeys:** left out and counted, since Proton doesn't document their content.
+    - **Checks against real exports:** the fixtures follow each vendor's published format; a real export from each manager is a manual check before the beta (`QUALITY.md`).
 - [ ] M8.2 Import in memory; if a file was picked, offer to securely delete the source export afterwards.
 - [ ] M8.3 Fuzz every parser; sample files in `core/pwm-import/fixtures/` (synthetic data only).
 - [ ] M8.4 KeePass `.kdbx` (KDBX 3.1/4) with the `keepass` crate, behind our own header and KDF limits (D51 §5).

@@ -21,7 +21,7 @@ pwm/
     pwm-client/             # the one API apps and the extension use: account, items, sync, generator (D31)
     pwm-autofill/           # URL matching, field classification, site overrides
     pwm-export/             # our own export formats: .pwmx (encrypted), JSON, CSV, behind re-auth (D24)
-    pwm-import/             # importers (Bitwarden, 1Password, Keeper, NordPass, Proton Pass, Dashlane, KeePass, LastPass, CSV)
+    pwm-import/             # importers (Bitwarden, 1Password, Keeper, NordPass, Proton Pass, Dashlane, LastPass, any CSV, our own exports; KeePass in M8.4)
     pwm-generator/          # password/passphrase generator, strength estimation (zxcvbn)
     pwm-health/             # weak/reused/breached checks (HIBP k-anonymity)
     pwm-ffi/                # UniFFI bindings (Swift, Kotlin) over pwm-client
