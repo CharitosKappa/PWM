@@ -535,6 +535,7 @@ const IMPORT_FORMATS: { id: string; label: string }[] = [
   { id: "bitwarden", label: "Bitwarden (.json)" },
   { id: "1password", label: "1Password (.1pux)" },
   { id: "keeper", label: "Keeper (.json)" },
+  { id: "keepass", label: "KeePass (.kdbx)" },
   { id: "nordpass", label: "NordPass (.csv)" },
   { id: "protonpass", label: "Proton Pass (.zip or .json)" },
   { id: "dashlane", label: "Dashlane (.zip, .csv or .json)" },
@@ -583,6 +584,10 @@ function Import({ onLocked }: { onLocked: () => void }): JSX.Element {
   const [detected, setDetected] = useState<ImportDetected | null>(null);
   const [format, setFormat] = useState("");
   const [password, setPassword] = useState("");
+  /** A KeePass key file, as base64. */
+  const [keyFile, setKeyFile] = useState<{ name: string; data: string } | null>(
+    null,
+  );
   const [columns, setColumns] = useState<ImportMapping>({});
   const [preview, setPreview] = useState<ImportPreviewView | null>(null);
   const [done, setDone] = useState<ImportPreviewView | null>(null);
@@ -604,6 +609,7 @@ function Import({ onLocked }: { onLocked: () => void }): JSX.Element {
     setFile(null);
     setDetected(null);
     setPassword("");
+    setKeyFile(null);
     if (!picked) return;
     if (picked.size > MAX_IMPORT_BYTES) {
       setPickError(describeCode("import_too_large"));
@@ -631,6 +637,7 @@ function Import({ onLocked }: { onLocked: () => void }): JSX.Element {
         file: file.data,
         format,
         password,
+        keyFile: format === "keepass" ? (keyFile?.data ?? "") : "",
         columns: format === "csv" ? columns : null,
       }),
     );
@@ -641,10 +648,25 @@ function Import({ onLocked }: { onLocked: () => void }): JSX.Element {
     const result = await run(() => send({ kind: "importFinish" }));
     if (!result) return;
     setDone(result);
-    setPlain(password === "");
+    setPlain(password === "" && keyFile === null);
     setPreview(null);
     setFile(null);
     setPassword("");
+    setKeyFile(null);
+  };
+
+  const pickKey = async (input: HTMLInputElement): Promise<void> => {
+    const picked = input.files?.[0];
+    input.value = "";
+    reset();
+    if (!picked || picked.size > 1024 * 1024) {
+      setKeyFile(null);
+      return;
+    }
+    setKeyFile({
+      name: picked.name,
+      data: toBase64(new Uint8Array(await picked.arrayBuffer())),
+    });
   };
 
   const headers = detected?.columns?.headers ?? [];
@@ -661,7 +683,7 @@ function Import({ onLocked }: { onLocked: () => void }): JSX.Element {
         <input
           id="import-file"
           type="file"
-          accept=".json,.csv,.zip,.1pux,.pwmx"
+          accept=".json,.csv,.zip,.1pux,.pwmx,.kdbx"
           onChange={(e) => void pick(e.currentTarget)}
         />
       </label>
@@ -694,6 +716,7 @@ function Import({ onLocked }: { onLocked: () => void }): JSX.Element {
           </label>
           {(detected?.needsPassword === true ||
             format === "bitwarden" ||
+            format === "keepass" ||
             format === "pwm") && (
             <Field
               label="Export password"
@@ -703,6 +726,21 @@ function Import({ onLocked }: { onLocked: () => void }): JSX.Element {
               autoComplete="off"
               hint="Only if the export was made with a password."
             />
+          )}
+          {format === "keepass" && (
+            <label class="field">
+              <span class="label">Key file</span>
+              <input
+                id="import-key-file"
+                type="file"
+                onChange={(e) => void pickKey(e.currentTarget)}
+              />
+              <span class="caption muted">
+                {keyFile
+                  ? `Using ${keyFile.name}.`
+                  : "Only if the database needs one."}
+              </span>
+            </label>
           )}
           {format === "csv" && headers.length > 0 && (
             <fieldset class="stack">

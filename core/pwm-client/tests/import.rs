@@ -70,7 +70,7 @@ fn a_file_is_previewed_then_saved_with_new_ids() {
         Some(("lastpass".to_owned(), false))
     );
     let preview = client
-        .prepare_import(None, "lastpass", LASTPASS, None, None, T0)
+        .prepare_import(None, "lastpass", LASTPASS, None, None, None, T0)
         .unwrap();
     assert_eq!((preview.logins, preview.folders), (2, 2));
     assert!(titles(&client, &vault).is_empty(), "nothing is saved yet");
@@ -90,11 +90,11 @@ fn a_file_is_previewed_then_saved_with_new_ids() {
 fn importing_the_same_file_again_adds_nothing() {
     let (mut client, vault) = unlocked();
     client
-        .prepare_import(None, "lastpass", LASTPASS, None, None, T0)
+        .prepare_import(None, "lastpass", LASTPASS, None, None, None, T0)
         .unwrap();
     client.finish_import(T0).unwrap();
     let again = client
-        .prepare_import(None, "lastpass", LASTPASS, None, None, T0)
+        .prepare_import(None, "lastpass", LASTPASS, None, None, None, T0)
         .unwrap();
     assert_eq!((again.logins, again.folders), (0, 0));
     assert_eq!(again.left_out, [("duplicates".to_owned(), 2)]);
@@ -109,7 +109,7 @@ fn importing_the_same_file_again_adds_nothing() {
     let changed = b"url,username,password,totp,extra,name,grouping,fav\n\
 https://bank.example,ada,new-pw,,,Bank,Finance\\Banks,1\n";
     let preview = client
-        .prepare_import(None, "lastpass", changed, None, None, T0)
+        .prepare_import(None, "lastpass", changed, None, None, None, T0)
         .unwrap();
     assert_eq!((preview.logins, preview.folders), (1, 0));
     client.finish_import(T0).unwrap();
@@ -125,7 +125,7 @@ fn an_item_too_large_to_sync_is_left_out() {
     let huge = "x".repeat(300 * 1024);
     let file = format!("name,url,username,password,note\nBig,,,,{huge}\nSmall,,,,note\n");
     let preview = client
-        .prepare_import(None, "csv", file.as_bytes(), None, None, T0)
+        .prepare_import(None, "csv", file.as_bytes(), None, None, None, T0)
         .unwrap();
     assert_eq!(preview.logins, 2);
     let done = client.finish_import(T0).unwrap();
@@ -141,29 +141,37 @@ fn refusals_carry_their_codes() {
     let code =
         |r: Result<pwm_client::ImportPreview, pwm_client::ClientError>| r.unwrap_err().code();
     assert_eq!(
-        code(client.prepare_import(None, "bitwarden", encrypted, None, None, T0)),
+        code(client.prepare_import(None, "bitwarden", encrypted, None, None, None, T0)),
         "import_password_needed"
     );
     assert_eq!(
-        code(client.prepare_import(None, "keeper", b"not json", None, None, T0)),
+        code(client.prepare_import(None, "keeper", b"not json", None, None, None, T0)),
         "import_unreadable"
     );
     assert_eq!(
-        code(client.prepare_import(None, "nope", LASTPASS, None, None, T0)),
+        code(client.prepare_import(None, "nope", LASTPASS, None, None, None, T0)),
         "import_unreadable"
     );
     assert_eq!(
-        code(client.prepare_import(Some("not-an-id"), "lastpass", LASTPASS, None, None, T0)),
+        code(client.prepare_import(
+            Some("not-an-id"),
+            "lastpass",
+            LASTPASS,
+            None,
+            None,
+            None,
+            T0
+        )),
         "invalid_id"
     );
 
     // Locked: nothing to check against, so nothing is read.
     client
-        .prepare_import(None, "lastpass", LASTPASS, None, None, T0)
+        .prepare_import(None, "lastpass", LASTPASS, None, None, None, T0)
         .unwrap();
     client.lock();
     assert_eq!(
-        code(client.prepare_import(None, "lastpass", LASTPASS, None, None, T0)),
+        code(client.prepare_import(None, "lastpass", LASTPASS, None, None, None, T0)),
         "locked"
     );
 }

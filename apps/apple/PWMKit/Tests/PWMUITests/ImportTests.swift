@@ -108,6 +108,27 @@ final class ImportTests: XCTestCase {
         XCTAssertNil(model.fileName)
     }
 
+    func testAKeePassDatabaseTakesAKeyFile() async {
+        let model = model()
+        await model.picked(file("vault.kdbx", "kdbx"))
+        model.format = "keepass"
+        XCTAssertTrue(model.asksPassword)
+        XCTAssertTrue(model.asksKeyFile)
+        await model.check()
+        XCTAssertEqual(model.error, "Enter the password this export was made with.")
+
+        let key = file("vault.keyx", "key")
+        model.pickedKeyFile(key)
+        XCTAssertEqual(model.keyFileName, "vault.keyx")
+        await model.check()
+        XCTAssertNil(model.error)
+        await model.importNow()
+        XCTAssertFalse(model.plaintext, "a database with a key file isn't plain text")
+        XCTAssertNil(model.keyFileName, "the key file is dropped")
+        let calls = await account.calls
+        XCTAssertEqual(calls, ["prepareImport keepass key", "finishImport"])
+    }
+
     func testLeavingDropsThePreview() async {
         let model = model()
         await model.picked(file("lastpass.csv", lastpass))

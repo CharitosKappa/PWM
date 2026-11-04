@@ -2054,3 +2054,12 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The Mac sandbox** gets `com.apple.security.files.user-selected.read-write`, so the picked file can be read and then deleted. CI's ad-hoc build still runs with no entitlements.
   - **After importing,** the apps sync at once; a failed sync leaves the items queued like any change.
   - **Not run on this machine:** the Swift tests and app targets (no Xcode, Docker not running); CI runs them first.
+
+  Implementation notes (M8.4):
+  - **The crate:** `keepass` 0.17 (MIT), with no features in the app and `save_kdbx4` in the tests only. It also reads KeePass 1, which our header check refuses (`import_keepass_kdb`): D51 covers 3.1 and 4.
+  - **The header check** reads the outer header's fields without decrypting anything: KDBX 3.1's AES-KDF rounds, and KDBX 4's KDF parameter dictionary (its id, rounds, memory, iterations, lanes). Over the bounds it says `import_keepass_too_costly`, with a line to lower them in KeePass; an unknown KDF or version says `import_keepass_version`.
+  - **Mapping as built:** an entry with no username, password, URL or other fields becomes a note. KeePass 2's TOTP fields are read when the secret is in base32 (with its length, period and algorithm); the other encodings stay as hidden fields. Protected fields are hidden. Entries with nothing in them are counted as empty.
+  - **The key file** is passed as bytes (at most 1 MB from the screens); a file with a key file counts as protected, so no delete line shows after it.
+  - **Fuzzing:** `import_files` reaches the KeePass header check (no password, so no key derivation); a target past it would run Argon2 with up to 1 GiB per input, so there is none.
+  - **KDBX 3.1 fixtures:** the crate can't write 3.1, so the test reads any `.kdbx` in `core/pwm-import/fixtures/keepass/`, made once in KeePass or KeePassXC as its README says, and skips while there are none.
+  - **Not run on this machine:** the Swift tests and app targets; CI runs them first.

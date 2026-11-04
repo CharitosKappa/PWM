@@ -60,6 +60,7 @@ describe("import", () => {
       file: file(LASTPASS),
       format: "lastpass",
       password: "",
+      keyFile: "",
       columns: null,
     });
     expect(preview.logins).toBe(2);
@@ -112,6 +113,7 @@ describe("import", () => {
         file: json,
         format: "bitwarden",
         password,
+        keyFile: "",
         columns: null,
       });
     expect(await errorOf(prepare(""))).toBe("import_password_needed");
@@ -145,11 +147,27 @@ describe("import", () => {
           file: file(LASTPASS),
           format: "lastpass",
           password: "",
+          keyFile: "",
           columns: null,
         }),
       ),
     ).toBe("locked");
     expect(core.importsPrepared).toBe(0);
+  });
+
+  it("passes a KeePass key file to the core", async () => {
+    const { background } = await signedUp();
+    const prepare = (keyFile: string) =>
+      background.handle({
+        kind: "importPrepare",
+        file: file("kdbx"),
+        format: "keepass",
+        password: "",
+        keyFile,
+        columns: null,
+      });
+    expect(await errorOf(prepare(""))).toBe("import_password_needed");
+    expect((await prepare(file("key"))).logins).toBe(0);
   });
 
   it("drops a preview on cancel", async () => {
@@ -159,6 +177,7 @@ describe("import", () => {
       file: file(LASTPASS),
       format: "lastpass",
       password: "",
+      keyFile: "",
       columns: null,
     });
     await background.handle({ kind: "importCancel" });

@@ -9,6 +9,7 @@ public enum ImportFile {
         ("bitwarden", "Bitwarden (.json)"),
         ("1password", "1Password (.1pux)"),
         ("keeper", "Keeper (.json)"),
+        ("keepass", "KeePass (.kdbx)"),
         ("nordpass", "NordPass (.csv)"),
         ("protonpass", "Proton Pass (.zip or .json)"),
         ("dashlane", "Dashlane (.zip, .csv or .json)"),
@@ -146,13 +147,15 @@ extension Session {
     }
 
     /// Reads the file into the first vault's preview; nothing is saved yet.
+    /// `keyFile` is a KeePass key file.
     public func prepareImport(
-        format: String, data: Redacted<Data>, password: Redacted<String>?, columns: ColumnMap?
+        format: String, data: Redacted<Data>, password: Redacted<String>?, keyFile: Redacted<Data>?,
+        columns: ColumnMap?
     ) throws -> ImportSummary {
         let preview = try core {
             try client.prepareImport(
                 vaultId: nil, format: format, bytes: data.value, password: password?.value,
-                mapping: columns?.core, nowMs: now()
+                keyFile: keyFile?.value, mapping: columns?.core, nowMs: now()
             )
         }
         return ImportSummary(preview)

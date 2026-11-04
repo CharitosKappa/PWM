@@ -81,7 +81,15 @@ describe("the WASM core", () => {
     expect(() => core.exportFile("json", "", Date.now())).toThrow(locked);
     expect(() => core.startListApprovals()).toThrow(locked);
     expect(() =>
-      core.prepareImport("", "csv", new Uint8Array(), "", "", Date.now()),
+      core.prepareImport(
+        "",
+        "csv",
+        new Uint8Array(),
+        "",
+        new Uint8Array(),
+        "",
+        Date.now(),
+      ),
     ).toThrow(locked);
     expect(fns.breachRangeUrl("ABCDE")).toBe(
       "https://api.pwnedpasswords.com/range/ABCDE",

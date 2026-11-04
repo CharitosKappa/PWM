@@ -91,10 +91,12 @@ export class Importer {
     file: string,
     format: string,
     password: string,
+    keyFile: string,
     columns: ImportMapping | null,
   ): Promise<ImportPreviewView> {
     await this.deps.touch();
     const bytes = this.bytes(file);
+    const key = keyFile === "" ? new Uint8Array() : this.bytes(keyFile);
     try {
       const json = this.call(() =>
         this.deps
@@ -104,6 +106,7 @@ export class Importer {
             format,
             bytes,
             password,
+            key,
             columns ? JSON.stringify(columns) : "",
             this.deps.platform.now(),
           ),
@@ -111,6 +114,7 @@ export class Importer {
       return preview(json);
     } finally {
       bytes.fill(0);
+      key.fill(0);
     }
   }
 

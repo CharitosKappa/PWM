@@ -487,16 +487,20 @@ impl PwmClient {
     /// Reads a picked file to import into `vault_id` (default: the first
     /// vault) and says what will come in (D51). Nothing is saved yet. Never
     /// log the bytes.
+    // Each input is one thing the import screen collects.
+    #[allow(clippy::too_many_arguments)]
     pub fn prepare_import(
         &self,
         vault_id: Option<String>,
         format: String,
         bytes: Vec<u8>,
         password: Option<String>,
+        key_file: Option<Vec<u8>>,
         mapping: Option<ImportMapping>,
         now_ms: i64,
     ) -> Result<ImportPreview, PwmError> {
         let bytes = zeroize::Zeroizing::new(bytes);
+        let key_file = key_file.map(zeroize::Zeroizing::new);
         Ok(self
             .lock_inner()
             .prepare_import(
@@ -504,6 +508,7 @@ impl PwmClient {
                 &format,
                 &bytes,
                 password.as_deref(),
+                key_file.as_deref().map(Vec::as_slice),
                 mapping.map(Into::into),
                 now_ms,
             )?
@@ -1156,7 +1161,7 @@ pub struct ImportColumns {
 
 #[derive(uniffi::Record)]
 pub struct DetectedImport {
-    /// `bitwarden`, `1password`, `keeper`, `nordpass`, `protonpass`,
+    /// `bitwarden`, `1password`, `keeper`, `keepass`, `nordpass`, `protonpass`,
     /// `dashlane`, `lastpass`, `csv` or `pwm`.
     pub format: String,
     pub needs_password: bool,

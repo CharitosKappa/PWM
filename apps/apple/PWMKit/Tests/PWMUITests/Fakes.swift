@@ -326,13 +326,16 @@ actor FakeAccount: Account {
         return CSVColumns(headers: headers, suggested: ColumnMap(title: headers.firstIndex(of: "name")), rows: 1)
     }
 
-    func prepareImport(format: String, data: Redacted<Data>, password: Redacted<String>?, columns: ColumnMap?) throws -> ImportSummary {
+    func prepareImport(
+        format: String, data: Redacted<Data>, password: Redacted<String>?, keyFile: Redacted<Data>?, columns: ColumnMap?
+    ) throws -> ImportSummary {
+        if format == "keepass", password == nil, keyFile == nil { throw PWMError(code: "import_password_needed") }
         if format == "bitwarden" {
             guard let password else { throw PWMError(code: "import_password_needed") }
             guard password.value == "export-pw" else { throw PWMError(code: "import_wrong_password") }
         }
-        guard ["lastpass", "csv", "bitwarden"].contains(format) else { throw PWMError(code: "import_unreadable") }
-        calls.append("prepareImport \(format)\(columns.map { " title=\($0.title ?? -1)" } ?? "")")
+        guard ["lastpass", "csv", "bitwarden", "keepass"].contains(format) else { throw PWMError(code: "import_unreadable") }
+        calls.append("prepareImport \(format)\(columns.map { " title=\($0.title ?? -1)" } ?? "")\(keyFile == nil ? "" : " key")")
         importPrepared = true
         return ImportSummary(logins: 2, notes: 0, cards: 0, identities: 0, folders: 1, trashed: 0, leftOut: [.init(reason: "attachments", count: 1)])
     }

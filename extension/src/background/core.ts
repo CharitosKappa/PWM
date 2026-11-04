@@ -210,6 +210,8 @@ export interface Core {
     format: string,
     bytes: Uint8Array,
     password: string,
+    /** A KeePass key file, or empty. */
+    keyFile: Uint8Array,
     mapping: string,
     nowMs: number,
   ): string;
