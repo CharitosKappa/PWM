@@ -12,18 +12,19 @@ object Tokens {
     const val VERSION = 1
 
     object Color {
-        val bg = ThemedColor(light = 0xFFFFFFFF, dark = 0xFF0F1115)
-        val surface = ThemedColor(light = 0xFFF5F6F8, dark = 0xFF181B21)
-        val surfaceRaised = ThemedColor(light = 0xFFFFFFFF, dark = 0xFF20242C)
-        val border = ThemedColor(light = 0xFFD9DCE1, dark = 0xFF2E333D)
-        val text = ThemedColor(light = 0xFF14171C, dark = 0xFFECEEF2)
-        val textMuted = ThemedColor(light = 0xFF5B6270, dark = 0xFF9AA1AE)
-        val accent = ThemedColor(light = 0xFF2457D6, dark = 0xFF6F95F5)
-        val accentText = ThemedColor(light = 0xFFFFFFFF, dark = 0xFF0F1115)
-        val focus = ThemedColor(light = 0xFF2457D6, dark = 0xFF6F95F5)
-        val success = ThemedColor(light = 0xFF1E7F4F, dark = 0xFF4CC38A)
-        val warning = ThemedColor(light = 0xFF9A6100, dark = 0xFFE2A336)
-        val danger = ThemedColor(light = 0xFFC42B2B, dark = 0xFFF07070)
+        val bg = ThemedColor(light = 0xFFFFFFFF, dark = 0xFF13121F)
+        val surface = ThemedColor(light = 0xFFF4F3FB, dark = 0xFF1C1B2C)
+        val surfaceRaised = ThemedColor(light = 0xFFFFFFFF, dark = 0xFF252438)
+        val border = ThemedColor(light = 0xFFE2E0F0, dark = 0xFF34324A)
+        val text = ThemedColor(light = 0xFF1E1B3A, dark = 0xFFEEEDF7)
+        val textMuted = ThemedColor(light = 0xFF5D5A78, dark = 0xFFA9A6C4)
+        val accent = ThemedColor(light = 0xFF4F3FD6, dark = 0xFFA79BFF)
+        val accentText = ThemedColor(light = 0xFFFFFFFF, dark = 0xFF13121F)
+        val accentSoft = ThemedColor(light = 0xFFECEAFD, dark = 0xFF2A2650)
+        val focus = ThemedColor(light = 0xFF4F3FD6, dark = 0xFFA79BFF)
+        val success = ThemedColor(light = 0xFF1C7C54, dark = 0xFF5FD39A)
+        val warning = ThemedColor(light = 0xFF8A5A00, dark = 0xFFF0B44C)
+        val danger = ThemedColor(light = 0xFFC0304A, dark = 0xFFFF8095)
     }
 
     /** Sizes are the web sizes in sp; Android scales them with the font size setting. */
@@ -52,9 +53,9 @@ object Tokens {
     /** In dp. */
     object Radius {
         const val none: Double = 0.0
-        const val sm: Double = 4.0
-        const val md: Double = 8.0
-        const val lg: Double = 12.0
+        const val sm: Double = 12.0
+        const val md: Double = 16.0
+        const val lg: Double = 20.0
         const val full: Double = 9999.0
     }
 }

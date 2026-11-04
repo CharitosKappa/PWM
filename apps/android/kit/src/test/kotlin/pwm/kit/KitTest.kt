@@ -100,7 +100,7 @@ class KitTest {
     @Test
     fun theTokensAreGenerated() {
         assertEquals(1, Tokens.VERSION)
-        assertEquals(0xFF2457D6, Tokens.Color.accent.light)
+        assertEquals(0xFF4F3FD6, Tokens.Color.accent.light)
         assertEquals(16.0, Tokens.Space.s4, 0.0)
     }
 }
