@@ -19,6 +19,9 @@ interface AppPrefs {
 
     /** The unlock screen offered fingerprint or face unlock once (D45 §3). */
     var biometricOffered: Boolean
+
+    /** "Hide PWM from screenshots and screen sharing" (D56 §2), on by default. */
+    var hideFromCapture: Boolean
 }
 
 class MemoryPrefs(
@@ -26,6 +29,7 @@ class MemoryPrefs(
     override var kitPending: Boolean = false,
     override var lockTimeoutMinutes: Int? = null,
     override var biometricOffered: Boolean = false,
+    override var hideFromCapture: Boolean = true,
 ) : AppPrefs
 
 /** A copy that is hidden from the clipboard preview and cleared after a while. */

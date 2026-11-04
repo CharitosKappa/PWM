@@ -129,6 +129,7 @@ class SettingsModel internal constructor(
     private val paper: EmergencyKit.Paper,
     private val onLock: () -> Unit,
     private val onSignedOut: () -> Unit,
+    private val onHideFromCapture: (Boolean) -> Unit = {},
 ) {
     enum class Page { MAIN, NOTICES }
 
@@ -140,6 +141,8 @@ class SettingsModel internal constructor(
         /** Fingerprint and face unlock (D55): on, off, or why it can't be used. */
         val biometric: BiometricState? = null,
         val biometricBusy: Boolean = false,
+        /** "Hide PWM from screenshots and screen sharing" (D56 §2). */
+        val hideFromCapture: Boolean = true,
         /** The Emergency Kit PDF, made when Settings opens. */
         val kit: Redacted<ByteArray>? = null,
         val kitSaved: Boolean = false,
@@ -154,8 +157,15 @@ class SettingsModel internal constructor(
             server = prefs.server,
             lockTimeout = LockTimeout.of(prefs.lockTimeoutMinutes),
             biometric = runCatching { account.biometricState() }.getOrNull(),
+            hideFromCapture = prefs.hideFromCapture,
         ),
     )
+
+    /** Turning it off asks nothing; the window follows at once. */
+    fun setHideFromCapture(hide: Boolean) {
+        onHideFromCapture(hide)
+        mutable.update { it.copy(hideFromCapture = hide) }
+    }
 
     /** The switch: turning it on asks for a finger or face once; a cancel leaves it off. */
     fun setBiometric(on: Boolean) {

@@ -1,9 +1,7 @@
 package pwm.app
 
 import android.Manifest
-import android.app.Activity
 import android.content.pm.PackageManager
-import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,7 +31,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -223,13 +220,7 @@ internal fun StrengthMeter(score: Int?) {
 @Composable
 private fun SecretKey(app: AppModel, model: SecretKeyModel) {
     val state by model.state.collectAsState()
-    val context = LocalContext.current
-    // No screenshots or recordings of the Secret Key (D53 §5); the rest is M6.4.
-    DisposableEffect(Unit) {
-        val window = (context as? Activity)?.window
-        window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
-    }
+    // No screenshots or recordings of it: the Activity sets that for this screen (D56 §1).
     Page(stringResource(R.string.secret_key_title), stringResource(R.string.secret_key_subtitle), tag = "secretKeyScreen") {
         Surface(color = color(Tokens.Color.surface), shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
             Text(
