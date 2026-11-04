@@ -22,6 +22,9 @@ pub enum ClientError {
     InvalidRules,
     #[error("unknown vault")]
     UnknownVault,
+    /// An import refused the file; the code says why (D51 §7).
+    #[error("the file can't be imported")]
+    Import(&'static str),
     /// Not an APNs token as hex, or an app other than `ios` or `macos`.
     #[error("the push token is not valid")]
     InvalidPushToken,
@@ -112,6 +115,7 @@ impl ClientError {
             Self::InvalidUrl => "invalid_url",
             Self::InvalidRules => "invalid_rules",
             Self::UnknownVault => "unknown_vault",
+            Self::Import(code) => code,
             Self::InvalidPushToken => "invalid_push_token",
             Self::UnknownItem => "unknown_item",
             Self::ItemDeleted => "item_deleted",

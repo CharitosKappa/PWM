@@ -2057,6 +2057,7 @@ dependencies = [
  "pwm-export",
  "pwm-generator",
  "pwm-health",
+ "pwm-import",
  "pwm-kit",
  "pwm-passkey",
  "pwm-store",
@@ -2116,6 +2117,7 @@ dependencies = [
  "pwm-store",
  "thiserror",
  "uniffi",
+ "zeroize",
 ]
 
 [[package]]

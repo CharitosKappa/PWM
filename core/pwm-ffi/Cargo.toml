@@ -19,3 +19,4 @@ pwm-client = { path = "../pwm-client" }
 pwm-store = { path = "../pwm-store" }
 thiserror = "2.0.21"
 uniffi = "0.32.2"
+zeroize = "1.9.1"

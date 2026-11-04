@@ -98,6 +98,8 @@ pub struct Client<S: Store> {
     pub(crate) autofill: crate::autofill::AutofillState,
     /// The master password was entered again for an export (D24).
     pub(crate) export_grant: Option<pwm_export::ExportGrant>,
+    /// An import read and checked, waiting to be saved (D51).
+    pub(crate) import: Option<crate::import::PendingImport>,
     /// The approval this device accepted and has not finished (D46).
     pub(crate) approving: Option<crate::approval::Approving>,
     /// The commitments of the requests last listed, by id.
@@ -129,6 +131,7 @@ impl<S: Store> Client<S> {
             signup_params: KdfParams::DEFAULT,
             autofill: crate::autofill::AutofillState::default(),
             export_grant: None,
+            import: None,
             approving: None,
             approval_commitments: std::collections::HashMap::new(),
         }
@@ -296,6 +299,7 @@ impl<S: Store> Client<S> {
     /// operation is abandoned.
     pub fn lock(&mut self) {
         self.export_grant = None;
+        self.import = None;
         self.approving = None;
         self.approval_commitments.clear();
         let syncing = matches!(self.running, Running::Sync | Running::LockedSync);

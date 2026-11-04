@@ -389,6 +389,51 @@ impl WasmClient {
             .map_err(js_error)
     }
 
+    /// Reads a picked file to import into `vault_id` (empty: the first
+    /// vault) and returns the preview as JSON (D51): `{logins, notes, cards,
+    /// identities, folders, trashed, left_out: [[reason, count]]}`. `mapping`
+    /// is the CSV column mapping as JSON, or empty for the suggestion.
+    #[wasm_bindgen(js_name = prepareImport)]
+    pub fn prepare_import(
+        &mut self,
+        vault_id: &str,
+        format: &str,
+        bytes: &[u8],
+        password: &str,
+        mapping: &str,
+        now: f64,
+    ) -> Result<String, JsValue> {
+        let mapping = if mapping.is_empty() {
+            None
+        } else {
+            Some(mapping_from_json(mapping).map_err(js_error)?)
+        };
+        let preview = self
+            .inner
+            .prepare_import(
+                (!vault_id.is_empty()).then_some(vault_id),
+                format,
+                bytes,
+                (!password.is_empty()).then_some(password),
+                mapping,
+                ms(now),
+            )
+            .map_err(js_error)?;
+        Ok(preview_json(&preview))
+    }
+
+    /// Saves the prepared import; sync afterwards. The preview as JSON.
+    #[wasm_bindgen(js_name = finishImport)]
+    pub fn finish_import(&mut self, now: f64) -> Result<String, JsValue> {
+        let preview = self.inner.finish_import(ms(now)).map_err(js_error)?;
+        Ok(preview_json(&preview))
+    }
+
+    #[wasm_bindgen(js_name = cancelImport)]
+    pub fn cancel_import(&mut self) {
+        self.inner.cancel_import();
+    }
+
     /// Every vault as a file, using up the grant: `format` is `pwmx` (with
     /// `export_password`), `json` or `csv`.
     #[wasm_bindgen(js_name = exportFile)]
@@ -1002,6 +1047,76 @@ impl WasmBreachCheck {
 }
 
 /// The HIBP range URL for a prefix (D22 §4).
+fn preview_json(p: &pwm_client::ImportPreview) -> String {
+    serde_json::json!({
+        "logins": p.logins, "notes": p.notes, "cards": p.cards,
+        "identities": p.identities, "folders": p.folders, "trashed": p.trashed,
+        "left_out": p.left_out,
+    })
+    .to_string()
+}
+
+const MAPPING_FIELDS: [&str; 9] = [
+    "title", "url", "username", "password", "notes", "totp", "folder", "favorite", "tags",
+];
+
+fn mapping_from_json(text: &str) -> Result<pwm_client::ColumnMapping, ClientError> {
+    let v: serde_json::Value =
+        serde_json::from_str(text).map_err(|_| ClientError::Import("import_unreadable"))?;
+    let i = |k: &str| {
+        v.get(k)
+            .and_then(serde_json::Value::as_u64)
+            .map(|n| n as usize)
+    };
+    Ok(pwm_client::ColumnMapping {
+        title: i("title"),
+        url: i("url"),
+        username: i("username"),
+        password: i("password"),
+        notes: i("notes"),
+        totp: i("totp"),
+        folder: i("folder"),
+        favorite: i("favorite"),
+        tags: i("tags"),
+    })
+}
+
+fn mapping_json(m: &pwm_client::ColumnMapping) -> serde_json::Value {
+    let values = [
+        m.title, m.url, m.username, m.password, m.notes, m.totp, m.folder, m.favorite, m.tags,
+    ];
+    let mut map = serde_json::Map::new();
+    for (key, value) in MAPPING_FIELDS.iter().zip(values) {
+        map.insert(
+            (*key).to_owned(),
+            value.map_or(serde_json::Value::Null, Into::into),
+        );
+    }
+    serde_json::Value::Object(map)
+}
+
+/// The format a picked file looks like, as JSON `{format, needs_password}`,
+/// or nothing.
+#[wasm_bindgen(js_name = detectImport)]
+pub fn detect_import(file_name: &str, bytes: &[u8]) -> Option<String> {
+    pwm_client::detect_import(file_name, bytes).map(|(format, needs_password)| {
+        serde_json::json!({ "format": format, "needs_password": needs_password }).to_string()
+    })
+}
+
+/// A CSV's header row and suggested columns as JSON `{headers, suggested,
+/// rows}`.
+#[wasm_bindgen(js_name = importColumns)]
+pub fn import_columns(bytes: &[u8]) -> Result<String, JsValue> {
+    let columns = pwm_client::import_columns(bytes).map_err(|e| js_error(ClientError::from(e)))?;
+    Ok(serde_json::json!({
+        "headers": columns.headers,
+        "suggested": mapping_json(&columns.suggested),
+        "rows": columns.rows,
+    })
+    .to_string())
+}
+
 #[wasm_bindgen(js_name = breachRangeUrl)]
 pub fn breach_range_url(prefix: &str) -> String {
     format!("{}{prefix}", pwm_client::HIBP_RANGE_URL)
