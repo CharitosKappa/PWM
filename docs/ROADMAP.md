@@ -567,7 +567,14 @@ Phase 3  Teams           months 16–24 M16–M19
     - **KeePass:** M8.4.
     - **Proton Pass passkeys:** left out and counted, since Proton doesn't document their content.
     - **Checks against real exports:** the fixtures follow each vendor's published format; a real export from each manager is a manual check before the beta (`QUALITY.md`).
-- [ ] M8.2 Import in memory; if a file was picked, offer to securely delete the source export afterwards.
+- [x] M8.2 Import in memory; if a file was picked, offer to securely delete the source export afterwards.
+  - Done per D51 §9 (implementation notes there):
+    - **Extension:** an Import tab on the manage page: pick a file, check where it's from (and a CSV's columns), the export's password when it has one, what will come in and what is left out, then Import, which saves and syncs. After a file with no password it says to delete it; a browser can't delete files.
+    - **iOS and macOS:** Import in Settings, the same steps, with a button that deletes the picked export file after a plaintext import. The Mac app's sandbox gets read and write access to files the user picks.
+    - **Tests:** 5 Vitest tests through the background, 1 against the real WASM build, 6 Swift view-model tests and 1 Swift test against the real server.
+  - **Deferred:**
+    - **Android:** M6. **Windows and Linux:** M7.
+    - **A check on devices:** picking and deleting files from Files, iCloud Drive and Finder (manual, `QUALITY.md`).
 - [ ] M8.3 Fuzz every parser; sample files in `core/pwm-import/fixtures/` (synthetic data only).
 - [ ] M8.4 KeePass `.kdbx` (KDBX 3.1/4) with the `keepass` crate, behind our own header and KDF limits (D51 §5).
 

@@ -266,6 +266,10 @@ public final class SettingsModel {
         ExportModel(account: account)
     }
 
+    public func makeImport() -> ImportModel {
+        ImportModel(account: account, files: app.importFiles)
+    }
+
     public func makeApprovals() -> ApprovalsModel {
         ApprovalsModel(account: account)
     }

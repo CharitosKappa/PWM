@@ -307,6 +307,65 @@ actor FakeAccount: Account {
             return Redacted(Data("title".utf8))
         }
     }
+
+    // Import (D51): the file's text says what it is; "bitwarden" needs the
+    // password "export-pw".
+    var importPrepared = false
+
+    func guessImport(fileName: String, data: Redacted<Data>) -> ImportGuess? {
+        let text = String(decoding: data.value, as: UTF8.self)
+        if text.hasPrefix("url,username,password,totp,extra") { return ImportGuess(format: "lastpass", needsPassword: false) }
+        if text.hasPrefix("{") { return ImportGuess(format: "bitwarden", needsPassword: true) }
+        if fileName.hasSuffix(".csv") { return ImportGuess(format: "csv", needsPassword: false) }
+        return nil
+    }
+
+    func importColumns(_ data: Redacted<Data>) throws -> CSVColumns {
+        let header = String(decoding: data.value, as: UTF8.self).split(separator: "\n").first.map(String.init) ?? ""
+        let headers = header.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+        return CSVColumns(headers: headers, suggested: ColumnMap(title: headers.firstIndex(of: "name")), rows: 1)
+    }
+
+    func prepareImport(format: String, data: Redacted<Data>, password: Redacted<String>?, columns: ColumnMap?) throws -> ImportSummary {
+        if format == "bitwarden" {
+            guard let password else { throw PWMError(code: "import_password_needed") }
+            guard password.value == "export-pw" else { throw PWMError(code: "import_wrong_password") }
+        }
+        guard ["lastpass", "csv", "bitwarden"].contains(format) else { throw PWMError(code: "import_unreadable") }
+        calls.append("prepareImport \(format)\(columns.map { " title=\($0.title ?? -1)" } ?? "")")
+        importPrepared = true
+        return ImportSummary(logins: 2, notes: 0, cards: 0, identities: 0, folders: 1, trashed: 0, leftOut: [.init(reason: "attachments", count: 1)])
+    }
+
+    func finishImport() throws -> ImportSummary {
+        guard importPrepared else { throw PWMError(code: "not_running") }
+        importPrepared = false
+        calls.append("finishImport")
+        return ImportSummary(logins: 2, notes: 0, cards: 0, identities: 0, folders: 1, trashed: 0, leftOut: [.init(reason: "attachments", count: 1)])
+    }
+
+    func cancelImport() {
+        importPrepared = false
+        calls.append("cancelImport")
+    }
+}
+
+/// Files the import screen reads and deletes, in memory.
+final class FakeImportFiles: ImportFiles, @unchecked Sendable {
+    var files: [URL: Data] = [:]
+    var deleted: [URL] = []
+
+    func size(of url: URL) -> Int? { files[url]?.count }
+
+    func read(_ url: URL) throws -> Data {
+        guard let data = files[url] else { throw PWMError(code: "import_unreadable") }
+        return data
+    }
+
+    func delete(_ url: URL) throws {
+        guard files.removeValue(forKey: url) != nil else { throw PWMError(code: "delete_failed") }
+        deleted.append(url)
+    }
 }
 
 @MainActor
