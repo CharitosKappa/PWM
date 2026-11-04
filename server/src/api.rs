@@ -13,6 +13,7 @@ use serde::de::DeserializeOwned;
 use sqlx::PgPool;
 
 use crate::limits::{Clock, Limits, RateLimiter, TrustedProxies, system_clock};
+use crate::push::Push;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -20,6 +21,8 @@ pub struct AppState {
     pub secrets: Arc<ServerSecrets>,
     pub(crate) limiter: Arc<RateLimiter>,
     pub(crate) trusted_proxies: Arc<TrustedProxies>,
+    /// APNs (D50 §3); off unless configured.
+    pub(crate) push: Push,
 }
 
 impl AppState {
@@ -30,7 +33,13 @@ impl AppState {
             secrets: Arc::new(secrets),
             limiter: Arc::new(RateLimiter::new(Limits::default(), system_clock())),
             trusted_proxies: Arc::new(TrustedProxies::default()),
+            push: Push::off(),
         }
+    }
+
+    pub fn with_push(mut self, push: Push) -> Self {
+        self.push = push;
+        self
     }
 
     pub fn with_limits(mut self, limits: Limits, clock: Arc<dyn Clock>) -> Self {

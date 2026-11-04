@@ -47,12 +47,28 @@ pub enum Outcome {
     Approvals(Vec<crate::ApprovalRequest>),
     /// An approval was accepted, completed or denied.
     ApprovalUpdated,
+    /// This device's push token was registered or removed (D50 §3).
+    PushTokenSet,
+}
+
+/// This device's APNs token, for [`Client::start_push_token`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PushToken {
+    /// `"ios"` or `"macos"`.
+    pub app: String,
+    /// The token as hex, as the system gives it.
+    pub token: String,
+    /// A development build's token (APNs sandbox).
+    pub sandbox: bool,
 }
 
 enum State<S> {
     Locked(S),
     Unlocked(Box<SyncEngine<S>>),
-    /// Only while moving between the two.
+    /// Locked, with a sync run in progress on an engine without keys
+    /// (D50 §1). It goes back to `Locked` when the run ends.
+    Syncing(Box<SyncEngine<S>>),
+    /// Only while moving between the others.
     Moving,
 }
 
@@ -60,6 +76,9 @@ pub(crate) enum Running {
     Idle,
     Auth(AuthFlow),
     Sync,
+    /// A sync started while locked; it carries on if the client is unlocked
+    /// meanwhile (D50 §1).
+    LockedSync,
     CreateVault(Id),
     /// Sync, then create a vault if the account has none (D34).
     EnsureVault,
@@ -67,6 +86,8 @@ pub(crate) enum Running {
     Devices,
     /// A device approval call (D46).
     Approval(crate::approval::ApprovalCall),
+    /// Registering or removing the push token, locked or not (D50 §3).
+    PushToken,
 }
 
 pub struct Client<S: Store> {
@@ -129,7 +150,7 @@ impl<S: Store> Client<S> {
     pub fn store(&self) -> &S {
         match &self.state {
             State::Locked(store) => store,
-            State::Unlocked(engine) => engine.store(),
+            State::Unlocked(engine) | State::Syncing(engine) => engine.store(),
             State::Moving => unreachable!("never observable"),
         }
     }
@@ -145,10 +166,39 @@ impl<S: Store> Client<S> {
     /// New tokens to keep in secure storage, and items the server refused.
     pub fn take_events(&mut self) -> Vec<SyncEvent> {
         let mut events = std::mem::take(&mut self.events);
-        if let State::Unlocked(engine) = &mut self.state {
+        if let State::Unlocked(engine) | State::Syncing(engine) = &mut self.state {
             events.extend(engine.take_events());
         }
         events
+    }
+
+    /// The engine of the run in progress, locked or not.
+    fn running_engine(&mut self) -> Result<&mut SyncEngine<S>, ClientError> {
+        match &mut self.state {
+            State::Unlocked(engine) | State::Syncing(engine) => Ok(engine),
+            _ => Err(ClientError::Locked),
+        }
+    }
+
+    /// Back to `Locked` once a locked sync's run has ended, keeping its
+    /// events (refreshed tokens must never be lost).
+    fn settle_state(&mut self) {
+        if matches!(&self.state, State::Syncing(engine) if !engine.is_running()) {
+            let State::Syncing(mut engine) = std::mem::replace(&mut self.state, State::Moving)
+            else {
+                unreachable!("checked above");
+            };
+            self.events.extend(engine.take_events());
+            self.state = State::Locked(engine.into_store());
+        }
+    }
+
+    /// Idle, or only a sync that can carry on unlocked.
+    fn idle_for_unlock(&self) -> Result<(), ClientError> {
+        match self.running {
+            Running::Idle | Running::Sync | Running::LockedSync | Running::PushToken => Ok(()),
+            _ => Err(ClientError::Busy),
+        }
     }
 
     pub(crate) fn engine(&mut self) -> Result<&mut SyncEngine<S>, ClientError> {
@@ -232,34 +282,55 @@ impl<S: Store> Client<S> {
         secret_key: &str,
         tokens: Tokens,
     ) -> Result<(), ClientError> {
-        self.idle()?;
-        let State::Locked(store) = &self.state else {
+        self.idle_for_unlock()?;
+        if self.is_unlocked() {
             return Ok(());
-        };
-        let record = store.account()?.ok_or(ClientError::WrongPassword)?;
+        }
+        let record = self.store().account()?.ok_or(ClientError::WrongPassword)?;
         let keyset = auth::unlock(&record, password, secret_key)?;
         self.open(keyset, tokens)
     }
 
-    /// Drops every key from memory. A running operation is abandoned.
+    /// Drops every key from memory. A sync in progress carries on without
+    /// keys, so a token refresh in flight is not lost (D50 §1); any other
+    /// operation is abandoned.
     pub fn lock(&mut self) {
-        self.running = Running::Idle;
         self.export_grant = None;
         self.approving = None;
         self.approval_commitments.clear();
-        if let State::Unlocked(_) = self.state {
-            let State::Unlocked(engine) = std::mem::replace(&mut self.state, State::Moving) else {
-                unreachable!("checked above");
-            };
-            self.state = State::Locked(engine.into_store());
+        let syncing = matches!(self.running, Running::Sync | Running::LockedSync);
+        match std::mem::replace(&mut self.state, State::Moving) {
+            State::Unlocked(mut engine) => {
+                engine.drop_keys();
+                if syncing && engine.is_running() {
+                    self.running = Running::LockedSync;
+                } else {
+                    self.running = Running::Idle;
+                    engine.cancel();
+                }
+                self.state = State::Syncing(engine);
+            }
+            state => {
+                if !matches!(state, State::Syncing(_)) {
+                    self.running = Running::Idle;
+                }
+                self.state = state;
+            }
         }
+        self.settle_state();
+    }
+
+    /// Locks and abandons everything, a locked sync included.
+    fn stop(&mut self) {
+        self.cancel();
+        self.lock();
     }
 
     /// Locks and deletes the cached account, its vaults and items, so the
     /// device keeps nothing of it. The platform deletes its stored tokens and
     /// Secret Key; the device id stays.
     pub fn sign_out(&mut self) -> Result<(), ClientError> {
-        self.lock();
+        self.stop();
         let State::Locked(store) = &mut self.state else {
             unreachable!("locked just now");
         };
@@ -273,7 +344,7 @@ impl<S: Store> Client<S> {
         keyset: AccountKeyset,
         tokens: Tokens,
     ) -> Result<(), ClientError> {
-        self.idle()?;
+        self.idle_for_unlock()?;
         self.open(keyset, tokens)
     }
 
@@ -281,6 +352,18 @@ impl<S: Store> Client<S> {
         let state = std::mem::replace(&mut self.state, State::Moving);
         let store = match state {
             State::Locked(store) => store,
+            // A locked sync carries on with the keys; its tokens are newer.
+            State::Syncing(mut engine) => {
+                let unlocked = engine.unlock(keyset);
+                self.state = State::Syncing(engine);
+                unlocked?;
+                let State::Syncing(engine) = std::mem::replace(&mut self.state, State::Moving)
+                else {
+                    unreachable!("set just now");
+                };
+                self.state = State::Unlocked(engine);
+                return Ok(());
+            }
             State::Unlocked(engine) => engine.into_store(),
             State::Moving => unreachable!("never observable"),
         };
@@ -301,7 +384,7 @@ impl<S: Store> Client<S> {
         keyset: AccountKeyset,
         tokens: Tokens,
     ) -> Result<(), ClientError> {
-        self.lock();
+        self.stop();
         let State::Locked(store) = &mut self.state else {
             unreachable!("locked just now");
         };
@@ -320,6 +403,78 @@ impl<S: Store> Client<S> {
     }
 
     // --- Server conversations ---
+
+    /// Starts a sync that needs only the tokens (D50 §1): locked, it stores
+    /// what needs no key as ciphertext, uploads what is queued, and leaves
+    /// the rest for the next unlocked sync. Unlocked, it is [`start_sync`].
+    /// `tokens` come from secure storage; new ones arrive as events.
+    ///
+    /// [`start_sync`]: Client::start_sync
+    pub fn start_locked_sync(&mut self, tokens: Tokens) -> Result<Step, ClientError> {
+        self.idle()?;
+        if self.is_unlocked() {
+            return self.start_sync();
+        }
+        if self.store().account()?.is_none() {
+            return Err(ClientError::Locked);
+        }
+        let State::Locked(store) = std::mem::replace(&mut self.state, State::Moving) else {
+            unreachable!("idle and not unlocked");
+        };
+        let mut engine = Box::new(SyncEngine::locked(store, tokens)?);
+        let step = engine.start_sync();
+        self.state = State::Syncing(engine);
+        self.running = Running::LockedSync;
+        self.after_engine(step)
+    }
+
+    /// Registers this device's push token (`Some`) or removes it (`None`)
+    /// on the server (D50 §3). It needs only the tokens, so it also runs
+    /// while locked. Ends with `PushTokenSet`.
+    pub fn start_push_token(
+        &mut self,
+        tokens: Tokens,
+        push: Option<PushToken>,
+    ) -> Result<Step, ClientError> {
+        self.idle()?;
+        let path = "/v1/devices/self/push".to_owned();
+        let (method, body) = match push {
+            Some(push) => {
+                let hex = push.token.len() % 2 == 0
+                    && (64..=200).contains(&push.token.len())
+                    && push.token.bytes().all(|b| b.is_ascii_hexdigit());
+                if !hex || !["ios", "macos"].contains(&push.app.as_str()) {
+                    return Err(ClientError::InvalidPushToken);
+                }
+                let environment = if push.sandbox {
+                    "sandbox"
+                } else {
+                    "production"
+                };
+                let body = serde_json::json!({
+                    "app": push.app, "token": push.token, "environment": environment,
+                });
+                (pwm_sync::Method::Put, Some(body.to_string().into_bytes()))
+            }
+            None => (pwm_sync::Method::Delete, None),
+        };
+        let step = if self.is_unlocked() {
+            self.engine()?.start_call(method, path, body)
+        } else {
+            if self.store().account()?.is_none() {
+                return Err(ClientError::Locked);
+            }
+            let State::Locked(store) = std::mem::replace(&mut self.state, State::Moving) else {
+                unreachable!("idle and not unlocked");
+            };
+            let mut engine = Box::new(SyncEngine::locked(store, tokens)?);
+            let step = engine.start_call(method, path, body);
+            self.state = State::Syncing(engine);
+            step
+        };
+        self.running = Running::PushToken;
+        self.after_engine(step)
+    }
 
     /// Starts a sync run (vault list, pull, push).
     pub fn start_sync(&mut self) -> Result<Step, ClientError> {
@@ -356,7 +511,7 @@ impl<S: Store> Client<S> {
         let account = self.account_record()?.account_id;
         let name_sealed = self
             .engine_ref()?
-            .keyset()
+            .keyset()?
             .seal_device_name(&account, &device, name.trim())
             .map_err(|_| ClientError::InvalidDeviceName)?;
         self.start_device_task(pwm_sync::DeviceTask::Rename {
@@ -387,7 +542,7 @@ impl<S: Store> Client<S> {
         records: Vec<pwm_sync::DeviceRecord>,
     ) -> Result<Vec<crate::DeviceInfo>, ClientError> {
         let account = self.account_record()?.account_id;
-        let keyset = self.engine_ref()?.keyset();
+        let keyset = self.engine_ref()?.keyset()?;
         Ok(records
             .into_iter()
             .map(|r| crate::DeviceInfo {
@@ -442,7 +597,7 @@ impl<S: Store> Client<S> {
             },
             running => {
                 self.running = running;
-                let step = self.engine()?.receive(response, now_ms);
+                let step = self.running_engine()?.receive(response, now_ms);
                 self.after_engine(step)
             }
         }
@@ -461,7 +616,7 @@ impl<S: Store> Client<S> {
             },
             running => {
                 self.running = running;
-                let step = self.engine()?.network_failed();
+                let step = self.running_engine()?.network_failed();
                 self.after_engine(step)
             }
         }
@@ -470,9 +625,10 @@ impl<S: Store> Client<S> {
     /// Abandons the running operation.
     pub fn cancel(&mut self) {
         self.running = Running::Idle;
-        if let State::Unlocked(engine) = &mut self.state {
+        if let State::Unlocked(engine) | State::Syncing(engine) = &mut self.state {
             engine.cancel();
         }
+        self.settle_state();
     }
 
     fn after_engine(
@@ -483,12 +639,16 @@ impl<S: Store> Client<S> {
             Ok(step) => self.map_engine_step(step),
             Err(err) => {
                 self.running = Running::Idle;
+                self.settle_state();
                 Err(err.into())
             }
         }
     }
 
     pub(crate) fn map_engine_step(&mut self, step: pwm_sync::Step) -> Result<Step, ClientError> {
+        if !matches!(step, pwm_sync::Step::Send(_)) {
+            self.settle_state();
+        }
         let step = match step {
             pwm_sync::Step::Send(request) => return Ok(Step::Send(request)),
             pwm_sync::Step::Wait { delay_ms } => Step::Wait { delay_ms },
@@ -508,6 +668,16 @@ impl<S: Store> Client<S> {
                 Step::Done(Outcome::Devices(self.open_devices(records)?))
             }
             pwm_sync::Step::Done(SyncOutcome::DeviceUpdated) => Step::Done(Outcome::DeviceUpdated),
+            pwm_sync::Step::Done(SyncOutcome::Answered { status, .. })
+                if matches!(self.running, Running::PushToken) =>
+            {
+                self.running = Running::Idle;
+                return match status {
+                    204 => Ok(Step::Done(Outcome::PushTokenSet)),
+                    400 => Err(ClientError::InvalidPushToken),
+                    status => Err(ClientError::Server(status)),
+                };
+            }
             pwm_sync::Step::Done(SyncOutcome::Answered { status, body }) => {
                 let Running::Approval(call) = self.running else {
                     self.running = Running::Idle;

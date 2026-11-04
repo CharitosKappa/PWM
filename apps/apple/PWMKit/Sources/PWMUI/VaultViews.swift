@@ -129,6 +129,7 @@ struct ItemList: View {
     @Binding var selection: String?
     @Binding var editing: ItemEditModel?
     @State private var deleting: Entry?
+    @State private var signingInAgain = false
 
     private var title: String {
         switch model.section {
@@ -181,7 +182,14 @@ struct ItemList: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if let notice = model.error ?? model.status {
+            if let again = model.signInAgain, again.needed {
+                Button("Sign in again to sync") { signingInAgain = true }
+                    .textStyle(Tokens.Text.caption)
+                    .padding(Tokens.Space.s2)
+                    .frame(maxWidth: .infinity)
+                    .background(.bar)
+                    .accessibilityIdentifier("signInAgain")
+            } else if let notice = model.error ?? model.status {
                 Text(verbatim: notice)
                     .textStyle(Tokens.Text.caption)
                     .foregroundStyle(Tokens.Color.textMuted.color)
@@ -210,6 +218,11 @@ struct ItemList: View {
                 }
             }
         }
+        .sheet(isPresented: $signingInAgain) {
+            if let again = model.signInAgain {
+                SignInAgainView(model: again) { signingInAgain = false }
+            }
+        }
         .confirmationDialog(
             "Delete this item forever?",
             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
@@ -219,6 +232,46 @@ struct ItemList: View {
             Button("Delete forever", role: .destructive) { Task { await model.deleteForever(entry) } }
         } message: { _ in
             Text("It is removed from all your devices and can't be restored.")
+        }
+    }
+}
+
+/// "Sign in again to sync" (D50 §5): the master password only. What this
+/// device hasn't sent yet is kept.
+struct SignInAgainView: View {
+    @Bindable var model: SignInAgainModel
+    let done: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    SecureField("Master password", text: $model.password)
+                        .field(.password)
+                        .accessibilityIdentifier("signInAgainPassword")
+                        .onSubmit { signIn() }
+                } footer: {
+                    Text("Your session on this device ended. Changes you made here are kept and sync once you sign in.")
+                }
+                ErrorText(text: model.error)
+            }
+            .navigationTitle("Sign in again")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { done() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Sign in") { signIn() }
+                        .disabled(!model.canSignIn)
+                        .accessibilityIdentifier("signInAgainButton")
+                }
+            }
+        }
+    }
+
+    private func signIn() {
+        Task {
+            if await model.signIn() { done() }
         }
     }
 }

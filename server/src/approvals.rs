@@ -104,6 +104,10 @@ async fn ask(
     .fetch_one(&mut *tx)
     .await?;
     tx.commit().await?;
+    // Sent after the answer is decided, so it changes nothing the asker sees.
+    if let Some(account) = account {
+        state.push.approval_asked(account);
+    }
     Ok((
         StatusCode::CREATED,
         Json(Asked {

@@ -9,7 +9,7 @@ import type { CopyField, ItemSummary, Status } from "../shared/messages.ts";
 import { describe, describeCode, send } from "./api.ts";
 import { SaveOffer } from "./Offer.tsx";
 import { ReportLink } from "./Report.tsx";
-import { Notice } from "./ui.tsx";
+import { Field, Notice } from "./ui.tsx";
 
 type Unlocked = Extract<Status, { state: "unlocked" }>;
 
@@ -120,6 +120,7 @@ export function Vault({
         <button onClick={() => void lock()}>Lock</button>
       </header>
       <SyncLine status={status} onSync={() => void sync()} />
+      {status.syncError === "signed_out" && <SignInAgain onStatus={onStatus} />}
       {generator && <Generator onToast={setToast} />}
       {selected ? (
         <Detail
@@ -231,6 +232,59 @@ function Suggestions({
         })}
       </ul>
     </section>
+  );
+}
+
+/**
+ * "Sign in again to sync" (D50 §5): the master password only. What this
+ * browser hasn't sent yet is kept.
+ */
+function SignInAgain({
+  onStatus,
+}: {
+  onStatus: (status: Status) => void;
+}): JSX.Element {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (event: Event): Promise<void> => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const status = await send({ kind: "signInAgain", password });
+      setPassword("");
+      onStatus(status);
+    } catch (err) {
+      setError(describe(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form
+      class="stack notice info"
+      id="sign-in-again"
+      onSubmit={(e) => void submit(e)}
+    >
+      <span>
+        Your session in this browser ended. Changes you made here are kept and
+        sync once you sign in again.
+      </span>
+      <Field
+        label="Master password"
+        type="password"
+        value={password}
+        onInput={setPassword}
+        autoComplete="current-password"
+      />
+      <div class="slot">{error && <Notice kind="danger">{error}</Notice>}</div>
+      <button class="primary" disabled={busy || password === ""}>
+        {busy ? "Signing in…" : "Sign in again"}
+      </button>
+    </form>
   );
 }
 

@@ -237,6 +237,123 @@ async fn sign_up_sync_and_log_in_on_a_second_device() {
     db.drop().await;
 }
 
+/// D50 §1 and §5: a locked device pulls and uploads with its tokens only,
+/// and after a refused refresh token it signs in again, keeping what it
+/// had not sent.
+#[tokio::test]
+async fn a_locked_device_syncs_and_signs_in_again_keeping_unsent_changes() {
+    let Some((db, app)) = setup().await else {
+        return;
+    };
+    let mut laptop = new_client();
+    let step = laptop.start_signup(EMAIL, PASSWORD, &new_id().unwrap(), Platform::Macos, "Mac");
+    let Outcome::SignedUp { secret_key } = run(&app, &mut laptop, step).await.unwrap() else {
+        panic!("not signed up");
+    };
+    let secret_key = secret_key.expose_secret().clone();
+    let step = laptop.start_ensure_vault();
+    let Outcome::VaultCreated { vault_id: vault } = run(&app, &mut laptop, step).await.unwrap()
+    else {
+        panic!("no vault");
+    };
+
+    let mut phone = new_client();
+    let phone_id = new_id().unwrap();
+    let step = phone.start_login(
+        EMAIL,
+        PASSWORD,
+        &secret_key,
+        &phone_id,
+        Platform::Ios,
+        "Phone",
+    );
+    run(&app, &mut phone, step).await.unwrap();
+    let phone_tokens = latest_tokens(&mut phone);
+    let step = phone.start_sync();
+    run(&app, &mut phone, step).await.unwrap();
+
+    // A passkey saved by the AutoFill extension, say, then the phone locks.
+    phone.save_item(&vault, &note("Passkey").1, T0).unwrap();
+    phone.lock();
+    laptop.save_item(&vault, &note("Mail").1, T0).unwrap();
+    let step = laptop.start_sync();
+    run(&app, &mut laptop, step).await.unwrap();
+
+    let tokens = Tokens::new(
+        phone_tokens.access().to_owned(),
+        phone_tokens.refresh().to_owned(),
+    );
+    let step = phone.start_locked_sync(tokens);
+    let Outcome::Synced(report) = run(&app, &mut phone, step).await.unwrap() else {
+        panic!("not synced");
+    };
+    assert_eq!((report.pulled, report.pushed), (1, 1));
+    assert!(!phone.is_unlocked());
+    // Its push token goes up while locked too (D50 §3).
+    let tokens = Tokens::new(
+        phone_tokens.access().to_owned(),
+        phone_tokens.refresh().to_owned(),
+    );
+    let push = pwm_client::PushToken {
+        app: "ios".to_owned(),
+        token: "ab".repeat(32),
+        sandbox: true,
+    };
+    let step = phone.start_push_token(tokens, Some(push));
+    assert!(matches!(
+        run(&app, &mut phone, step).await.unwrap(),
+        Outcome::PushTokenSet
+    ));
+    let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM push_tokens")
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 1);
+    let step = laptop.start_sync();
+    run(&app, &mut laptop, step).await.unwrap();
+    assert_eq!(titles(&laptop, &vault), ["Mail", "Passkey"]);
+    let tokens = Tokens::new(
+        phone_tokens.access().to_owned(),
+        phone_tokens.refresh().to_owned(),
+    );
+    phone.unlock(PASSWORD, &secret_key, tokens).unwrap();
+    assert_eq!(titles(&phone, &vault), ["Mail", "Passkey"]);
+
+    // The session ends elsewhere; an edit made meanwhile is kept.
+    let (status, _) = common::call(
+        &app,
+        "POST",
+        "/v1/auth/logout",
+        Some(phone_tokens.access()),
+        None,
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::NO_CONTENT);
+    phone.save_item(&vault, &note("Offline").1, T0).unwrap();
+    let step = phone.start_sync();
+    assert!(matches!(
+        run(&app, &mut phone, step).await.unwrap(),
+        Outcome::SignedOut
+    ));
+
+    // Signing in again on the same device keeps the cache and sends it.
+    let step = phone.start_login(EMAIL, PASSWORD, &secret_key, &phone_id, Platform::Ios, "");
+    assert!(matches!(
+        run(&app, &mut phone, step).await.unwrap(),
+        Outcome::LoggedIn
+    ));
+    assert_eq!(titles(&phone, &vault), ["Mail", "Offline", "Passkey"]);
+    let step = phone.start_sync();
+    let Outcome::Synced(report) = run(&app, &mut phone, step).await.unwrap() else {
+        panic!("not synced");
+    };
+    assert_eq!(report.pushed, 1);
+    let step = laptop.start_sync();
+    run(&app, &mut laptop, step).await.unwrap();
+    assert_eq!(titles(&laptop, &vault), ["Mail", "Offline", "Passkey"]);
+    db.drop().await;
+}
+
 /// Devices from the app (D43 §6): a device names itself at login, any
 /// device renames or revokes the others, and a name moved to another
 /// device does not open.

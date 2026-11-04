@@ -527,11 +527,22 @@ Phase 3  Teams           months 16–24 M16–M19
   - **Deferred:**
     - **A check on a device:** real recording, mirroring and screenshots (manual steps in `QUALITY.md`).
     - **Android:** M6.4. **Windows:** M7. **Linux and the browser extension:** no API (logged in D49).
-- [ ] M5.8 Background sync, from M3:
+- [x] M5.8 Background sync, from M3:
   - **Pulling while locked:** store new ciphertext in the cache without keys, and merge conflicts at the next unlock. This keeps the AutoFill extension's data fresh.
   - **Background refresh:** iOS background refresh, and a timer on macOS.
   - **Server push:** a content-free "your vault changed" notification over APNs, which triggers a sync.
   - **Edge case in `pwm-sync`:** deleting an item whose first upload's answer was lost should not bring it back on the next pull. Keep a pending delete instead of dropping the record.
+  - Done per D50 (implementation notes there):
+    - **Core:** a locked sync with the tokens only (`SyncEngine::locked`, `Client::start_locked_sync`), handed over when the user unlocks or locks during a run; the push token call (`start_push_token`); the delete of an unconfirmed item at revision 1. Through UniFFI.
+    - **Server:** `PUT`/`DELETE /v1/devices/self/push` (migration 0006), and the APNs sender: a content-free push to the other devices after each item write, at most once a minute, and a fixed-text notice for approval requests. Off unless `PWM_APNS_*` is set.
+    - **iOS and macOS:** background refresh and silent pushes on iOS, a 15-minute timer and pushes on macOS; the push token at launch and after a sign-in, removed at sign-out; "Sign in again to sync"; the approval notice switch in Settings.
+    - **Extension:** "Sign in again" in the popup.
+    - **Re-login after a refused refresh token** (from M5.3) and **push for approval requests** (from M5.9) are done here too.
+  - **Deferred:**
+    - **A check on devices:** real APNs delivery and iOS's background refresh scheduling (manual checklist in `QUALITY.md`).
+    - **The APNs key:** made by the founder in the Apple developer account, with D1's bundle ids.
+    - **macOS while the app is closed:** no sync (the app quits with its window); a menu-bar mode could come later.
+    - **Android:** M6.5. **Windows and Linux:** M7. **The browser extension:** no push (logged in D50).
 
 ### M6 — Android
 - [ ] M6.1 Compose app over UniFFI core, same screens as M5.3.

@@ -22,7 +22,7 @@ pub use approval::{ApprovalAsk, ApprovalRequest, AskStep, POLL_EVERY_MS};
 pub use auth::id_text;
 pub use autofill::AutofillMatch;
 pub use biometric::{BiometricUnlock, BrowserUnlock};
-pub use client::{Client, Outcome, Step, new_id};
+pub use client::{Client, Outcome, PushToken, Step, new_id};
 pub use error::ClientError;
 pub use kit::{ScannedKit, emergency_kit, scan_kit};
 pub use passkey::{

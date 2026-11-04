@@ -1,4 +1,5 @@
-//! `GET /v1/account` and `/v1/devices` (D26, D43).
+//! `GET /v1/account`, `/v1/devices` (D26, D43) and this device's push token
+//! (D50 §3).
 
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -21,6 +22,75 @@ pub fn routes() -> ApiRouter {
             "/v1/devices/{id}",
             axum::routing::patch(rename_device).delete(revoke_device),
         )
+        .route(
+            "/v1/devices/self/push",
+            axum::routing::put(set_push).delete(clear_push),
+        )
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PushToken {
+    app: String,
+    /// The APNs device token, as hex.
+    token: String,
+    environment: String,
+}
+
+/// Registers or replaces this device's push token. A token another device
+/// held (a reinstall) moves here.
+async fn set_push(
+    State(state): State<AppState>,
+    auth: Authenticated,
+    ApiJson(req): ApiJson<PushToken>,
+) -> Result<StatusCode, ApiError> {
+    if !["ios", "macos"].contains(&req.app.as_str())
+        || !["sandbox", "production"].contains(&req.environment.as_str())
+    {
+        return Err(ApiError::InvalidRequest);
+    }
+    let token = hex_token(&req.token).ok_or(ApiError::InvalidRequest)?;
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("DELETE FROM push_tokens WHERE token = $1 AND device_id <> $2")
+        .bind(&token)
+        .bind(auth.device_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "INSERT INTO push_tokens (device_id, app, token, environment) VALUES ($1, $2, $3, $4) \
+         ON CONFLICT (device_id) DO UPDATE \
+         SET app = $2, token = $3, environment = $4, updated_at = now()",
+    )
+    .bind(auth.device_id)
+    .bind(&req.app)
+    .bind(&token)
+    .bind(&req.environment)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn clear_push(
+    State(state): State<AppState>,
+    auth: Authenticated,
+) -> Result<StatusCode, ApiError> {
+    sqlx::query("DELETE FROM push_tokens WHERE device_id = $1")
+        .bind(auth.device_id)
+        .execute(&state.pool)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// 32 to 100 bytes as hex, which the table also checks.
+fn hex_token(text: &str) -> Option<Vec<u8>> {
+    if !text.len().is_multiple_of(2) || !(64..=200).contains(&text.len()) {
+        return None;
+    }
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok())
+        .collect()
 }
 
 #[derive(Serialize)]
@@ -135,6 +205,10 @@ async fn revoke_device(
     if found.is_none() {
         return Err(ApiError::NotFound);
     }
+    sqlx::query("DELETE FROM push_tokens WHERE device_id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -266,6 +266,8 @@ public final class UnlockModel {
     private let defaults: UserDefaults
     private let onUnlocked: @MainActor () -> Void
     private let onSignedOut: @MainActor () -> Void
+    /// Before the account goes: the push token leaves the server (D50 §3).
+    private let beforeSignOut: @MainActor () async -> Void
     /// Face ID changed: turn it back on after this password unlock (D45 §4).
     private var reenable = false
 
@@ -275,13 +277,15 @@ public final class UnlockModel {
 
     init(
         email: String?, account: any Account, defaults: UserDefaults = .standard,
-        onUnlocked: @escaping @MainActor () -> Void, onSignedOut: @escaping @MainActor () -> Void
+        onUnlocked: @escaping @MainActor () -> Void, onSignedOut: @escaping @MainActor () -> Void,
+        beforeSignOut: @escaping @MainActor () async -> Void = {}
     ) {
         self.email = email
         self.account = account
         self.defaults = defaults
         self.onUnlocked = onUnlocked
         self.onSignedOut = onSignedOut
+        self.beforeSignOut = beforeSignOut
     }
 
     public var canSubmit: Bool { !busy && !password.isEmpty }
@@ -357,6 +361,7 @@ public final class UnlockModel {
     }
 
     public func signOut() async {
+        await beforeSignOut()
         do {
             try await account.signOut()
             password = ""

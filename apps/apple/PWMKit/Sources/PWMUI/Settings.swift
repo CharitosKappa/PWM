@@ -142,8 +142,25 @@ public final class SettingsModel {
     /// "Suggest logins above the keyboard" (D47 §5).
     public private(set) var suggestLogins = true
 
+    /// "Notify me when a new device asks to sign in" (D50 §3): the
+    /// system's permission for this app's notices.
+    public private(set) var approvalNoticesOn = false
+
+    /// On asks the system the first time. Returns the system's settings to
+    /// open when only they can change it: after an earlier refusal, or to
+    /// turn notices off.
+    public func setApprovalNotices(_ on: Bool) async -> URL? {
+        if on, await app.approvalNotices.turnOn() {
+            approvalNoticesOn = true
+            return nil
+        }
+        approvalNoticesOn = await app.approvalNotices.isOn()
+        return notificationSettingsURL
+    }
+
     public func load() async {
         email = (try? await account.email()) ?? nil
+        approvalNoticesOn = await app.approvalNotices.isOn()
         biometric = try? await account.biometricState()
         suggestLogins = await account.suggestionsOn()
         browserTouchIDOn = app.browserTouchID?.isOn
@@ -152,6 +169,7 @@ public final class SettingsModel {
 
     /// Read again when the app comes back from the Settings app.
     public func loadAutoFill() async {
+        approvalNoticesOn = await app.approvalNotices.isOn()
         let was = autofillOn
         autofillOn = await app.autofill.isProviderOn()
         // iOS takes the suggestions only once PWM is the provider.
@@ -283,6 +301,7 @@ public final class SettingsModel {
 
     /// The screen asks first: changes not yet synced are lost.
     public func signOut() async {
+        await app.forgetPushToken()
         do {
             try await account.signOut()
             app.didSignOut()

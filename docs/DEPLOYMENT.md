@@ -21,6 +21,10 @@ How to run `pwm-server` outside development (decisions D25, D29, D30). The same 
 | `PWM_SERVER_SECRETS` | yes | From `pwm-server keygen`. Keep it in a secret manager **with a backup**: losing it locks every account out, and it cannot be rotated in v1. |
 | `PWM_LISTEN` | no | Default `0.0.0.0:8080` in the image. |
 | `PWM_TRUSTED_PROXIES` | no | Addresses or CIDR ranges of your reverse proxy, such as `10.0.0.0/8`. Without it, every client looks like the proxy to the rate limits. |
+| `PWM_APNS_KEY_FILE` | no | Path to the APNs `.p8` key from the Apple developer account (Keys, with Apple Push Notifications service). Mount it read-only; keep it like `PWM_SERVER_SECRETS`. Without it, push is off and the apps still sync on their own schedule (D50). |
+| `PWM_APNS_KEY_ID`, `PWM_APNS_TEAM_ID` | with the key | The key's 10-character id and the team id. |
+| `PWM_APNS_IOS_TOPIC`, `PWM_APNS_MACOS_TOPIC` | with the key | The iOS and macOS apps' bundle ids. |
+| `PWM_APNS_URL` | no | Replaces Apple's addresses; for tests only. |
 | `PWM_LOG` | no | Log filter, default `info,sqlx=warn`. |
 | `PWM_LOG_FORMAT` | no | `json` (default in the image) or `text`. |
 

@@ -55,6 +55,35 @@ final class ServerTests: XCTestCase {
         XCTAssertEqual(copy?.login?.password, "hunter2")
     }
 
+    /// D50: a locked device syncs with its tokens only, uploading what it
+    /// had queued, and sends its push token while locked too. One login, as
+    /// the server limits them.
+    func testALockedBackgroundSyncAndThePushToken() async throws {
+        let session = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
+        try await logInShared(session)
+        let vault = try await XCTUnwrapAsync(try await session.vaultIds().first)
+        let itemId = try await session.save(try await session.newItem(.note, title: "Locked sync"), in: vault)
+        await session.lock()
+
+        guard case let .synced(_, pushed, _, failed) = try await session.backgroundSync() else {
+            return XCTFail("the locked device did not sync")
+        }
+        XCTAssertEqual(pushed, 1)
+        XCTAssertEqual(failed, 0)
+        let stillLocked = await session.isUnlocked
+        XCTAssertFalse(stillLocked)
+        try await session.setPushToken(Data(repeating: 0xab, count: 32), sandbox: true)
+
+        try await session.unlock(password: strong)
+        guard case let .synced(_, pushedAgain, _, _) = try await session.sync() else {
+            return XCTFail("the unlocked device did not sync")
+        }
+        XCTAssertEqual(pushedAgain, 0, "it went up while locked")
+        let copy = try await session.item(itemId, in: vault)
+        XCTAssertEqual(copy?.title, "Locked sync")
+        try await session.setPushToken(nil, sandbox: true)
+    }
+
     func testUnlockOfflineAfterLocking() async throws {
         let keys = MemoryKeyStore()
         let session = try Session(cachePath: nil, server: server, keys: keys)

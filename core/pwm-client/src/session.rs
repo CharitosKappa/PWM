@@ -43,7 +43,7 @@ impl<S: Store> Client<S> {
     /// worker being stopped. Neither part may reach disk.
     pub fn export_session(&self) -> Result<SessionExport, ClientError> {
         let account_id = self.account_id_bytes()?;
-        let (envelope, key) = self.engine_ref()?.keyset().export_session(&account_id)?;
+        let (envelope, key) = self.engine_ref()?.keyset()?.export_session(&account_id)?;
         let mut blob = vec![SESSION_VERSION];
         blob.extend_from_slice(&account_id);
         blob.extend_from_slice(&envelope.to_bytes());
@@ -87,7 +87,7 @@ impl<S: Store> Client<S> {
         );
         let envelope = self
             .engine_ref()?
-            .keyset()
+            .keyset()?
             .seal_device_secret(&account_id, json.expose_secret())?;
         let mut out = vec![TOKENS_VERSION];
         out.extend_from_slice(&envelope.to_bytes());

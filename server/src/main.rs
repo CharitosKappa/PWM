@@ -1,6 +1,6 @@
 //! `pwm-server`: reads its settings from the environment (`PWM_DATABASE_URL`,
 //! `PWM_SERVER_SECRETS`, `PWM_LISTEN`, `PWM_TRUSTED_PROXIES`, `PWM_LOG`,
-//! `PWM_LOG_FORMAT`), applies pending migrations and serves the API until
+//! `PWM_LOG_FORMAT`, and the optional `PWM_APNS_*` for push), applies pending migrations and serves the API until
 //! Ctrl-C or SIGTERM.
 //!
 //! Subcommands:
@@ -22,7 +22,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use pwm_server::{
-    AppState, Config, DEFAULT_LISTEN, LogFormat, ServerError, app, connect,
+    AppState, Config, DEFAULT_LISTEN, LogFormat, Push, ServerError, app, connect,
     generate_server_secrets, install_panic_hook, log_subscriber, migrate,
 };
 use tokio::net::TcpListener;
@@ -186,8 +186,16 @@ async fn run() -> Result<(), ServerError> {
         env!("CARGO_PKG_VERSION"),
         listener.local_addr()?
     );
+    let push = match config.push {
+        Some(push) => {
+            tracing::info!("push over APNs is on");
+            Push::start(pool.clone(), push)
+        }
+        None => Push::off(),
+    };
     let state = AppState::new(pool.clone(), config.server_secrets)
-        .with_trusted_proxies(config.trusted_proxies);
+        .with_trusted_proxies(config.trusted_proxies)
+        .with_push(push);
     // The peer address is needed for per-IP rate limits.
     axum::serve(
         listener,

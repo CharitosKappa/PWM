@@ -1,13 +1,15 @@
 //! Randomized multi-device runs (D28): devices edit, delete and go offline
-//! in random orders, then all sync. They must end with identical vaults, and
-//! no saved content may disappear unless its item was deleted.
+//! in random orders, then all sync. Some runs happen while locked (D50 §1).
+//! They must end with identical vaults, and no saved content may disappear
+//! unless its item was deleted.
 
 mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use common::*;
-use pwm_store::{Store, SyncState};
+use pwm_store::{SqliteStore, Store, SyncState};
+use pwm_sync::SyncEngine;
 use pwm_vault::{HISTORY_LIMIT, ItemId};
 
 const T0: i64 = 1_700_000_000_000;
@@ -36,6 +38,15 @@ fn devices_converge_without_losing_edits() {
     for seed in 1..=SEEDS {
         run(seed);
     }
+}
+
+/// One sync without the keys, then unlocked again on the same cache.
+fn sync_locked(device: &mut Engine, account: &Account, server: &mut FakeServer, now: i64) {
+    let empty = SyncEngine::locked(SqliteStore::open_in_memory().unwrap(), server.new_device());
+    let engine = std::mem::replace(device, empty.unwrap());
+    let mut locked = SyncEngine::locked(engine.into_store(), server.new_device()).unwrap();
+    sync(&mut locked, server, now);
+    *device = SyncEngine::new(locked.into_store(), account.keyset(), server.new_device()).unwrap();
 }
 
 fn run(seed: u64) {
@@ -73,11 +84,18 @@ fn run(seed: u64) {
                 }
             }
         }
-        // A random subset of devices is online this round.
+        // A random subset of devices is online this round, some locked.
         for device in &mut devices {
-            if rng.below(2) == 0 {
-                now += 1_000;
-                sync(device, &mut server, now);
+            match rng.below(3) {
+                0 => {
+                    now += 1_000;
+                    sync(device, &mut server, now);
+                }
+                1 => {
+                    now += 1_000;
+                    sync_locked(device, &account, &mut server, now);
+                }
+                _ => {}
             }
         }
     }

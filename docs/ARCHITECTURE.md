@@ -66,6 +66,7 @@ Extension ──native messaging──▶ desktop app (unlock, biometrics)   or 
 - Server API is versioned (`/v1/...`), auth via OPAQUE (see `SECURITY.md`), JSON over HTTPS, ciphertext fields base64.
 - Sync model: each item is an encrypted blob with `(item_id, vault_id, revision, seq, updated_at)`: `revision` is per item and chosen by the client (it is in the AAD), `seq` is a per-vault change counter assigned by the server (D25). Every write names the revision it replaces, so the server never overwrites silently; a stale write gets 412 with the current item, and the client keeps both versions as item history (never silent data loss). Non-members of a vault get 404, viewers 403 `read_only` on writes (D27).
 - Sync client (D28): `pwm-sync` does no I/O. It hands the platform one `HttpRequest` at a time and takes back the `HttpResponse`, so native apps and the WASM extension run the same engine. Unsent changes are the cache's `Modified`/`Deleted` records. A run lists vaults, pulls each vault, then pushes. Conflicts keep the later edit current and the other in history; versions that cannot be merged, and edits of items deleted elsewhere, become new items.
+- Background sync (D50): a locked sync runs with the tokens only and leaves whatever needs the key for the next unlocked one. iOS runs it from background refresh (`pwm.sync`) and silent pushes, macOS every 15 minutes while the app runs and on a push. After an item write the server sends a content-free push over APNs to the other devices of the vault's members.
 
 ## Server API (v1, minimum)
 

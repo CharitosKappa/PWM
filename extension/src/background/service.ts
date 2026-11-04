@@ -251,6 +251,9 @@ export class Background {
       case "unlock":
         await this.unlock(request.password);
         return null;
+      case "signInAgain":
+        await this.signInAgain(request.password);
+        return this.status();
       case "unlockTouchId":
         await this.touchId.unlock();
         await this.afterUnlock();
@@ -504,6 +507,36 @@ export class Background {
     );
     if (done.outcome !== "logged_in") throw new ServiceError("internal");
     await this.signedIn(email, secretKey);
+  }
+
+  /**
+   * After the server refused this browser's refresh token (D50 §5): the
+   * master password only, since the email and Secret Key are here. The cache
+   * and its unsent changes stay, and so does Touch ID; it counts as typing
+   * the master password. Then syncs.
+   */
+  private async signInAgain(password: string): Promise<void> {
+    const email = await this.platform.disk.get("email");
+    const secretKey = await this.platform.disk.get("secretKey");
+    if (email === undefined || secretKey === undefined)
+      throw new ServiceError("signed_out");
+    const deviceId = await this.deviceId();
+    // An empty name sends none: the device keeps its name.
+    const done = await this.run(() =>
+      this.core.startLogin(
+        email,
+        password,
+        secretKey,
+        deviceId,
+        "extension",
+        "",
+      ),
+    );
+    if (done.outcome !== "logged_in") throw new ServiceError("internal");
+    await this.touchId.passwordTyped();
+    await this.afterUnlock();
+    this.syncError = null;
+    await this.sync();
   }
 
   /** The Emergency Kit for the signed-in account, on this browser's paper size. */

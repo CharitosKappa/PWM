@@ -1,13 +1,22 @@
 //! What happens to one cached item (D28 §3, §5–§7, §9). Revision rules: a
 //! `Modified` record at revision R is based on server revision R - 1
 //! (R = 1: not on the server yet); a `Deleted` record holds the server
-//! revision it deletes.
+//! revision it deletes (1 for an item never confirmed, D50 §4).
+//!
+//! The vault key is `None` in a locked sync (D50 §1). A step that needs it
+//! returns [`SyncError::Locked`] before writing anything, so the caller can
+//! leave the item for the next unlocked sync.
 
 use pwm_crypto::{Envelope, Id, SymmetricKey};
 use pwm_store::{ItemRecord, Store, SyncState};
 use pwm_vault::{Item, ItemId, decrypt_item, encrypt_item, encrypt_item_fitting};
 
 use crate::SyncError;
+
+/// The key, or `Locked` when syncing without keys.
+pub(crate) fn need(key: Option<&SymmetricKey>) -> Result<&SymmetricKey, SyncError> {
+    key.ok_or(SyncError::Locked)
+}
 
 pub(crate) fn put<S: Store>(
     store: &mut S,
@@ -40,13 +49,14 @@ fn decrypt(key: &SymmetricKey, record: &ItemRecord) -> Result<Item, SyncError> {
 /// Seals the record's content again at `revision`, as `Modified`.
 pub(crate) fn reseal<S: Store>(
     store: &mut S,
-    key: &SymmetricKey,
+    key: Option<&SymmetricKey>,
     record: &ItemRecord,
     revision: u64,
 ) -> Result<(), SyncError> {
     let envelope = if revision == record.revision {
         record.envelope.clone()
     } else {
+        let key = need(key)?;
         let item = decrypt(key, record)?;
         encrypt_item(key, &record.vault_id, &record.item_id, revision, &item)?
     };
@@ -79,9 +89,10 @@ pub(crate) fn save_copy<S: Store>(
 /// record goes, so a crash in between leaves both, never neither.
 pub(crate) fn move_to_copy<S: Store>(
     store: &mut S,
-    key: &SymmetricKey,
+    key: Option<&SymmetricKey>,
     local: &ItemRecord,
 ) -> Result<Option<ItemId>, SyncError> {
+    let key = need(key)?;
     let copy = match decrypt(key, local) {
         Ok(item) if item.is_editable() => Some(save_copy(store, key, &local.vault_id, &item)?),
         _ => None,
@@ -97,12 +108,13 @@ pub(crate) fn move_to_copy<S: Store>(
 /// stays, the local one becomes a new item. Returns that new item's id.
 pub(crate) fn merge<S: Store>(
     store: &mut S,
-    key: &SymmetricKey,
+    key: Option<&SymmetricKey>,
     local: &ItemRecord,
     server_revision: u64,
     server_envelope: Envelope,
     now_ms: i64,
 ) -> Result<Option<ItemId>, SyncError> {
+    let key = need(key)?;
     let (vault_id, item_id) = (local.vault_id, local.item_id);
     let ours = decrypt(key, local).ok().filter(Item::is_editable);
     let theirs = decrypt_item(key, &vault_id, &item_id, server_revision, &server_envelope).ok();
@@ -151,7 +163,7 @@ pub(crate) struct Applied {
 /// Applies one change from delta sync to the cache.
 pub(crate) fn apply_change<S: Store>(
     store: &mut S,
-    key: &SymmetricKey,
+    key: Option<&SymmetricKey>,
     vault_id: &Id,
     item_id: &ItemId,
     revision: u64,
@@ -188,8 +200,11 @@ pub(crate) fn apply_change<S: Store>(
             // The server has less than we had synced (restored from a
             // backup): our version goes up again on top of it.
             SyncState::Synced if revision < l.revision => {
-                if reseal(store, key, &l, revision + 1).is_err() {
-                    take(store, envelope)?;
+                match reseal(store, key, &l, revision + 1) {
+                    Err(SyncError::Locked) => return Err(SyncError::Locked),
+                    // Unreadable: the server's version stays.
+                    Err(_) => take(store, envelope)?,
+                    Ok(()) => {}
                 }
             }
             SyncState::Synced => take(store, envelope)?,
@@ -220,7 +235,7 @@ pub(crate) fn reupload_missing<S: Store>(
     for record in store.items(vault_id)? {
         if record.state == SyncState::Synced && !seen.contains(&record.item_id) {
             // An unreadable record cannot be resealed; it stays as it is.
-            if let Err(SyncError::Store(err)) = reseal(store, key, &record, 1) {
+            if let Err(SyncError::Store(err)) = reseal(store, Some(key), &record, 1) {
                 return Err(err.into());
             }
         }

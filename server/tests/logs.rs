@@ -30,7 +30,7 @@ impl Write for Capture {
 
 /// The server's own log pipeline (JSON lines through the scrubber) at
 /// TRACE, over a full run: register, login, refresh and its reuse warning,
-/// vault, item, sync. The only test in this binary, so the global
+/// vault, item, sync, a push token. The only test in this binary, so the global
 /// subscriber sees everything.
 #[tokio::test]
 async fn logs_hold_no_secrets_ids_or_contents() {
@@ -102,6 +102,15 @@ async fn logs_hold_no_secrets_ids_or_contents() {
         None,
     )
     .await;
+    let push_token = "cd".repeat(32);
+    call(
+        &app,
+        "PUT",
+        "/v1/devices/self/push",
+        Some(access),
+        Some(json!({ "app": "ios", "token": push_token, "environment": "sandbox" })),
+    )
+    .await;
     // Last, because it ends the session: a replaced refresh token again.
     let _ = refresh(&app, tokens["refresh_token"].as_str().unwrap()).await;
 
@@ -128,6 +137,7 @@ async fn logs_hold_no_secrets_ids_or_contents() {
         &account.device.to_string(),
         &vault.to_string(),
         &item.to_string(),
+        &push_token,
     ] {
         assert!(!log.contains(secret), "log contains {secret}");
     }

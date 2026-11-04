@@ -207,6 +207,7 @@ fn step(step: Step) -> WasmStep {
                     "approvals"
                 }
                 Outcome::ApprovalUpdated => "approval_updated",
+                Outcome::PushTokenSet => "push_token_set",
             });
         }
     }

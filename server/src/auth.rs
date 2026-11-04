@@ -399,9 +399,16 @@ async fn logout(
     State(state): State<AppState>,
     auth: Authenticated,
 ) -> Result<StatusCode, ApiError> {
+    let mut tx = state.pool.begin().await?;
     sqlx::query("DELETE FROM sessions WHERE id = $1")
         .bind(auth.session_id)
-        .execute(&state.pool)
+        .execute(&mut *tx)
         .await?;
+    // A signed-out device gets no pushes (D50 §3).
+    sqlx::query("DELETE FROM push_tokens WHERE device_id = $1")
+        .bind(auth.device_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

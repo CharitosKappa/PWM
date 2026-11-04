@@ -81,13 +81,78 @@ fn local_changes_follow_the_revision_rules() {
     assert_eq!(state(&device, &vault, &id), None);
     assert_eq!(server.vault(&vault).tombstones[id.as_bytes()].0, 2);
 
-    // Deleting an item that was never uploaded just removes it.
+    // Deleting an item that was never confirmed still tells the server,
+    // which may have it (D50 §4). Here it doesn't: the 404 removes it.
     let local = add(&mut device, &vault, "draft", T0);
     device.delete_item(&vault, &local).unwrap();
-    assert_eq!(state(&device, &vault, &local), None);
-    let before = server.log.len();
+    assert_eq!(
+        state(&device, &vault, &local),
+        Some((1, SyncState::Deleted))
+    );
+    assert_eq!(device.item(&vault, &local).unwrap(), None);
     sync(&mut device, &mut server, T0);
-    assert!(server.log[before..].iter().all(|l| l.starts_with("GET")));
+    assert!(server.log.last().unwrap().starts_with("DELETE"));
+    assert!(server.log.last().unwrap().ends_with("if-match=\"1\""));
+    assert_eq!(state(&device, &vault, &local), None);
+    assert!(
+        !server
+            .vault(&vault)
+            .tombstones
+            .contains_key(local.as_bytes())
+    );
+}
+
+#[test]
+fn a_delete_after_a_lost_upload_answer_stays_deleted() {
+    let mut server = FakeServer::new();
+    let account = Account::new();
+    let mut device = account.device(&mut server);
+    let vault = create_vault(&mut device, &mut server);
+    let id = add(&mut device, &vault, "draft", T0);
+
+    // The upload lands but the answer is lost; then the user deletes it.
+    server.fault("PUT", Fault::LoseResponse);
+    let step = device.start_sync().unwrap();
+    assert!(matches!(
+        drive(&mut device, &mut server, step, T0),
+        Ran::Wait(_)
+    ));
+    assert!(server.vault(&vault).items.contains_key(id.as_bytes()));
+    device.delete_item(&vault, &id).unwrap();
+
+    // The pull brings our upload back, which doesn't revive it; the push
+    // deletes it on the server.
+    sync(&mut device, &mut server, T0);
+    assert_eq!(state(&device, &vault, &id), None);
+    assert!(titles(&device, &vault).is_empty());
+    assert!(!server.vault(&vault).items.contains_key(id.as_bytes()));
+    assert_eq!(server.vault(&vault).tombstones[id.as_bytes()].0, 1);
+
+    let mut other = account.device(&mut server);
+    sync(&mut other, &mut server, T0);
+    assert!(titles(&other, &vault).is_empty());
+}
+
+#[test]
+fn a_delete_of_an_unconfirmed_item_another_device_edited_keeps_the_edit() {
+    let mut server = FakeServer::new();
+    let account = Account::new();
+    let mut device = account.device(&mut server);
+    let vault = create_vault(&mut device, &mut server);
+    let id = add(&mut device, &vault, "draft", T0);
+    server.fault("PUT", Fault::LoseResponse);
+    let step = device.start_sync().unwrap();
+    drive(&mut device, &mut server, step, T0);
+
+    // Another device pulls it and edits it before this one hears back.
+    let mut other = account.device(&mut server);
+    sync(&mut other, &mut server, T0);
+    edit(&mut other, &vault, &id, "draft (edited)", T0 + 1);
+    sync(&mut other, &mut server, T0);
+
+    device.delete_item(&vault, &id).unwrap();
+    sync(&mut device, &mut server, T0);
+    assert_eq!(titles(&device, &vault), ["draft (edited)"]);
 }
 
 #[test]

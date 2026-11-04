@@ -16,6 +16,8 @@ export type Request =
   | { kind: "signUp"; email: string; password: string }
   | { kind: "signIn"; email: string; password: string; secretKey: string }
   | { kind: "unlock"; password: string }
+  /** After the server refused this browser's session (D50 §5). */
+  | { kind: "signInAgain"; password: string }
   /** Touch ID through the PWM app for Mac (D48 §5). */
   | { kind: "unlockTouchId" }
   | { kind: "touchId" }
@@ -221,6 +223,7 @@ export interface Replies {
   checkLeaks: HealthView;
   setLeakCheck: boolean;
   unlockTouchId: null;
+  signInAgain: Status;
   touchId: boolean;
   setTouchId: boolean;
   /** The file as base64, with the name to save it under. */
@@ -240,6 +243,7 @@ const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "signUp",
   "signIn",
   "unlock",
+  "signInAgain",
   "unlockTouchId",
   "touchId",
   "setTouchId",
