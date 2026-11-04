@@ -16,6 +16,10 @@ export type Request =
   | { kind: "signUp"; email: string; password: string }
   | { kind: "signIn"; email: string; password: string; secretKey: string }
   | { kind: "unlock"; password: string }
+  /** Touch ID through the PWM app for Mac (D48 §5). */
+  | { kind: "unlockTouchId" }
+  | { kind: "touchId" }
+  | { kind: "setTouchId"; on: boolean }
   | { kind: "lock" }
   | { kind: "signOut" }
   | { kind: "items"; query: string }
@@ -142,7 +146,12 @@ export interface ReportPreview {
 
 export type Status =
   | { state: "signedOut" }
-  | { state: "locked"; email: string }
+  | {
+      state: "locked";
+      email: string;
+      /** Touch ID unlock is on for this account (D48 §5). */
+      touchId: boolean;
+    }
   | {
       state: "unlocked";
       email: string;
@@ -211,6 +220,9 @@ export interface Replies {
   health: HealthView;
   checkLeaks: HealthView;
   setLeakCheck: boolean;
+  unlockTouchId: null;
+  touchId: boolean;
+  setTouchId: boolean;
   /** The file as base64, with the name to save it under. */
   exportVault: { file: string; name: string };
   askApproval: AskView;
@@ -228,6 +240,9 @@ const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "signUp",
   "signIn",
   "unlock",
+  "unlockTouchId",
+  "touchId",
+  "setTouchId",
   "lock",
   "signOut",
   "items",

@@ -67,6 +67,15 @@ const MESSAGES: Record<string, string> = {
   export_not_authorized: "Enter your master password to export.",
   export_expired: "Enter your master password again to export.",
   locked: "Unlock first.",
+  helper_missing:
+    "Touch ID needs the PWM app for Mac, with browser unlock turned on in its Settings.",
+  touch_id_off: "Turn on Touch ID in Settings first.",
+  touch_id_unavailable: "Touch ID is not set up on this Mac.",
+  biometric_cancelled: "Unlock with your master password, or try again.",
+  biometric_changed:
+    "Touch ID changed. Enter your master password, then turn Touch ID on again.",
+  master_password_due:
+    "Enter your master password. It's asked every 14 days so you don't forget it.",
 };
 
 /** Plain words for an error code. */

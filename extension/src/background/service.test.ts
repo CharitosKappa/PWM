@@ -375,6 +375,7 @@ describe("auto-lock", () => {
     expect(await background.status()).toEqual({
       state: "locked",
       email: "ada@example.com",
+      touchId: false,
     });
     expect(platform.sessionBytes.value).toBeUndefined();
     expect(platform.alarmsAt.has("autolock")).toBe(false);

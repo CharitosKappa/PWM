@@ -32,6 +32,7 @@
     "activeTab",
     "scripting"
   ],
+  "optional_permissions": ["nativeMessaging"],
   "host_permissions": ["https://api.pwm.invalid/*"],
   "optional_host_permissions": ["https://*/*", "http://*/*"],
   "content_security_policy": {

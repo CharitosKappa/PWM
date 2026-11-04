@@ -9,6 +9,7 @@ import type {
   Disk,
   DiskKey,
   FrameRef,
+  NativeHost,
   Pages,
   Platform,
   SessionStore,
@@ -16,7 +17,7 @@ import type {
 import { fromBase64, toBase64 } from "../shared/bytes.ts";
 import type { ContentMessage } from "../shared/autofill.ts";
 import { writeClipboard } from "../shared/clipboard.ts";
-import { SITE_ACCESS } from "../shared/config.ts";
+import { NATIVE_HOST, SITE_ACCESS } from "../shared/config.ts";
 import type { ClipboardMessage } from "../shared/messages.ts";
 
 const DB_NAME = "pwm";
@@ -340,6 +341,16 @@ export function browserName(userAgent: string): string {
   return "Other";
 }
 
+/** Without the optional `nativeMessaging` permission the API is missing. */
+const nativeHost: NativeHost = {
+  send: (message) => {
+    const runtime = chrome.runtime as Partial<typeof chrome.runtime>;
+    if (runtime.sendNativeMessage === undefined)
+      return Promise.reject(new Error("no native messaging"));
+    return runtime.sendNativeMessage(NATIVE_HOST, message);
+  },
+};
+
 export function chromePlatform(): Platform {
   return {
     disk: new ChromeDisk(indexedDB, chrome.storage.local),
@@ -352,6 +363,7 @@ export function chromePlatform(): Platform {
         : new PageClipboard(),
     capabilities: { inlineUi: PWM_TARGET === "chromium" },
     pages: new ChromePages(),
+    native: nativeHost,
     fetch: (url, init) => fetch(url, init),
     now: () => Date.now(),
     locale: navigator.language,

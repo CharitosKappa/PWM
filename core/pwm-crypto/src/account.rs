@@ -21,6 +21,7 @@ const VAULT_KEY_VERSION: u8 = 1;
 const SESSION_VERSION: u8 = 1;
 /// Biometric unlock format (D45): the keyset plaintext under a random key.
 const BIOMETRIC_VERSION: u8 = 1;
+const BROWSER_UNLOCK_VERSION: u8 = 1;
 /// Device secret format (D34): the raw secret under `sym_key`.
 const DEVICE_SECRET_VERSION: u8 = 1;
 /// Device name plaintext format: UTF-8 padded to exactly 64 bytes (D26).
@@ -192,16 +193,65 @@ impl AccountKeyset {
         account_id: &Id,
         device_id: &Id,
     ) -> Result<(Envelope, Secret<[u8; 32]>), CryptoError> {
+        self.export_under_fresh_key(&Aad::biometric_unlock(
+            BIOMETRIC_VERSION,
+            account_id,
+            device_id,
+        ))
+    }
+
+    /// The browser extension's unlocked keyset for Touch ID through the Mac
+    /// app (decision D48 §5): as [`export_biometric_unlock`](Self::export_biometric_unlock),
+    /// under its own label `pwm/browser-unlock`. The extension keeps the
+    /// envelope; the Mac's helper keeps the key behind Touch ID.
+    pub fn export_browser_unlock(
+        &self,
+        account_id: &Id,
+        device_id: &Id,
+    ) -> Result<(Envelope, Secret<[u8; 32]>), CryptoError> {
+        self.export_under_fresh_key(&Aad::browser_unlock(
+            BROWSER_UNLOCK_VERSION,
+            account_id,
+            device_id,
+        ))
+    }
+
+    /// Restores a keyset from [`export_browser_unlock`](Self::export_browser_unlock).
+    pub fn import_browser_unlock(
+        envelope: &Envelope,
+        key: &Secret<[u8; 32]>,
+        account_id: &Id,
+        device_id: &Id,
+    ) -> Result<Self, CryptoError> {
+        Self::import_under_key(
+            envelope,
+            key,
+            &Aad::browser_unlock(BROWSER_UNLOCK_VERSION, account_id, device_id),
+        )
+    }
+
+    fn export_under_fresh_key(
+        &self,
+        aad: &Aad,
+    ) -> Result<(Envelope, Secret<[u8; 32]>), CryptoError> {
         let key_bytes = random_32()?;
         let key = SymmetricKey::from_secret(Secret::<[u8; 32]>::new_with(|k| {
             k.copy_from_slice(key_bytes.expose_secret());
         }));
-        let envelope = seal(
-            &key,
-            self.plaintext().expose_secret(),
-            &Aad::biometric_unlock(BIOMETRIC_VERSION, account_id, device_id),
-        )?;
+        let envelope = seal(&key, self.plaintext().expose_secret(), aad)?;
         Ok((envelope, key_bytes))
+    }
+
+    fn import_under_key(
+        envelope: &Envelope,
+        key: &Secret<[u8; 32]>,
+        aad: &Aad,
+    ) -> Result<Self, CryptoError> {
+        let key = SymmetricKey::from_secret(Secret::<[u8; 32]>::new_with(|k| {
+            k.copy_from_slice(key.expose_secret());
+        }));
+        let plaintext = open(&key, envelope, aad)?;
+        Self::from_plaintext(plaintext.expose_secret())
     }
 
     /// Restores a keyset from [`export_biometric_unlock`](Self::export_biometric_unlock).
@@ -211,15 +261,11 @@ impl AccountKeyset {
         account_id: &Id,
         device_id: &Id,
     ) -> Result<Self, CryptoError> {
-        let key = SymmetricKey::from_secret(Secret::<[u8; 32]>::new_with(|k| {
-            k.copy_from_slice(key.expose_secret());
-        }));
-        let plaintext = open(
-            &key,
+        Self::import_under_key(
             envelope,
+            key,
             &Aad::biometric_unlock(BIOMETRIC_VERSION, account_id, device_id),
-        )?;
-        Self::from_plaintext(plaintext.expose_secret())
+        )
     }
 
     /// Seals a secret this device keeps on disk (the refresh token, D34)

@@ -469,6 +469,43 @@ fn vectors_session() {
 }
 
 #[test]
+fn vectors_browser_unlock() {
+    for v in load(include_str!("../../test-vectors/browser_unlock.json")) {
+        let account: Id = arr(&v["account_id"]);
+        let device: Id = arr(&v["device_id"]);
+        assert_eq!(
+            Aad::browser_unlock(1, &account, &device).as_bytes(),
+            bytes(&v["aad"])
+        );
+        let unlock_key: [u8; 32] = arr(&v["unlock_key"]);
+        let blob = bytes(&v["envelope"]);
+        let plaintext = open(
+            &SymmetricKey::from_secret(Secret::new(unlock_key)),
+            &Envelope::from_bytes(&blob).unwrap(),
+            &Aad::browser_unlock(1, &account, &device),
+        )
+        .unwrap();
+        assert_eq!(
+            plaintext.expose_secret().as_slice(),
+            bytes(&v["keyset_plaintext"])
+        );
+        let original = keyset(&v);
+        assert_tamper_evident(&blob, |b| {
+            Envelope::from_bytes(b)
+                .and_then(|env| {
+                    AccountKeyset::import_browser_unlock(
+                        &env,
+                        &Secret::new(unlock_key),
+                        &account,
+                        &device,
+                    )
+                })
+                .is_ok_and(|k| k.x25519_public() == original.x25519_public())
+        });
+    }
+}
+
+#[test]
 fn vectors_biometric_unlock() {
     for v in load(include_str!("../../test-vectors/biometric_unlock.json")) {
         let account: Id = arr(&v["account_id"]);

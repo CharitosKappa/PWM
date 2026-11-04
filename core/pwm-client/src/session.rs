@@ -133,7 +133,7 @@ impl<S: Store> Client<S> {
     }
 }
 
-fn open_tokens(
+pub(crate) fn open_tokens(
     keyset: &AccountKeyset,
     account_id: &pwm_crypto::Id,
     sealed: Option<&[u8]>,

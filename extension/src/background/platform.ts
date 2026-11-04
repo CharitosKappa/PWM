@@ -32,7 +32,10 @@ export type DiskKey =
   | "inlineIcon"
   | "saveNever"
   | "passkeys"
-  | "leakCheck";
+  | "leakCheck"
+  /** Touch ID unlock (D48 §5): the sealed blob, never its key. */
+  | "browserUnlock"
+  | "passwordUnlockedAt";
 
 /** Memory-only storage that survives worker restarts (`chrome.storage.session`). */
 export interface SessionStore {
@@ -95,6 +98,16 @@ export interface Pages {
   setGlobalBadge(text: string): Promise<void>;
 }
 
+/**
+ * The PWM app for Mac's helper, for Touch ID unlock (D48 §5): native
+ * messaging in Chrome, Edge, Brave, Opera and Firefox, and the app's own
+ * handler in Safari.
+ */
+export interface NativeHost {
+  /** One message and its answer; rejects when no helper answers. */
+  send(message: Record<string, unknown>): Promise<unknown>;
+}
+
 /** What this browser can do (D40); the code asks this, never the browser's name. */
 export interface Capabilities {
   /**
@@ -110,6 +123,7 @@ export interface Platform {
   alarms: Alarms;
   clipboard: Clipboard;
   pages: Pages;
+  native: NativeHost;
   capabilities: Capabilities;
   fetch: (url: string, init: RequestInit) => Promise<Response>;
   now: () => number;

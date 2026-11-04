@@ -15,6 +15,7 @@ import type {
   DiskKey,
   FrameRef,
   FrameSender,
+  NativeHost,
   Pages,
   Platform,
 } from "./platform.ts";
@@ -181,6 +182,32 @@ export class FakeCore implements Core {
   exportSession(): Uint8Array {
     if (!this.unlocked) throw coreError("locked");
     return new Uint8Array([1, 2, 3, 4]);
+  }
+
+  /** Stands in for the browser blob: the key is 32 bytes of 7, the blob says whose. */
+  exportBrowserUnlock(deviceId: string): Uint8Array {
+    if (!this.unlocked) throw coreError("locked");
+    const blob = new TextEncoder().encode(`blob:${deviceId}`);
+    const out = new Uint8Array(32 + blob.length);
+    out.fill(7, 0, 32);
+    out.set(blob, 32);
+    return out;
+  }
+
+  unlockBrowser(
+    blob: Uint8Array,
+    key: Uint8Array,
+    deviceId: string,
+    sealedTokens: Uint8Array | undefined,
+  ): void {
+    const ok =
+      new TextDecoder().decode(blob) === `blob:${deviceId}` &&
+      key.length === 32 &&
+      key.every((b) => b === 7);
+    if (!ok || this.account === undefined)
+      throw coreError("browser_unlock_failed");
+    if (sealedTokens === undefined) throw coreError("signed_out");
+    this.unlocked = true;
   }
 
   restoreSession(session: Uint8Array): void {
@@ -1036,6 +1063,7 @@ export function field(index: number, extra: Partial<FieldInfo>): FieldInfo {
 
 export interface FakePlatform extends Platform {
   pages: FakePages;
+  native: FakeNative;
   disk: MemoryDisk;
   sessionBytes: { value: Uint8Array | undefined };
   alarmsAt: Map<AlarmName, number>;
@@ -1049,6 +1077,40 @@ export interface FakePlatform extends Platform {
     body: Uint8Array;
     etag: string | null;
   };
+}
+
+/**
+ * The Mac's helper (D48 §5): keeps enrolled keys in memory and answers as
+ * the real one does; `touchId` is what the next Touch ID prompt does.
+ */
+export class FakeNative implements NativeHost {
+  readonly keys = new Map<string, string>();
+  readonly sent: Record<string, unknown>[] = [];
+  touchId: "ok" | "cancel" | "changed" = "ok";
+  installed = true;
+
+  send(message: Record<string, unknown>): Promise<unknown> {
+    this.sent.push(message);
+    if (!this.installed) return Promise.reject(new Error("no host"));
+    const id = `${String(message.account_id)}|${String(message.device_id)}`;
+    const fail = (error: string) => Promise.resolve({ v: 1, ok: false, error });
+    if (message.type === "forget") {
+      this.keys.delete(id);
+      return Promise.resolve({ v: 1, ok: true });
+    }
+    if (this.touchId === "cancel") return fail("cancelled");
+    if (this.touchId === "changed") {
+      this.keys.delete(id);
+      return fail("changed");
+    }
+    if (message.type === "enroll") {
+      this.keys.set(id, String(message.key));
+      return Promise.resolve({ v: 1, ok: true });
+    }
+    const key = this.keys.get(id);
+    if (key === undefined) return fail("unknown");
+    return Promise.resolve({ v: 1, ok: true, key });
+  }
 }
 
 export function fakePlatform(disk = new MemoryDisk()): FakePlatform {
@@ -1066,6 +1128,7 @@ export function fakePlatform(disk = new MemoryDisk()): FakePlatform {
   return {
     disk,
     pages: new FakePages(),
+    native: new FakeNative(),
     capabilities: { inlineUi: true },
     sessionBytes,
     alarmsAt,

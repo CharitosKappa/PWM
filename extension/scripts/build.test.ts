@@ -64,9 +64,18 @@ describe("manifest", () => {
   it("builds Safari like Firefox, without idle or gecko settings (D48 §4)", () => {
     const strip = (m: Manifest, keys: string[]) =>
       Object.fromEntries(Object.entries(m).filter(([k]) => !keys.includes(k)));
-    const differ = ["background", "permissions", "browser_specific_settings"];
+    const differ = [
+      "background",
+      "permissions",
+      "optional_permissions",
+      "browser_specific_settings",
+    ];
     expect(strip(safari, differ)).toEqual(strip(firefox, differ));
     expect(safari.permissions).not.toContain("idle");
+    // Safari asks nothing at install for it; elsewhere it's asked on the click.
+    expect(safari.permissions).toContain("nativeMessaging");
+    expect(firefox.optional_permissions).toEqual(["nativeMessaging"]);
+    expect(manifest.optional_permissions).toEqual(["nativeMessaging"]);
     expect(safari.permissions).not.toContain("offscreen");
     const changed = (patch: Record<string, unknown>) =>
       checkManifest({ ...safari, ...patch }, pkg.version, "safari");

@@ -30,7 +30,8 @@
     "alarms",
     "clipboardWrite",
     "activeTab",
-    "scripting"
+    "scripting",
+    "nativeMessaging"
   ],
   "host_permissions": ["https://api.pwm.invalid/*"],
   "optional_host_permissions": ["https://*/*", "http://*/*"],

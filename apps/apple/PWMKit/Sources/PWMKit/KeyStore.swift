@@ -80,10 +80,6 @@ public struct KeychainKeyStore: KeyStore {
         self.dataProtection = dataProtection
     }
 
-    private func query(_ name: KeyName) -> [CFString: Any] {
-        query(account: name.rawValue)
-    }
-
     private func query(account: String) -> [CFString: Any] {
         var query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
@@ -100,36 +96,50 @@ public struct KeychainKeyStore: KeyStore {
     }
 
     public func get(_ name: KeyName) throws -> String? {
-        var query = query(name)
+        try value(account: name.rawValue)
+    }
+
+    public func set(_ name: KeyName, _ value: String) throws {
+        try setValue(value, account: name.rawValue)
+    }
+
+    public func delete(_ name: KeyName) throws {
+        try deleteValue(account: name.rawValue)
+    }
+
+    /// An item by its account name, for stores with names of their own
+    /// (the browser helper's keys, D48 §5).
+    public func value(account: String) throws -> String? {
+        var query = query(account: account)
         query[kSecReturnData] = true
         query[kSecMatchLimit] = kSecMatchLimitOne
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = result as? Data else {
-            throw refused(status, "get", name.rawValue)
+            throw refused(status, "get", account)
         }
         return String(data: data, encoding: .utf8)
     }
 
-    public func set(_ name: KeyName, _ value: String) throws {
+    public func setValue(_ value: String, account: String) throws {
         let data = Data(value.utf8)
         var update: [CFString: Any] = [kSecValueData: data]
         if dataProtection {
             update[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         }
-        var status = SecItemUpdate(query(name) as CFDictionary, update as CFDictionary)
+        var status = SecItemUpdate(query(account: account) as CFDictionary, update as CFDictionary)
         if status == errSecItemNotFound {
-            let add = query(name).merging(update) { $1 }
+            let add = query(account: account).merging(update) { $1 }
             status = SecItemAdd(add as CFDictionary, nil)
         }
-        guard status == errSecSuccess else { throw refused(status, "set", name.rawValue) }
+        guard status == errSecSuccess else { throw refused(status, "set", account) }
     }
 
-    public func delete(_ name: KeyName) throws {
-        let status = SecItemDelete(query(name) as CFDictionary)
+    public func deleteValue(account: String) throws {
+        let status = SecItemDelete(query(account: account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw refused(status, "delete", name.rawValue)
+            throw refused(status, "delete", account)
         }
     }
 

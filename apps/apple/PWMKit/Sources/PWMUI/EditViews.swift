@@ -441,6 +441,16 @@ struct SettingsView: View {
                 Text("Checks your passwords against known leaks without sending them: only the first 5 characters of a hash leave your device.")
             }
             #if os(macOS)
+            if let on = model.browserTouchIDOn {
+                Section {
+                    Toggle("Allow browser extensions to unlock with Touch ID", isOn: Binding(
+                        get: { on }, set: { model.setBrowserTouchID($0) }
+                    ))
+                    .accessibilityIdentifier("browserTouchID")
+                } footer: {
+                    Text("For PWM in Chrome, Edge, Brave, Opera and Firefox. Turn it on there too. Your master password is still asked every 14 days.")
+                }
+            }
             Section {
                 Toggle("Hide PWM from screenshots and screen sharing", isOn: Binding(
                     get: { model.hidesFromCaptureOn }, set: { model.setHidesFromCapture($0) }
@@ -509,6 +519,11 @@ struct SettingsView: View {
         .onDisappear { model.dropKit() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await model.loadAutoFill() } }
+        }
+        .task(id: model.signOutAsked) {
+            guard model.signOutAsked else { return }
+            confirmSignOut = true
+            model.signOutQuestionShown()
         }
         .confirmationDialog("Sign out of this device?", isPresented: $confirmSignOut, titleVisibility: .visible) {
             Button("Sign out", role: .destructive) { Task { await model.signOut() } }

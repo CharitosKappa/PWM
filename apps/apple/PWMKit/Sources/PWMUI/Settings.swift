@@ -146,6 +146,7 @@ public final class SettingsModel {
         email = (try? await account.email()) ?? nil
         biometric = try? await account.biometricState()
         suggestLogins = await account.suggestionsOn()
+        browserTouchIDOn = app.browserTouchID?.isOn
         await loadAutoFill()
     }
 
@@ -186,6 +187,13 @@ public final class SettingsModel {
         biometric = try? await account.biometricState()
     }
 
+    /// "Sign Out…" from the menu bar is waiting for its question.
+    public var signOutAsked: Bool { app.signOutAsked }
+
+    public func signOutQuestionShown() {
+        app.signOutQuestionShown()
+    }
+
     public func setLockTimeout(_ timeout: LockTimeout) {
         app.lockTimeout = timeout
         lockTimeout = timeout
@@ -198,6 +206,25 @@ public final class SettingsModel {
     public func setBreachCheck(_ on: Bool) {
         app.breachCheckOn = on
         breachCheck = on
+    }
+
+    /// "Allow browser extensions to unlock with Touch ID" (macOS, D48 §5);
+    /// nil where there is no such switch.
+    public private(set) var browserTouchIDOn: Bool?
+
+    public func setBrowserTouchID(_ on: Bool) {
+        guard let system = app.browserTouchID else { return }
+        error = nil
+        if on {
+            do {
+                try system.turnOn()
+            } catch {
+                self.error = message(for: error)
+            }
+        } else {
+            system.turnOff()
+        }
+        browserTouchIDOn = system.isOn
     }
 
     /// "Hide PWM from screenshots and screen sharing" (macOS, D49 §5).

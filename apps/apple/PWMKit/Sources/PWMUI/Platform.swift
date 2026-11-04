@@ -76,8 +76,17 @@ extension AppModel {
             },
             pasteboard: SystemPasteboard(),
             deviceName: currentDeviceName,
-            autofill: liveAutoFill
+            autofill: liveAutoFill,
+            browserTouchID: liveBrowserTouchID
         )
+    }
+
+    static var liveBrowserTouchID: (any BrowserTouchID)? {
+        #if os(macOS) && canImport(LocalAuthentication)
+        SystemBrowserTouchID()
+        #else
+        nil
+        #endif
     }
 
     static func liveSuggestions(shared: Bool) -> Suggestions? {

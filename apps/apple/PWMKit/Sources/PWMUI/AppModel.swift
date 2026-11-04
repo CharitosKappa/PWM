@@ -34,6 +34,19 @@ public final class AppModel {
         settingsRequests += 1
     }
 
+    /// macOS: "Sign Out…" in the menu bar opens Settings and asks the same
+    /// question its Sign out button does.
+    public private(set) var signOutAsked = false
+
+    public func askSignOut() {
+        requestSettings()
+        signOutAsked = true
+    }
+
+    func signOutQuestionShown() {
+        signOutAsked = false
+    }
+
     private var account: (any Account)?
     private var accountServer: URL?
     private let makeAccount: @MainActor (URL) throws -> any Account
@@ -42,6 +55,8 @@ public final class AppModel {
     private let deviceName: String
     /// Whether PWM is the AutoFill provider (D47 §7).
     let autofill: any AutoFillSystem
+    /// macOS: the browser extensions' Touch ID unlock (D48 §5); nil elsewhere.
+    let browserTouchID: (any BrowserTouchID)?
     private let clock: @MainActor () -> ContinuousClock.Instant
     private var backgroundedAt: ContinuousClock.Instant?
 
@@ -58,6 +73,7 @@ public final class AppModel {
         pasteboard: any SecretPasteboard,
         deviceName: String,
         autofill: any AutoFillSystem = NoAutoFillSystem(),
+        browserTouchID: (any BrowserTouchID)? = nil,
         clock: @escaping @MainActor () -> ContinuousClock.Instant = { ContinuousClock.now }
     ) {
         self.makeAccount = makeAccount
@@ -65,6 +81,7 @@ public final class AppModel {
         self.pasteboard = pasteboard
         self.deviceName = deviceName
         self.autofill = autofill
+        self.browserTouchID = browserTouchID
         self.clock = clock
     }
 
