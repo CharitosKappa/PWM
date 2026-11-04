@@ -114,6 +114,18 @@ final class ScreenCaptureTests: XCTestCase {
         await elsewhere.load()
         XCTAssertNil(elsewhere.browserTouchIDOn, "no switch without the Mac helper")
     }
+
+    /// "Sign Out…" in the Mac menu bar (D48 §2): Settings asks once.
+    func testSignOutFromTheMenuAsksInSettings() async {
+        let app = AppModel(makeAccount: { [unowned self] _ in self.account }, pasteboard: pasteboard, deviceName: "Mac")
+        let settings = SettingsModel(server: nil, app: app, account: account)
+        let before = app.settingsRequests
+        app.askSignOut()
+        XCTAssertEqual(app.settingsRequests, before + 1, "Settings is shown")
+        XCTAssertTrue(settings.signOutAsked)
+        settings.signOutQuestionShown()
+        XCTAssertFalse(settings.signOutAsked, "asked once")
+    }
 }
 
 final class FakeBrowserTouchID: BrowserTouchID, @unchecked Sendable {
@@ -129,4 +141,3 @@ final class FakeBrowserTouchID: BrowserTouchID, @unchecked Sendable {
 
     func turnOff() { on = false }
 }
-

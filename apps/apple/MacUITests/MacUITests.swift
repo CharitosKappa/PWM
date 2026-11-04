@@ -63,29 +63,11 @@ final class MacUITests: XCTestCase {
         expect(app.buttons["createAccount"])
     }
 
+    /// File, Sign Out…, then the same question as Settings asks. Scrolling
+    /// Settings to its Sign out button does not work in CI's UI tests.
     private func signOut() {
-        // ⌘, shows Settings.
-        app.typeKey(",", modifierFlags: .command)
-        let button = app.buttons["signOut"]
-        // Scroll the Settings form: a scroll goes to the control under the
-        // pointer, so each round uses the lowest control still in view (a
-        // fixed point did not reach the form on CI), and turns round when
-        // Sign out does not move up.
-        expect(button)
-        let window = app.windows.firstMatch
-        let anchors = [
-            "lockNow", "lockTimeout", "exportVault", "approvals", "devices", "breachCheck",
-            "health", "suggestLogins", "hideFromCapture", "browserTouchID",
-        ]
-        var delta = -200.0
-        for _ in 0..<12 where !button.isHittable {
-            guard let anchor = anchors.lazy.map({ self.element($0) }).first(where: { $0.exists && $0.isHittable }) else { break }
-            let before = button.frame.minY
-            anchor.scroll(byDeltaX: 0, deltaY: delta)
-            if button.frame.minY >= before { delta = -delta }
-        }
-        XCTAssertTrue(button.isHittable, "window \(window.frame), button \(button.frame)")
-        click(button)
+        click(app.menuBars.menuBarItems["File"])
+        click(app.menuItems["Sign Out…"])
         click(app.buttons["confirmSignOut"].firstMatch)
     }
 

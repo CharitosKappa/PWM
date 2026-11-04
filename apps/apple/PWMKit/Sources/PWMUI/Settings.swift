@@ -187,6 +187,13 @@ public final class SettingsModel {
         biometric = try? await account.biometricState()
     }
 
+    /// "Sign Out…" from the menu bar is waiting for its question.
+    public var signOutAsked: Bool { app.signOutAsked }
+
+    public func signOutQuestionShown() {
+        app.signOutQuestionShown()
+    }
+
     public func setLockTimeout(_ timeout: LockTimeout) {
         app.lockTimeout = timeout
         lockTimeout = timeout

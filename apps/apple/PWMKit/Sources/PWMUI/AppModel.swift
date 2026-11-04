@@ -34,6 +34,19 @@ public final class AppModel {
         settingsRequests += 1
     }
 
+    /// macOS: "Sign Out…" in the menu bar opens Settings and asks the same
+    /// question its Sign out button does.
+    public private(set) var signOutAsked = false
+
+    public func askSignOut() {
+        requestSettings()
+        signOutAsked = true
+    }
+
+    func signOutQuestionShown() {
+        signOutAsked = false
+    }
+
     private var account: (any Account)?
     private var accountServer: URL?
     private let makeAccount: @MainActor (URL) throws -> any Account

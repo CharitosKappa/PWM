@@ -2,7 +2,8 @@ import PWMUI
 import SwiftUI
 
 /// The macOS app (D48 §2): one window over the shared package, as on iOS.
-/// The menu bar adds ⌘N for a new login, ⇧⌘L to lock and ⌘, for Settings.
+/// The menu bar adds ⌘N for a new login, ⇧⌘L to lock, ⌘, for Settings, and
+/// Sign Out…, which asks first.
 @main
 struct PWMMacApp: App {
     @State private var model = AppModel.live()
@@ -32,6 +33,8 @@ struct PWMMacApp: App {
             CommandGroup(after: .newItem) {
                 Button("Lock Vault") { Task { await model.lock() } }
                     .keyboardShortcut("l", modifiers: [.command, .shift])
+                    .disabled(model.vault == nil)
+                Button("Sign Out…") { model.askSignOut() }
                     .disabled(model.vault == nil)
             }
         }

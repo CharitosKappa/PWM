@@ -520,6 +520,11 @@ struct SettingsView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await model.loadAutoFill() } }
         }
+        .task(id: model.signOutAsked) {
+            guard model.signOutAsked else { return }
+            confirmSignOut = true
+            model.signOutQuestionShown()
+        }
         .confirmationDialog("Sign out of this device?", isPresented: $confirmSignOut, titleVisibility: .visible) {
             Button("Sign out", role: .destructive) { Task { await model.signOut() } }
                 .accessibilityIdentifier("confirmSignOut")
