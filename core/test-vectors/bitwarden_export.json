@@ -1,0 +1,24 @@
+{
+  "format_version": 1,
+  "description": "Bitwarden password-protected export (D51 §4), made with Node's crypto. `plaintext` is the inner JSON the export holds.",
+  "vectors": [
+    {
+      "name": "pbkdf2 5000",
+      "password": "correct horse battery staple 42",
+      "enc_key": "245c558c6fcebb3d96ac82513657184e482ba7abb6dfec2e74dc4cf3254dd8f5",
+      "mac_key": "247d06198a30b3362cf9f15bc7917daaa77810950e789ded02b2cb762845113d",
+      "export": {
+        "encrypted": true,
+        "passwordProtected": true,
+        "salt": "c2FsdHlzYWx0eXNhbHR5",
+        "kdfType": 0,
+        "kdfIterations": 5000,
+        "kdfMemory": null,
+        "kdfParallelism": null,
+        "encKeyValidation_DO_NOT_EDIT": "2.AQEBAQEBAQEBAQEBAQEBAQ==|H0ojeiccBKwyGK42G6Pol4dL3ls2IHVzhfP0v7RNsBkZTzAkx+d/lmViJUdL+r3c|L7Igaovc7Bd4aS8M87ZIZHbr1iWuRiSkOFd2xPVkFx0=",
+        "data": "2.AgICAgICAgICAgICAgICAg==|+k3Agj36DMYfWZxi8ZCyX114GBl6ylHqJAZLf6Dx64Px/HEmWGoAZq+snC/rZWBqziDz0HMGX23ZFrsR0ZUD9d/7dnELYnGBFZ1Rhc4gEjpsvA4zRva07y2kpYUu9NjVNWa6L9nBVCZDD37y1GxpUxVbdn6LxNINoNxRMeTDBAJnQAPySbZHJ+i+lOXkUMRvJMiCyJi8ciCtMcttXS5gxDANh6Knx1R3AjyNbhqlS2Lb7vO37xgf8qgsqK+Kboql06CLNKYXP0NRpK2jOj9fh3KLPV87+PK9NvgXdisIMmGN/YF81mI4qHPlm5vZudQbPxdL6AAA6tkcQd78qiQVUkM/1lNZLhapR3PuKY35ugBP0CuoaxEoSo1Rhk8VJSFQckC2FCVsL+Ajpaff0xEcKg==|zPoz+nD/kHOqgqASiNDAzUdNlXPGBvn1ubFIJTeQP4s="
+      },
+      "plaintext": "{\"encrypted\":false,\"folders\":[{\"id\":\"f1\",\"name\":\"Work/Banks\"}],\"items\":[{\"id\":\"i1\",\"folderId\":\"f1\",\"type\":1,\"name\":\"Bank\",\"notes\":\"synthetic\",\"favorite\":true,\"login\":{\"username\":\"ada\",\"password\":\"hunter2-synthetic\",\"totp\":\"JBSWY3DPEHPK3PXP\",\"uris\":[{\"match\":1,\"uri\":\"https://bank.example\"}]}}]}"
+    }
+  ]
+}

@@ -557,9 +557,10 @@ Phase 3  Teams           months 16–24 M16–M19
 - [ ] M7.3 Signed installers (MSIX/EXE, AppImage, .deb, .rpm, Flatpak).
 
 ### M8 — Importers (`pwm-import`)
-- [ ] M8.1 Bitwarden JSON (incl. encrypted export), 1Password `.1pux`, Keeper JSON, NordPass CSV, Proton Pass ZIP/JSON, Dashlane CSV/JSON, KeePass `.kdbx` (KDBX 3.1/4), LastPass CSV, generic CSV with column mapper.
+- [ ] M8.1 Bitwarden JSON (incl. encrypted export), 1Password `.1pux`, Keeper JSON, NordPass CSV, Proton Pass ZIP/JSON, Dashlane CSV/JSON, LastPass CSV, generic CSV with column mapper, and our own `.pwmx`/JSON into any account (D51). KeePass is M8.4.
 - [ ] M8.2 Import in memory; if a file was picked, offer to securely delete the source export afterwards.
 - [ ] M8.3 Fuzz every parser; sample files in `core/pwm-import/fixtures/` (synthetic data only).
+- [ ] M8.4 KeePass `.kdbx` (KDBX 3.1/4) with the `keepass` crate, behind our own header and KDF limits (D51 §5).
 
 ### M9 — Plans and billing
 - [ ] M9.1 Entitlements service (decision D6); Stripe web checkout; App Store / Play Billing.

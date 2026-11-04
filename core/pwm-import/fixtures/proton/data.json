@@ -1,0 +1,92 @@
+{
+  "version": "1.21.0",
+  "userId": "synthetic-user",
+  "encrypted": false,
+  "vaults": {
+    "share-1": {
+      "name": "Personal",
+      "description": "",
+      "items": [
+        {
+          "itemId": "p1",
+          "shareId": "share-1",
+          "data": {
+            "metadata": { "name": "Bank", "note": "Synthetic note", "itemUuid": "u1" },
+            "extraFields": [
+              { "fieldName": "Security answer", "type": "hidden", "data": { "content": "blue" } },
+              { "fieldName": "Member id", "type": "text", "data": { "content": "42" } }
+            ],
+            "type": "login",
+            "content": {
+              "itemEmail": "ada@example.com",
+              "itemUsername": "ada",
+              "password": "hunter2-synthetic",
+              "urls": ["https://bank.example", "https://app.bank.example"],
+              "totpUri": "otpauth://totp/Bank:ada?secret=JBSWY3DPEHPK3PXP",
+              "passkeys": [{ "keyId": "k1", "content": "c3ludGhldGlj", "rpId": "bank.example" }]
+            }
+          },
+          "state": 1,
+          "aliasEmail": null,
+          "createTime": 1704164645,
+          "modifyTime": 1706843045,
+          "pinned": true
+        },
+        {
+          "itemId": "p2",
+          "data": {
+            "metadata": { "name": "Visa", "note": "" },
+            "extraFields": [],
+            "type": "creditCard",
+            "content": {
+              "cardholderName": "Ada Lovelace",
+              "cardType": 0,
+              "number": "4111111111111111",
+              "verificationNumber": "123",
+              "expirationDate": "2030-05",
+              "pin": "0000"
+            }
+          },
+          "state": 1,
+          "createTime": 1704164645,
+          "modifyTime": 1704164645,
+          "pinned": false
+        },
+        {
+          "itemId": "p3",
+          "data": { "metadata": { "name": "Wifi", "note": "Code 1234" }, "extraFields": [], "type": "note", "content": {} },
+          "state": 2,
+          "createTime": 1704164645,
+          "modifyTime": 1704164645,
+          "pinned": false
+        },
+        {
+          "itemId": "p4",
+          "data": { "metadata": { "name": "Alias", "note": "" }, "extraFields": [], "type": "alias", "content": {} },
+          "state": 1,
+          "aliasEmail": "alias@example.com",
+          "createTime": 1704164645,
+          "modifyTime": 1704164645
+        }
+      ]
+    },
+    "share-2": {
+      "name": "Work",
+      "description": "",
+      "items": [
+        {
+          "itemId": "p5",
+          "data": {
+            "metadata": { "name": "Me", "note": "" },
+            "extraFields": [],
+            "type": "identity",
+            "content": { "fullName": "Ada Lovelace", "email": "ada@example.com", "phoneNumber": "+44 20 0000 0000", "city": "London", "countryOrRegion": "GB" }
+          },
+          "state": 1,
+          "createTime": 1704164645,
+          "modifyTime": 1704164645
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "shared_folders": [{ "path": "Team", "manage_users": false }],
+  "records": [
+    {
+      "uid": "r1",
+      "title": "Bank",
+      "$type": "login",
+      "login": "ada",
+      "password": "hunter2-synthetic",
+      "login_url": "https://bank.example",
+      "notes": "Synthetic note",
+      "custom_fields": {
+        "$oneTimeCode": "otpauth://totp/Bank:ada?secret=JBSWY3DPEHPK3PXP",
+        "$text:Member id": "42",
+        "$secret:Security answer": "blue",
+        "$pinCode": "0000"
+      },
+      "folders": [{ "folder": "Personal\\Banks" }]
+    },
+    {
+      "uid": "r2",
+      "title": "Visa",
+      "$type": "bankCard",
+      "notes": "",
+      "custom_fields": {
+        "$paymentCard": { "cardNumber": "4111111111111111", "cardExpirationDate": "05/2030", "cardSecurityCode": "123" },
+        "$text:cardholderName": "Ada Lovelace"
+      },
+      "folders": [{ "shared_folder": "Team", "folder": "Cards" }]
+    },
+    {
+      "uid": "r3",
+      "title": "Home",
+      "$type": "address",
+      "custom_fields": {
+        "$address": { "street1": "1 Example Street", "street2": "", "city": "London", "state": "", "zip": "N1 1AA", "country": "GB" }
+      }
+    },
+    { "uid": "r4", "title": "Wifi", "$type": "encryptedNotes", "notes": "Code 1234" },
+    { "uid": "r5", "title": "Scan", "$type": "file" }
+  ]
+}

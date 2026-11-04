@@ -1931,3 +1931,103 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Tests:** 10 locked-sync engine tests, the randomized test with locked runs, 2 delete tests, 10 client tests, 4 push unit tests (one over HTTP/2 to a fake APNs), 6 server push tests against a fake APNs, an end-to-end client test (locked sync, the push token, signing in again keeping an unsent edit), 8 Swift view-model tests, a Swift test against the real server, and 4 extension tests.
   - **Not done as proposed:** none.
   - **Not run on this machine:** the server's database tests and the Swift tests (no Postgres or Docker running), and the app targets (no Xcode). CI runs them first.
+- **D51 — Importers: formats, mapping, encrypted exports, KeePass, limits, and the import flow** · settled 2026-11-04 · founder (approved as proposed).
+  The roadmap's M8 lists the formats:
+  - Bitwarden JSON, including its encrypted export
+  - 1Password `.1pux`
+  - Keeper JSON
+  - NordPass CSV
+  - Proton Pass ZIP/JSON
+  - Dashlane CSV/JSON
+  - KeePass `.kdbx` 3.1 and 4
+  - LastPass CSV
+  - a generic CSV with a column mapper
+
+  It also asks for importing in memory, an offer to delete the source export, fuzzing, and synthetic fixtures. `PRODUCT.md` promises "direct encrypted importers for 8 competitors, no plaintext CSV left on disk". D24 left importing our own export into an existing account to M8. `core/pwm-import` exists but is empty.
+
+  Open:
+  - how the task is split
+  - what an importer produces, and how foreign fields map to D18 items
+  - which encrypted exports are opened, and with which crates
+  - how KeePass is read
+  - the limits against hostile files
+  - duplicates
+  - what each app shows, and what "delete the source" can honestly mean
+
+  Proposal:
+  1. **Split into four tasks, one PR each:**
+     - **M8.1:** the crate and every format except KeePass.
+     - **M8.4 (new):** KeePass. It has its own crypto, KDF limits and fixtures.
+     - **M8.2:** the import screens in the extension, iOS and macOS.
+     - **M8.3:** fuzzing. It ships with each parser, and is ticked when both parser tasks are done.
+  2. **What an importer produces (`pwm-import`, no I/O):**
+     - **Formats:** `detect(file name, bytes)` suggests a format from the content, and the name only as a hint. The user can always pick another.
+     - **Parsing:** `parse(format, bytes, secrets)` returns a `Parsed` list: D18 items (login, note, card, identity, folder), and a report.
+     - **The report:** counts per type, and what was left out, each with a count and a plain reason. Examples: attachments, SSH keys, aliases, unknown types, an item too large to sync.
+     - **Never:** an item is never half-imported silently.
+     - **Inputs:** `Secret<Vec<u8>>`, zeroized after parsing. Values are `Secret` strings until they become items. Nothing is logged.
+     - **Saving:** `pwm-client` saves the list into a chosen vault (default the first) with new ids. Folders are remapped and nested folders kept. Then it syncs as usual. Through UniFFI and WASM.
+  3. **Mapping, the same rules for every format:**
+     - **Title, notes, favorite, folder and tags:** taken as they are. Empty titles become the URL's host, or "Untitled".
+     - **URLs:** each URL is kept. A source's match mode is mapped where one exists (Bitwarden's six map one to one onto `AUTOFILL.md`'s); otherwise the default.
+     - **One-time codes:** they go through `normalize_totp` (D23). One that is refused becomes a hidden custom field, so it isn't lost.
+     - **Fields with no D18 home** become custom fields of the matching kind (text, hidden, url, date). Examples: security questions, PINs, a second username, SSN, passport.
+     - **Password history:** imported as D19 history where the source has it (Bitwarden, 1Password, KeePass), newest first, at most 10.
+     - **Trashed or archived items:** they come in trashed (D19), so they purge 30 days after the import.
+     - **Passkeys:** imported when the export includes the private key and it is ES256 (Bitwarden, Proton Pass). Otherwise they are counted as left out.
+     - **Items over the sync size limit (D29):** history is trimmed first, as when saving; then left out and reported.
+  4. **The formats:** implemented from each vendor's published format notes and sample exports we write ourselves. No code from GPL projects.
+     - **Bitwarden JSON:** unencrypted, and password-protected encrypted (PBKDF2-SHA256 or Argon2id, then AES-256-CBC with HMAC-SHA256). The "account restricted" encrypted export can't be opened without the Bitwarden account key, so it is refused with a line saying to export as password-protected or unencrypted. Types: login, note, card, identity. SSH keys are reported.
+     - **1Password `.1pux`:** the ZIP's `export.data`. Logins, passwords, notes, cards and identities. Other categories become notes holding their fields. Documents and attachments are reported. Archived items come in trashed.
+     - **Keeper JSON:** records with login, password, URL, notes and custom fields. Its one-time code key and its payment-card and address fields map; the rest become custom fields. Shared and nested folders become folders.
+     - **NordPass CSV:** its `type` column chooses login, card, identity, note or folder.
+     - **Proton Pass:** the unencrypted ZIP's `data.json`. Each vault becomes a folder, since we import into one vault. Aliases are reported. The PGP-encrypted export is refused with a line saying to export without encryption, because opening it would mean adding OpenPGP. Its CSV goes through the generic CSV.
+     - **Dashlane:** the CSV ZIP (credentials, secure notes, payments, IDs, personal info) and the older JSON export.
+     - **LastPass CSV:** secure notes (`http://sn`) become notes. A structured note whose `NoteType` is a credit card or an address maps to a card or an identity.
+     - **Generic CSV:** the core reads the header and suggests a column for each field (title, URL, username, password, notes, one-time code, folder, favorite, tags). The user can change any. Browser exports (Chrome, Edge, Brave, Opera, Firefox, Safari) are matched by their headers and need no mapping.
+     - **Our own `.pwmx` and JSON (D24):** opened with `pwm-export`'s readers, with new ids, so an export goes into any account.
+  5. **KeePass (M8.4):**
+     - **Read with the `keepass` crate (MIT).** It handles KDBX 3.1 and 4: AES-256, ChaCha20 and Twofish; AES-KDF and Argon2d/id; key files; the inner stream; gzip. It uses RustCrypto primitives underneath. Writing a KDBX reader of our own is a lot of security-sensitive parsing for no gain.
+     - **Our own header check before handing a file to it:** KDF bounds (Argon2 at most 1 GiB and 100 iterations, AES-KDF at most 100 million rounds) and a 50 MB file limit, so a crafted file can't stall or exhaust a device.
+     - **Mapping:** groups become nested folders, and the recycle bin comes in trashed. Title, username, password, URL and notes map. The `otp` and `TimeOtp-*` fields become the one-time code. Other strings become custom fields (protected ones hidden). Entry history becomes D19 history. Attachments are reported.
+     - **Fixtures:** KDBX 4 fixtures made in the tests with the same crate's writer. KDBX 3.1 fixtures, which it can't write, are tiny synthetic files you make once with KeePass or KeePassXC (a file made with a GPL app isn't GPL), or made with `kdbxweb` (MIT) if you approve that one npm download.
+  6. **New crates (to the allow-list check, `cargo deny`):**
+     - **Archives:** `zip` with only `deflate` (MIT).
+     - **Bitwarden's cipher:** RustCrypto `aes`, `cbc` and `pbkdf2` (MIT or Apache-2.0), beside the vetted `hmac`, `hkdf`, `sha2` and `argon2`. They are used only to open Bitwarden's format, never for our own.
+     - **KeePass:** `keepass` and what it brings in (all MIT or Apache-2.0), checked when M8.4 adds it.
+     - **CSV:** the `csv-core` reader `pwm-export` already uses.
+  7. **Limits against hostile files:**
+     - **Size:** files at most 50 MB.
+     - **ZIPs:** at most 10,000 entries and 200 MB unpacked. Only the expected entry is read.
+     - **Structure:** JSON nesting and string lengths are bounded, and at most 50,000 items per import.
+     - **XML:** never expands entities.
+     - **Errors:** each refusal has its own code (`import_too_large`, `import_unreadable`, `import_wrong_password`, `import_unsupported`), and the message never contains file content.
+  8. **Duplicates:** an incoming item identical to one already in the vault is skipped and counted as "already in your vault". Identical means the same type, title, username, password and URLs. Importing the same file twice therefore adds nothing. Anything that differs is imported.
+  9. **The import screens (M8.2):**
+     - **Where:**
+       - the extension's manage page
+       - iOS and macOS Settings
+       - Android (M6) and desktop (M7) later, logged as gaps
+     - **Steps:**
+       1. Pick a file. It is read into memory and never copied.
+       2. Check the detected format.
+       3. Enter the export's password or key file if it has one.
+       4. See what will be imported and left out.
+       5. Import.
+     - **No master password** is asked: importing only adds items, unlike export.
+     - **After an import from a plaintext file**, one line says the file holds passwords in plain text, with a button to delete it.
+       - **iOS and macOS** delete the picked file outright (it doesn't go to the Trash).
+       - **The extension** can't delete files, so it says to delete it.
+     - **Honest wording:** we don't claim a "secure" delete. On flash storage overwriting a file doesn't guarantee its old blocks are gone. The docs say so.
+  10. **Tests:**
+      - **Per format, hand-written synthetic fixtures** in `core/pwm-import/fixtures/`, covering every item type, odd and missing fields, Unicode, and trashed items.
+      - **Tests on those fixtures:** one per mapping rule above; every refusal; the limits (a ZIP bomb, a huge file, deep JSON); duplicates.
+      - **Bitwarden's encrypted export:** a vector made by an independent implementation (Node's `crypto`: PBKDF2, HKDF, AES-CBC, HMAC) and checked by Rust and Node. The Argon2id variant uses the vetted `argon2` with RFC 9106 parameters.
+      - **Our own export:** a round trip (export, then import into another account) giving the same items with new ids.
+      - **Fuzz targets** per family (CSV, JSON, ZIP, Bitwarden encrypted, KDBX header and parse).
+
+  Alternatives:
+  - **Our own KDBX reader:** no new dependency tree, but thousands of lines of crypto-adjacent parsing to write and audit.
+  - **CSV only for every source:** simpler, but it loses folders, history, one-time codes and passkeys, and leaves plaintext on disk, which `PRODUCT.md` promises to avoid where the source offers better.
+  - **Asking for the master password before importing:** consistent with export, but importing reveals nothing new, so it would be friction without protection.
+  - **Opening Proton's PGP export:** possible with an OpenPGP crate, but that is a large dependency for one vendor's optional encryption.

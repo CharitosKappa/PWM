@@ -1,0 +1,29 @@
+url,username,password,totp,extra,name,grouping,fav
+https://bank.example,ada,hunter2-synthetic,JBSWY3DPEHPK3PXP,Account notes,Bank,Finance\Banks,1
+https://mail.example/login,ada@example.com,mail-pass-synthetic,,,Mail,,0
+http://sn,,,,"NoteType:Credit Card
+Language:en-US
+Name on Card:Ada Lovelace
+Type:Visa
+Number:4111111111111111
+Security Code:123
+Start Date:,
+Expiration Date:January,2030
+Notes:first line
+second line",Visa card,Finance,0
+http://sn,,,,"NoteType:Address
+Language:en-US
+Title:Ms
+First Name:Ada
+Middle Name:
+Last Name:Lovelace
+Address 1:1 Example Street
+Address 2:Flat 2
+City / Town:London
+State:
+Zip / Postal Code:N1 1AA
+Country:GB
+Email Address:ada@example.com
+Phone:+44 20 0000 0000
+Notes:",Home address,,0
+http://sn,,,,Wifi code 1234,Plain note,,0

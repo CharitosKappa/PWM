@@ -1,0 +1,4 @@
+name,url,username,password,note
+bank.example,https://bank.example/,ada,hunter2-synthetic,
+mail.example,https://mail.example/,ada@example.com,mail-pass-synthetic,Synthetic note
+,,,,

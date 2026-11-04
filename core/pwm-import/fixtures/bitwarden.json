@@ -1,0 +1,109 @@
+{
+  "encrypted": false,
+  "folders": [
+    { "id": "f-work", "name": "Work" },
+    { "id": "f-banks", "name": "Work/Banks" }
+  ],
+  "items": [
+    {
+      "id": "1",
+      "folderId": "f-banks",
+      "type": 1,
+      "reprompt": 0,
+      "name": "Bank",
+      "notes": "Synthetic note",
+      "favorite": true,
+      "creationDate": "2024-01-02T03:04:05.678Z",
+      "revisionDate": "2024-02-02T03:04:05.000Z",
+      "fields": [
+        { "name": "Security answer", "value": "blue", "type": 1 },
+        { "name": "Member id", "value": "42", "type": 0 },
+        { "name": "Linked", "value": null, "type": 3, "linkedId": 100 }
+      ],
+      "login": {
+        "uris": [
+          { "match": null, "uri": "https://bank.example" },
+          { "match": 1, "uri": "https://app.bank.example" },
+          { "match": 4, "uri": "^https://bank\\.example/.*$" }
+        ],
+        "username": "ada",
+        "password": "hunter2-synthetic",
+        "totp": "otpauth://totp/Bank:ada?secret=JBSWY3DPEHPK3PXP&issuer=Bank",
+        "fido2Credentials": [
+          {
+            "credentialId": "00112233-4455-6677-8899-aabbccddeeff",
+            "keyType": "public-key",
+            "keyAlgorithm": "ECDSA",
+            "keyCurve": "P-256",
+            "keyValue": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQGhRANCAARreMj0F0JW1Fmz2LCAVBRfcHupz-8CpkPkO2lbATcxwrPvDh_91mGU9EYMiijg_WPDHdo0X3UQa8fKqibMIW-W",
+            "rpId": "bank.example",
+            "userHandle": "dXNlci0x",
+            "userName": "ada",
+            "counter": "3",
+            "rpName": "Bank",
+            "userDisplayName": "Ada",
+            "discoverable": "true",
+            "creationDate": "2024-01-02T03:04:05.000Z"
+          },
+          {
+            "credentialId": "b64.AAEC",
+            "keyAlgorithm": "EdDSA",
+            "keyCurve": "Ed25519",
+            "keyValue": "AAAA",
+            "rpId": "other.example"
+          }
+        ]
+      },
+      "passwordHistory": [
+        { "lastUsedDate": "2023-06-01T00:00:00.000Z", "password": "older-synthetic" },
+        { "lastUsedDate": "2023-12-01T00:00:00.000Z", "password": "old-synthetic" }
+      ]
+    },
+    {
+      "id": "2",
+      "folderId": null,
+      "type": 2,
+      "name": "Wifi",
+      "notes": "Code 1234",
+      "favorite": false,
+      "secureNote": { "type": 0 }
+    },
+    {
+      "id": "3",
+      "type": 3,
+      "name": "Visa",
+      "card": {
+        "cardholderName": "Ada Lovelace",
+        "brand": "Visa",
+        "number": "4111111111111111",
+        "expMonth": "5",
+        "expYear": "2030",
+        "code": "123"
+      }
+    },
+    {
+      "id": "4",
+      "type": 4,
+      "name": "Me",
+      "identity": {
+        "title": "Ms",
+        "firstName": "Ada",
+        "middleName": "",
+        "lastName": "Lovelace",
+        "address1": "1 Example Street",
+        "address2": null,
+        "city": "London",
+        "postalCode": "N1 1AA",
+        "country": "GB",
+        "company": "Analytical Engines",
+        "email": "ada@example.com",
+        "phone": "+44 20 0000 0000",
+        "ssn": "000-00-0000",
+        "passportNumber": "X0000000"
+      }
+    },
+    { "id": "5", "type": 5, "name": "Server key", "sshKey": { "privateKey": "synthetic" } },
+    { "id": "6", "type": 1, "name": "", "login": { "uris": [{ "uri": "https://nameless.example/path" }], "username": "x" } },
+    { "id": "7", "type": 1, "name": "Old", "deletedDate": "2024-03-01T00:00:00.000Z", "login": { "username": "y" } }
+  ]
+}
