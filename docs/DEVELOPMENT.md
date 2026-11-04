@@ -132,6 +132,17 @@ just tokens    # regenerate Sources/PWMDesign/Tokens.swift after changing design
   2. In `apps/apple/PWMKit`, run `swift test -Xlinker -L$PWD/../../../target/debug`, with `LD_LIBRARY_PATH` set to the same folder.
 - **On Windows:** the package does not build natively. It does build in the `swift` Docker image, on the Linux build of the core (generate it in a `rust` container first). The app and the views build only on a Mac, so CI runs them.
 
+## Android
+
+`apps/android` (D52) is a Gradle project: `:core` (the generated bindings), `:kit` (the Kotlin layer, plain JVM) and `:app` (Compose). It builds and runs on Windows, macOS and Linux with Android Studio's JDK, the Android SDK with NDK 28, the Rust targets and `cargo-ndk`; `apps/android/README.md` has the setup.
+
+```
+just android          # :kit's JVM tests, a debug build, the licence check
+just android-device   # the app's tests on a running emulator or device
+```
+
+`:kit`'s tests call the core through JNA on the host build of `pwm-ffi`; with `PWM_TEST_SERVER=http://127.0.0.1:8080` and `just server` running, its server test signs up, syncs and signs in on a second session.
+
 ## Fuzzing
 
 Targets live in `core/pwm-crypto/fuzz/fuzz_targets/` (`envelope_decode`, `vault_share_decode`, `keyset_plaintext`, `secret_key_parse`, `password_normalize`, `totp_parse`, `export_read`, `opaque_messages`, `autofill_rules`, `url_match`, `kit_qr_parse`). CI runs each for 60 s on every PR and 10 minutes nightly; crash inputs are uploaded as artifacts.

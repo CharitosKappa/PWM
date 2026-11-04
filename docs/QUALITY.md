@@ -71,6 +71,14 @@ On a Mac, with a signed build of the app and the extension's store id in `Browse
 3. Cancel Touch ID: the master password still unlocks, and Touch ID stays on. Add a finger in System Settings: the next unlock turns Touch ID off.
 4. Turn the app's switch off: the extension says the Mac app is needed.
 
+### Android device checklist (D52)
+
+On a real phone (not an emulator), with a debug build:
+
+1. Install it and open it: the screen says the core is ready.
+2. Run `just android-device` with the phone connected: the Keystore test passes, so keys are sealed by the phone's hardware-backed Keystore.
+3. Clear the app's data in system settings, then open it again: it starts clean, with no error.
+
 ### Import checklist (D51)
 
 Before the beta, with a real export from each manager (made with a throwaway account holding synthetic items, never real ones):
