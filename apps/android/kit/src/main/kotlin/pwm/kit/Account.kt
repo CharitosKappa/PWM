@@ -59,6 +59,29 @@ interface Account {
     /** The background job's sync: locked or not, with the stored tokens (D57 §2). */
     suspend fun backgroundSync(): SyncResult
 
+    // --- Devices and approvals (D59 §2-3) ---
+
+    /** The account's devices, this one marked. */
+    suspend fun devices(): List<DeviceEntry>
+
+    /** Renames one of the account's devices (63 bytes at most), sealed. */
+    suspend fun renameDevice(deviceId: String, name: String)
+
+    /** Revokes another device; to leave this one, sign out. */
+    suspend fun revokeDevice(deviceId: String)
+
+    suspend fun approvalRequests(): List<ApprovalEntry>
+
+    /** Accepts a listed request; list again until it has a code. */
+    suspend fun acceptApproval(id: String)
+
+    suspend fun completeApproval(id: String)
+
+    suspend fun denyApproval(id: String)
+
+    /** After a refused refresh token (D50 §5): the master password only. */
+    suspend fun signInAgain(password: Redacted<String>): SyncResult
+
     // --- Items (D54 §4) ---
 
     suspend fun vaultIds(): List<String>
@@ -97,4 +120,22 @@ interface Account {
     suspend fun linkApp(itemId: String, vaultId: String, packageName: String, cert: String)
 
     suspend fun isUnlocked(): Boolean
+}
+
+/** One of the account's devices (D43 §6). The name is opened by the core; null if it couldn't be. */
+class DeviceEntry(
+    val id: String,
+    val platform: String,
+    val name: String?,
+    val createdAtMs: Long,
+    val lastSeenAtMs: Long,
+    val revokedAtMs: Long?,
+    val isCurrent: Boolean,
+) {
+    override fun toString(): String = "DeviceEntry($platform)"
+}
+
+/** A new device's request to sign in (D46): `pending`, `accepted` or `revealed`, with the code once there is one. */
+class ApprovalEntry(val id: String, val platform: String, val createdAtMs: Long, val state: String, val code: String?) {
+    override fun toString(): String = "ApprovalEntry($state)"
 }

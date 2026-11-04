@@ -223,6 +223,56 @@ class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = 
 
     override suspend fun isUnlocked(): Boolean = unlocked
 
+    // Devices and approvals: a list in memory.
+    val devices = mutableListOf(
+        pwm.kit.DeviceEntry("d1", "android", "Pixel 8", 1, 2, null, true),
+        pwm.kit.DeviceEntry("d2", "ios", "iPhone", 1, 2, null, false),
+    )
+    val approvals = mutableListOf<pwm.kit.ApprovalEntry>()
+    var signInAgains = 0
+
+    override suspend fun devices(): List<pwm.kit.DeviceEntry> = devices.toList()
+
+    override suspend fun renameDevice(deviceId: String, name: String) {
+        val i = devices.indexOfFirst { it.id == deviceId }.takeIf { it >= 0 } ?: throw PwmError("unknown_device")
+        val d = devices[i]
+        devices[i] = pwm.kit.DeviceEntry(d.id, d.platform, name, d.createdAtMs, d.lastSeenAtMs, d.revokedAtMs, d.isCurrent)
+    }
+
+    override suspend fun revokeDevice(deviceId: String) {
+        if (!devices.removeIf { it.id == deviceId }) throw PwmError("unknown_device")
+    }
+
+    override suspend fun approvalRequests(): List<pwm.kit.ApprovalEntry> = approvals.toList()
+
+    override suspend fun acceptApproval(id: String) = replaceApproval(id, "accepted", null)
+
+    override suspend fun completeApproval(id: String) {
+        if (!approvals.removeIf { it.id == id }) throw PwmError("unknown_approval")
+        calls += "complete $id"
+    }
+
+    override suspend fun denyApproval(id: String) {
+        approvals.removeIf { it.id == id }
+        calls += "deny $id"
+    }
+
+    /** The new device revealed its key: the code shows. */
+    fun reveal(id: String, code: String) = replaceApproval(id, "revealed", code)
+
+    private fun replaceApproval(id: String, state: String, code: String?) {
+        val i = approvals.indexOfFirst { it.id == id }.takeIf { it >= 0 } ?: throw PwmError("unknown_approval")
+        val a = approvals[i]
+        approvals[i] = pwm.kit.ApprovalEntry(a.id, a.platform, a.createdAtMs, state, code)
+    }
+
+    override suspend fun signInAgain(password: Redacted<String>): SyncResult {
+        if (password.value != PASSWORD) throw PwmError("invalid_credentials")
+        signInAgains += 1
+        syncResult = SyncResult.Synced(0, 0, 0, 0)
+        return syncResult
+    }
+
     /** Adds an item as if it had synced from another device. */
     fun add(item: Item) {
         items[item.id!!] = item

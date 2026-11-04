@@ -145,6 +145,14 @@ class OnboardingUITest {
         tap("tab.settings")
         compose.waitUntil(10_000) { exists("biometricUnavailable") }
 
+        // Rename this device: the name goes up sealed and comes back opened (D59 §2).
+        tap("devices")
+        tap("rename.current")
+        replace("deviceName", "Test phone")
+        tap("confirmRename")
+        compose.waitUntil(30_000) { exists("device.current.name") && text("device.current.name") == "Test phone" }
+        tap("back")
+
         // The switch lets the vault show in screenshots and screen sharing (D56 §2).
         tap("hideFromCaptureSwitch")
         compose.waitUntil(5_000) { !secure() }

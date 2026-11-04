@@ -22,6 +22,9 @@ interface AppPrefs {
 
     /** "Hide PWM from screenshots and screen sharing" (D56 §2), on by default. */
     var hideFromCapture: Boolean
+
+    /** The server refused this device's refresh token: "Sign in again to sync" shows (D50 §5). */
+    var signInAgain: Boolean
 }
 
 class MemoryPrefs(
@@ -30,6 +33,7 @@ class MemoryPrefs(
     override var lockTimeoutMinutes: Int? = null,
     override var biometricOffered: Boolean = false,
     override var hideFromCapture: Boolean = true,
+    override var signInAgain: Boolean = false,
 ) : AppPrefs
 
 /** The periodic background sync (D57 §2): WorkManager in the app, a fake in tests. */

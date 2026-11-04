@@ -149,6 +149,29 @@
     <string name="notices_missing">The notices aren\'t in this build. Release builds include them.</string>
     <string name="version">Version %1$s</string>
 
+    <!-- Devices, approving and signing in again (D59) -->
+    <string name="devices">Devices</string>
+    <string name="this_device">This device</string>
+    <string name="unknown_device">Unknown device</string>
+    <string name="device_seen">%1$s · Last used %2$s · Added %3$s</string>
+    <string name="rename">Rename</string>
+    <string name="rename_device">Rename device</string>
+    <string name="device_name">Device name</string>
+    <string name="revoke">Sign out device</string>
+    <string name="revoke_ask">Sign out %1$s? It loses access until it signs in again with the Secret Key.</string>
+    <string name="approve_device">Approve a new device</string>
+    <string name="approve_hint">A device signing in can ask to be approved here, instead of typing the Secret Key.</string>
+    <string name="no_requests">No device is asking right now.</string>
+    <string name="request_from">A new %1$s device</string>
+    <string name="approve">Approve</string>
+    <string name="deny">Deny</string>
+    <string name="approve_waiting">Waiting for the new device…</string>
+    <string name="approve_compare">Check that the new device shows this code:</string>
+    <string name="codes_match">The codes match</string>
+    <string name="approved_done">Approved. The new device can sign in now.</string>
+    <string name="sign_in_again">Sign in again to sync</string>
+    <string name="sign_in_again_hint">The server ended this device’s session. Your changes are kept and sync after you sign in.</string>
+
     <!-- Autofill (D58) -->
     <string name="autofill_unlock">Unlock PWM to fill</string>
     <string name="autofill_search">Search PWM</string>

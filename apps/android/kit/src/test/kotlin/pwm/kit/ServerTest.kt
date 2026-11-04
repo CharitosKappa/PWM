@@ -2,7 +2,11 @@ package pwm.kit
 
 import java.net.URL
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -30,7 +34,7 @@ class ServerTest {
         var clock = System.currentTimeMillis()
         val firstKeys = MemoryKeyStore()
         val fingers = FakeBiometrics()
-        val first = Session(cachePath = null, server = server, keys = firstKeys, now = { clock }, biometrics = fingers)
+        val first = Session(cachePath = null, server = server, transport = JdkTransport(), keys = firstKeys, now = { clock }, biometrics = fingers)
         val secretKey = first.signUp(email, password, "Android phone")
         assertTrue(secretKey.value.startsWith("A1-"))
         assertTrue(first.isUnlocked())
@@ -57,7 +61,7 @@ class ServerTest {
         assertEquals(0, first.purgeTrash())
 
         val keys = MemoryKeyStore()
-        val second = Session(cachePath = null, server = server, keys = keys)
+        val second = Session(cachePath = null, server = server, transport = JdkTransport(), keys = keys)
         assertTrue(second.logIn(email, password, secretKey, "Android tablet") is SyncResult.Synced)
         val copy = second.items(vault).first { it.id == id }
         assertEquals("Example", copy.title)
@@ -82,6 +86,41 @@ class ServerTest {
         second.lock()
         second.unlock(password)
         assertTrue(second.isUnlocked())
+
+        // Devices (D59 §2): both sessions are listed, and a rename comes back sealed and opened.
+        val listed = first.devices()
+        assertEquals(2, listed.size)
+        val mine = listed.single { it.isCurrent }
+        val theirs = listed.single { !it.isCurrent }
+        first.renameDevice(theirs.id, "Test tablet")
+        assertEquals("Test tablet", second.devices().single { it.isCurrent }.name)
+        assertEquals(mine.id, first.devices().single { it.isCurrent }.id)
+
+        // Approving a new device (D46, D59 §3): a third session asks, the first approves.
+        withContext(Dispatchers.Default) {
+            var shown: String? = null
+            val newcomer = Session(cachePath = null, server = server, transport = JdkTransport(), keys = MemoryKeyStore())
+            val asked = async { newcomer.askForApproval(email) { code -> shown = code } }
+            var request: ApprovalEntry? = null
+            repeat(50) {
+                if (request == null) request = first.approvalRequests().firstOrNull()
+                if (request == null) delay(200)
+            }
+            first.acceptApproval(request!!.id)
+            var code: String? = null
+            repeat(50) {
+                if (code == null) code = first.approvalRequests().firstOrNull { it.id == request!!.id }?.code
+                if (code == null) delay(300)
+            }
+            assertEquals("the same code on both devices", shown, code)
+            first.completeApproval(request!!.id)
+            assertEquals("the Secret Key arrived", secretKey, asked.await())
+        }
+
+        // Signing in again (D50 §5, D59 §4): the master password only, the same device, the vault kept.
+        assertTrue(first.signInAgain(password) is SyncResult.Synced)
+        assertEquals(mine.id, first.devices().single { it.isCurrent }.id)
+        assertEquals("Example", first.items(vault).first { it.id == id }.title)
 
         // Fingerprint and face unlock through the core (D55 §7), with a fake key store.
         assertEquals(BiometricState.Off, first.biometricState())
@@ -109,7 +148,7 @@ class ServerTest {
         // Another device's blob doesn't open here: it is refused and turned off.
         second.lock()
         for (name in listOf(KeyName.BIOMETRIC_BLOB, KeyName.BIOMETRIC_KEY)) keys.set(name, firstKeys.get(name)!!)
-        val stolen = Session(cachePath = null, server = server, keys = keys, biometrics = FakeBiometrics())
+        val stolen = Session(cachePath = null, server = server, transport = JdkTransport(), keys = keys, biometrics = FakeBiometrics())
         assertEquals("biometric_changed", (runCatching { stolen.unlockWithBiometrics() }.exceptionOrNull() as PwmError).code)
         assertTrue(keys.get(KeyName.BIOMETRIC_BLOB) == null)
 
@@ -123,11 +162,11 @@ class ServerTest {
         // The same phone, signed out, signs in again to that account as the
         // same device, and a new account signs up there as a new device.
         val device = keys.get(KeyName.DEVICE_ID)
-        val again = Session(cachePath = null, server = server, keys = keys)
+        val again = Session(cachePath = null, server = server, transport = JdkTransport(), keys = keys)
         assertTrue(again.logIn(email, password, secretKey, "Android tablet") is SyncResult.Synced)
         assertEquals(device, keys.get(KeyName.DEVICE_ID))
         again.signOut()
-        val other = Session(cachePath = null, server = server, keys = keys)
+        val other = Session(cachePath = null, server = server, transport = JdkTransport(), keys = keys)
         other.signUp("kotlin-${UUID.randomUUID()}@example.com", password, "Android tablet")
         assertTrue("a new device for the new account", keys.get(KeyName.DEVICE_ID) != device)
         other.signOut()

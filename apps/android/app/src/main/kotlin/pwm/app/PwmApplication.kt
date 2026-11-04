@@ -116,6 +116,10 @@ class AndroidPrefs(context: Context) : AppPrefs {
         get() = prefs.getBoolean(KIT_PENDING, false)
         set(value) = prefs.edit().putBoolean(KIT_PENDING, value).apply()
 
+    override var signInAgain: Boolean
+        get() = prefs.getBoolean(SIGN_IN_AGAIN, false)
+        set(value) = prefs.edit().putBoolean(SIGN_IN_AGAIN, value).apply()
+
     override var hideFromCapture: Boolean
         get() = prefs.getBoolean(HIDE_FROM_CAPTURE, true)
         set(value) = prefs.edit().putBoolean(HIDE_FROM_CAPTURE, value).apply()
@@ -134,6 +138,7 @@ class AndroidPrefs(context: Context) : AppPrefs {
         const val LOCK_TIMEOUT = "lockTimeoutMinutes"
         const val BIOMETRIC_OFFERED = "biometricOffered"
         const val HIDE_FROM_CAPTURE = "hideFromCapture"
+        const val SIGN_IN_AGAIN = "signInAgain"
     }
 }
 

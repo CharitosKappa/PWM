@@ -140,6 +140,7 @@ class AppModel(
                         }
                     },
                     onSignedIn = {
+                        prefs.signInAgain = false
                         background.schedule()
                         account?.let(::showVault)
                     },
@@ -190,7 +191,9 @@ class AppModel(
     }
 
     private fun showVault(account: Account) {
-        val vault = VaultModel(scope, account, clipboard, work, onSignedOut = ::didSignOut)
+        lateinit var vault: VaultModel
+        val signInAgain = SignInAgainModel(scope, account, prefs, onSignedIn = { vault.refresh() })
+        vault = VaultModel(scope, account, clipboard, work, onSignedOut = ::didSignOut, onSessionEnded = signInAgain::sessionEnded)
         val home = HomeModel(
             vault = vault,
             generator = GeneratorModel(scope, work, clipboard).also { it.regenerate() },
@@ -198,6 +201,7 @@ class AppModel(
                 scope, account, prefs, paper, onLock = { lock(account) }, onSignedOut = ::didSignOut,
                 onHideFromCapture = ::setHideFromCapture,
             ),
+            signInAgain = signInAgain,
         )
         show(Screen.Vault(home))
         scope.launch {
@@ -264,7 +268,12 @@ class AppModel(
                     if (result.pulled + result.pushed > 0) BackgroundResult.NEW_DATA else BackgroundResult.NO_DATA
                 }
                 is SyncResult.Retry -> BackgroundResult.FAILED
-                SyncResult.SignedOut -> BackgroundResult.NO_DATA
+                SyncResult.SignedOut -> {
+                    // Shows at the next open, or now if the vault shows (D50 §5).
+                    prefs.signInAgain = true
+                    (mutable.value.screen as? Screen.Vault)?.model?.signInAgain?.sessionEnded()
+                    BackgroundResult.NO_DATA
+                }
                 SyncResult.DeviceRevoked -> {
                     // The core has cleared the cache; finish signing out.
                     runCatching { account.signOut() }
@@ -316,6 +325,7 @@ class AppModel(
 
     private fun didSignOut() {
         background.cancel()
+        prefs.signInAgain = false
         prefs.kitPending = false
         backgroundedAt = null
         showWelcome()
