@@ -21,6 +21,7 @@ class Copied(val value: String, val clearAfterMs: Long)
 /** The app model over fake accounts, a fake clipboard and a clock the test moves. */
 class Harness(scope: TestScope, val prefs: MemoryPrefs = MemoryPrefs()) {
     val accounts = mutableListOf<FakeAccount>()
+    val files = FakeFiles()
     var nextAccount: (URL) -> FakeAccount = { FakeAccount(it) }
     val copied = mutableListOf<Copied>()
     var now = 1_000_000L
@@ -41,6 +42,7 @@ class Harness(scope: TestScope, val prefs: MemoryPrefs = MemoryPrefs()) {
                 scheduled += "cancel"
             }
         },
+        importFiles = files,
     )
     val screen get() = app.state.value.screen
     val home get() = (screen as AppModel.Screen.Vault).model
@@ -273,6 +275,69 @@ class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = 
         return syncResult
     }
 
+    // Health, export and import.
+    var health = pwm.kit.PasswordHealth(emptyMap(), emptyList())
+    var breached: Map<String, Long> = emptyMap()
+    var breachError: PwmError? = null
+    var breachChecks = 0
+    var exportAuthorized = false
+    var guess: pwm.kit.ImportGuess? = pwm.kit.ImportGuess("csv", false)
+    var columns = pwm.kit.CsvColumns(listOf("name", "url", "username", "password"), pwm.kit.ColumnMap(title = 0, url = 1, username = 2, password = 3), 2)
+    var preview = pwm.kit.ImportSummary(2, 0, 0, 0, 0, 0, listOf(pwm.kit.ImportSummary.LeftOut("empty", 1)))
+    /** The import's password, when the file needs one. */
+    var importPassword: String? = null
+    /** What prepareImport was given last. */
+    var prepared: Pair<String, pwm.kit.ColumnMap?>? = null
+
+    override suspend fun passwordHealth(): pwm.kit.PasswordHealth = health
+
+    override suspend fun breachedPasswords(): Map<String, Long> {
+        breachChecks += 1
+        breachError?.let { throw it }
+        return breached
+    }
+
+    override suspend fun authorizeExport(password: Redacted<String>) {
+        if (password.value != PASSWORD) throw PwmError("wrong_password")
+        exportAuthorized = true
+    }
+
+    override suspend fun export(format: pwm.kit.ExportFormat): Redacted<ByteArray> {
+        if (!exportAuthorized) throw PwmError("export_not_authorized")
+        exportAuthorized = false
+        calls += "export ${format.fileExtension}"
+        return Redacted("exported".toByteArray())
+    }
+
+    override fun guessImport(fileName: String, data: Redacted<ByteArray>): pwm.kit.ImportGuess? = guess
+
+    override fun importColumns(data: Redacted<ByteArray>): pwm.kit.CsvColumns = columns
+
+    override suspend fun prepareImport(
+        format: String,
+        data: Redacted<ByteArray>,
+        password: Redacted<String>?,
+        keyFile: Redacted<ByteArray>?,
+        columns: pwm.kit.ColumnMap?,
+    ): pwm.kit.ImportSummary {
+        importPassword?.let { if (password?.value != it) throw PwmError(if (password == null) "import_password_needed" else "import_wrong_password") }
+        prepared = format to columns
+        calls += "prepare $format"
+        return preview
+    }
+
+    override suspend fun finishImport(): pwm.kit.ImportSummary {
+        if (prepared == null) throw PwmError("import_not_prepared")
+        calls += "finish"
+        prepared = null
+        return preview
+    }
+
+    override suspend fun cancelImport() {
+        prepared = null
+        calls += "cancelImport"
+    }
+
     /** Adds an item as if it had synced from another device. */
     fun add(item: Item) {
         items[item.id!!] = item
@@ -282,5 +347,29 @@ class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = 
         const val PASSWORD = "right horse battery staple"
         const val KEY = "A1-FAKE00-SECRET-KEY000-000000-AAA"
         const val VAULT = "vault-1"
+    }
+}
+
+/** Picked files by address; [deletable] is false for a place that can't delete. */
+class FakeFiles : ImportFiles {
+    class File(val name: String, val bytes: ByteArray, val size: Long? = bytes.size.toLong())
+
+    val files = mutableMapOf<String, File>()
+    var deletable = true
+    /** Files read, by address: a refused one is never read. */
+    val reads = mutableListOf<String>()
+
+    override fun name(uri: String): String? = files[uri]?.name
+
+    override fun size(uri: String): Long? = files[uri]?.size
+
+    override fun read(uri: String): ByteArray {
+        reads += uri
+        return files[uri]?.bytes ?: throw PwmError("import_unreadable")
+    }
+
+    override fun delete(uri: String): Boolean {
+        if (!deletable) return false
+        return files.remove(uri) != null
     }
 }

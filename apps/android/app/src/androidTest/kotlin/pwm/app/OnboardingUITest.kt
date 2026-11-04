@@ -153,6 +153,50 @@ class OnboardingUITest {
         compose.waitUntil(30_000) { exists("device.current.name") && text("device.current.name") == "Test phone" }
         tap("back")
 
+        // Health, with the leak check off so the test asks no outside service (D59 §5):
+        // one login with a generated password has no problems.
+        tap("breachCheckSwitch")
+        tap("health")
+        compose.waitUntil(30_000) { exists("healthClean") }
+        tap("back")
+        tap("breachCheckSwitch")
+
+        // Import a CSV the test writes, then delete it (D59 §7). The system's
+        // picker is checked by hand (QUALITY.md); its address goes in directly.
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val csv = java.io.File(context.cacheDir, "browser-export.csv")
+        csv.writeText("name,url,username,password\nImported,https://imported.example,bob,pw-imported-1\n")
+        tap("import")
+        compose.runOnUiThread { settings().state.value.importing!!.picked(android.net.Uri.fromFile(csv).toString()) }
+        compose.waitUntil(10_000) { exists("importFile") }
+        tap("checkImport")
+        compose.waitUntil(30_000) { exists("importReady") }
+        tap("importNow")
+        compose.waitUntil(30_000) { exists("importDone") }
+        tap("deleteImport")
+        compose.waitUntil(10_000) { exists("importDeleted") }
+        check(!csv.exists()) { "the export file is still there" }
+        tap("back")
+
+        // Export JSON after the master password and the warning (D59 §6), written
+        // where "Save to" would write it.
+        tap("export")
+        tap("export.JSON")
+        compose.onNodeWithTag("exportNow").assertIsNotEnabled()
+        type("exportMasterPassword", password)
+        tap("exportUnderstood")
+        tap("exportNow")
+        compose.waitUntil(60_000) { exists("saveExport") }
+        val exported = java.io.File(context.cacheDir, "pwm-export.json")
+        val export = settings().state.value.export!!
+        check(DataFiles.write(context, android.net.Uri.fromFile(exported), export.state.value.file!!.value)) { "the export wasn't written" }
+        compose.runOnUiThread { export.didSave() }
+        compose.waitUntil(10_000) { exists("exportSaved") }
+        val json = exported.readText()
+        exported.delete()
+        check("Bank" in json && "Imported" in json) { "the export is missing items" }
+        tap("back")
+
         // The switch lets the vault show in screenshots and screen sharing (D56 §2).
         tap("hideFromCaptureSwitch")
         compose.waitUntil(5_000) { !secure() }
@@ -173,6 +217,11 @@ class OnboardingUITest {
         unlock()
         signOut()
         compose.waitUntil(10_000) { syncJob() == WorkInfo.State.CANCELLED }
+    }
+
+    private fun settings(): pwm.kit.ui.SettingsModel {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as PwmApplication
+        return (app.model.state.value.screen as pwm.kit.ui.AppModel.Screen.Vault).model.settings
     }
 
     private fun syncJob(): WorkInfo.State? =

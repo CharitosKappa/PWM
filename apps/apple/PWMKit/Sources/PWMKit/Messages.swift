@@ -44,6 +44,7 @@ extension PWMError {
         "export_expired": "Enter your master password again to export.",
         "weak_export_password": "Choose a stronger export password.",
         "kit_save_failed": "The Emergency Kit couldn't be saved. Try again, or print it.",
+        "export_save_failed": "The export couldn't be saved. Try again.",
         "import_too_large": "This file is too large to import.",
         "import_unreadable": "This file can't be read as that format. Check the format, or export again.",
         "import_password_needed": "Enter the password this export was made with.",

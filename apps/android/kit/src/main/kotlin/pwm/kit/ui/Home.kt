@@ -123,7 +123,7 @@ class GeneratorModel internal constructor(
     }
 }
 
-/** The settings tab (D43 §2; devices, health and export come in M6.8). */
+/** The settings tab (D43 §2), with the account pages (D59 §2-3) and the data pages (D59 §5-7). */
 class SettingsModel internal constructor(
     private val scope: CoroutineScope,
     private val account: Account,
@@ -132,8 +132,13 @@ class SettingsModel internal constructor(
     private val onLock: () -> Unit,
     private val onSignedOut: () -> Unit,
     private val onHideFromCapture: (Boolean) -> Unit = {},
+    private val vault: VaultModel? = null,
+    private val work: CoroutineDispatcher? = null,
+    private val files: ImportFiles = NoImportFiles,
+    /** The health report's "Change": the item's edit screen, on the vault tab. */
+    private val onEditItem: (Entry) -> Unit = {},
 ) {
-    enum class Page { MAIN, NOTICES, DEVICES, APPROVALS }
+    enum class Page { MAIN, NOTICES, DEVICES, APPROVALS, HEALTH, EXPORT, IMPORT }
 
     data class State(
         val email: String? = null,
@@ -153,6 +158,12 @@ class SettingsModel internal constructor(
         /** The account screens, made when shown (D59). */
         val devices: DevicesModel? = null,
         val approvals: ApprovalsModel? = null,
+        /** "Check for leaked passwords" (D22 §5). */
+        val breachCheck: Boolean = true,
+        /** The data screens, made when shown (D59 §5-7). */
+        val health: HealthModel? = null,
+        val export: ExportModel? = null,
+        val importing: ImportModel? = null,
         val error: String? = null,
     )
 
@@ -163,8 +174,15 @@ class SettingsModel internal constructor(
             lockTimeout = LockTimeout.of(prefs.lockTimeoutMinutes),
             biometric = runCatching { account.biometricState() }.getOrNull(),
             hideFromCapture = prefs.hideFromCapture,
+            breachCheck = prefs.breachCheck,
         ),
     )
+
+    /** The switch; the health report reads it when it opens. */
+    fun setBreachCheck(on: Boolean) {
+        prefs.breachCheck = on
+        mutable.update { it.copy(breachCheck = on) }
+    }
 
     /** Turning it off asks nothing; the window follows at once. */
     fun setHideFromCapture(hide: Boolean) {
@@ -224,11 +242,31 @@ class SettingsModel internal constructor(
 
     fun showApprovals() = mutable.update { it.copy(page = Page.APPROVALS, approvals = ApprovalsModel(scope, account)) }
 
-    /** Back from a page of Settings; false on Settings itself. */
+    /** The health report; the screen loads it each time it shows. */
+    fun showHealth() {
+        val vault = vault ?: return
+        val health = HealthModel(scope, vault, prefs.breachCheck, onEditItem)
+        mutable.update { it.copy(page = Page.HEALTH, health = health) }
+    }
+
+    fun showExport() = mutable.update { it.copy(page = Page.EXPORT, export = ExportModel(scope, account, work ?: kotlinx.coroutines.Dispatchers.Default)) }
+
+    fun showImport() = mutable.update {
+        it.copy(page = Page.IMPORT, importing = ImportModel(scope, account, files, work ?: kotlinx.coroutines.Dispatchers.IO))
+    }
+
+    /** Back from a page of Settings; false on Settings itself. Leaving a page drops what it held. */
     fun back(): Boolean {
         if (mutable.value.page == Page.MAIN) return false
-        mutable.update { it.copy(page = Page.MAIN, devices = null, approvals = null) }
+        closePages()
         return true
+    }
+
+    private fun closePages() {
+        val s = mutable.value
+        s.export?.done()
+        s.importing?.close()
+        mutable.update { it.copy(page = Page.MAIN, devices = null, approvals = null, health = null, export = null, importing = null) }
     }
 
     fun askSignOut() = mutable.update { it.copy(signOutAsked = true) }
@@ -249,6 +287,9 @@ class SettingsModel internal constructor(
         }
     }
 
-    /** The kit leaves memory when the vault locks. */
-    internal fun drop() = mutable.update { it.copy(kit = null) }
+    /** The kit, an export's file and an import's file leave memory when the vault locks. */
+    internal fun drop() {
+        closePages()
+        mutable.update { it.copy(kit = null) }
+    }
 }

@@ -81,6 +81,8 @@ class PwmApplication : Application() {
             clock = SystemClock::elapsedRealtime,
             // The periodic background sync while someone is signed in (D57 §2).
             background = WorkManagerScheduler(this),
+            // Files picked for import, read once through the system (D59 §7).
+            importFiles = AndroidImportFiles(this),
         )
         model.start()
         // The whole app's background and foreground, so moving between its
@@ -120,6 +122,10 @@ class AndroidPrefs(context: Context) : AppPrefs {
         get() = prefs.getBoolean(SIGN_IN_AGAIN, false)
         set(value) = prefs.edit().putBoolean(SIGN_IN_AGAIN, value).apply()
 
+    override var breachCheck: Boolean
+        get() = prefs.getBoolean(BREACH_CHECK, true)
+        set(value) = prefs.edit().putBoolean(BREACH_CHECK, value).apply()
+
     override var hideFromCapture: Boolean
         get() = prefs.getBoolean(HIDE_FROM_CAPTURE, true)
         set(value) = prefs.edit().putBoolean(HIDE_FROM_CAPTURE, value).apply()
@@ -139,6 +145,7 @@ class AndroidPrefs(context: Context) : AppPrefs {
         const val BIOMETRIC_OFFERED = "biometricOffered"
         const val HIDE_FROM_CAPTURE = "hideFromCapture"
         const val SIGN_IN_AGAIN = "signInAgain"
+        const val BREACH_CHECK = "breachCheck"
     }
 }
 

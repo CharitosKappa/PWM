@@ -129,6 +129,12 @@ Devices and approving (D59), with the same build:
 2. On a second phone or the extension, sign in with "Sign in with another device". On this phone, Settings, Approve a new device: the request shows within a few seconds; the codes match on both; the new device signs in.
 3. Revoke this phone's session from another device's list: the next sync here shows "Sign in again to sync"; the master password brings it back, with unsent changes kept.
 
+Health, export and import (D59 §5-7), with the same build:
+
+1. With a weak and a reused password, and one known to be leaked (such as `password123` on a synthetic login): Password health lists each; Change opens its edit screen on the Vault tab. Turn off "Check for leaked passwords": the leak check doesn't run.
+2. Export each format: the master password is asked every time and a fingerprint doesn't count. Save export opens "Save to"; save to Downloads and to Google Drive; the file opens with the export password (`.pwmx`) or as text. With Immediately set, the vault doesn't lock on the trip.
+3. Import a CSV from Downloads with the system's picker: the preview's counts match; after Import, Delete export file removes it. From Google Drive, where the file can't be deleted, the screen says to delete it by hand.
+
 ### Import checklist (D51)
 
 Before the beta, with a real export from each manager (made with a throwaway account holding synthetic items, never real ones):
@@ -136,7 +142,7 @@ Before the beta, with a real export from each manager (made with a throwaway acc
 1. Bitwarden (unencrypted, and password-protected with PBKDF2 and with Argon2id), KeePass `.kdbx` from KeePass 2 and KeePassXC (3.1 and 4, with a password, a key file and both), 1Password `.1pux`, Keeper JSON, NordPass CSV, Proton Pass ZIP, Dashlane CSV ZIP, LastPass CSV, and Chrome, Firefox and Safari CSVs.
 2. Each one: the detected format is right; the preview's counts match the source; logins, cards, identities, notes, folders, one-time codes and custom fields land where expected; what was left out is listed.
 3. Import the same file twice: the second adds nothing.
-4. On iOS (from Files and iCloud Drive) and macOS (from Finder): after a plaintext import, Delete export file removes it; after an encrypted one, no button shows. In the extension, the line says to delete it.
+4. On iOS (from Files and iCloud Drive), macOS (from Finder) and Android (from Downloads and Google Drive): after a plaintext import, Delete export file removes it, or says to delete it by hand where the place can't; after an encrypted one, no button shows. In the extension, the line says to delete it.
 5. Delete the throwaway accounts and the export files afterwards.
 
 ### Background sync and push checklist (D50)

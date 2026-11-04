@@ -82,6 +82,44 @@ interface Account {
     /** After a refused refresh token (D50 §5): the master password only. */
     suspend fun signInAgain(password: Redacted<String>): SyncResult
 
+    // --- Health, export and import (D59 §5-7) ---
+
+    /** Weak and reused passwords across every vault; local only. */
+    suspend fun passwordHealth(): PasswordHealth
+
+    /**
+     * Logins whose password is in known breaches (item id to how often it
+     * was seen). Only 5 characters of each password's SHA-1 leave the
+     * device, straight to the breach service with padding (D22 §4).
+     */
+    suspend fun breachedPasswords(): Map<String, Long>
+
+    /** The master password again; the next [export] within 5 minutes may run. A fingerprint never counts. */
+    suspend fun authorizeExport(password: Redacted<String>)
+
+    /** Every vault as a file, on every plan. Keep the bytes only until saved. */
+    suspend fun export(format: ExportFormat): Redacted<ByteArray>
+
+    /** The format a picked file looks like, or null. */
+    fun guessImport(fileName: String, data: Redacted<ByteArray>): ImportGuess?
+
+    /** A CSV's header and the suggested columns, for the column picker. */
+    fun importColumns(data: Redacted<ByteArray>): CsvColumns
+
+    /** Reads the file into a preview for the first vault; nothing is saved yet. */
+    suspend fun prepareImport(
+        format: String,
+        data: Redacted<ByteArray>,
+        password: Redacted<String>?,
+        keyFile: Redacted<ByteArray>?,
+        columns: ColumnMap?,
+    ): ImportSummary
+
+    /** Saves the prepared import, then syncs it up (a failed sync leaves it queued, like any change). */
+    suspend fun finishImport(): ImportSummary
+
+    suspend fun cancelImport()
+
     // --- Items (D54 §4) ---
 
     suspend fun vaultIds(): List<String>

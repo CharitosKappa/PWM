@@ -17,6 +17,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.withContext
 import uniffi.pwm_ffi.ApprovalAsk
 import uniffi.pwm_ffi.androidAppLink
+import uniffi.pwm_ffi.breachPaddingHeader
+import uniffi.pwm_ffi.breachRangeUrl
+import uniffi.pwm_ffi.detectImport
 import uniffi.pwm_ffi.AskStep
 import uniffi.pwm_ffi.Event
 import uniffi.pwm_ffi.Header
@@ -66,6 +69,8 @@ class Session(
     private val now: () -> Long = System::currentTimeMillis,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1),
     private val biometrics: BiometricKeys = NoBiometrics,
+    /** For the breach check only: straight to the breach service, never through our server (D22 §4). */
+    private val breachTransport: HttpTransport = UrlConnectionTransport(),
 ) : Account {
     private val client: PwmClient = core {
         if (cachePath != null) PwmClient.open(cachePath) else PwmClient.inMemory()
@@ -372,6 +377,77 @@ class Session(
     override suspend fun denyApproval(id: String) = on {
         expect<Outcome.ApprovalUpdated>(runOnline(core { client.startDenyApproval(id) }))
     }
+
+    // --- Health (D22, D44, D59 §5) ---
+
+    override suspend fun passwordHealth(): PasswordHealth = on {
+        val report = core { client.healthReport() }
+        PasswordHealth(report.weak.associate { it.itemId to it.score.toInt() }, report.reused)
+    }
+
+    /** Each 5-character prefix is asked once; a refusal or a dead network ends the check. */
+    override suspend fun breachedPasswords(): Map<String, Long> = on {
+        core { client.breachCheck() }.use { check ->
+            val header = breachPaddingHeader()
+            for (prefix in check.prefixes()) {
+                val request = HttpRequest("GET", URL(breachRangeUrl(prefix)), listOf(header.name to header.value), null)
+                val response = try {
+                    breachTransport.send(request)
+                } catch (e: IOException) {
+                    throw PwmError("network")
+                }
+                currentCoroutineContext().ensureActive()
+                if (response.status != 200) throw PwmError("breach_check")
+                core { check.addResponse(prefix, response.body.decodeToString()) }
+            }
+            check.finish().associate { it.itemId to it.count.toLong() }
+        }
+    }
+
+    // --- Export (D24, D59 §6) ---
+
+    override suspend fun authorizeExport(password: Redacted<String>) = on {
+        val secretKey = keys.get(KeyName.SECRET_KEY) ?: throw PwmError("not_signed_in")
+        core { client.authorizeExport(password.value, secretKey, now()) }
+    }
+
+    override suspend fun export(format: ExportFormat): Redacted<ByteArray> = on {
+        Redacted(core { client.export(format.core, now()) })
+    }
+
+    // --- Import (D51, D59 §7) ---
+
+    override fun guessImport(fileName: String, data: Redacted<ByteArray>): ImportGuess? =
+        detectImport(fileName, data.value)?.let { ImportGuess(it.format, it.needsPassword) }
+
+    override fun importColumns(data: Redacted<ByteArray>): CsvColumns {
+        val columns = core { uniffi.pwm_ffi.importColumns(data.value) }
+        return CsvColumns(columns.headers, ColumnMap.of(columns.suggested), columns.rows.toInt())
+    }
+
+    override suspend fun prepareImport(
+        format: String,
+        data: Redacted<ByteArray>,
+        password: Redacted<String>?,
+        keyFile: Redacted<ByteArray>?,
+        columns: ColumnMap?,
+    ): ImportSummary = on {
+        ImportSummary.of(core { client.prepareImport(null, format, data.value, password?.value, keyFile?.value, columns?.core, now()) })
+    }
+
+    override suspend fun finishImport(): ImportSummary = on {
+        val done = ImportSummary.of(core { client.finishImport(now()) })
+        try {
+            syncNow()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Left queued, like any change.
+        }
+        done
+    }
+
+    override suspend fun cancelImport() = on { client.cancelImport() }
 
     // --- Signing in again (D50 §5, D59 §4) ---
 
