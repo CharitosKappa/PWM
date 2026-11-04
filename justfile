@@ -15,6 +15,8 @@ check:
     pnpm lint
     pnpm typecheck
     node scripts/tokens-swift.mjs --check
+    node scripts/tokens-kotlin.mjs --check
+    node scripts/messages-kotlin.mjs --check
 
 # all unit tests (core, server, extension)
 test:
@@ -99,6 +101,21 @@ bindings:
     cargo build --locked -p pwm-ffi
     cargo run --locked -q -p pwm-ffi-bindgen -- generate --library {{ffi_lib}} --language swift --out-dir target/bindings/swift --no-format
     cargo run --locked -q -p pwm-ffi-bindgen -- generate --library {{ffi_lib}} --language kotlin --out-dir target/bindings/kotlin --no-format
+
+# the Android app (D52): the core for the device ABIs (cargo-ndk), the Kotlin layer's JVM tests, a debug build and the licence check
+[working-directory('apps/android')]
+android:
+    ./gradlew :kit:test :app:assembleDebug :app:checkLicense
+
+# the Android app's tests on a running emulator or a connected device
+[working-directory('apps/android')]
+android-device:
+    ./gradlew :app:connectedDebugAndroidTest
+
+# design tokens and error messages into the Android app (D52 §6); `just check` fails when stale
+android-generated:
+    node scripts/tokens-kotlin.mjs
+    node scripts/messages-kotlin.mjs
 
 # apply formatters
 fmt:

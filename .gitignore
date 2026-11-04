@@ -12,6 +12,12 @@
 .build/
 .swiftpm/
 
+# The Android app's Gradle output, local SDK path and the core built for it (D52)
+/apps/android/.gradle/
+/apps/android/.kotlin/
+/apps/android/**/build/
+/apps/android/local.properties
+
 # Node
 node_modules/
 dist/

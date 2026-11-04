@@ -2063,3 +2063,78 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Fuzzing:** `import_files` reaches the KeePass header check (no password, so no key derivation); a target past it would run Argon2 with up to 1 GiB per input, so there is none.
   - **KDBX 3.1 fixtures:** the crate can't write 3.1, so the test reads any `.kdbx` in `core/pwm-import/fixtures/keepass/`, made once in KeePass or KeePassXC as its README says, and skips while there are none.
   - **Not run on this machine:** the Swift tests and app targets; CI runs them first.
+
+- **D52 — The Android app: split, project layout, the core as native libraries, the Kotlin layer, storage, tokens, dependencies and tests** · settled 2026-11-04 · founder (approved as proposed).
+  The roadmap's M6.1 says "Compose app over UniFFI core, same screens as M5.3". On Apple that took five tasks (M5.1 package, M5.2 onboarding, M5.3 vault screens, M5.9 approvals, M5.10 health, devices and export), plus M8.2's import. The core's API and its Kotlin bindings already exist; CI compiles a Kotlin smoke test against them.
+
+  What this machine has: Android Studio with JDK 21, the SDK (platforms 35 and 36), the NDK (28) and an emulator. Gradle and the Android and Maven libraries are downloaded on first build.
+
+  Open:
+  - how M6.1 is split
+  - the project layout and minimum Android version
+  - how the Rust library reaches Android
+  - what the Kotlin layer adds over the generated bindings
+  - where the cache and keys live
+  - design tokens, dependencies, and tests
+
+  Proposal:
+  1. **Split M6.1 like M5,** one PR each:
+     - **M6.1:** the project, the core as native libraries, the Kotlin layer, storage, tokens, and the tests and CI job. A launchable app with a placeholder screen.
+     - **M6.6 (new):** onboarding, as M5.2: create an account, the Emergency Kit, sign in, and asking another device to approve (M5.9's new-device side).
+     - **M6.7 (new):** the vault screens, as M5.3: list, search, sections, detail, edit every type, the generator, Settings, the lock timeout.
+     - **M6.8 (new):** health, devices, approving a new device, export, import, signing in again: M5.9, M5.10, D50 §5 and M8.2.
+     - **Unchanged:** M6.2 to M6.5.
+  2. **One Gradle project, `apps/android`, with three modules:**
+     - **`:core`:** the generated UniFFI Kotlin file and the native libraries. Generated, never edited.
+     - **`:kit`:** the Kotlin layer apps use (§4), in plain Kotlin and coroutines, with no Android UI. It holds the view models too, so they run on the JVM in tests, as `PWMUI`'s do on Linux.
+     - **`:app`:** the Compose screens, the Activity, and the platform pieces (Keystore, autofill later).
+     - **Versions:**
+       - minimum Android 9 (API 28), the first with BiometricPrompt; compile and target API 36
+       - Kotlin 2 with Compose, through the Compose BOM; the Gradle wrapper pinned
+       - one ABI set: `arm64-v8a`, `armeabi-v7a`, `x86_64` (emulators)
+     - **Passkeys:** Credential Manager providers need Android 14, so on 9 to 13 only passwords autofill. M6.3 logs it.
+  3. **The core as native libraries:**
+     - **The build:** `just android` builds `pwm-ffi` for the three ABIs with `cargo-ndk` (MIT or Apache) and the installed NDK, then generates the Kotlin file. Both go to `apps/android/core/build/` (not committed). Gradle runs it before compiling `:core`, so one command builds the whole app.
+     - **JNA:** the UniFFI Kotlin bindings call the library through JNA (Apache-2.0, dual-licensed with LGPL; we take Apache), its Android AAR.
+     - **Release:** the workspace's release profile, stripped.
+  4. **What `:kit` adds,** as `PWMKit` does on Apple, so screens never touch steps, requests or JSON:
+     - **`Session`:** a class around one `PwmClient`, its methods `suspend` functions on one dispatcher, so calls never overlap. It drives the D28/D31 step loop over HTTP.
+     - **HTTP:** `HttpsURLConnection`, with no cookies and no cache, and TLS left to the system. No HTTP library.
+     - **Items:** Kotlin types for the D18 JSON, keeping unknown fields by merging into the raw JSON on save, as on Apple.
+     - **Errors:** a `PwmException` carrying the core's stable codes, with the same plain messages as the Apple app (one shared list, §6).
+     - **Secrets:** a `Redacted<T>` whose `toString` is `<redacted>`. Master passwords and revealed values stay in local values and go straight to the core. Logging uses codes and counts only.
+  5. **Storage:**
+     - **The cache:** `PwmClient.open(path)` in the app's private files, which Android encrypts at rest. It holds ciphertext only (D20).
+     - **The device's keys** (Secret Key, tokens, device id): an AES-256-GCM key in the Android Keystore, made for this app and never exportable, seals them in a private file. The platform's cipher is used only to protect them on disk, as the Keychain does on Apple; no crypto of ours runs in Kotlin.
+     - **Behind a `KeyStore` interface,** with an in-memory fake for tests.
+     - **Biometric unlock** is M6.2.
+  6. **Shared copy and design tokens:**
+     - **Tokens:** `scripts/tokens-kotlin.mjs` turns `design/tokens.json` into a committed Kotlin file. `just check` fails when it's stale, as for Swift.
+     - **Error messages and UI copy:** the Swift list of messages moves to `design/messages.json`, generated into both apps, so they say the same thing.
+  7. **Dependencies,** all permissive and on the allow-list:
+     - **Libraries:** AndroidX and Compose (Apache-2.0), Kotlin and coroutines (Apache-2.0), JNA (Apache-2.0), JUnit 4 (EPL-1.0, tests only, never shipped).
+     - **The check:** a licence report plugin (Apache-2.0) in Gradle checks every shipped dependency against the allow-list. `just audit` runs it.
+     - **Never:** no analytics, crash or ad SDKs.
+  8. **Tests and CI:**
+     - **This machine:** builds the app and runs the JVM tests and the emulator.
+     - **JVM tests of `:kit`:**
+       - **Against a real server:** the Session and view models, with the Linux and Windows build of `pwm-ffi` through JNA, as the Swift package does on Linux.
+       - **Covered:** sign-up, sign-in on a second session, save, sync, item JSON round trips, error codes, and `Redacted`.
+     - **A new `android` CI job** on PRs touching `apps/android` or `core/`: `just android`, the JVM tests, a debug build, and Compose UI tests on an emulator (KVM on the Linux runner).
+     - **Not testable in CI:** a real device's Keystore hardware. Its manual check goes in `QUALITY.md`.
+  9. **Downloads:** the first build fetches Gradle, the Android and Maven libraries and `cargo-ndk`, from Gradle's, Google's and Maven Central's servers and crates.io. The founder approves that here, once, instead of per command.
+
+  Alternatives:
+  - **Kotlin Multiplatform sharing code with iOS:** the screens are already native per platform, and the core is the shared part; KMP would add a second shared layer.
+  - **OkHttp:** a common HTTP client, but `HttpsURLConnection` does what the step loop needs without a dependency.
+  - **Jetpack Security's `EncryptedSharedPreferences`:** deprecated by Google; the Keystore directly is the supported path.
+  - **Minimum Android 8 (API 26),** the first with autofill: about 2% more devices, but no BiometricPrompt and more code paths.
+
+  Implementation notes (M6.1):
+  - **Versions:** Gradle 9.3.1, the Android Gradle Plugin 9.1 (with its built-in Kotlin) and Kotlin 2.4; the Compose BOM 2024.12.01; JNA 5.17.0. Espresso is pinned to 3.7.0 in the tests: the older one Compose's test library pulls in fails on Android 16.
+  - **`:core` and `:kit` are plain Kotlin/JVM modules,** so the JVM tests load the host build of the core (`pwm_ffi.dll`, `.so` or `.dylib`) through JNA's jar, while `:app` ships JNA's Android AAR. Both compile against JNA as `compileOnly`, so the app never gets two copies.
+  - **The step loop** runs each `Session` call on its own single-thread dispatcher; a cancelled coroutine calls the core's `cancel`. A transport `IOException` becomes `networkFailed`.
+  - **`KeystoreKeys`** seals each value with AES-256-GCM under one Keystore key (`pwm.device-keys`, made on first use, never exportable), with the key's name as associated data, in `noBackupFilesDir/keys/`. Writes go through a temporary file and a rename.
+  - **The licence check** is the `com.github.jk1.dependency-license-report` plugin (Apache-2.0) on the release runtime classpath, with `apps/android/allowed-licenses.json`. It runs in `just android` and the `android` CI job rather than `just audit`, because it needs the Android SDK, which the `audit` job doesn't have.
+  - **The messages:** `design/messages.json` was taken from the Apple app's list. The Apple app keeps its own list in `PWMError.swift` for now: M8's open PRs add messages there, and moving it now would conflict. It moves once they merge, and a check then keeps both the same.
+  - **Not done here:** the server test of `:kit` (no Postgres running); the `android` CI job runs it.
