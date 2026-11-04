@@ -289,6 +289,26 @@ async fn a_locked_device_syncs_and_signs_in_again_keeping_unsent_changes() {
     };
     assert_eq!((report.pulled, report.pushed), (1, 1));
     assert!(!phone.is_unlocked());
+    // Its push token goes up while locked too (D50 §3).
+    let tokens = Tokens::new(
+        phone_tokens.access().to_owned(),
+        phone_tokens.refresh().to_owned(),
+    );
+    let push = pwm_client::PushToken {
+        app: "ios".to_owned(),
+        token: "ab".repeat(32),
+        sandbox: true,
+    };
+    let step = phone.start_push_token(tokens, Some(push));
+    assert!(matches!(
+        run(&app, &mut phone, step).await.unwrap(),
+        Outcome::PushTokenSet
+    ));
+    let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM push_tokens")
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 1);
     let step = laptop.start_sync();
     run(&app, &mut laptop, step).await.unwrap();
     assert_eq!(titles(&laptop, &vault), ["Mail", "Passkey"]);

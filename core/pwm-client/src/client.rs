@@ -47,6 +47,19 @@ pub enum Outcome {
     Approvals(Vec<crate::ApprovalRequest>),
     /// An approval was accepted, completed or denied.
     ApprovalUpdated,
+    /// This device's push token was registered or removed (D50 §3).
+    PushTokenSet,
+}
+
+/// This device's APNs token, for [`Client::start_push_token`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PushToken {
+    /// `"ios"` or `"macos"`.
+    pub app: String,
+    /// The token as hex, as the system gives it.
+    pub token: String,
+    /// A development build's token (APNs sandbox).
+    pub sandbox: bool,
 }
 
 enum State<S> {
@@ -73,6 +86,8 @@ pub(crate) enum Running {
     Devices,
     /// A device approval call (D46).
     Approval(crate::approval::ApprovalCall),
+    /// Registering or removing the push token, locked or not (D50 §3).
+    PushToken,
 }
 
 pub struct Client<S: Store> {
@@ -181,7 +196,7 @@ impl<S: Store> Client<S> {
     /// Idle, or only a sync that can carry on unlocked.
     fn idle_for_unlock(&self) -> Result<(), ClientError> {
         match self.running {
-            Running::Idle | Running::Sync | Running::LockedSync => Ok(()),
+            Running::Idle | Running::Sync | Running::LockedSync | Running::PushToken => Ok(()),
             _ => Err(ClientError::Busy),
         }
     }
@@ -413,6 +428,54 @@ impl<S: Store> Client<S> {
         self.after_engine(step)
     }
 
+    /// Registers this device's push token (`Some`) or removes it (`None`)
+    /// on the server (D50 §3). It needs only the tokens, so it also runs
+    /// while locked. Ends with `PushTokenSet`.
+    pub fn start_push_token(
+        &mut self,
+        tokens: Tokens,
+        push: Option<PushToken>,
+    ) -> Result<Step, ClientError> {
+        self.idle()?;
+        let path = "/v1/devices/self/push".to_owned();
+        let (method, body) = match push {
+            Some(push) => {
+                let hex = push.token.len() % 2 == 0
+                    && (64..=200).contains(&push.token.len())
+                    && push.token.bytes().all(|b| b.is_ascii_hexdigit());
+                if !hex || !["ios", "macos"].contains(&push.app.as_str()) {
+                    return Err(ClientError::InvalidPushToken);
+                }
+                let environment = if push.sandbox {
+                    "sandbox"
+                } else {
+                    "production"
+                };
+                let body = serde_json::json!({
+                    "app": push.app, "token": push.token, "environment": environment,
+                });
+                (pwm_sync::Method::Put, Some(body.to_string().into_bytes()))
+            }
+            None => (pwm_sync::Method::Delete, None),
+        };
+        let step = if self.is_unlocked() {
+            self.engine()?.start_call(method, path, body)
+        } else {
+            if self.store().account()?.is_none() {
+                return Err(ClientError::Locked);
+            }
+            let State::Locked(store) = std::mem::replace(&mut self.state, State::Moving) else {
+                unreachable!("idle and not unlocked");
+            };
+            let mut engine = Box::new(SyncEngine::locked(store, tokens)?);
+            let step = engine.start_call(method, path, body);
+            self.state = State::Syncing(engine);
+            step
+        };
+        self.running = Running::PushToken;
+        self.after_engine(step)
+    }
+
     /// Starts a sync run (vault list, pull, push).
     pub fn start_sync(&mut self) -> Result<Step, ClientError> {
         self.idle()?;
@@ -605,6 +668,16 @@ impl<S: Store> Client<S> {
                 Step::Done(Outcome::Devices(self.open_devices(records)?))
             }
             pwm_sync::Step::Done(SyncOutcome::DeviceUpdated) => Step::Done(Outcome::DeviceUpdated),
+            pwm_sync::Step::Done(SyncOutcome::Answered { status, .. })
+                if matches!(self.running, Running::PushToken) =>
+            {
+                self.running = Running::Idle;
+                return match status {
+                    204 => Ok(Step::Done(Outcome::PushTokenSet)),
+                    400 => Err(ClientError::InvalidPushToken),
+                    status => Err(ClientError::Server(status)),
+                };
+            }
             pwm_sync::Step::Done(SyncOutcome::Answered { status, body }) => {
                 let Running::Approval(call) = self.running else {
                     self.running = Running::Idle;

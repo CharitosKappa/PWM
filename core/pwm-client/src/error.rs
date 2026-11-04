@@ -22,6 +22,9 @@ pub enum ClientError {
     InvalidRules,
     #[error("unknown vault")]
     UnknownVault,
+    /// Not an APNs token as hex, or an app other than `ios` or `macos`.
+    #[error("the push token is not valid")]
+    InvalidPushToken,
     #[error("no such item")]
     UnknownItem,
     #[error("the item is deleted")]
@@ -109,6 +112,7 @@ impl ClientError {
             Self::InvalidUrl => "invalid_url",
             Self::InvalidRules => "invalid_rules",
             Self::UnknownVault => "unknown_vault",
+            Self::InvalidPushToken => "invalid_push_token",
             Self::UnknownItem => "unknown_item",
             Self::ItemDeleted => "item_deleted",
             Self::ItemTooLarge => "item_too_large",

@@ -214,3 +214,75 @@ fn unlocked_it_is_an_ordinary_sync() {
     assert!(matches!(step, Step::Done(Outcome::Synced(_))));
     assert!(client.is_unlocked());
 }
+
+const APNS: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+fn push(token: &str) -> Option<pwm_client::PushToken> {
+    Some(pwm_client::PushToken {
+        app: "ios".to_owned(),
+        token: token.to_owned(),
+        sandbox: true,
+    })
+}
+
+#[test]
+fn the_push_token_is_sent_while_locked() {
+    let (store, _) = signed_in_store();
+    let mut client = Client::new(store);
+    let request = sent(client.start_push_token(tokens(), push(APNS)).unwrap());
+    assert_eq!(path(&request), "PUT /v1/devices/self/push");
+    let body: serde_json::Value = serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+    assert_eq!(
+        body,
+        json!({ "app": "ios", "token": APNS, "environment": "sandbox" })
+    );
+    let step = client
+        .receive(HttpResponse::new(204, Vec::new(), Vec::new()), T0)
+        .unwrap();
+    assert!(matches!(step, Step::Done(Outcome::PushTokenSet)));
+    assert!(!client.is_unlocked());
+
+    let request = sent(client.start_push_token(tokens(), None).unwrap());
+    assert_eq!(path(&request), "DELETE /v1/devices/self/push");
+    assert_eq!(
+        client
+            .receive(answer(400, json!({ "error": "invalid_request" })), T0)
+            .unwrap_err()
+            .code(),
+        "invalid_push_token"
+    );
+    // Idle again after the error.
+    assert!(client.start_push_token(tokens(), None).is_ok());
+}
+
+#[test]
+fn a_push_token_that_is_not_hex_is_refused() {
+    let (store, secret_key) = signed_in_store();
+    let mut client = Client::new(store);
+    client.unlock(PASSWORD, &secret_key, tokens()).unwrap();
+    for token in ["abc", &APNS[..62], &"zz".repeat(32)] {
+        assert_eq!(
+            client
+                .start_push_token(tokens(), push(token))
+                .unwrap_err()
+                .code(),
+            "invalid_push_token"
+        );
+    }
+    let mut android = push(APNS).unwrap();
+    android.app = "android".to_owned();
+    assert_eq!(
+        client
+            .start_push_token(tokens(), Some(android))
+            .unwrap_err()
+            .code(),
+        "invalid_push_token"
+    );
+    // Unlocked, it goes through the open engine.
+    let request = sent(client.start_push_token(tokens(), push(APNS)).unwrap());
+    assert_eq!(path(&request), "PUT /v1/devices/self/push");
+    client
+        .receive(HttpResponse::new(204, Vec::new(), Vec::new()), T0)
+        .unwrap();
+    assert!(client.is_unlocked());
+}

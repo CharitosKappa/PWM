@@ -104,6 +104,8 @@ pub enum Outcome {
         approvals: Vec<ApprovalRequest>,
     },
     ApprovalUpdated,
+    /// This device's push token was registered or removed (D50 §3).
+    PushTokenSet,
 }
 
 /// A request from a new device; `code` once this device accepted it and the
@@ -233,6 +235,7 @@ fn step(step: pwm_client::Step) -> Step {
                         .collect(),
                 },
                 pwm_client::Outcome::ApprovalUpdated => Outcome::ApprovalUpdated,
+                pwm_client::Outcome::PushTokenSet => Outcome::PushTokenSet,
             },
         },
     }
@@ -526,6 +529,28 @@ impl PwmClient {
 
     pub fn start_sync(&self) -> Result<Step, PwmError> {
         Ok(step(self.lock_inner().start_sync()?))
+    }
+
+    /// Registers this device's APNs token (hex) on the server, or removes it
+    /// when `token` is `None`; works locked (D50 §3). `app` is `"ios"` or
+    /// `"macos"`. Ends with `PushTokenSet`.
+    pub fn start_push_token(
+        &self,
+        access: String,
+        refresh: String,
+        app: String,
+        token: Option<String>,
+        sandbox: bool,
+    ) -> Result<Step, PwmError> {
+        let push = token.map(|token| pwm_client::PushToken {
+            app,
+            token,
+            sandbox,
+        });
+        Ok(step(
+            self.lock_inner()
+                .start_push_token(Tokens::new(access, refresh), push)?,
+        ))
     }
 
     /// A sync that needs only the tokens (D50 §1): locked, it stores what
