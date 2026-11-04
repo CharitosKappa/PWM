@@ -86,7 +86,10 @@ final class ServerTests: XCTestCase {
         // D51, on the same login: a browser's CSV comes in through the core,
         // is saved and syncs; the same file again adds nothing.
         let title = "Imported \(UUID().uuidString.prefix(8))"
-        let file = Redacted(Data("name,url,username,password\n\(title),https://import.example,ada,pw\n".utf8))
+        // A strong, unique password: the account is shared, and the health
+        // test counts weak and reused ones.
+        let password = "lantern-\(UUID().uuidString.prefix(8))-orbit-velvet-42"
+        let file = Redacted(Data("name,url,username,password\n\(title),https://import.example,ada,\(password)\n".utf8))
         XCTAssertEqual(session.guessImport(fileName: "passwords.csv", data: file)?.format, "csv")
         XCTAssertEqual(try session.importColumns(file).suggested.password, 3)
         let preview = try await session.prepareImport(format: "csv", data: file, password: nil, keyFile: nil, columns: nil)
