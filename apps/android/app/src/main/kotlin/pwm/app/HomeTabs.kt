@@ -33,6 +33,8 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import pwm.kit.BiometricState
+import pwm.kit.PwmError
 import pwm.kit.design.Tokens
 import pwm.kit.ui.AppModel
 import pwm.kit.ui.GeneratorModel
@@ -171,6 +173,23 @@ internal fun SettingsTab(app: AppModel, model: SettingsModel) {
         }
         Text(stringResource(R.string.lock_timeout_hint), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))
         Secondary(stringResource(R.string.lock_now), tag = "lockNow", onClick = model::lockNow)
+
+        // Fingerprint and face unlock (D55): the switch, or why it can't be used.
+        Heading(stringResource(R.string.biometric_switch))
+        when (val biometric = state.biometric) {
+            is BiometricState.Unavailable -> Text(
+                PwmError(biometric.code).userMessage, style = Tokens.Text.body.compose(), color = color(Tokens.Color.textMuted),
+                modifier = Modifier.testTag("biometricUnavailable"),
+            )
+            BiometricState.On, BiometricState.Off -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.biometric_hint), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted), modifier = Modifier.weight(1f))
+                Switch(
+                    checked = biometric == BiometricState.On, onCheckedChange = model::setBiometric, enabled = !state.biometricBusy,
+                    modifier = Modifier.testTag("biometricSwitch"),
+                )
+            }
+            null -> Unit
+        }
 
         Heading(stringResource(R.string.emergency_kit))
         Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s2.dp), modifier = Modifier.fillMaxWidth()) {

@@ -32,6 +32,8 @@
     "biometric_changed": "Your fingerprint or face unlock changed. Enter your master password to turn it back on.",
     "biometric_unavailable": "Fingerprint or face unlock is not available on this device.",
     "biometric_unlock_failed": "Enter your master password.",
+    "biometric_not_enrolled": "Set up a fingerprint or face unlock in your phone's settings first.",
+    "biometric_no_screen_lock": "Set a screen lock in your phone's settings first.",
     "master_password_due": "Enter your master password. It's asked every 14 days so you don't forget it.",
     "invalid_device_name": "Use a shorter name, up to 63 characters.",
     "breach_check": "The leak check is not answering. Try again later.",

@@ -147,7 +147,7 @@ class AppModel(
     private fun showUnlock(account: Account) {
         show(
             Screen.Unlock(
-                UnlockModel(scope, account.email(), account, onUnlocked = { afterUnlock(account) }, onSignedOut = ::didSignOut),
+                UnlockModel(scope, account.email(), account, prefs, onUnlocked = { afterUnlock(account) }, onSignedOut = ::didSignOut),
             ),
         )
     }

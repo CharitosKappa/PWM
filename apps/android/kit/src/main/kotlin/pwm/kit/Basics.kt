@@ -45,6 +45,11 @@ enum class KeyName(val key: String) {
     REFRESH_TOKEN("refresh-token"),
     DEVICE_ID("device-id"),
     EMAIL("email"),
+
+    /** Fingerprint and face unlock (D55 §4): the core's blob, the wrapped unlock key, and when the master password was last typed. */
+    BIOMETRIC_BLOB("biometric-blob"),
+    BIOMETRIC_KEY("biometric-key"),
+    PASSWORD_UNLOCKED_AT("password-unlocked-at"),
 }
 
 /**

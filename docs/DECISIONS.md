@@ -2318,3 +2318,63 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Versions:** `lifecycle-process` 2.8.7 (Apache-2.0). The licence check still covers 107 libraries: it was already a dependency of another library.
   - **Icons:** Material's core set only. The extended set is large, and no item type needs a site's logo.
   - **Run on this machine:** the JVM tests and the server test, the build and licence check, and all 5 device tests on an Android 16 emulator, the full vault flow included, against a local server on a throwaway Postgres. Not run: a real phone, a tablet, and a real camera (the `QUALITY.md` checklist).
+
+- **D55 — Fingerprint and face unlock on Android: the Keystore key, the prompt, and what D45 carries over** · settled 2026-11-04 · founder (approved as proposed).
+  M6.2 says "BiometricPrompt + Keystore-wrapped key". D45 settled biometric unlock for every platform: the core seals the opened keyset under a random 32-byte unlock key (`export_biometric_unlock`, `unlock_biometric`, already in UniFFI), and the platform's keystore protects that key. Open, for Android:
+  - which Keystore key protects the unlock key
+  - which biometrics count, and the prompt
+  - re-making the blob after a master password unlock without asking for a finger each time
+  - how it's tested, given that emulators in CI have no fingerprint enrolled
+
+  Proposal:
+  1. **The Keystore key: RSA-3072 with OAEP**, made in the Android Keystore when unlock is turned on, never exportable and not backed up. It's the same slot as the Secure Enclave key on Apple (D45 §2).
+     - **Only the private half needs a finger or face:** each use needs a fresh strong biometric (Android 11+: per-use with `AUTH_BIOMETRIC_STRONG`; Android 9 and 10: the equivalent per-use setting).
+     - **Wrapping needs no prompt:** the 32-byte unlock key is encrypted to the public half with `RSA/ECB/OAEPWithSHA-256AndMGF1Padding`, done by the platform. Only the ciphertext is kept.
+     - **A new finger or face makes the key unusable:** it's invalidated by new enrollments, and Android then refuses it.
+     - **Why not AES in the Keystore:** an AES key that needs a biometric needs one to encrypt too. The blob is re-made after every master password unlock (D45 §4), so each of those would also ask for a finger. A public key wraps without a prompt, as Apple's enclave key does.
+     - **Why not elliptic curves:** the Android Keystore can't encrypt with them.
+     - **The crypto rule:** this is the platform-key wrapping `SECURITY.md` names, done by the operating system. No primitive is written in Kotlin; the core still does all the vault crypto.
+  2. **Which biometrics count: Android's "strong" class only** (Class 3): most fingerprint sensors, and face unlock on phones with secure face hardware.
+     - **Not the weak class** (camera-only face unlock on many phones): the Keystore can't bind a key to it.
+     - **Not the screen lock PIN:** as on Apple, only a biometric replaces the master password.
+     - **The prompt:** AndroidX Biometric's `BiometricPrompt`, with the private key's cipher as its crypto object, so the Keystore opens the key only for that touch. Its title is "Unlock your vault", and its button is "Use master password".
+  3. **What carries over from D45 unchanged:**
+     - **Turning it on:**
+       - a switch in Settings, and one offer after a master password unlock ("Use fingerprint or face unlock next time?")
+       - turning it on asks for a finger or face once, so one that doesn't work is found now
+     - **The master password** is still asked every 14 days, after a biometric change (then it turns back on by itself), and after signing in.
+     - **After each master password unlock,** the blob is made again.
+     - **Turning it off and signing out** delete the key, the wrapped key and the blob; locking keeps them.
+     - **The unlock screen** tries the prompt once by itself, and a cancel leaves the password field with no error.
+     - **The lock timeout (D54 §5) is unchanged:** a biometric only replaces typing the password.
+  4. **Where things are kept:** the blob, the wrapped key, and when the master password was last typed, as three more names in the Keystore-sealed key files (D52 §5). The offer's "shown once" is in the app's preferences.
+  5. **The Activity** becomes a `FragmentActivity`, which `BiometricPrompt` needs. Compose works the same on it.
+  6. **When it isn't available,** Settings says why:
+     - no sensor of the strong class
+     - none enrolled
+     - no screen lock set
+  7. **Tests:**
+     - **JVM view-model tests** with a fake key store (as D45 §8's `BiometricKeyStore`): the switch, the one-time offer, the 14-day rule with an injected clock, a biometric change, a cancel, and sign-out.
+     - **The server test:** a real round trip through the core. Turn it on, lock, unlock with the fake key store, and check that another device's blob is refused.
+     - **On the CI emulator,** which has no finger enrolled: Settings says unlock is unavailable, and the UI test checks that.
+     - **On a real phone (`QUALITY.md`):**
+       - turning it on, unlocking, and cancelling
+       - enrolling a new finger: the next unlock asks for the master password and turns it back on
+       - removing the screen lock
+  8. **Downloads:** the first build fetches AndroidX Biometric (`androidx.biometric:biometric` 1.1.0, Apache-2.0, with `androidx.fragment`). The founder approves that here.
+  9. **Parity:** the autofill service (M6.3) will unlock with the same key, without the KDF, as D47 does on Apple.
+
+  Alternatives:
+  - **AES in the Keystore:** simpler, but every master password unlock would also ask for a finger, to wrap the new blob (§1).
+  - **StrongBox:** a separate secure chip on some phones. Its RSA keys are 2048-bit only, and many phones don't have one. The Keystore's trusted environment is hardware-backed on every certified phone.
+  - **Allowing the screen lock PIN as well:** more devices could use it, but the PIN would then open the vault, and it's often 4 digits.
+
+  Implementation notes (M6.2):
+  - **OAEP's parameters:** SHA-256 for the message digest, with MGF1 over SHA-1, the MGF1 digest the Android Keystore takes on every version. The public half is used from a software copy of its encoded key, as Android recommends, so wrapping never asks.
+  - **The prompt** is `BiometricPrompt` from AndroidX Biometric 1.1.0 (with `androidx.fragment`; the licence check covers 108 libraries, all allowed). It uses the Activity on screen, which the app tracks; in the background it's `biometric_cancelled`. Every prompt error (the master password button, a cancel, too many tries) is `biometric_cancelled`, so the password field shows.
+  - **A sign-in starts with it off,** and `logIn` and `signUp` count as typing the master password for the 14-day rule.
+  - **New messages:** `biometric_not_enrolled` and `biometric_no_screen_lock` in `design/messages.json`.
+  - **Run on this machine:**
+    - the JVM tests, the server test's round trip, the build and licence check, and the 5 device tests on an Android 16 emulator
+    - **the real key and prompt, by hand on the emulator:** with a PIN set and a fingerprint enrolled through the emulator's simulated sensor, turning it on and unlocking with a finger both worked. The PIN and fingerprint were removed afterwards, so later runs match CI.
+  - **Not run:** a real phone, and a new enrollment invalidating the key (the `QUALITY.md` checklist).

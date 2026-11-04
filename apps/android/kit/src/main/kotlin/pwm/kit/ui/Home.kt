@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import pwm.kit.Account
+import pwm.kit.BiometricState
 import pwm.kit.EmergencyKit
 import pwm.kit.Generator
 import pwm.kit.PasswordStrength
@@ -136,6 +137,9 @@ class SettingsModel internal constructor(
         /** The self-hosted address, or null for the hosted service. */
         val server: String? = null,
         val lockTimeout: LockTimeout = LockTimeout.STANDARD,
+        /** Fingerprint and face unlock (D55): on, off, or why it can't be used. */
+        val biometric: BiometricState? = null,
+        val biometricBusy: Boolean = false,
         /** The Emergency Kit PDF, made when Settings opens. */
         val kit: Redacted<ByteArray>? = null,
         val kitSaved: Boolean = false,
@@ -149,8 +153,26 @@ class SettingsModel internal constructor(
             email = account.email(),
             server = prefs.server,
             lockTimeout = LockTimeout.of(prefs.lockTimeoutMinutes),
+            biometric = runCatching { account.biometricState() }.getOrNull(),
         ),
     )
+
+    /** The switch: turning it on asks for a finger or face once; a cancel leaves it off. */
+    fun setBiometric(on: Boolean) {
+        mutable.update { it.copy(biometricBusy = true, error = null) }
+        scope.launch {
+            try {
+                if (on) account.enableBiometricUnlock() else account.disableBiometricUnlock()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: PwmError) {
+                if (e.code != "biometric_cancelled") mutable.update { it.copy(error = e.userMessage) }
+            } catch (e: Exception) {
+                mutable.update { it.copy(error = message(e)) }
+            }
+            mutable.update { it.copy(biometricBusy = false, biometric = runCatching { account.biometricState() }.getOrNull()) }
+        }
+    }
     val state: StateFlow<State> = mutable
 
     fun setLockTimeout(timeout: LockTimeout) {

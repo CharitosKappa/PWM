@@ -27,7 +27,10 @@ class ServerTest {
     fun signUpSaveSyncAndSignInOnASecondDevice() = runTest {
         val email = "kotlin-${UUID.randomUUID()}@example.com"
         val password = Redacted("correct horse battery staple 42")
-        val first = Session(cachePath = null, server = server, keys = MemoryKeyStore())
+        var clock = System.currentTimeMillis()
+        val firstKeys = MemoryKeyStore()
+        val fingers = FakeBiometrics()
+        val first = Session(cachePath = null, server = server, keys = firstKeys, now = { clock }, biometrics = fingers)
         val secretKey = first.signUp(email, password, "Android phone")
         assertTrue(secretKey.value.startsWith("A1-"))
         assertTrue(first.isUnlocked())
@@ -64,6 +67,41 @@ class ServerTest {
         second.lock()
         second.unlock(password)
         assertTrue(second.isUnlocked())
+
+        // Fingerprint and face unlock through the core (D55 §7), with a fake key store.
+        assertEquals(BiometricState.Off, first.biometricState())
+        first.enableBiometricUnlock()
+        assertEquals("turning it on asks once", 1, fingers.prompts)
+        assertEquals(BiometricState.On, first.biometricState())
+        first.lock()
+        first.unlockWithBiometrics()
+        assertTrue(first.isUnlocked())
+        // After 14 days the master password is asked once, and then a finger works again.
+        clock += BiometricRules.MASTER_PASSWORD_EVERY_MS
+        first.lock()
+        assertEquals("master_password_due", (runCatching { first.unlockWithBiometrics() }.exceptionOrNull() as PwmError).code)
+        first.unlock(password)
+        first.lock()
+        first.unlockWithBiometrics()
+        assertTrue(first.isUnlocked())
+        // A cancelled prompt leaves it on.
+        first.lock()
+        fingers.prompt = { throw PwmError("biometric_cancelled") }
+        assertEquals("biometric_cancelled", (runCatching { first.unlockWithBiometrics() }.exceptionOrNull() as PwmError).code)
+        assertEquals(BiometricState.On, first.biometricState())
+        first.unlock(password)
+
+        // Another device's blob doesn't open here: it is refused and turned off.
+        second.lock()
+        for (name in listOf(KeyName.BIOMETRIC_BLOB, KeyName.BIOMETRIC_KEY)) keys.set(name, firstKeys.get(name)!!)
+        val stolen = Session(cachePath = null, server = server, keys = keys, biometrics = FakeBiometrics())
+        assertEquals("biometric_changed", (runCatching { stolen.unlockWithBiometrics() }.exceptionOrNull() as PwmError).code)
+        assertTrue(keys.get(KeyName.BIOMETRIC_BLOB) == null)
+
+        // Signing out deletes it.
+        first.signOut()
+        assertTrue(firstKeys.get(KeyName.BIOMETRIC_BLOB) == null)
+        assertTrue(fingers.deleted > 0)
         second.signOut()
         assertTrue(keys.get(KeyName.SECRET_KEY) == null)
     }

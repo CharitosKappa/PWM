@@ -96,6 +96,14 @@ The vault (D54), with the same build:
 5. With Immediately set, Save Emergency Kit in Settings: the picker opens and the file saves without the vault locking.
 6. Settings, Third-party notices: each file opens and nothing loads from the network.
 
+Fingerprint and face unlock (D55), with the same build:
+
+1. With no finger enrolled, Settings says why it can't be used. Enroll one: the switch shows.
+2. Unlock with the master password: the offer shows once. Turn on: the prompt asks once. Lock: the unlock screen asks by itself; Use master password leaves the password field, with no error.
+3. Enroll another finger, then lock: the next unlock asks for the master password, says why, and turns it back on.
+4. Remove the screen lock: Settings says to set one, and the unlock screen asks for the master password.
+5. Sign out and sign in again: it starts off.
+
 ### Import checklist (D51)
 
 Before the beta, with a real export from each manager (made with a throwaway account holding synthetic items, never real ones):

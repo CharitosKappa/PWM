@@ -64,6 +64,7 @@ class Session(
     private val transport: HttpTransport = UrlConnectionTransport(),
     private val now: () -> Long = System::currentTimeMillis,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1),
+    private val biometrics: BiometricKeys = NoBiometrics,
 ) : Account {
     private val client: PwmClient = core {
         if (cachePath != null) PwmClient.open(cachePath) else PwmClient.inMemory()
@@ -84,6 +85,7 @@ class Session(
         val outcome = run(first) as? Outcome.SignedUp ?: throw PwmError("protocol")
         keys.set(KeyName.SECRET_KEY, outcome.secretKey)
         keys.set(KeyName.EMAIL, email)
+        passwordTyped()
         run(core { client.startEnsureVault() })
         Redacted(outcome.secretKey)
     }
@@ -101,6 +103,9 @@ class Session(
         if (run(first) != Outcome.LoggedIn) throw PwmError("protocol")
         keys.set(KeyName.SECRET_KEY, secretKey.value)
         keys.set(KeyName.EMAIL, email)
+        // A new sign-in starts with fingerprint and face unlock off (D45 §4).
+        disableBiometrics()
+        passwordTyped()
         syncNow()
     }
 
@@ -113,7 +118,97 @@ class Session(
                 keys.get(KeyName.ACCESS_TOKEN) ?: "", keys.get(KeyName.REFRESH_TOKEN) ?: "",
             )
         }
+        passwordTyped()
+        // The blob is made again, so it always matches the keyset (D45 §4); no prompt.
+        if (keys.get(KeyName.BIOMETRIC_BLOB) != null) {
+            runCatching { storeBiometricUnlock() }.onFailure { disableBiometrics() }
+        }
     }
+
+    // --- Fingerprint and face unlock (D45, D55) ---
+
+    override fun biometricState(): BiometricState = when (val available = biometrics.availability()) {
+        is BiometricAvailability.Unavailable -> BiometricState.Unavailable(available.code)
+        BiometricAvailability.Available ->
+            if (keys.get(KeyName.BIOMETRIC_BLOB) == null) BiometricState.Off else BiometricState.On
+    }
+
+    /** Turns it on while unlocked. It asks for a finger or face once, so one that doesn't work is found now. */
+    override suspend fun enableBiometricUnlock() {
+        if (biometrics.availability() != BiometricAvailability.Available) throw PwmError("biometric_unavailable")
+        val made = on { makeBiometricUnlock() }
+        try {
+            biometrics.unwrap(made.second, BiometricPurpose.TURN_ON)
+        } catch (e: Exception) {
+            runCatching { biometrics.delete() }
+            throw e
+        }
+        on {
+            keys.set(KeyName.BIOMETRIC_BLOB, made.first.encode())
+            keys.set(KeyName.BIOMETRIC_KEY, made.second.encode())
+            if (keys.get(KeyName.PASSWORD_UNLOCKED_AT) == null) passwordTyped()
+        }
+    }
+
+    override suspend fun disableBiometricUnlock() = on { disableBiometrics() }
+
+    /**
+     * Unlocks after a finger or face. `master_password_due` every 14 days;
+     * `biometric_changed` turns it off, and the master password unlocks.
+     */
+    override suspend fun unlockWithBiometrics() {
+        if (biometricState() != BiometricState.On) throw PwmError("biometric_unavailable")
+        val last = keys.get(KeyName.PASSWORD_UNLOCKED_AT)?.toLongOrNull() ?: 0
+        if (now() - last >= BiometricRules.MASTER_PASSWORD_EVERY_MS) throw PwmError("master_password_due")
+        val blob = keys.get(KeyName.BIOMETRIC_BLOB)?.decode()
+        val wrapped = keys.get(KeyName.BIOMETRIC_KEY)?.decode()
+        val access = keys.get(KeyName.ACCESS_TOKEN)
+        val refresh = keys.get(KeyName.REFRESH_TOKEN)
+        if (blob == null || wrapped == null || access == null || refresh == null) {
+            on { disableBiometrics() }
+            throw PwmError("biometric_changed")
+        }
+        val key = try {
+            biometrics.unwrap(wrapped, BiometricPurpose.UNLOCK)
+        } catch (e: PwmError) {
+            if (e.code == "biometric_changed") on { disableBiometrics() }
+            throw e
+        }
+        on {
+            try {
+                core { client.unlockBiometric(blob, key.value, deviceId(), access, refresh) }
+            } catch (e: PwmError) {
+                if (e.code != "biometric_unlock_failed") throw e
+                // Not this account's or this device's blob, or a wrong key: start again.
+                disableBiometrics()
+                throw PwmError("biometric_changed")
+            }
+        }
+    }
+
+    /** The core's blob and the unlock key, wrapped by the platform. */
+    private fun makeBiometricUnlock(): Pair<ByteArray, ByteArray> {
+        val made = core { client.exportBiometricUnlock(deviceId()) }
+        return made.blob to biometrics.wrap(Redacted(made.key))
+    }
+
+    private fun storeBiometricUnlock() {
+        val (blob, wrapped) = makeBiometricUnlock()
+        keys.set(KeyName.BIOMETRIC_BLOB, blob.encode())
+        keys.set(KeyName.BIOMETRIC_KEY, wrapped.encode())
+    }
+
+    private fun disableBiometrics() {
+        runCatching { biometrics.delete() }
+        keys.delete(KeyName.BIOMETRIC_BLOB)
+        keys.delete(KeyName.BIOMETRIC_KEY)
+    }
+
+    private fun passwordTyped() = keys.set(KeyName.PASSWORD_UNLOCKED_AT, now().toString())
+
+    private fun ByteArray.encode(): String = java.util.Base64.getEncoder().encodeToString(this)
+
+    private fun String.decode(): ByteArray? = runCatching { java.util.Base64.getDecoder().decode(this) }.getOrNull()
 
     override suspend fun lock() = on { client.lock() }
 
@@ -144,7 +239,8 @@ class Session(
     /** Deletes the account from this device: its cache, tokens, Secret Key and email. */
     override suspend fun signOut() = on {
         core { client.signOut() }
-        for (name in listOf(KeyName.SECRET_KEY, KeyName.ACCESS_TOKEN, KeyName.REFRESH_TOKEN, KeyName.EMAIL)) {
+        disableBiometrics()
+        for (name in listOf(KeyName.SECRET_KEY, KeyName.ACCESS_TOKEN, KeyName.REFRESH_TOKEN, KeyName.EMAIL, KeyName.PASSWORD_UNLOCKED_AT)) {
             keys.delete(name)
         }
     }

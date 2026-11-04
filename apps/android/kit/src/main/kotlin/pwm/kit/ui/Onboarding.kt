@@ -11,8 +11,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import pwm.kit.Account
+import pwm.kit.BiometricState
 import pwm.kit.EmergencyKit
 import pwm.kit.PasswordStrength
+import pwm.kit.PwmError
 import pwm.kit.Redacted
 
 // The onboarding screens' state (D53 §1-2), as on Apple (D42 §4). Each model
@@ -252,11 +254,16 @@ class SignInModel internal constructor(
     }
 }
 
-/** Unlock on later launches: the master password only. */
+/**
+ * Unlock on later launches: the master password, or a finger or face when
+ * that is on (D45, D55). After a master password unlock it offers the
+ * finger or face once, never again after "Not now".
+ */
 class UnlockModel internal constructor(
     private val scope: CoroutineScope,
     val email: String?,
     private val account: Account,
+    private val prefs: AppPrefs,
     private val onUnlocked: () -> Unit,
     private val onSignedOut: () -> Unit,
 ) {
@@ -264,12 +271,19 @@ class UnlockModel internal constructor(
         val password: Redacted<String> = Redacted(""),
         val busy: Boolean = false,
         val error: String? = null,
+        val biometric: BiometricState? = null,
+        /** "Use fingerprint or face unlock next time?", after a master password unlock. */
+        val offer: Boolean = false,
     ) {
         val canSubmit: Boolean get() = !busy && password.value.isNotEmpty()
+        val canUseBiometrics: Boolean get() = !busy && biometric == BiometricState.On
     }
 
-    private val mutable = MutableStateFlow(State())
+    private val mutable = MutableStateFlow(State(biometric = runCatching { account.biometricState() }.getOrNull()))
     val state: StateFlow<State> = mutable
+    /** A biometric change: turn it back on after this password unlock (D45 §4). */
+    private var reenable = false
+    private var tried = false
 
     fun setPassword(password: String) = mutable.update { it.copy(password = Redacted(password)) }
 
@@ -280,14 +294,79 @@ class UnlockModel internal constructor(
         scope.launch {
             try {
                 account.unlock(now.password)
-                mutable.update { it.copy(password = Redacted(""), busy = false) }
-                onUnlocked()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 mutable.update { it.copy(password = Redacted(""), busy = false, error = message(e)) }
+                return@launch
+            }
+            mutable.update { it.copy(password = Redacted("")) }
+            if (reenable) {
+                reenable = false
+                runCatching { account.enableBiometricUnlock() }
+            } else if (mutable.value.biometric == BiometricState.Off && !prefs.biometricOffered) {
+                mutable.update { it.copy(busy = false, offer = true) }
+                return@launch
+            }
+            mutable.update { it.copy(busy = false) }
+            onUnlocked()
+        }
+    }
+
+    /** The prompt once by itself when the screen shows; a cancel leaves the password field. */
+    fun tryBiometricsOnce() {
+        if (tried) return
+        tried = true
+        unlockWithBiometrics()
+    }
+
+    fun unlockWithBiometrics() {
+        if (!mutable.value.canUseBiometrics) return
+        mutable.update { it.copy(busy = true, error = null) }
+        scope.launch {
+            try {
+                account.unlockWithBiometrics()
+                mutable.update { it.copy(busy = false) }
+                onUnlocked()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: PwmError) {
+                when (e.code) {
+                    "biometric_cancelled" -> mutable.update { it.copy(busy = false) }
+                    "biometric_changed" -> {
+                        reenable = true
+                        mutable.update { it.copy(busy = false, error = e.userMessage, biometric = account.biometricState()) }
+                    }
+                    else -> mutable.update { it.copy(busy = false, error = e.userMessage) }
+                }
+            } catch (e: Exception) {
+                mutable.update { it.copy(busy = false, error = message(e)) }
             }
         }
+    }
+
+    /** The one-time offer, answered either way, is never shown again. */
+    fun acceptOffer() {
+        prefs.biometricOffered = true
+        mutable.update { it.copy(busy = true) }
+        scope.launch {
+            // Left off when it fails or is cancelled; Settings can turn it on later.
+            try {
+                account.enableBiometricUnlock()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Unit
+            }
+            mutable.update { it.copy(busy = false, offer = false) }
+            onUnlocked()
+        }
+    }
+
+    fun declineOffer() {
+        prefs.biometricOffered = true
+        mutable.update { it.copy(offer = false) }
+        onUnlocked()
     }
 
     fun signOut() {

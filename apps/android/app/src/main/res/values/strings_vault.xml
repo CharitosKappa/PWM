@@ -148,4 +148,15 @@
     <string name="notices">Third-party notices</string>
     <string name="notices_missing">The notices aren\'t in this build. Release builds include them.</string>
     <string name="version">Version %1$s</string>
+
+    <!-- Fingerprint and face unlock (D55) -->
+    <string name="biometric_switch">Unlock with fingerprint or face</string>
+    <string name="biometric_hint">Your master password is still asked every 14 days, and after a new fingerprint or face is added.</string>
+    <string name="biometric_unlock_title">Unlock your vault</string>
+    <string name="biometric_turn_on_title">Turn on fingerprint or face unlock</string>
+    <string name="use_master_password">Use master password</string>
+    <string name="unlock_with_biometric">Unlock with fingerprint or face</string>
+    <string name="biometric_offer">Use fingerprint or face unlock next time?</string>
+    <string name="turn_on">Turn on</string>
+    <string name="not_now">Not now</string>
 </resources>

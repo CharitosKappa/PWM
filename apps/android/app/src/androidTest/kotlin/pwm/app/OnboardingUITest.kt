@@ -124,8 +124,11 @@ class OnboardingUITest {
         tap("submit")
         compose.waitUntil(60_000) { exists("item.Bank") }
 
-        // Lock now, then unlock with the master password only.
+        // No finger enrolled on the emulator: Settings says why (D55 §7).
         tap("tab.settings")
+        compose.waitUntil(10_000) { exists("biometricUnavailable") }
+
+        // Lock now, then unlock with the master password only.
         tap("lockNow")
         unlock()
 

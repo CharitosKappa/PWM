@@ -35,6 +35,8 @@ internal object Messages {
         "biometric_changed" to "Your fingerprint or face unlock changed. Enter your master password to turn it back on.",
         "biometric_unavailable" to "Fingerprint or face unlock is not available on this device.",
         "biometric_unlock_failed" to "Enter your master password.",
+        "biometric_not_enrolled" to "Set up a fingerprint or face unlock in your phone's settings first.",
+        "biometric_no_screen_lock" to "Set a screen lock in your phone's settings first.",
         "master_password_due" to "Enter your master password. It's asked every 14 days so you don't forget it.",
         "invalid_device_name" to "Use a shorter name, up to 63 characters.",
         "breach_check" to "The leak check is not answering. Try again later.",

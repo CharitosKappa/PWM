@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -31,6 +32,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -57,6 +59,7 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import pwm.kit.BiometricState
 import pwm.kit.design.Tokens
 import pwm.kit.ui.AppModel
 import pwm.kit.ui.CreateAccountModel
@@ -358,7 +361,28 @@ private fun Asking(code: String?, onCancel: () -> Unit) {
 @Composable
 private fun Unlock(model: UnlockModel) {
     val state by model.state.collectAsState()
+    // The finger or face once by itself (D45, D55 §3); a cancel leaves the password.
+    LaunchedEffect(model) { model.tryBiometricsOnce() }
+    if (state.offer) {
+        AlertDialog(
+            onDismissRequest = model::declineOffer,
+            title = { Text(stringResource(R.string.biometric_offer)) },
+            text = { Text(stringResource(R.string.biometric_hint)) },
+            confirmButton = {
+                TextButton(onClick = model::acceptOffer, modifier = Modifier.testTag("acceptBiometric")) { Text(stringResource(R.string.turn_on)) }
+            },
+            dismissButton = {
+                TextButton(onClick = model::declineOffer, modifier = Modifier.testTag("declineBiometric")) { Text(stringResource(R.string.not_now)) }
+            },
+        )
+    }
     Page(stringResource(R.string.unlock_title), model.email, tag = "unlockScreen") {
+        if (state.biometric == BiometricState.On) {
+            OutlinedButton(
+                onClick = model::unlockWithBiometrics, enabled = state.canUseBiometrics,
+                modifier = Modifier.fillMaxWidth().testTag("unlockBiometric"),
+            ) { Text(stringResource(R.string.unlock_with_biometric)) }
+        }
         Field(stringResource(R.string.master_password), state.password.value, model::setPassword, tag = "password", secret = true)
         ErrorLine(state.error)
         Primary(stringResource(if (state.busy) R.string.unlocking else R.string.unlock), enabled = state.canSubmit, tag = "unlock", onClick = model::submit)
