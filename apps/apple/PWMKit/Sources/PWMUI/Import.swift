@@ -48,6 +48,9 @@ public final class ImportModel {
         didSet { if format != oldValue { summary = nil } }
     }
     public var password = ""
+    /// A KeePass key file's name, once picked.
+    public private(set) var keyFileName: String?
+    private var keyFile: Redacted<Data>?
     public private(set) var needsPassword = false
     /// For a generic CSV.
     public private(set) var columns: CSVColumns?
@@ -77,7 +80,21 @@ public final class ImportModel {
     /// The password field shows for encrypted exports and the formats that
     /// may have one.
     public var asksPassword: Bool {
-        needsPassword || format == "bitwarden" || format == "pwm"
+        needsPassword || ["bitwarden", "keepass", "pwm"].contains(format)
+    }
+
+    /// KeePass databases may also need a key file.
+    public var asksKeyFile: Bool { format == "keepass" }
+
+    /// The user picked a KeePass key file (at most 1 MB).
+    public func pickedKeyFile(_ url: URL) {
+        summary = nil
+        guard let size = files.size(of: url), size <= 1024 * 1024, let data = try? files.read(url) else {
+            error = PWMError(code: "import_unreadable").message
+            return
+        }
+        keyFile = Redacted(data)
+        keyFileName = url.lastPathComponent
     }
 
     public var canCheck: Bool { data != nil && !format.isEmpty && !working }
@@ -122,6 +139,7 @@ public final class ImportModel {
             summary = try await account.prepareImport(
                 format: format, data: data,
                 password: password.isEmpty ? nil : Redacted(password),
+                keyFile: format == "keepass" ? keyFile : nil,
                 columns: format == "csv" ? columnMap : nil
             )
         } catch {
@@ -138,10 +156,12 @@ public final class ImportModel {
         error = nil
         do {
             done = try await account.finishImport()
-            plaintext = password.isEmpty
+            plaintext = password.isEmpty && keyFile == nil
             summary = nil
             data = nil
             password = ""
+            keyFile = nil
+            keyFileName = nil
         } catch {
             self.error = message(for: error)
         }
@@ -165,6 +185,7 @@ public final class ImportModel {
     public func close() async {
         if summary != nil { await account.cancelImport() }
         data = nil
+        keyFile = nil
         password = ""
         summary = nil
     }
@@ -175,6 +196,8 @@ public final class ImportModel {
         fileName = nil
         format = ""
         password = ""
+        keyFile = nil
+        keyFileName = nil
         needsPassword = false
         columns = nil
         columnMap = ColumnMap()

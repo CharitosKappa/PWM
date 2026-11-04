@@ -754,14 +754,17 @@ export class FakeCore implements Core {
     format: string,
     bytes: Uint8Array,
     password: string,
+    keyFile: Uint8Array,
   ): string {
+    if (format === "keepass" && password === "" && keyFile.length === 0)
+      throw coreError("import_password_needed");
     if (!this.unlocked) throw coreError("locked");
     if (vaultId !== "") throw coreError("unknown_vault");
     if (format === "bitwarden" && password === "")
       throw coreError("import_password_needed");
     if (format === "bitwarden" && password !== "export-pw")
       throw coreError("import_wrong_password");
-    if (!["lastpass", "csv", "bitwarden"].includes(format))
+    if (!["lastpass", "csv", "bitwarden", "keepass"].includes(format))
       throw coreError("import_unreadable");
     const lines = new TextDecoder()
       .decode(bytes)

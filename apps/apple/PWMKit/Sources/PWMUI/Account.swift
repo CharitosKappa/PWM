@@ -43,7 +43,9 @@ public protocol Account: AnyObject, Sendable {
     // Import (D51).
     func guessImport(fileName: String, data: Redacted<Data>) async -> ImportGuess?
     func importColumns(_ data: Redacted<Data>) async throws -> CSVColumns
-    func prepareImport(format: String, data: Redacted<Data>, password: Redacted<String>?, columns: ColumnMap?) async throws -> ImportSummary
+    func prepareImport(
+        format: String, data: Redacted<Data>, password: Redacted<String>?, keyFile: Redacted<Data>?, columns: ColumnMap?
+    ) async throws -> ImportSummary
     func finishImport() async throws -> ImportSummary
     func cancelImport() async
 

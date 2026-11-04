@@ -17,7 +17,10 @@ struct ImportHost: View {
 
 struct ImportView: View {
     @Bindable var model: ImportModel
-    @State private var picking = false
+    /// One file importer for both pickers: SwiftUI shows only one per view.
+    @State private var picking: Picking?
+
+    private enum Picking { case export, keyFile }
 
     /// What the picker offers: the export formats, and any file for a
     /// `.1pux` or `.pwmx` the system doesn't know.
@@ -26,7 +29,7 @@ struct ImportView: View {
     var body: some View {
         Form {
             Section {
-                Button(model.fileName == nil ? "Choose export file" : "Choose another file") { picking = true }
+                Button(model.fileName == nil ? "Choose export file" : "Choose another file") { picking = .export }
                     .accessibilityIdentifier("importChoose")
                 if let name = model.fileName {
                     LabeledContent("File") { Text(verbatim: name) }
@@ -44,11 +47,17 @@ struct ImportView: View {
                     }
                     .accessibilityIdentifier("importFormat")
                     if model.asksPassword {
-                        SecureField("Export password", text: $model.password)
+                        SecureField(model.asksKeyFile ? "Master password" : "Export password", text: $model.password)
                             .accessibilityIdentifier("importPassword")
                     }
+                    if model.asksKeyFile {
+                        Button(model.keyFileName.map { "Key file: \($0)" } ?? "Choose key file") { picking = .keyFile }
+                            .accessibilityIdentifier("importKeyFile")
+                    }
                 } footer: {
-                    if model.asksPassword {
+                    if model.asksKeyFile {
+                        Text("The database's password, its key file, or both.")
+                    } else if model.asksPassword {
                         Text("Only if the export was made with a password.")
                     }
                 }
@@ -119,9 +128,16 @@ struct ImportView: View {
             }
         }
         .navigationTitle("Import")
-        .fileImporter(isPresented: $picking, allowedContentTypes: Self.types) { result in
-            if case let .success(url) = result {
-                Task { await model.picked(url) }
+        .fileImporter(
+            isPresented: Binding(get: { picking != nil }, set: { if !$0 { picking = nil } }),
+            allowedContentTypes: picking == .keyFile ? [.data] : Self.types
+        ) { result in
+            let target = picking
+            picking = nil
+            guard case let .success(url) = result else { return }
+            switch target {
+            case .keyFile: model.pickedKeyFile(url)
+            default: Task { await model.picked(url) }
             }
         }
         .onDisappear { Task { await model.close() } }

@@ -84,6 +84,8 @@ export type Request =
       format: string;
       /** The export's own password, or "". */
       password: string;
+      /** A KeePass key file as base64, or "". */
+      keyFile: string;
       /** For a generic CSV: which column holds what. */
       columns: ImportMapping | null;
     }

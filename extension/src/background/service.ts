@@ -402,6 +402,7 @@ export class Background {
           request.file,
           request.format,
           request.password,
+          request.keyFile,
           request.columns,
         );
       case "importFinish":

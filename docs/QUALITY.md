@@ -75,7 +75,7 @@ On a Mac, with a signed build of the app and the extension's store id in `Browse
 
 Before the beta, with a real export from each manager (made with a throwaway account holding synthetic items, never real ones):
 
-1. Bitwarden (unencrypted, and password-protected with PBKDF2 and with Argon2id), 1Password `.1pux`, Keeper JSON, NordPass CSV, Proton Pass ZIP, Dashlane CSV ZIP, LastPass CSV, and Chrome, Firefox and Safari CSVs.
+1. Bitwarden (unencrypted, and password-protected with PBKDF2 and with Argon2id), KeePass `.kdbx` from KeePass 2 and KeePassXC (3.1 and 4, with a password, a key file and both), 1Password `.1pux`, Keeper JSON, NordPass CSV, Proton Pass ZIP, Dashlane CSV ZIP, LastPass CSV, and Chrome, Firefox and Safari CSVs.
 2. Each one: the detected format is right; the preview's counts match the source; logins, cards, identities, notes, folders, one-time codes and custom fields land where expected; what was left out is listed.
 3. Import the same file twice: the second adds nothing.
 4. On iOS (from Files and iCloud Drive) and macOS (from Finder): after a plaintext import, Delete export file removes it; after an encrypted one, no button shows. In the extension, the line says to delete it.
