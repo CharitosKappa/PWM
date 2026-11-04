@@ -31,6 +31,9 @@ class ServerTest {
         val secretKey = first.signUp(email, password, "Android phone")
         assertTrue(secretKey.value.startsWith("A1-"))
         assertTrue(first.isUnlocked())
+        // The Emergency Kit, drawn by the core for this account (D53 §2).
+        assertEquals("%PDF-", String(first.emergencyKit(EmergencyKit.Paper.A4).value, 0, 5, Charsets.ISO_8859_1))
+        assertEquals(secretKey, first.secretKey())
 
         val vault = first.vaultIds().first()
         val item = first.newItem(Item.Kind.LOGIN, "Example").edited {
@@ -41,6 +44,7 @@ class ServerTest {
         val id = first.save(item, vault)
         val pushed = first.sync() as SyncResult.Synced
         assertEquals(1L, pushed.pushed)
+        assertEquals(1, first.itemCount())
 
         val keys = MemoryKeyStore()
         val second = Session(cachePath = null, server = server, keys = keys)

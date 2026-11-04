@@ -22,6 +22,7 @@ dependencies {
     api(project(":core"))
     api(libs.coroutines.core)
     implementation(libs.serialization.json)
+    implementation(libs.zxing.core)
     compileOnly(libs.jna)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)

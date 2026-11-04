@@ -1,5 +1,77 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The app's copy, in English, the same words as the Apple app (D53 §1).
+     Error messages come from design/messages.json instead. -->
 <resources>
     <!-- A placeholder until D1 names the product. -->
     <string name="app_name">PWM</string>
+
+    <string name="back">Back</string>
+    <string name="cancel">Cancel</string>
+    <string name="email">Email</string>
+    <string name="master_password">Master password</string>
+    <string name="sign_in">Sign in</string>
+    <string name="sign_out">Sign out</string>
+
+    <!-- Welcome -->
+    <string name="welcome_title">Welcome</string>
+    <string name="welcome_subtitle">Your passwords, encrypted on your devices before they are synced.</string>
+    <string name="create_account">Create account</string>
+    <string name="other_server">Other server</string>
+    <string name="other_server_hint">For a self-hosted server. Leave it off to use ours.</string>
+    <string name="server_placeholder">https://vault.example.com</string>
+
+    <!-- Create account -->
+    <string name="create_subtitle">Nobody, including us, can reset your master password.</string>
+    <string name="master_password_again">Master password again</string>
+    <string name="passwords_differ">The passwords don\'t match.</string>
+    <string name="creating">Creating…</string>
+    <string name="strength">Password strength: %1$s</string>
+    <string-array name="strength_words">
+        <item>Too guessable</item>
+        <item>Weak</item>
+        <item>Fair</item>
+        <item>Strong</item>
+        <item>Very strong</item>
+    </string-array>
+
+    <!-- The Secret Key and the Emergency Kit -->
+    <string name="secret_key_title">Save your Secret Key</string>
+    <string name="secret_key_subtitle">You need it with your master password to sign in on a new device. It is shown only now.</string>
+    <string name="save_kit">Save Emergency Kit</string>
+    <string name="print_kit">Print</string>
+    <string name="kit_file_name">Emergency Kit.pdf</string>
+    <string name="kit_print_job">Emergency Kit</string>
+    <string name="copy">Copy</string>
+    <string name="copied">Copied</string>
+    <string name="clipboard_clears">The clipboard clears in 30 seconds.</string>
+    <string name="keep_it_offline">Print it or save it somewhere safe and offline.</string>
+    <string name="i_saved_it">I saved it</string>
+    <string name="secret_key_label">Secret Key</string>
+
+    <!-- Sign in -->
+    <string name="sign_in_subtitle">Use your master password and the Secret Key on your Emergency Kit.</string>
+    <string name="scan_kit">Scan Emergency Kit</string>
+    <string name="scan_kit_hint">Point the camera at the QR code on your Emergency Kit.</string>
+    <string name="ask_another_device">Sign in with another device</string>
+    <string name="ask_instructions">On a device where you\'re signed in, open Settings, then Approve a new device.</string>
+    <string name="ask_check_code">Check that it shows this code:</string>
+    <string name="ask_waiting">Waiting for your other device…</string>
+    <string name="approved">Secret Key received from your other device.</string>
+    <string name="server_shown">Server: %1$s</string>
+    <string name="signing_in">Signing in…</string>
+
+    <!-- Unlock -->
+    <string name="unlock_title">Unlock</string>
+    <string name="unlock">Unlock</string>
+    <string name="unlocking">Unlocking…</string>
+
+    <!-- The vault, until M6.7 -->
+    <string name="vault_title">Vault</string>
+    <string name="vault_loading">Syncing…</string>
+    <plurals name="vault_items">
+        <item quantity="one">%1$d item</item>
+        <item quantity="other">%1$d items</item>
+    </plurals>
+    <string name="vault_coming">The vault list comes next.</string>
+    <string name="lock">Lock</string>
 </resources>

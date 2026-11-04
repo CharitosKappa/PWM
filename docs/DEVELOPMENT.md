@@ -143,6 +143,15 @@ just android-device   # the app's tests on a running emulator or device
 
 `:kit`'s tests call the core through JNA on the host build of `pwm-ffi`; with `PWM_TEST_SERVER=http://127.0.0.1:8080` and `just server` running, its server test signs up, syncs and signs in on a second session.
 
+The app's onboarding UI test needs a server too. With `just server` running and an emulator started, point the emulator's `localhost:8080` at it, then pass the address:
+
+```
+adb reverse tcp:8080 tcp:8080
+cd apps/android && ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.server=http://localhost:8080
+```
+
+Without the argument, that test is skipped and the others run.
+
 ## Fuzzing
 
 Targets live in `core/pwm-crypto/fuzz/fuzz_targets/` (`envelope_decode`, `vault_share_decode`, `keyset_plaintext`, `secret_key_parse`, `password_normalize`, `totp_parse`, `export_read`, `opaque_messages`, `autofill_rules`, `url_match`, `kit_qr_parse`). CI runs each for 60 s on every PR and 10 minutes nightly; crash inputs are uploaded as artifacts.

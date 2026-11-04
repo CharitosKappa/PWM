@@ -434,7 +434,11 @@ jobs:
           target: google_apis
           disable-animations: true
           working-directory: apps/android
-          script: ./gradlew --no-configuration-cache :app:connectedDebugAndroidTest
+          # The emulator's localhost:8080 is the runner's, where the server
+          # runs, so the app's plain-HTTP rule stays as it is (D53 §6).
+          script: |
+            adb reverse tcp:8080 tcp:8080
+            ./gradlew --no-configuration-cache :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.server=http://localhost:8080
       - if: failure()
         run: cat target/pwm-server.log || true
 

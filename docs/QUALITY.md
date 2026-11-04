@@ -75,9 +75,17 @@ On a Mac, with a signed build of the app and the extension's store id in `Browse
 
 On a real phone (not an emulator), with a debug build:
 
-1. Install it and open it: the screen says the core is ready.
+1. Install it and open it: the welcome screen shows.
 2. Run `just android-device` with the phone connected: the Keystore test passes, so keys are sealed by the phone's hardware-backed Keystore.
 3. Clear the app's data in system settings, then open it again: it starts clean, with no error.
+
+Onboarding (D53), with the same build:
+
+1. Create an account. On the Secret Key screen, a screenshot comes out black.
+2. Save Emergency Kit: the system's "Save to" opens; save to Downloads and open the PDF. Print: the print dialog shows the kit; "Save as PDF" works.
+3. Kill the app on the Secret Key screen before "I saved it", open it and unlock: the Secret Key screen comes back.
+4. Sign out, then Sign in, Scan Emergency Kit: the camera permission is asked only now. Scan the printed kit: the email and Secret Key fill in, never the password. Refuse the permission once: the screen says how to allow it, and typing still works.
+5. Sign in with another device, approving from the extension: the codes match on both.
 
 ### Import checklist (D51)
 

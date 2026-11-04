@@ -41,6 +41,7 @@ internal object Messages {
         "export_not_authorized" to "Enter your master password to export.",
         "export_expired" to "Enter your master password again to export.",
         "weak_export_password" to "Choose a stronger export password.",
+        "kit_save_failed" to "The Emergency Kit couldn't be saved. Try again, or print it.",
         "import_too_large" to "This file is too large to import.",
         "import_unreadable" to "This file can't be read as that format. Check the format, or export again.",
         "import_password_needed" to "Enter the password this export was made with.",

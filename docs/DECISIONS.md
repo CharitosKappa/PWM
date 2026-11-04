@@ -2140,3 +2140,83 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **Moved after M8 merged:** `scripts/messages.mjs` (replacing `messages-kotlin.mjs`) writes both `PWMKit/Messages.swift` and `:kit`'s `Messages.kt`, and `just check` fails when either is stale. The file gained M8's 11 import messages.
     - **One app's own names:** where the Apple wording names Apple's system (Face ID or Touch ID, the keychain, Files or Finder: 4 messages), `messages` holds wording for any platform and `platforms.apple` keeps the Apple app's text. The Apple app shows exactly what it showed before.
   - **Not done here:** the server test of `:kit` (no Postgres running); the `android` CI job runs it.
+
+- **D53 — Android onboarding: screens and view models, the Emergency Kit, scanning it, asking another device, and the UI test** · settled 2026-11-04 · founder (approved as proposed).
+  M6.6 (D52 §1) is the Android version of M5.2 plus M5.9's new-device side: create an account, the Emergency Kit, sign in with the Secret Key, and asking a signed-in device to approve. The core already does the hard parts (`password_strength`, `emergency_kit`, `scan_kit`, `ApprovalAsk`), and `:kit`'s `Session` signs up, logs in and unlocks (M6.1). Open:
+  - how screens are structured and tested
+  - how the kit is saved, printed and copied on Android
+  - how the kit's QR code is scanned, and with which library
+  - what happens if the app is killed before the kit is saved
+  - the device name, the server choice and plain HTTP to a local server
+  - how the UI test reaches the test server from the emulator
+
+  Proposal:
+  1. **View models in `:kit`, screens in `:app`,** as `PWMUI` and its views on Apple (D42 §3):
+     - **View models:** plain Kotlin classes exposing `StateFlow`, with no Android imports, so the JVM tests run them. One per screen, as on Apple: `CreateAccountModel`, `SecretKeyModel`, `SignInModel`, `UnlockModel`, plus an `AppModel` that holds the current screen.
+     - **Navigation:** `AppModel`'s screen state drives one `Activity`, with no navigation library. The system back gesture goes through Compose's `BackHandler` to the model.
+     - **Lifetime:** an `Application` subclass owns the `AppModel`, so rotating the phone keeps the screen and what was typed. Master passwords live only in the view models' state, never in saved instance state.
+     - **Screens:** Compose with Material 3, styled from the design tokens. Copy in `strings.xml`, so translation can follow.
+  2. **The screens,** as on Apple (D42 §4):
+     - **Welcome:** "Create account" and "Sign in"; the server is the hosted one, or "Other server".
+     - **Create account:**
+       - Fields: email, master password, and the password again.
+       - The strength meter. Continue needs a score of at least 3.
+       - The line "Nobody, including us, can reset your master password."
+     - **Save your Secret Key** (shown once): the key in large monospaced text, with:
+       - **"Save Emergency Kit":** the system's "Save to" picker (`ACTION_CREATE_DOCUMENT`), so the user picks Downloads, a drive or a USB stick. The PDF bytes are written straight to the chosen file, with no temporary copy.
+       - **"Print":** Android's print dialog, fed the same bytes, again with no temporary file.
+       - **"Copy":** marked sensitive, so Android 13+ hides it in the clipboard preview, and cleared after 30 seconds.
+       - **"I saved it":** enabled after a save, a print or a copy, as on Apple and in the extension.
+       - **Paper:** A4, or Letter in the same regions as the Apple app.
+     - **Sign in:**
+       - Fields: email, master password and Secret Key.
+       - **"Scan Emergency Kit"** (§3) fills the email, the Secret Key and a self-hosted server, never the master password.
+       - **"Ask another device"** (D46): shows the matching code and waits, with Cancel. It replaces typing the Secret Key.
+     - **Unlock** on later launches: the master password, with "Sign out" beside it. Fingerprint and face unlock come with M6.2.
+     - **After sign-in, a placeholder vault screen:** the item count, Lock and Sign out. The vault is M6.7.
+  3. **Scanning the kit: CameraX and ZXing,** both Apache-2.0:
+     - **CameraX** (`camera-core`, `camera-camera2`, `camera-lifecycle`, `camera-view`) shows the camera and hands frames to the decoder.
+     - **ZXing's `core` jar** decodes QR codes only, on the device, with no network. The text goes to the core's `scan_kit`, which accepts only `pwm-kit:1?…`.
+     - **The camera permission** is asked when the user taps "Scan Emergency Kit", never earlier. If it's refused, the screen says how to allow it, and typing still works.
+     - **Not Google's ML Kit or its code scanner:** their terms are Google's own, not a licence on the allow-list, and the code scanner needs Google Play services.
+  4. **If the app is killed before the kit is saved:** the account exists, but the user may never have seen the Secret Key.
+     - **A "kit pending" flag** is set at sign-up and cleared by "I saved it". While it's set, the app opens on the Secret Key screen after unlocking, so the kit can still be saved.
+     - **The Apple app doesn't do this.** It's a small change there too, and it is logged here as a gap, to add with M5's next touch.
+  5. **The details:**
+     - **The device name** sent at sign-in: the phone's model (`Build.MODEL`, such as "Pixel 8"), which needs no permission. Rename comes with devices in M6.8.
+     - **The server choice** is kept in the app's private preferences (it's not a secret). A test-only instrumentation argument sets it, as `-server` does on Apple.
+     - **Plain HTTP:** only to `localhost` and `127.0.0.1`, as the core already enforces, through a network security config. Everything else is HTTPS.
+     - **Screenshots:** the Secret Key screen sets `FLAG_SECURE` now, since it's one line and that screen shows the most sensitive value. The rest is M6.4.
+  6. **Tests:**
+     - **JVM tests of the view models** (tests first), with a fake account as on Apple:
+       - the strength gate and the "I saved it" gate
+       - a scanned kit filling the right fields and never the password
+       - the kit-pending flag surviving a restart
+       - asking another device: the code shown, cancel, and an ended request
+       - error messages
+     - **Against a real server** (`PWM_TEST_SERVER`, as in M6.1): sign up, read the kit, sign out, sign in again with the Secret Key.
+     - **The scanner's decoding:** a JVM test that draws the core's kit QR text as an image with ZXing's encoder (tests only), decodes it with the app's decoder and checks the result.
+     - **A Compose UI test on the CI emulator:**
+       - The flow: create an account, see the Secret Key, copy it, continue to the vault screen, sign out, sign in again with the Secret Key, lock and unlock.
+       - **Reaching the server:** `adb reverse tcp:8080 tcp:8080` makes the emulator's `localhost:8080` the runner's, so the plain-HTTP rule stays as it is.
+     - **Manual, in `QUALITY.md`:** scanning a printed kit with a real camera, and the save and print pickers.
+  7. **Downloads:** the first build fetches CameraX and ZXing from Google's and Maven Central's servers, as D52 §9 did for the rest. The founder approves that here.
+
+  Alternatives:
+  - **Jetpack Navigation for Compose:** a standard library, but with one Activity and a handful of screens, a state in the model is simpler and is the same shape as the Apple app.
+  - **AndroidX `ViewModel`s in `:app`:** survive rotation for free, but tie the logic to Android, so the JVM tests couldn't run it.
+  - **Google's code scanner:** no camera permission and no camera code, but it's under Google's own terms and needs Play services, so it fails on phones without them.
+  - **zxing-android-embedded** (Apache-2.0): a ready-made scanner screen, but it uses the old camera API and is in maintenance mode.
+  - **Share the kit through the share sheet:** familiar, but it needs a temporary file and a `FileProvider`, so the kit would sit on disk outside the user's choice.
+
+  Implementation notes (M6.6):
+  - **State:** each model exposes one `StateFlow` of an immutable state, with passwords and Secret Keys as `Redacted`, so a state never prints them. Its work runs in the app's scope (`MainScope` in `PwmApplication`), so turning the phone doesn't cancel a sign-up.
+  - **`Account`:** the interface the models use; `Session` implements it, and the tests use a fake. `Session` adds `emergencyKit` (dated today on the device), `askForApproval` (the D46 loop, polling every 2 s; cancelling sends the core's cancel request), `secretKey` and `itemCount`.
+  - **Servers are compared as text:** `java.net.URL.equals` looks the host up on the network.
+  - **Versions:** CameraX 1.4.2 and ZXing `core` 3.5.3, both Apache-2.0. The licence check now covers 107 shipped libraries, all on the allow-list.
+  - **The scanner** reads the camera's brightness plane, so the frame's rotation doesn't matter to the decoder; a code that isn't a kit shows its error and the camera keeps looking.
+  - **Copy:** the clip is marked sensitive and cleared after 30 s. In the background Android hides the clipboard from apps, so the app can't check whether something else was copied since; it clears then anyway.
+  - **Print** marks the kit as saved once the print system has the PDF, which includes its preview, as the Apple app marks it when the share sheet opens.
+  - **Plain HTTP to `[::1]`:** the core accepts it, but a network security config can't name an IPv6 address, so Android refuses it. `localhost` and `127.0.0.1` work.
+  - **A new message,** `kit_save_failed`, is in `design/messages.json` for both apps.
+  - **Run on this machine:** the JVM tests, the build and licence check, and all 4 device tests on an Android 16 emulator, the full flow included, against a local server on a throwaway Postgres. Not run: a real camera, and the save and print pickers (the `QUALITY.md` checklist).

@@ -1,26 +1,21 @@
 package pwm.app
 
-import androidx.compose.ui.test.assertTextEquals
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Rule
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import pwm.kit.KeyName
+import uniffi.pwm_ffi.newId
 
 /** On a device or emulator (D52 §8): the core loads, and the Keystore keeps keys. */
 @RunWith(AndroidJUnit4::class)
 class AppTest {
-    @get:Rule
-    val compose = createAndroidComposeRule<MainActivity>()
-
     @Test
     fun theCoreLoadsOnTheDevice() {
-        compose.onNodeWithTag("coreStatus").assertTextEquals("The core is ready. Sign-in comes next.")
+        assertTrue(newId().isNotEmpty())
     }
 
     @Test
