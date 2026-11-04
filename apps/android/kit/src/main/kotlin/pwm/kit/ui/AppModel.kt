@@ -35,6 +35,8 @@ class AppModel(
      */
     private val clock: () -> Long = { System.nanoTime() / 1_000_000 },
     private val background: BackgroundScheduler = NoBackgroundScheduler,
+    /** The files the user picks for import (D59 §7). */
+    private val importFiles: ImportFiles = NoImportFiles,
 ) {
     sealed class Screen {
         data object Loading : Screen()
@@ -194,12 +196,18 @@ class AppModel(
         lateinit var vault: VaultModel
         val signInAgain = SignInAgainModel(scope, account, prefs, onSignedIn = { vault.refresh() })
         vault = VaultModel(scope, account, clipboard, work, onSignedOut = ::didSignOut, onSessionEnded = signInAgain::sessionEnded)
-        val home = HomeModel(
+        lateinit var home: HomeModel
+        home = HomeModel(
             vault = vault,
             generator = GeneratorModel(scope, work, clipboard).also { it.regenerate() },
             settings = SettingsModel(
                 scope, account, prefs, paper, onLock = { lock(account) }, onSignedOut = ::didSignOut,
                 onHideFromCapture = ::setHideFromCapture,
+                vault = vault, work = work, files = importFiles,
+                onEditItem = { entry ->
+                    vault.edit(entry)
+                    home.setTab(HomeModel.Tab.VAULT)
+                },
             ),
             signInAgain = signInAgain,
         )

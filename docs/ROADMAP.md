@@ -612,7 +612,12 @@ Phase 3  Teams           months 16–24 M16–M19
   - **Deferred:** health, export and import (M6.11); approval notices (M6.9, push); approving from a real phone (`QUALITY.md`).
 - [ ] M6.9 Push for Android (D57 §1), after M6.3 and M6.8: needs a decision on Google Play services' licence (an allow-list exception) or UnifiedPush, a Firebase project, and the server's RS256 signer for FCM.
 - [ ] M6.10 The Credential Manager provider for Android 14+ (D58 §1): passwords and passkeys, with its own decision on the passkey request format for apps (the provider builds the client data with an `android:apk-key-hash` origin), checking an app against the site's Digital Asset Links file, and the browsers allowed to pass a client data hash.
-- [ ] M6.11 Health, export and import on Android (D59 §1, §5-7): the health report with the breach check, export through the system's "Save to", and import through its file picker with the delete line.
+- [x] M6.11 Health, export and import on Android (D59 §1, §5-7): the health report with the breach check, export through the system's "Save to", and import through its file picker with the delete line.
+  - Done per D59 (implementation notes there):
+    - **`:kit`:** `Session` reads the health report, runs the breach check through its own transport, authorizes and makes exports, and guesses, previews, finishes and cancels imports; `HealthModel`, `ExportModel` and `ImportModel`, and the "Check for leaked passwords" switch.
+    - **`:app`:** Settings' Password health, Export (through "Save to") and Import (through the file picker, with Delete export file) pages.
+    - **Tests:** 5 JVM view-model tests; the server test checks health with a fake breach service, an export and a CSV import; the UI test opens health, imports a CSV and deletes it, and exports JSON.
+  - **Deferred:** the system's pickers and real exports from each manager (`QUALITY.md`).
 
 ### M7 — Windows + Linux desktop
 - [ ] M7.1 Tauri app (pending D3) with same screens; Windows Hello unlock; Linux unlock via password (+ polkit/fprintd later).

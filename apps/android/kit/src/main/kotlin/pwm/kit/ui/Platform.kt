@@ -25,6 +25,9 @@ interface AppPrefs {
 
     /** The server refused this device's refresh token: "Sign in again to sync" shows (D50 §5). */
     var signInAgain: Boolean
+
+    /** "Check for leaked passwords" (D22 §5, D59 §5), on by default. */
+    var breachCheck: Boolean
 }
 
 class MemoryPrefs(
@@ -34,7 +37,37 @@ class MemoryPrefs(
     override var biometricOffered: Boolean = false,
     override var hideFromCapture: Boolean = true,
     override var signInAgain: Boolean = false,
+    override var breachCheck: Boolean = true,
 ) : AppPrefs
+
+/**
+ * The files the user picks for import (D59 §7), by the address the system's
+ * picker gave: the content resolver in the app, a map in tests. Never a
+ * copy of ours.
+ */
+interface ImportFiles {
+    /** The file's name as the picker shows it. */
+    fun name(uri: String): String?
+
+    /** Its size in bytes, if the system knows it. */
+    fun size(uri: String): Long?
+
+    /** Reads it into memory once. */
+    fun read(uri: String): ByteArray
+
+    /** Asks the place it came from to delete it; false where it can't (some cloud drives). */
+    fun delete(uri: String): Boolean
+}
+
+object NoImportFiles : ImportFiles {
+    override fun name(uri: String): String? = null
+
+    override fun size(uri: String): Long? = null
+
+    override fun read(uri: String): ByteArray = throw PwmError("import_unreadable")
+
+    override fun delete(uri: String): Boolean = false
+}
 
 /** The periodic background sync (D57 §2): WorkManager in the app, a fake in tests. */
 interface BackgroundScheduler {

@@ -293,7 +293,7 @@ class VaultModel internal constructor(
         }
 
         /** By title in the user's language, then by id, so the order is stable. */
-        private val ORDER: Comparator<Entry> = run {
+        internal val ORDER: Comparator<Entry> = run {
             val collator = Collator.getInstance().apply { strength = Collator.SECONDARY }
             Comparator { a, b -> collator.compare(a.item.title, b.item.title).takeIf { it != 0 } ?: a.id.compareTo(b.id) }
         }

@@ -140,6 +140,9 @@ internal fun SettingsTab(app: AppModel, model: SettingsModel) {
         SettingsModel.Page.NOTICES -> return Notices(model)
         SettingsModel.Page.DEVICES -> return state.devices?.let { DevicesPage(model, it) } ?: Unit
         SettingsModel.Page.APPROVALS -> return state.approvals?.let { ApprovalsPage(model, it) } ?: Unit
+        SettingsModel.Page.HEALTH -> return state.health?.let { HealthPage(model, it) } ?: Unit
+        SettingsModel.Page.EXPORT -> return state.export?.let { ExportPage(app, model, it) } ?: Unit
+        SettingsModel.Page.IMPORT -> return state.importing?.let { ImportPage(app, model, it) } ?: Unit
         SettingsModel.Page.MAIN -> Unit
     }
     LaunchedEffect(model) { model.prepareKit() }
@@ -221,6 +224,19 @@ internal fun SettingsTab(app: AppModel, model: SettingsModel) {
         }
         if (state.kitSaved) Text(stringResource(R.string.kit_saved), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.success))
         ErrorLine(state.error)
+
+        // The data pages (D59 §5-7); export is on every plan.
+        Heading(stringResource(R.string.your_data))
+        Secondary(stringResource(R.string.password_health), tag = "health", onClick = model::showHealth)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.breach_check_switch), style = Tokens.Text.body.compose(), color = color(Tokens.Color.text))
+                Text(stringResource(R.string.breach_check_hint), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))
+            }
+            Switch(checked = state.breachCheck, onCheckedChange = model::setBreachCheck, modifier = Modifier.testTag("breachCheckSwitch"))
+        }
+        Secondary(stringResource(R.string.export_title), tag = "export", onClick = model::showExport)
+        Secondary(stringResource(R.string.import_title), tag = "import", onClick = model::showImport)
 
         Heading(stringResource(R.string.devices))
         Secondary(stringResource(R.string.devices), tag = "devices", onClick = model::showDevices)

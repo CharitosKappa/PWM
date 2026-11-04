@@ -34,7 +34,11 @@ class ServerTest {
         var clock = System.currentTimeMillis()
         val firstKeys = MemoryKeyStore()
         val fingers = FakeBiometrics()
-        val first = Session(cachePath = null, server = server, transport = JdkTransport(), keys = firstKeys, now = { clock }, biometrics = fingers)
+        val breaches = FakeBreaches()
+        val first = Session(
+            cachePath = null, server = server, transport = JdkTransport(), keys = firstKeys, now = { clock }, biometrics = fingers,
+            breachTransport = breaches,
+        )
         val secretKey = first.signUp(email, password, "Android phone")
         assertTrue(secretKey.value.startsWith("A1-"))
         assertTrue(first.isUnlocked())
@@ -81,6 +85,33 @@ class ServerTest {
         assertEquals("Made while the second was locked", second.items(vault).first { it.id == fromFirst }.title)
         first.sync()
         assertEquals("Queued on the second device", first.items(vault).first { it.id == queuedId }.title)
+
+        // Health (D59 §5): a reused password, and the leak check against a fake
+        // breach service that knows the item's password.
+        val twin = first.save(first.newItem(Item.Kind.LOGIN, "Twin").edited { this.password = "hunter2-synthetic" }, vault)
+        val health = first.passwordHealth()
+        assertTrue("reused", health.reused.any { id in it && twin in it })
+        breaches.known["hunter2-synthetic"] = 42
+        assertEquals(42L, first.breachedPasswords()[id])
+        assertTrue("only the breach service was asked", breaches.hosts.all { it == "api.pwnedpasswords.com" })
+        assertTrue("with the padding header", breaches.padded)
+
+        // Export (D59 §6): the master password first, then the file.
+        assertTrue(runCatching { first.export(ExportFormat.Json) }.exceptionOrNull() is PwmError)
+        assertTrue(runCatching { first.authorizeExport(Redacted("not it")) }.exceptionOrNull() is PwmError)
+        first.authorizeExport(password)
+        val json = first.export(ExportFormat.Json).value.decodeToString()
+        assertTrue("Example" in json && "hunter2-synthetic" in json)
+
+        // Import (D59 §7): a browser's CSV, previewed, then saved and synced.
+        val csv = Redacted("name,url,username,password\nImported,https://imported.example,bob,pw-imported-1\n".toByteArray())
+        assertEquals("csv", first.guessImport("logins.csv", csv)?.format)
+        val columns = first.importColumns(csv)
+        assertEquals(1, columns.rows)
+        assertEquals(1, first.prepareImport("csv", csv, null, null, columns.suggested).logins)
+        assertEquals(1, first.finishImport().logins)
+        second.sync()
+        assertTrue(second.items(vault).any { it.title == "Imported" && it.username == "bob" })
 
         // Locked, then unlocked offline with the stored keys.
         second.lock()
@@ -170,5 +201,24 @@ class ServerTest {
         other.signUp("kotlin-${UUID.randomUUID()}@example.com", password, "Android tablet")
         assertTrue("a new device for the new account", keys.get(KeyName.DEVICE_ID) != device)
         other.signOut()
+    }
+}
+
+/** The breach service's range API, for passwords the test names (D22 §4). */
+private class FakeBreaches : HttpTransport {
+    val known = mutableMapOf<String, Int>()
+    val hosts = mutableListOf<String>()
+    var padded = false
+
+    override fun send(request: HttpRequest): HttpResponse {
+        hosts += request.url.host
+        if (request.headers.any { it.first.equals("Add-Padding", ignoreCase = true) }) padded = true
+        val prefix = request.url.path.substringAfterLast('/').uppercase()
+        val body = known.entries.mapNotNull { (password, count) ->
+            val hash = java.security.MessageDigest.getInstance("SHA-1").digest(password.toByteArray())
+                .joinToString("") { "%02X".format(it) }
+            if (hash.startsWith(prefix)) "${hash.removePrefix(prefix)}:$count" else null
+        }.joinToString("\r\n")
+        return HttpResponse(200, emptyList(), body.toByteArray())
     }
 }

@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings' data pages (D59 §5-7): health, export and import, the same words as the Apple app. -->
+<resources>
+    <string name="your_data">Your data</string>
+
+    <!-- The health report (D22, D44) -->
+    <string name="password_health">Password health</string>
+    <string name="health_checking">Checking for leaked passwords…</string>
+    <string name="health_leaked">Leaked</string>
+    <string name="health_leaked_hint">These passwords appear in known data breaches. Change them first.</string>
+    <string name="health_weak">Weak</string>
+    <string name="health_weak_detail">Easy to guess</string>
+    <string name="health_reused">Reused</string>
+    <string name="health_reused_hint">A leak on one site would open the others. Give each its own password.</string>
+    <plurals name="health_reused_detail">
+        <item quantity="one">Same password as %d other</item>
+        <item quantity="other">Same password as %d others</item>
+    </plurals>
+    <plurals name="health_leak_count">
+        <item quantity="one">Seen %s time in leaks</item>
+        <item quantity="other">Seen %s times in leaks</item>
+    </plurals>
+    <string name="health_clean">No problems found</string>
+    <string name="health_change">Change</string>
+    <string name="breach_check_switch">Check for leaked passwords</string>
+    <string name="breach_check_hint">Checks your passwords against known leaks without sending them: only the first 5 characters of a hash leave your device.</string>
+
+    <!-- Export (D24) -->
+    <string name="export_title">Export</string>
+    <string name="export_hint">Every item, folder and history entry in your vaults, on every plan.</string>
+    <string name="export_encrypted">Encrypted (.pwmx)</string>
+    <string name="export_json">JSON, not encrypted</string>
+    <string name="export_csv">CSV, not encrypted</string>
+    <string name="export_encrypted_hint">Opens with the export password alone, without your account. Every item, folder and history entry.</string>
+    <string name="export_json_hint">Every item, folder and history entry, readable by anyone who has the file.</string>
+    <string name="export_csv_hint">Logins, notes, cards and identities as a spreadsheet, readable by anyone who has the file.</string>
+    <string name="export_master_hint">Every export asks for it again.</string>
+    <string name="export_password">Export password</string>
+    <string name="export_password_again">Export password again</string>
+    <string name="export_understood">I understand that anyone who gets this file can read all my passwords.</string>
+    <string name="export_button">Export</string>
+    <string name="export_working">Exporting…</string>
+    <string name="export_save">Save export</string>
+    <string name="export_saved">Export saved.</string>
+
+    <!-- Import (D51, D59 §7) -->
+    <string name="import_title">Import</string>
+    <string name="import_hint">From another password manager, or a PWM export. The file is read on this phone only.</string>
+    <string name="import_choose">Choose export file</string>
+    <string name="import_choose_another">Choose another file</string>
+    <string name="import_file">File: %s</string>
+    <string name="import_format">Where it\'s from</string>
+    <string name="import_format_choose">Choose…</string>
+    <string-array name="import_formats">
+        <item>Bitwarden (.json)</item>
+        <item>1Password (.1pux)</item>
+        <item>Keeper (.json)</item>
+        <item>KeePass (.kdbx)</item>
+        <item>NordPass (.csv)</item>
+        <item>Proton Pass (.zip or .json)</item>
+        <item>Dashlane (.zip, .csv or .json)</item>
+        <item>LastPass (.csv)</item>
+        <item>Other CSV, such as a browser\'s</item>
+        <item>PWM export (.pwmx, .json or .csv)</item>
+    </string-array>
+    <string name="import_key_file">Choose key file</string>
+    <string name="import_key_file_named">Key file: %s</string>
+    <string name="import_keepass_hint">The database\'s password, its key file, or both.</string>
+    <string name="import_password_hint">Only if the export was made with a password.</string>
+    <string name="import_columns">Which column holds what</string>
+    <string name="import_column_none">None</string>
+    <string name="import_column_n">Column %d</string>
+    <string name="import_check">Check file</string>
+    <string name="import_reading">Reading…</string>
+    <string name="import_ready">Ready to import %s.</string>
+    <plurals name="import_trashed">
+        <item quantity="one">%d of them comes in the trash, as it was archived or deleted there.</item>
+        <item quantity="other">%d of them come in the trash, as they were archived or deleted there.</item>
+    </plurals>
+    <string name="import_button">Import</string>
+    <string name="import_working">Importing…</string>
+    <string name="import_done">Imported %s.</string>
+    <string name="import_plaintext">The export file holds your passwords in plain text. Delete it now.</string>
+    <string name="import_delete">Delete export file</string>
+    <string name="import_deleted">The export file is deleted.</string>
+    <string name="import_nothing_new">nothing new</string>
+    <plurals name="count_logins">
+        <item quantity="one">%d login</item>
+        <item quantity="other">%d logins</item>
+    </plurals>
+    <plurals name="count_notes">
+        <item quantity="one">%d note</item>
+        <item quantity="other">%d notes</item>
+    </plurals>
+    <plurals name="count_cards">
+        <item quantity="one">%d card</item>
+        <item quantity="other">%d cards</item>
+    </plurals>
+    <plurals name="count_identities">
+        <item quantity="one">%d identity</item>
+        <item quantity="other">%d identities</item>
+    </plurals>
+    <plurals name="count_folders">
+        <item quantity="one">%d folder</item>
+        <item quantity="other">%d folders</item>
+    </plurals>
+    <string name="left_out">Left out: %1$d %2$s</string>
+    <string name="left_out_attachments">attachments and documents</string>
+    <string name="left_out_ssh_keys">SSH keys</string>
+    <string name="left_out_aliases">email aliases</string>
+    <string name="left_out_passkeys">passkeys this export can\'t carry</string>
+    <string name="left_out_unknown_types">items of a type PWM doesn\'t have</string>
+    <string name="left_out_empty">empty rows</string>
+    <string name="left_out_too_large">items too large to sync</string>
+    <string name="left_out_duplicates">items already in your vault</string>
+</resources>
