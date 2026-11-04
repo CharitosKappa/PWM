@@ -101,6 +101,8 @@ dependencies {
     implementation(libs.camera.view)
     // The lock timeout (D54 §5).
     implementation(libs.lifecycle.process)
+    // Fingerprint and face unlock (D55).
+    implementation(libs.biometric)
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)

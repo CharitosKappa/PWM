@@ -557,7 +557,14 @@ Phase 3  Teams           months 16–24 M16–M19
     - **The screens:** M6.6 to M6.8.
     - **The Apple app's messages** move to `design/messages.json` once M8's open PRs merge (D52 notes). Done after M8 merged: both apps' lists are generated from it.
     - **A real phone's Keystore hardware:** the manual checklist in `QUALITY.md`.
-- [ ] M6.2 BiometricPrompt + Keystore-wrapped key.
+- [x] M6.2 BiometricPrompt + Keystore-wrapped key.
+  - Done per D55 (implementation notes there):
+    - **`:kit`:** `BiometricKeys` (the platform's key store, with a fake for tests); `Session` turns it on and off, unlocks with it through the core's `unlock_biometric`, asks for the master password every 14 days and re-makes the blob after each master password unlock; the unlock screen's one-time offer and automatic prompt, and the Settings switch.
+    - **`:app`:** `KeystoreBiometrics`: an RSA-3072 Keystore key, OAEP, a fresh strong biometric per use, invalidated by new enrollments; `BiometricPrompt` with the cipher as its crypto object. `MainActivity` is a `FragmentActivity`.
+    - **Tests:** 7 view-model tests; the server test's round trip through the core (on, lock, unlock, the 14-day rule, a cancel, another device's blob refused, sign-out); the UI test checks Settings on an emulator with no finger.
+  - **Deferred:**
+    - **On a real phone:** the checklist in `QUALITY.md` (a new finger, removing the screen lock).
+    - **The autofill service** unlocks with the same key in M6.3.
 - [ ] M6.3 AutofillService + Credential Manager provider (passwords + passkeys), inline suggestions.
 - [ ] M6.4 FLAG_SECURE on sensitive screens.
 - [ ] M6.5 Background sync and push (FCM) for Android, the same as M5.8 (WorkManager for periodic refresh).

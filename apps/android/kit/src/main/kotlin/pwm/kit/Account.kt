@@ -42,6 +42,18 @@ interface Account {
 
     suspend fun signOut()
 
+    // --- Fingerprint and face unlock (D45, D55) ---
+
+    fun biometricState(): BiometricState
+
+    /** Asks for a finger or face once; `biometric_cancelled` leaves it off. */
+    suspend fun enableBiometricUnlock()
+
+    suspend fun disableBiometricUnlock()
+
+    /** `master_password_due`, `biometric_changed` or `biometric_cancelled` leave the password to type. */
+    suspend fun unlockWithBiometrics()
+
     suspend fun sync(): SyncResult
 
     // --- Items (D54 §4) ---

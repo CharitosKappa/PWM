@@ -1,5 +1,6 @@
 package pwm.app
 
+import android.app.Activity
 import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.ClipData
@@ -8,11 +9,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PersistableBundle
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -33,10 +36,34 @@ import pwm.kit.ui.SecretClipboard
 class PwmApplication : Application() {
     lateinit var model: AppModel
         private set
+    private var shown: FragmentActivity? = null
 
     override fun onCreate() {
         super.onCreate()
         val keys = KeystoreKeys(this)
+        // The Activity on screen, for the fingerprint prompt (D55 §2).
+        registerActivityLifecycleCallbacks(
+            object : ActivityLifecycleCallbacks {
+                override fun onActivityResumed(activity: Activity) {
+                    shown = activity as? FragmentActivity
+                }
+
+                override fun onActivityPaused(activity: Activity) {
+                    if (shown === activity) shown = null
+                }
+
+                override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
+
+                override fun onActivityStarted(activity: Activity) = Unit
+
+                override fun onActivityStopped(activity: Activity) = Unit
+
+                override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
+
+                override fun onActivityDestroyed(activity: Activity) = Unit
+            },
+        )
+        val biometrics = KeystoreBiometrics(this) { shown }
         // The cache holds ciphertext only (D20), in a folder that is never backed up.
         val cache = File(noBackupFilesDir, "vault.db").path
         model = AppModel(
@@ -46,7 +73,7 @@ class PwmApplication : Application() {
             deviceName = Build.MODEL?.takeIf { it.isNotBlank() } ?: "Android",
             clipboard = AndroidClipboard(this),
             paper = EmergencyKit.Paper.of(Locale.getDefault().country),
-            makeAccount = { server -> Session(cache, server, keys) },
+            makeAccount = { server -> Session(cache, server, keys, biometrics = biometrics) },
             // Keeps counting while the phone sleeps; ignores the wall clock (D54 §5).
             clock = SystemClock::elapsedRealtime,
         )
@@ -84,6 +111,10 @@ class AndroidPrefs(context: Context) : AppPrefs {
         get() = prefs.getBoolean(KIT_PENDING, false)
         set(value) = prefs.edit().putBoolean(KIT_PENDING, value).apply()
 
+    override var biometricOffered: Boolean
+        get() = prefs.getBoolean(BIOMETRIC_OFFERED, false)
+        set(value) = prefs.edit().putBoolean(BIOMETRIC_OFFERED, value).apply()
+
     override var lockTimeoutMinutes: Int?
         get() = if (prefs.contains(LOCK_TIMEOUT)) prefs.getInt(LOCK_TIMEOUT, 0) else null
         set(value) = prefs.edit().apply { if (value == null) remove(LOCK_TIMEOUT) else putInt(LOCK_TIMEOUT, value) }.apply()
@@ -92,6 +123,7 @@ class AndroidPrefs(context: Context) : AppPrefs {
         const val SERVER = "server"
         const val KIT_PENDING = "kitPending"
         const val LOCK_TIMEOUT = "lockTimeoutMinutes"
+        const val BIOMETRIC_OFFERED = "biometricOffered"
     }
 }
 

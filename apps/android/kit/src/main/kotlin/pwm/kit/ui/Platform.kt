@@ -16,12 +16,16 @@ interface AppPrefs {
 
     /** The lock timeout's minutes (D54 §5); null for the default. */
     var lockTimeoutMinutes: Int?
+
+    /** The unlock screen offered fingerprint or face unlock once (D45 §3). */
+    var biometricOffered: Boolean
 }
 
 class MemoryPrefs(
     override var server: String? = null,
     override var kitPending: Boolean = false,
     override var lockTimeoutMinutes: Int? = null,
+    override var biometricOffered: Boolean = false,
 ) : AppPrefs
 
 /** A copy that is hidden from the clipboard preview and cleared after a while. */

@@ -6,6 +6,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import pwm.kit.Account
+import pwm.kit.BiometricState
 import pwm.kit.CurrentCode
 import pwm.kit.EmergencyKit
 import pwm.kit.Item
@@ -101,6 +102,42 @@ class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = 
         signedIn = false
         unlocked = false
         email = null
+        biometricOn = false
+    }
+
+    // Fingerprint and face unlock: [biometricResult] is what the prompt does.
+    /** Off unless a test turns it on, so other tests don't meet the offer. */
+    var biometricAvailable = false
+    var biometricOn = false
+    var biometricResult: () -> Unit = {}
+    var prompts = 0
+
+    override fun biometricState(): BiometricState = when {
+        !biometricAvailable -> BiometricState.Unavailable("biometric_not_enrolled")
+        biometricOn -> BiometricState.On
+        else -> BiometricState.Off
+    }
+
+    override suspend fun enableBiometricUnlock() {
+        prompts += 1
+        biometricResult()
+        biometricOn = true
+    }
+
+    override suspend fun disableBiometricUnlock() {
+        biometricOn = false
+    }
+
+    override suspend fun unlockWithBiometrics() {
+        if (!biometricOn) throw PwmError("biometric_unavailable")
+        prompts += 1
+        try {
+            biometricResult()
+        } catch (e: PwmError) {
+            if (e.code == "biometric_changed") biometricOn = false
+            throw e
+        }
+        unlocked = true
     }
 
     override suspend fun sync(): SyncResult {
