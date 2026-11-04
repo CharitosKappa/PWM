@@ -2,22 +2,31 @@ package pwm.kit
 
 import java.io.IOException
 import java.net.URL
+import java.time.Instant
+import java.time.ZoneId
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.withContext
+import uniffi.pwm_ffi.ApprovalAsk
+import uniffi.pwm_ffi.AskStep
 import uniffi.pwm_ffi.Event
 import uniffi.pwm_ffi.Header
+import uniffi.pwm_ffi.Paper
 import uniffi.pwm_ffi.Outcome
 import uniffi.pwm_ffi.Platform
 import uniffi.pwm_ffi.PwmClient
 import uniffi.pwm_ffi.Request
 import uniffi.pwm_ffi.Response
 import uniffi.pwm_ffi.Step
+import uniffi.pwm_ffi.emergencyKit as kitPdf
 import uniffi.pwm_ffi.newId
 
 /** How a sync run ended. */
@@ -50,12 +59,12 @@ sealed class SessionEvent {
 @OptIn(ExperimentalCoroutinesApi::class)
 class Session(
     cachePath: String?,
-    private val server: URL,
+    override val server: URL,
     private val keys: KeyStore,
     private val transport: HttpTransport = UrlConnectionTransport(),
     private val now: () -> Long = System::currentTimeMillis,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1),
-) {
+) : Account {
     private val client: PwmClient = core {
         if (cachePath != null) PwmClient.open(cachePath) else PwmClient.inMemory()
     }
@@ -70,7 +79,7 @@ class Session(
      * Creates the account and its first vault. Returns the Secret Key to
      * show on the Emergency Kit now; it is kept in [KeyStore] for unlocking.
      */
-    suspend fun signUp(email: String, password: Redacted<String>, deviceName: String): Redacted<String> = on {
+    override suspend fun signUp(email: String, password: Redacted<String>, deviceName: String): Redacted<String> = on {
         val first = core { client.startSignup(email, password.value, deviceId(), Platform.ANDROID, deviceName) }
         val outcome = run(first) as? Outcome.SignedUp ?: throw PwmError("protocol")
         keys.set(KeyName.SECRET_KEY, outcome.secretKey)
@@ -80,7 +89,7 @@ class Session(
     }
 
     /** Signs in on this device with all three secrets, then syncs. */
-    suspend fun logIn(
+    override suspend fun logIn(
         email: String,
         password: Redacted<String>,
         secretKey: Redacted<String>,
@@ -96,7 +105,7 @@ class Session(
     }
 
     /** Unlocks the account cached on this device, offline. */
-    suspend fun unlock(password: Redacted<String>) = on {
+    override suspend fun unlock(password: Redacted<String>) = on {
         val secretKey = keys.get(KeyName.SECRET_KEY) ?: throw PwmError("not_signed_in")
         core {
             client.unlock(
@@ -106,18 +115,34 @@ class Session(
         }
     }
 
-    suspend fun lock() = on { client.lock() }
+    override suspend fun lock() = on { client.lock() }
 
     suspend fun isUnlocked(): Boolean = on { client.isUnlocked() }
 
     /** Whether an account is signed in on this device (it may be locked). */
-    fun isSignedIn(): Boolean = keys.get(KeyName.SECRET_KEY) != null
+    override fun isSignedIn(): Boolean = keys.get(KeyName.SECRET_KEY) != null
 
     /** The email this device signed in with, for the unlock screen. */
-    fun email(): String? = keys.get(KeyName.EMAIL)
+    override fun email(): String? = keys.get(KeyName.EMAIL)
+
+    override fun secretKey(): Redacted<String>? = keys.get(KeyName.SECRET_KEY)?.let(::Redacted)
+
+    /** The Emergency Kit PDF for the signed-in account (D42 §5), dated today on this device. */
+    override suspend fun emergencyKit(paper: EmergencyKit.Paper): Redacted<ByteArray> = on {
+        val email = keys.get(KeyName.EMAIL)
+        val secretKey = keys.get(KeyName.SECRET_KEY)
+        val accountId = core { client.accountId() }
+        if (email == null || secretKey == null || accountId == null) throw PwmError("not_signed_in")
+        val created = Instant.ofEpochMilli(now()).atZone(ZoneId.systemDefault()).toLocalDate().toString()
+        val server = if (Server.isHosted(server)) null else server.toString()
+        val bytes = core {
+            kitPdf(email, secretKey, server, accountId, created, if (paper == EmergencyKit.Paper.A4) Paper.A4 else Paper.LETTER)
+        }
+        Redacted(bytes)
+    }
 
     /** Deletes the account from this device: its cache, tokens, Secret Key and email. */
-    suspend fun signOut() = on {
+    override suspend fun signOut() = on {
         core { client.signOut() }
         for (name in listOf(KeyName.SECRET_KEY, KeyName.ACCESS_TOKEN, KeyName.REFRESH_TOKEN, KeyName.EMAIL)) {
             keys.delete(name)
@@ -126,7 +151,7 @@ class Session(
 
     // --- Sync and items ---
 
-    suspend fun sync(): SyncResult = on { syncNow() }
+    override suspend fun sync(): SyncResult = on { syncNow() }
 
     suspend fun vaultIds(): List<String> = on { core { client.vaultIds() } }
 
@@ -135,11 +160,64 @@ class Session(
         core { client.items(vaultId) }.map(Item::parse)
     }
 
+    override suspend fun itemCount(): Int = on {
+        core { client.vaultIds() }.sumOf { vault ->
+            core { client.items(vault) }.map(Item::parse).count { it.trashedAtMs == null }
+        }
+    }
+
     fun newItem(kind: Item.Kind, title: String): Item = Item.new(kind, title, core { newId() }, now())
 
     /** Saves locally (history and times are the core's); sync uploads it. */
     suspend fun save(item: Item, vaultId: String): String = on {
         core { client.saveItem(vaultId, item.toJson().value, now()) }
+    }
+
+    // --- Asking another device (D46) ---
+
+    override suspend fun askForApproval(email: String, onCode: suspend (String) -> Unit): Redacted<String> {
+        val ask = core { ApprovalAsk(email, Platform.ANDROID) }
+        return ask.use {
+            var request = ask.firstRequest() ?: throw PwmError("internal")
+            try {
+                while (true) {
+                    val response = try {
+                        withContext(Dispatchers.IO) { transport.send(httpRequest(request)) }
+                    } catch (e: IOException) {
+                        throw PwmError("network")
+                    }
+                    val answer = Response(
+                        response.status.toUShort(),
+                        response.headers.map { (n, v) -> Header(n, v) },
+                        response.body,
+                    )
+                    when (val step = core { ask.receive(answer) }) {
+                        is AskStep.Send -> request = step.request
+                        is AskStep.ShowCode -> {
+                            onCode(step.code)
+                            delay(APPROVAL_POLL_MS)
+                            request = core { ask.poll() }
+                        }
+                        is AskStep.Wait -> {
+                            delay(step.delayMs.toLong().coerceAtLeast(APPROVAL_POLL_MS))
+                            request = core { ask.poll() }
+                        }
+                        is AskStep.Approved -> return@use Redacted(step.secretKey)
+                        AskStep.Ended -> throw PwmError("approval_ended")
+                    }
+                }
+                @Suppress("UNREACHABLE_CODE")
+                throw PwmError("internal")
+            } catch (e: CancellationException) {
+                // Gives up on the server too, so the other device stops showing it.
+                ask.cancel()?.let { cancel ->
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        runCatching { transport.send(httpRequest(cancel)) }
+                    }
+                }
+                throw e
+            }
+        }
     }
 
     // --- The step loop ---
@@ -228,6 +306,10 @@ class Session(
                     eventsFlow.tryEmit(SessionEvent.ItemFailed(event.vaultId, event.itemId, event.status.toInt()))
             }
         }
+    }
+
+    private companion object {
+        const val APPROVAL_POLL_MS = 2_000L
     }
 
     private fun deviceId(): String {

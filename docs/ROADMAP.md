@@ -561,7 +561,16 @@ Phase 3  Teams           months 16–24 M16–M19
 - [ ] M6.3 AutofillService + Credential Manager provider (passwords + passkeys), inline suggestions.
 - [ ] M6.4 FLAG_SECURE on sensitive screens.
 - [ ] M6.5 Background sync and push (FCM) for Android, the same as M5.8 (WorkManager for periodic refresh).
-- [ ] M6.6 Onboarding, as M5.2: create an account, the Emergency Kit, sign in, and asking another device to approve (D52 §1).
+- [x] M6.6 Onboarding, as M5.2: create an account, the Emergency Kit, sign in, and asking another device to approve (D52 §1).
+  - Done per D53 (implementation notes there):
+    - **`:kit`:** the view models (`AppModel`, `CreateAccountModel`, `SecretKeyModel`, `SignInModel`, `UnlockModel`, a placeholder `VaultModel`) over an `Account` interface; `Session` gains the kit PDF, asking another device (D46) and the item count; `Server`, `EmergencyKit`, `PasswordStrength` and `QrDecoder` (ZXing).
+    - **`:app`:** the Compose screens (welcome with the server choice, create account, the Secret Key with Save, Print and Copy, sign in with scanning and asking another device, unlock, the placeholder vault), the CameraX scanner, and `FLAG_SECURE` on the Secret Key screen.
+    - **The kit-pending flag:** the Secret Key screen comes back after unlocking until "I saved it".
+    - **Tests:** 14 view-model tests and 2 QR decoder tests on the JVM; the server test now covers the kit and the item count; a Compose UI test on the emulator (create an account, sign out, sign in with the Secret Key, lock, unlock) against the job's server through `adb reverse`.
+  - **Deferred:**
+    - **The Apple app's kit-pending flag** (D53 §4): a gap, for M5's next touch.
+    - **Fingerprint and face unlock:** M6.2. **The rest of `FLAG_SECURE`:** M6.4. **Renaming the device:** M6.8.
+    - **A real camera, and the save and print pickers:** the manual checklist in `QUALITY.md`.
 - [ ] M6.7 The vault screens, as M5.3: list, search, sections, detail, editing every type, the generator, Settings and the lock timeout (D52 §1).
 - [ ] M6.8 Health, devices, approving a new device, export, import and signing in again, as M5.9, M5.10, D50 §5 and M8.2 (D52 §1).
 
