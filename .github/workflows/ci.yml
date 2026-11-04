@@ -379,6 +379,14 @@ jobs:
           --health-timeout 5s
           --health-retries 15
     steps:
+      # The core for three ABIs, the server and the emulator's system image
+      # don't fit in the runner's free space: remove preinstalled tools this
+      # job never uses (.NET, Haskell, Swift, CodeQL, Boost).
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/share/swift /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:

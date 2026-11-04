@@ -34,4 +34,6 @@ just android-device   # the app's tests on a running emulator or a device
 
 ## Generated files
 
-`kit/src/main/kotlin/pwm/kit/design/Tokens.kt` (from `design/tokens.json`) and `kit/src/main/kotlin/pwm/kit/Messages.kt` (from `design/messages.json`) are committed. `just android-generated` writes them; `just check` fails when they are stale.
+`kit/src/main/kotlin/pwm/kit/design/Tokens.kt` (from `design/tokens.json`) and `kit/src/main/kotlin/pwm/kit/Messages.kt` (from `design/messages.json`) are committed. `just android-generated` writes the tokens and `just messages` the messages, for both apps; `just check` fails when any is stale.
+
+The messages are shared with the Apple app. Change them in `design/messages.json`, never in a generated file; `platforms` there holds one app's own wording where it names its own system (Face ID, the keychain).

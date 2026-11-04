@@ -42,6 +42,9 @@ class KitTest {
     fun errorsCarryCodesAndPlainMessages() {
         assertEquals("Wrong master password.", PwmError("wrong_password").userMessage)
         assertEquals("Something went wrong. Try again.", PwmError("no_such_code").userMessage)
+        // From design/messages.json: the shared wording, not the Apple app's names.
+        assertEquals("This file is too large to import.", PwmError("import_too_large").userMessage)
+        assertEquals("This device refused to store its keys.", PwmError("keychain").userMessage)
         assertEquals("code=locked", PwmError("locked").message)
     }
 

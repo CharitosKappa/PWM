@@ -1,5 +1,5 @@
 {
-  "$description": "Plain messages for the core error codes, shared by the apps (D52 §6). Never a value from the user.",
+  "$description": "Plain messages for the error codes of the core and the apps, shared by the apps (D52 §6). Never a value from the user. `platforms` replaces a message on one platform, for its own names (Face ID, the keychain).",
   "version": 1,
   "fallback": "Something went wrong. Try again.",
   "messages": {
@@ -29,8 +29,8 @@
     "unknown_approval": "That request ended. Ask the new device to try again.",
     "approval_failed": "The approval didn't arrive safely. Sign in with your Secret Key.",
     "biometric_cancelled": "Unlock with your master password, or try again.",
-    "biometric_changed": "Face ID or Touch ID changed. Enter your master password to turn it back on.",
-    "biometric_unavailable": "Face ID or Touch ID is not available on this device.",
+    "biometric_changed": "Your fingerprint or face unlock changed. Enter your master password to turn it back on.",
+    "biometric_unavailable": "Fingerprint or face unlock is not available on this device.",
     "biometric_unlock_failed": "Enter your master password.",
     "master_password_due": "Enter your master password. It's asked every 14 days so you don't forget it.",
     "invalid_device_name": "Use a shorter name, up to 63 characters.",
@@ -38,13 +38,32 @@
     "export_not_authorized": "Enter your master password to export.",
     "export_expired": "Enter your master password again to export.",
     "weak_export_password": "Choose a stronger export password.",
+    "import_too_large": "This file is too large to import.",
+    "import_unreadable": "This file can't be read as that format. Check the format, or export again.",
+    "import_password_needed": "Enter the password this export was made with.",
+    "import_wrong_password": "Wrong password for this export.",
+    "import_bitwarden_account_restricted": "This Bitwarden export is locked to the Bitwarden account. Export again as “Password protected” or unencrypted.",
+    "import_proton_encrypted": "This Proton Pass export is encrypted. Export again without encryption.",
+    "not_running": "Check the file again, then import.",
+    "import_keepass_kdb": "This is a KeePass 1 database. Open it in KeePass 2 or KeePassXC and save it as a .kdbx first.",
+    "import_keepass_version": "This KeePass database uses a version or setting PWM can't open yet.",
+    "import_keepass_too_costly": "This database's key settings would take too long here. Lower them in KeePass, then try again.",
+    "delete_failed": "The file couldn't be deleted. Delete it yourself in your Files app.",
     "not_signed_in": "Sign in on this device first.",
     "storage": "The vault on this device could not be opened.",
-    "keychain": "The keychain refused to store this device's keys.",
+    "keychain": "This device refused to store its keys.",
     "invalid_email": "Enter a valid email address.",
     "invalid_server": "Enter the server's address, starting with https://.",
     "not_a_kit": "That's not an Emergency Kit code.",
     "kit_too_new": "This Emergency Kit is from a newer version of the app. Update the app to scan it.",
     "camera": "Allow camera access in Settings to scan your Emergency Kit."
+  },
+  "platforms": {
+    "apple": {
+      "biometric_changed": "Face ID or Touch ID changed. Enter your master password to turn it back on.",
+      "biometric_unavailable": "Face ID or Touch ID is not available on this device.",
+      "keychain": "The keychain refused to store this device's keys.",
+      "delete_failed": "The file couldn't be deleted. Delete it yourself in Files or Finder."
+    }
   }
 }

@@ -16,7 +16,7 @@ check:
     pnpm typecheck
     node scripts/tokens-swift.mjs --check
     node scripts/tokens-kotlin.mjs --check
-    node scripts/messages-kotlin.mjs --check
+    node scripts/messages.mjs --check
 
 # all unit tests (core, server, extension)
 test:
@@ -112,10 +112,13 @@ android:
 android-device:
     ./gradlew :app:connectedDebugAndroidTest
 
-# design tokens and error messages into the Android app (D52 §6); `just check` fails when stale
+# design tokens into the Android app (D52 §6); `just check` fails when stale
 android-generated:
     node scripts/tokens-kotlin.mjs
-    node scripts/messages-kotlin.mjs
+
+# the error messages in design/messages.json into both apps (D52 §6); `just check` fails when stale
+messages:
+    node scripts/messages.mjs
 
 # apply formatters
 fmt:

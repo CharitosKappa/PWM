@@ -97,6 +97,9 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual("\(error)", "PWMError(wrong_password)")
         XCTAssertEqual(error.message, "Wrong master password.")
         XCTAssertEqual(PWMError(code: "something_new").message, "Something went wrong. Try again.")
+        // From design/messages.json, with the Apple app's own names.
+        XCTAssertEqual(PWMError(code: "import_too_large").message, "This file is too large to import.")
+        XCTAssertEqual(PWMError(code: "keychain").message, "The keychain refused to store this device's keys.")
     }
 
     func testRedactedNeverPrintsItsValue() {
