@@ -484,6 +484,41 @@ impl PwmClient {
             .authorize_export(&password, &secret_key, now_ms)?)
     }
 
+    /// Reads a picked file to import into `vault_id` (default: the first
+    /// vault) and says what will come in (D51). Nothing is saved yet. Never
+    /// log the bytes.
+    pub fn prepare_import(
+        &self,
+        vault_id: Option<String>,
+        format: String,
+        bytes: Vec<u8>,
+        password: Option<String>,
+        mapping: Option<ImportMapping>,
+        now_ms: i64,
+    ) -> Result<ImportPreview, PwmError> {
+        let bytes = zeroize::Zeroizing::new(bytes);
+        Ok(self
+            .lock_inner()
+            .prepare_import(
+                vault_id.as_deref(),
+                &format,
+                &bytes,
+                password.as_deref(),
+                mapping.map(Into::into),
+                now_ms,
+            )?
+            .into())
+    }
+
+    /// Saves the prepared import; sync afterwards.
+    pub fn finish_import(&self, now_ms: i64) -> Result<ImportPreview, PwmError> {
+        Ok(self.lock_inner().finish_import(now_ms)?.into())
+    }
+
+    pub fn cancel_import(&self) {
+        self.lock_inner().cancel_import();
+    }
+
     /// Every vault as a file, using up the grant. Never log the bytes.
     pub fn export(&self, format: ExportFormat, now_ms: i64) -> Result<Vec<u8>, PwmError> {
         let mut client = self.lock_inner();
@@ -1020,6 +1055,133 @@ pub struct Strength {
     pub crack_time: String,
     pub warning: Option<String>,
     pub suggestions: Vec<String>,
+}
+
+/// What an import brings in and leaves out (D51).
+#[derive(uniffi::Record)]
+pub struct ImportPreview {
+    pub logins: u64,
+    pub notes: u64,
+    pub cards: u64,
+    pub identities: u64,
+    pub folders: u64,
+    pub trashed: u64,
+    pub left_out: Vec<LeftOutCount>,
+}
+
+/// A reason (`attachments`, `ssh_keys`, `aliases`, `passkeys`,
+/// `unknown_types`, `empty`, `too_large`, `duplicates`) and how many.
+#[derive(uniffi::Record)]
+pub struct LeftOutCount {
+    pub reason: String,
+    pub count: u64,
+}
+
+impl From<pwm_client::ImportPreview> for ImportPreview {
+    fn from(p: pwm_client::ImportPreview) -> Self {
+        let n = |v: usize| v as u64;
+        Self {
+            logins: n(p.logins),
+            notes: n(p.notes),
+            cards: n(p.cards),
+            identities: n(p.identities),
+            folders: n(p.folders),
+            trashed: n(p.trashed),
+            left_out: p
+                .left_out
+                .into_iter()
+                .map(|(reason, count)| LeftOutCount {
+                    reason,
+                    count: n(count),
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Which CSV column holds each field, by index.
+#[derive(uniffi::Record)]
+pub struct ImportMapping {
+    pub title: Option<u32>,
+    pub url: Option<u32>,
+    pub username: Option<u32>,
+    pub password: Option<u32>,
+    pub notes: Option<u32>,
+    pub totp: Option<u32>,
+    pub folder: Option<u32>,
+    pub favorite: Option<u32>,
+    pub tags: Option<u32>,
+}
+
+impl From<ImportMapping> for pwm_client::ColumnMapping {
+    fn from(m: ImportMapping) -> Self {
+        let i = |v: Option<u32>| v.map(|v| v as usize);
+        Self {
+            title: i(m.title),
+            url: i(m.url),
+            username: i(m.username),
+            password: i(m.password),
+            notes: i(m.notes),
+            totp: i(m.totp),
+            folder: i(m.folder),
+            favorite: i(m.favorite),
+            tags: i(m.tags),
+        }
+    }
+}
+
+impl From<pwm_client::ColumnMapping> for ImportMapping {
+    fn from(m: pwm_client::ColumnMapping) -> Self {
+        let i = |v: Option<usize>| v.and_then(|v| u32::try_from(v).ok());
+        Self {
+            title: i(m.title),
+            url: i(m.url),
+            username: i(m.username),
+            password: i(m.password),
+            notes: i(m.notes),
+            totp: i(m.totp),
+            folder: i(m.folder),
+            favorite: i(m.favorite),
+            tags: i(m.tags),
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct ImportColumns {
+    pub headers: Vec<String>,
+    pub suggested: ImportMapping,
+    pub rows: u64,
+}
+
+#[derive(uniffi::Record)]
+pub struct DetectedImport {
+    /// `bitwarden`, `1password`, `keeper`, `nordpass`, `protonpass`,
+    /// `dashlane`, `lastpass`, `csv` or `pwm`.
+    pub format: String,
+    pub needs_password: bool,
+}
+
+/// The format a picked file looks like, or none.
+#[uniffi::export]
+pub fn detect_import(file_name: String, bytes: Vec<u8>) -> Option<DetectedImport> {
+    let bytes = zeroize::Zeroizing::new(bytes);
+    pwm_client::detect_import(&file_name, &bytes).map(|(format, needs_password)| DetectedImport {
+        format,
+        needs_password,
+    })
+}
+
+/// A CSV's header row and the suggested columns, for the column picker.
+#[uniffi::export]
+pub fn import_columns(bytes: Vec<u8>) -> Result<ImportColumns, PwmError> {
+    let bytes = zeroize::Zeroizing::new(bytes);
+    let columns = pwm_client::import_columns(&bytes).map_err(pwm_client::ClientError::from)?;
+    Ok(ImportColumns {
+        headers: columns.headers.clone(),
+        suggested: columns.suggested.clone().into(),
+        rows: columns.rows as u64,
+    })
 }
 
 /// A new random id for an item or a device.

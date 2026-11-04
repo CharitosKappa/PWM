@@ -1,0 +1,10 @@
+{
+  "AUTHENTIFIANT": [
+    { "domain": "bank.example", "email": "ada@example.com", "login": "ada", "note": "Synthetic note", "password": "hunter2-synthetic", "secondaryLogin": "", "title": "Bank" }
+  ],
+  "SECURENOTE": [{ "title": "Wifi", "content": "Code 1234" }],
+  "PAYMENTMEANS_CREDITCARD": [
+    { "bank": "Example Bank", "cardNumber": "4111111111111111", "expireMonth": "5", "expireYear": "2030", "name": "Visa", "owner": "Ada Lovelace", "securityCode": "123", "type": "VISA" }
+  ],
+  "EMAIL": [{ "email": "ada@example.com" }]
+}

@@ -419,6 +419,26 @@ for (const v of load("passkey_hashed")) {
   check("hashed signature", crypto.verify("sha256", signed, { key: pub, dsaEncoding: "der" }, hex(v.signature)));
 }
 
+// bitwarden_export.json: Bitwarden's password-protected export (D51 §4). The
+// keys are derived again and both values are opened, MAC first.
+for (const v of load("bitwarden_export")) {
+  const e = v.export;
+  const key = crypto.pbkdf2Sync(v.password, e.salt, e.kdfIterations, 32, "sha256");
+  const expand = (info) => crypto.createHmac("sha256", key).update(Buffer.concat([Buffer.from(info), Buffer.from([1])])).digest();
+  const enc = expand("enc");
+  const mac = expand("mac");
+  check(`bitwarden ${v.name} keys`, eq(enc, hex(v.enc_key)) && eq(mac, hex(v.mac_key)));
+  const open = (s) => {
+    const [iv, ct, tag] = s.slice(2).split("|").map((p) => Buffer.from(p, "base64"));
+    const want = crypto.createHmac("sha256", mac).update(Buffer.concat([iv, ct])).digest();
+    if (!eq(want, tag)) return null;
+    const d = crypto.createDecipheriv("aes-256-cbc", enc, iv);
+    return Buffer.concat([d.update(ct), d.final()]);
+  };
+  check(`bitwarden ${v.name} validation`, open(e.encKeyValidation_DO_NOT_EDIT) !== null);
+  check(`bitwarden ${v.name} data`, open(e.data)?.toString("utf8") === v.plaintext);
+}
+
 // opaque.json is checked by the Rust checker only: the protocol itself is
 // covered by the RFC 9807 vectors in opaque-ke.
 

@@ -1,0 +1,131 @@
+{
+  "accounts": [
+    {
+      "attrs": { "accountName": "Synthetic", "name": "Ada", "email": "ada@example.com" },
+      "vaults": [
+        {
+          "attrs": { "uuid": "v1", "name": "Personal", "type": "P" },
+          "items": [
+            {
+              "uuid": "a1",
+              "favIndex": 1,
+              "createdAt": 1704164645,
+              "updatedAt": 1706843045,
+              "state": "active",
+              "categoryUuid": "001",
+              "details": {
+                "loginFields": [
+                  { "value": "ada", "id": "", "name": "username", "fieldType": "T", "designation": "username" },
+                  { "value": "hunter2-synthetic", "id": "", "name": "password", "fieldType": "P", "designation": "password" }
+                ],
+                "notesPlain": "Synthetic note",
+                "sections": [
+                  {
+                    "title": "Extra",
+                    "name": "extra",
+                    "fields": [
+                      { "title": "one-time password", "id": "otp", "value": { "totp": "otpauth://totp/Bank:ada?secret=JBSWY3DPEHPK3PXP" } },
+                      { "title": "Security answer", "id": "q1", "value": { "concealed": "blue" } },
+                      { "title": "Member since", "id": "d1", "value": { "date": 1672531200 } },
+                      { "title": "Scan", "id": "f1", "value": { "file": { "fileName": "scan.pdf" } } }
+                    ]
+                  }
+                ],
+                "passwordHistory": [{ "value": "old-synthetic", "time": 1701388800 }]
+              },
+              "overview": {
+                "subtitle": "ada",
+                "urls": [{ "label": "", "url": "https://bank.example" }],
+                "title": "Bank",
+                "url": "https://bank.example",
+                "tags": ["finance"]
+              }
+            },
+            {
+              "uuid": "a2",
+              "favIndex": 0,
+              "createdAt": 1704164645,
+              "updatedAt": 1704164645,
+              "state": "active",
+              "categoryUuid": "002",
+              "details": {
+                "loginFields": [],
+                "notesPlain": "",
+                "sections": [
+                  {
+                    "title": "",
+                    "fields": [
+                      { "title": "cardholder name", "id": "cardholder", "value": { "string": "Ada Lovelace" } },
+                      { "title": "type", "id": "type", "value": { "creditCardType": "visa" } },
+                      { "title": "number", "id": "ccnum", "value": { "creditCardNumber": "4111111111111111" } },
+                      { "title": "verification number", "id": "cvv", "value": { "concealed": "123" } },
+                      { "title": "expiry date", "id": "expiry", "value": { "monthYear": 203005 } },
+                      { "title": "PIN", "id": "pin", "value": { "concealed": "0000" } }
+                    ]
+                  }
+                ]
+              },
+              "overview": { "title": "Visa", "url": "" }
+            },
+            {
+              "uuid": "a3",
+              "favIndex": 0,
+              "createdAt": 1704164645,
+              "updatedAt": 1704164645,
+              "state": "archived",
+              "categoryUuid": "003",
+              "details": { "notesPlain": "Code 1234" },
+              "overview": { "title": "Wifi" }
+            },
+            {
+              "uuid": "a4",
+              "favIndex": 0,
+              "createdAt": 1704164645,
+              "updatedAt": 1704164645,
+              "state": "active",
+              "categoryUuid": "004",
+              "details": {
+                "sections": [
+                  {
+                    "title": "Identification",
+                    "fields": [
+                      { "title": "first name", "id": "firstname", "value": { "string": "Ada" } },
+                      { "title": "last name", "id": "lastname", "value": { "string": "Lovelace" } },
+                      { "title": "email", "id": "email", "value": { "email": { "email_address": "ada@example.com", "provider": null } } },
+                      { "title": "address", "id": "address", "value": { "address": { "street": "1 Example Street", "city": "London", "country": "gb", "zip": "N1 1AA", "state": "" } } }
+                    ]
+                  }
+                ]
+              },
+              "overview": { "title": "Me" }
+            },
+            {
+              "uuid": "a5",
+              "favIndex": 0,
+              "createdAt": 1704164645,
+              "updatedAt": 1704164645,
+              "state": "active",
+              "categoryUuid": "006",
+              "details": { "documentAttributes": { "fileName": "passport.pdf" } },
+              "overview": { "title": "Passport scan" }
+            },
+            {
+              "uuid": "a6",
+              "favIndex": 0,
+              "createdAt": 1704164645,
+              "updatedAt": 1704164645,
+              "state": "active",
+              "categoryUuid": "101",
+              "details": {
+                "sections": [
+                  { "title": "", "fields": [{ "title": "account number", "id": "accountNo", "value": { "string": "12345678" } }] }
+                ]
+              },
+              "overview": { "title": "Savings" }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

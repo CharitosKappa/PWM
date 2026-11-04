@@ -71,6 +71,15 @@ On a Mac, with a signed build of the app and the extension's store id in `Browse
 3. Cancel Touch ID: the master password still unlocks, and Touch ID stays on. Add a finger in System Settings: the next unlock turns Touch ID off.
 4. Turn the app's switch off: the extension says the Mac app is needed.
 
+### Import checklist (D51)
+
+Before the beta, with a real export from each manager (made with a throwaway account holding synthetic items, never real ones):
+
+1. Bitwarden (unencrypted, and password-protected with PBKDF2 and with Argon2id), 1Password `.1pux`, Keeper JSON, NordPass CSV, Proton Pass ZIP, Dashlane CSV ZIP, LastPass CSV, and Chrome, Firefox and Safari CSVs.
+2. Each one: the detected format is right; the preview's counts match the source; logins, cards, identities, notes, folders, one-time codes and custom fields land where expected; what was left out is listed.
+3. Import the same file twice: the second adds nothing.
+4. Delete the throwaway accounts and the export files afterwards.
+
 ### Background sync and push checklist (D50)
 
 On a device with a signed build, and a server with the `PWM_APNS_*` settings:

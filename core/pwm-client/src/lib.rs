@@ -11,6 +11,7 @@ mod autofill;
 mod biometric;
 mod client;
 mod error;
+mod import;
 mod kit;
 mod passkey;
 mod save;
@@ -24,6 +25,7 @@ pub use autofill::AutofillMatch;
 pub use biometric::{BiometricUnlock, BrowserUnlock};
 pub use client::{Client, Outcome, PushToken, Step, new_id};
 pub use error::ClientError;
+pub use import::{ImportPreview, detect_import};
 pub use kit::{ScannedKit, emergency_kit, scan_kit};
 pub use passkey::{
     CredentialIdentity, HashedAssertion, HashedPasskey, PasskeyCandidate, PasskeyCreateCheck,
@@ -33,6 +35,7 @@ pub use pwm_generator::{
     PassphraseOptions, PasswordOptions, Strength, generate_passphrase, generate_password, strength,
 };
 pub use pwm_health::{ADD_PADDING_HEADER, HIBP_RANGE_URL};
+pub use pwm_import::{ColumnMapping, Columns as ImportColumns, csv_columns as import_columns};
 pub use pwm_kit::Paper;
 pub use pwm_store::{MemoryStore, SNAPSHOT_VERSION, Store};
 pub use pwm_sync::{HttpRequest, HttpResponse, Method, SyncEvent, SyncReport, Tokens};

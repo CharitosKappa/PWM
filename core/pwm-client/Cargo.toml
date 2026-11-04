@@ -17,6 +17,7 @@ pwm-crypto = { path = "../pwm-crypto" }
 pwm-export = { path = "../pwm-export" }
 pwm-generator = { path = "../pwm-generator" }
 pwm-health = { path = "../pwm-health" }
+pwm-import = { path = "../pwm-import" }
 pwm-kit = { path = "../pwm-kit" }
 pwm-passkey = { path = "../pwm-passkey" }
 # The client needs only the `Store` trait and `MemoryStore`; native wrappers
