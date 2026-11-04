@@ -30,6 +30,7 @@ pub use kit::{ScannedKit, emergency_kit, scan_kit};
 pub use passkey::{
     CredentialIdentity, HashedAssertion, HashedPasskey, PasskeyCandidate, PasskeyCreateCheck,
 };
+pub use pwm_autofill::{AppLinkError, app_link};
 pub use pwm_crypto::{KdfParams, Secret};
 pub use pwm_generator::{
     PassphraseOptions, PasswordOptions, Strength, generate_passphrase, generate_password, strength,

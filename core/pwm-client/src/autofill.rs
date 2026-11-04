@@ -3,9 +3,9 @@
 //! `pwm-autofill`; this only feeds it the unlocked vault.
 
 use pwm_autofill::{
-    Decision, Field, FrameRelation, Match, MultiStep, NextStep, Problem, RULES_KEYS, RefuseReason,
-    ReportFrame, ReportInput, Rules, StepDone, WarnReason, build_report, classify, rank,
-    verify_rules,
+    AppMatch, Decision, Field, FrameRelation, Match, MultiStep, NextStep, Problem, RULES_KEYS,
+    RefuseReason, ReportFrame, ReportInput, Rules, StepDone, WarnReason, build_report, classify,
+    match_app, rank, verify_rules,
 };
 use pwm_store::Store;
 use pwm_vault::ItemKind;
@@ -111,6 +111,63 @@ impl<S: Store> Client<S> {
                 }
             })
             .collect())
+    }
+
+    /// The logins linked to the Android app `package`, signed with one of
+    /// `certs` (D58 §4): `app` links first, then `app_unverified` ones (no
+    /// digest, from another manager's export), each newest first. Unverified
+    /// ones are `confirm`: offered from search, never suggested.
+    pub fn autofill_app_matches(
+        &self,
+        package: &str,
+        certs: &[String],
+    ) -> Result<Vec<AutofillMatch>, ClientError> {
+        let engine = self.engine_ref()?;
+        let mut found = Vec::new();
+        for vault_id in self.vault_ids()? {
+            let id = crate::client::parse_id(&vault_id)?;
+            for (item_id, item) in engine.items(&id)? {
+                if item.is_trashed() {
+                    continue;
+                }
+                let ItemKind::Login(login) = &item.kind else {
+                    continue;
+                };
+                let best = login
+                    .urls
+                    .iter()
+                    .filter_map(|u| match_app(package, certs, &u.url))
+                    .min_by_key(|m| *m != AppMatch::Linked);
+                if let Some(m) = best {
+                    found.push((
+                        m,
+                        item.updated_at,
+                        AutofillMatch {
+                            vault_id: vault_id.clone(),
+                            item_id: item_id.to_string(),
+                            title: item.title.clone(),
+                            username: login.username.clone(),
+                            matched: if m == AppMatch::Linked {
+                                "app"
+                            } else {
+                                "app_unverified"
+                            },
+                            decision: if m == AppMatch::Linked {
+                                "fill"
+                            } else {
+                                "confirm"
+                            },
+                        },
+                    ));
+                }
+            }
+        }
+        found.sort_by(|a, b| {
+            (a.0 != AppMatch::Linked)
+                .cmp(&(b.0 != AppMatch::Linked))
+                .then(b.1.cmp(&a.1))
+        });
+        Ok(found.into_iter().map(|(_, _, m)| m).collect())
     }
 
     /// Classifies the fields described in `fields_json` (an array of field

@@ -81,4 +81,20 @@ interface Account {
 
     /** The login's one-time code now; null when it has none, or a kind this version can't make. */
     suspend fun currentCode(itemId: String, vaultId: String): CurrentCode?
+
+    // --- Autofill (D58) ---
+
+    /** One item, or null when it's gone. */
+    suspend fun item(itemId: String, vaultId: String): Item?
+
+    /** The core's roles for the fields described (`classify_fields`), against the caller's address. */
+    suspend fun classifyFields(fieldsJson: String, pageUrl: String): String
+
+    /** The logins the caller may get, best first; empty while locked. */
+    suspend fun autofillMatches(caller: Caller): List<AutofillMatch>
+
+    /** Links a login to an app, with its certificate (D58 §4), and saves it. */
+    suspend fun linkApp(itemId: String, vaultId: String, packageName: String, cert: String)
+
+    suspend fun isUnlocked(): Boolean
 }

@@ -22,6 +22,9 @@ lifecycle = "2.8.7"
 biometric = "1.1.0"
 # The periodic background sync (D57 §2).
 work = "2.10.0"
+# Autofill (D58): inline suggestions, and UiAutomator for its device test.
+autofill = "1.1.0"
+uiautomator = "2.3.0"
 zxing = "3.5.3"
 
 [libraries]
@@ -49,6 +52,8 @@ lifecycle-process = { module = "androidx.lifecycle:lifecycle-process", version.r
 biometric = { module = "androidx.biometric:biometric", version.ref = "biometric" }
 work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 work-testing = { module = "androidx.work:work-testing", version.ref = "work" }
+autofill = { module = "androidx.autofill:autofill", version.ref = "autofill" }
+uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
 
 [plugins]
 license-report = { id = "com.github.jk1.dependency-license-report", version = "2.9" }

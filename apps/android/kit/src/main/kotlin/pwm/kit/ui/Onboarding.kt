@@ -266,6 +266,8 @@ class UnlockModel internal constructor(
     private val prefs: AppPrefs,
     private val onUnlocked: () -> Unit,
     private val onSignedOut: () -> Unit,
+    /** False on the fill screen: no offer while filling (D45 §3). */
+    private val offerBiometrics: Boolean = true,
 ) {
     data class State(
         val password: Redacted<String> = Redacted(""),
@@ -304,7 +306,7 @@ class UnlockModel internal constructor(
             if (reenable) {
                 reenable = false
                 runCatching { account.enableBiometricUnlock() }
-            } else if (mutable.value.biometric == BiometricState.Off && !prefs.biometricOffered) {
+            } else if (offerBiometrics && mutable.value.biometric == BiometricState.Off && !prefs.biometricOffered) {
                 mutable.update { it.copy(busy = false, offer = true) }
                 return@launch
             }

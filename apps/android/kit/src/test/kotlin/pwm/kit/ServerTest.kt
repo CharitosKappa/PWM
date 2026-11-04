@@ -119,5 +119,17 @@ class ServerTest {
         assertTrue(fingers.deleted > 0)
         second.signOut()
         assertTrue(keys.get(KeyName.SECRET_KEY) == null)
+
+        // The same phone, signed out, signs in again to that account as the
+        // same device, and a new account signs up there as a new device.
+        val device = keys.get(KeyName.DEVICE_ID)
+        val again = Session(cachePath = null, server = server, keys = keys)
+        assertTrue(again.logIn(email, password, secretKey, "Android tablet") is SyncResult.Synced)
+        assertEquals(device, keys.get(KeyName.DEVICE_ID))
+        again.signOut()
+        val other = Session(cachePath = null, server = server, keys = keys)
+        other.signUp("kotlin-${UUID.randomUUID()}@example.com", password, "Android tablet")
+        assertTrue("a new device for the new account", keys.get(KeyName.DEVICE_ID) != device)
+        other.signOut()
     }
 }

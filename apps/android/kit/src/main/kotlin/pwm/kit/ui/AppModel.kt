@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import pwm.kit.Account
+import pwm.kit.AutofillMatch
+import pwm.kit.Caller
 import pwm.kit.EmergencyKit
 import pwm.kit.Redacted
 import pwm.kit.Server
@@ -212,6 +214,38 @@ class AppModel(
         }
         showUnlock(account)
         scope.launch { account.lock() }
+    }
+
+    // --- Autofill (D58) ---
+
+    /**
+     * What the service offers for a request: the fields' classes, and the
+     * logins to suggest when unlocked. Null with nobody signed in.
+     */
+    suspend fun autofillPlan(caller: Caller, fieldsJson: String): AutofillPlan? {
+        val account = account?.takeIf { it.isSignedIn() } ?: return null
+        val unlocked = account.isUnlocked()
+        val classes = account.classifyFields(fieldsJson, caller.pageUrl)
+        val suggested = if (unlocked) account.autofillMatches(caller).filter { it.suggested } else emptyList()
+        return AutofillPlan(classes, unlocked, suggested)
+    }
+
+    /** A suggestion's values, while unlocked. */
+    suspend fun fillValues(match: AutofillMatch): FillValues? {
+        val account = account?.takeIf { it.isUnlocked() } ?: return null
+        return FillModel.values(account, match.itemId, match.vaultId)
+    }
+
+    /** The fill screen for a request; [onDone] gets what to fill, or null. */
+    fun fillModel(caller: Caller, onDone: (FillValues?) -> Unit): FillModel? {
+        val account = account?.takeIf { it.isSignedIn() } ?: return null
+        return FillModel(scope, account, caller, prefs, onUnlocked = { unlockedElsewhere(account) }, onDone = onDone)
+            .also { it.start() }
+    }
+
+    /** The fill screen unlocked the vault: the app shows it too when it comes back. */
+    private fun unlockedElsewhere(account: Account) {
+        if (mutable.value.screen is Screen.Unlock) afterUnlock(account)
     }
 
     // --- Background sync (D57 §2) ---

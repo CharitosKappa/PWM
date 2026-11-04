@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.withContext
 import uniffi.pwm_ffi.ApprovalAsk
+import uniffi.pwm_ffi.androidAppLink
 import uniffi.pwm_ffi.AskStep
 import uniffi.pwm_ffi.Event
 import uniffi.pwm_ffi.Header
@@ -81,7 +82,8 @@ class Session(
      * show on the Emergency Kit now; it is kept in [KeyStore] for unlocking.
      */
     override suspend fun signUp(email: String, password: Redacted<String>, deviceName: String): Redacted<String> = on {
-        val first = core { client.startSignup(email, password.value, deviceId(), Platform.ANDROID, deviceName) }
+        // A new account is a new device: the old id may belong to an account signed out here.
+        val first = core { client.startSignup(email, password.value, deviceIdFor(email, fresh = true), Platform.ANDROID, deviceName) }
         val outcome = run(first) as? Outcome.SignedUp ?: throw PwmError("protocol")
         keys.set(KeyName.SECRET_KEY, outcome.secretKey)
         keys.set(KeyName.EMAIL, email)
@@ -98,7 +100,7 @@ class Session(
         deviceName: String,
     ): SyncResult = on {
         val first = core {
-            client.startLogin(email, password.value, secretKey.value, deviceId(), Platform.ANDROID, deviceName)
+            client.startLogin(email, password.value, secretKey.value, deviceIdFor(email), Platform.ANDROID, deviceName)
         }
         if (run(first) != Outcome.LoggedIn) throw PwmError("protocol")
         keys.set(KeyName.SECRET_KEY, secretKey.value)
@@ -212,7 +214,7 @@ class Session(
 
     override suspend fun lock() = on { client.lock() }
 
-    suspend fun isUnlocked(): Boolean = on { client.isUnlocked() }
+    override suspend fun isUnlocked(): Boolean = on { client.isUnlocked() }
 
     /** Whether an account is signed in on this device (it may be locked). */
     override fun isSignedIn(): Boolean = keys.get(KeyName.SECRET_KEY) != null
@@ -282,7 +284,7 @@ class Session(
     }
 
     /** One item, or null when it's gone. */
-    suspend fun item(itemId: String, vaultId: String): Item? = on {
+    override suspend fun item(itemId: String, vaultId: String): Item? = on {
         core { client.item(vaultId, itemId) }?.let(Item::parse)
     }
 
@@ -305,6 +307,30 @@ class Session(
     /** Saves locally (history and times are the core's); sync uploads it. */
     override suspend fun save(item: Item, vaultId: String): String = on {
         core { client.saveItem(vaultId, item.toJson().value, now()) }
+    }
+
+    // --- Autofill (D58) ---
+
+    override suspend fun classifyFields(fieldsJson: String, pageUrl: String): String = on {
+        core { client.classifyFields(fieldsJson, pageUrl) }
+    }
+
+    override suspend fun autofillMatches(caller: Caller): List<AutofillMatch> = on {
+        if (!client.isUnlocked()) return@on emptyList()
+        val found = when (caller) {
+            is Caller.Web -> core { client.autofillMatches(caller.url, null) }
+            is Caller.App -> core { client.autofillAppMatches(caller.packageName, caller.certs.map(Callers::digest)) }
+        }
+        found.map { AutofillMatch(it.vaultId, it.itemId, it.title, it.username, it.decision) }
+    }
+
+    override suspend fun linkApp(itemId: String, vaultId: String, packageName: String, cert: String) = on {
+        val item = core { client.item(vaultId, itemId) }?.let(Item::parse) ?: throw PwmError("unknown_item")
+        val link = core { androidAppLink(packageName, cert) }
+        if (item.urls.any { it.url == link }) return@on
+        val linked = item.edited { setUrls(item.urls + Item.Url(link, "exact")) }
+        core { client.saveItem(vaultId, linked.toJson().value, now()) }
+        Unit
     }
 
     // --- Asking another device (D46) ---
@@ -450,6 +476,21 @@ class Session(
         keys.get(KeyName.DEVICE_ID)?.let { return it }
         val id = core { newId() }
         keys.set(KeyName.DEVICE_ID, id)
+        return id
+    }
+
+    /**
+     * The device id to sign in with: the stored one only when it belongs to
+     * [email], since the server refuses one device in two accounts
+     * (`device_conflict`). Signing out and back in keeps the same device.
+     */
+    private fun deviceIdFor(email: String, fresh: Boolean = false): String {
+        val stored = keys.get(KeyName.DEVICE_ID)
+        val owner = keys.get(KeyName.DEVICE_ACCOUNT)
+        if (!fresh && stored != null && owner.equals(email, ignoreCase = true)) return stored
+        val id = core { newId() }
+        keys.set(KeyName.DEVICE_ID, id)
+        keys.set(KeyName.DEVICE_ACCOUNT, email)
         return id
     }
 }

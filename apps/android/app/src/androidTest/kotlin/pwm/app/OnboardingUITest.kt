@@ -1,5 +1,6 @@
 package pwm.app
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsEnabled
@@ -7,8 +8,8 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import android.view.WindowManager
@@ -68,7 +69,8 @@ class OnboardingUITest {
         val server = InstrumentationRegistry.getArguments().getString("server").orEmpty()
         assumeTrue("needs a server: -Pandroid.testInstrumentationRunnerArguments.server=…", server.isNotEmpty())
 
-        tap("otherServerSwitch")
+        // Another test may have left it on.
+        if (!exists("otherServer")) tap("otherServerSwitch")
         replace("otherServer", server)
 
         // Create an account.
@@ -201,7 +203,9 @@ class OnboardingUITest {
         compose.waitUntil(10_000) { enabled(tag) }
         // Tabs and menus aren't in a scrolling list.
         runCatching { compose.onNodeWithTag(tag).performScrollTo() }
-        compose.onNodeWithTag(tag).assertIsEnabled().performClick()
+        // The element's own click, not a touch at its place: on a small screen
+        // the keyboard or a closing sheet can still cover it.
+        compose.onNodeWithTag(tag).assertIsEnabled().performSemanticsAction(SemanticsActions.OnClick)
         compose.waitForIdle()
     }
 

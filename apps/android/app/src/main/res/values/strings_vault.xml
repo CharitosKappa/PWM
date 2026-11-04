@@ -149,6 +149,16 @@
     <string name="notices_missing">The notices aren\'t in this build. Release builds include them.</string>
     <string name="version">Version %1$s</string>
 
+    <!-- Autofill (D58) -->
+    <string name="autofill_unlock">Unlock PWM to fill</string>
+    <string name="autofill_search">Search PWM</string>
+    <string name="fill_title">Fill a login</string>
+    <string name="fill_for">For %1$s</string>
+    <string name="use_for_this_app">Use for this app</string>
+    <string name="autofill_card">Turn on PWM for autofill</string>
+    <string name="autofill_card_hint">PWM fills logins in apps and browsers after you tap one. Android asks you to choose it once.</string>
+    <string name="autofill_turn_on">Turn on</string>
+
     <!-- Screenshots and screen sharing (D56) -->
     <string name="hide_from_capture">Hide PWM from screenshots and screen sharing</string>
     <string name="hide_from_capture_hint">When on, screenshots, recordings and screen sharing show the vault black. Turn it off to show the app to someone helping you. The app switcher never shows the vault.</string>

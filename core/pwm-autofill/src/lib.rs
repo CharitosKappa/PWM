@@ -4,6 +4,7 @@
 //! describes its page or screen and the core decides.
 #![forbid(unsafe_code)]
 
+mod app;
 mod classify;
 mod matching;
 mod multistep;
@@ -11,6 +12,7 @@ mod psl;
 mod report;
 mod rules;
 
+pub use app::{AppLinkError, AppMatch, app_link, match_app};
 pub use classify::{Class, Field, FieldClass, classify};
 pub use matching::{
     Candidate, Decision, Match, RefuseReason, WarnReason, best_match, match_url, rank,

@@ -105,6 +105,8 @@ dependencies {
     implementation(libs.biometric)
     // The periodic background sync (D57).
     implementation(libs.work.runtime)
+    // Autofill's inline suggestions (D58 §8).
+    implementation(libs.autofill)
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
@@ -112,5 +114,6 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(libs.work.testing)
+    androidTestImplementation(libs.uiautomator)
     debugImplementation(libs.compose.ui.test.manifest)
 }
