@@ -136,9 +136,11 @@ private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit)
 @Composable
 internal fun SettingsTab(app: AppModel, model: SettingsModel) {
     val state by model.state.collectAsState()
-    if (state.page == SettingsModel.Page.NOTICES) {
-        Notices(model)
-        return
+    when (state.page) {
+        SettingsModel.Page.NOTICES -> return Notices(model)
+        SettingsModel.Page.DEVICES -> return state.devices?.let { DevicesPage(model, it) } ?: Unit
+        SettingsModel.Page.APPROVALS -> return state.approvals?.let { ApprovalsPage(model, it) } ?: Unit
+        SettingsModel.Page.MAIN -> Unit
     }
     LaunchedEffect(model) { model.prepareKit() }
     if (state.signOutAsked) {
@@ -219,6 +221,10 @@ internal fun SettingsTab(app: AppModel, model: SettingsModel) {
         }
         if (state.kitSaved) Text(stringResource(R.string.kit_saved), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.success))
         ErrorLine(state.error)
+
+        Heading(stringResource(R.string.devices))
+        Secondary(stringResource(R.string.devices), tag = "devices", onClick = model::showDevices)
+        Secondary(stringResource(R.string.approve_device), tag = "approvals", onClick = model::showApprovals)
 
         Secondary(stringResource(R.string.notices), tag = "notices", onClick = model::showNotices)
         Secondary(stringResource(R.string.sign_out), tag = "signOut", onClick = model::askSignOut)

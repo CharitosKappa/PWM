@@ -2540,3 +2540,88 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The device test and keyboards:** a keyboard that takes inline suggestions (Gboard on the emulator) shows PWM's entries as chips that UiAutomator can't read. Debug builds read a switch the test sets, `pwm.test`/`dropdownOnly`, to send the dropdown instead; a release build never reads it.
   - **Found while testing, fixed here:** signing out kept the device id, so a new account signed up on the same phone was refused by the server (`device_conflict`, shown as a server error). Android now gives a sign-up a new device id, and reuses the stored id only for the account it belongs to (kept as `device-account`). The Apple app keeps the device id the same way and has the same gap; it's logged here for M5's next touch.
   - **Run on this machine:** the core tests and clippy, the JVM tests and the server test, the build and licence check (118 libraries), and the 5 device tests on an Android 16 emulator against a local server. Not run: a real phone with Chrome, Firefox and Gboard (the `QUALITY.md` checklist).
+
+- **D59 — Android account and data screens: devices, approving, signing in again, health, export and import** · settled 2026-11-04 · founder (approved as proposed).
+  M6.8 is the rest of the Apple app's Settings on Android:
+  - the device list (M5.10)
+  - approving a new device (M5.9, D46)
+  - signing in again after a refused refresh token (D50 §5)
+  - the health report (D22, D44)
+  - export (D24)
+  - import (D51, M8.2)
+
+  Every core call already exists through UniFFI (`startListDevices`, `startRenameDevice`, `startRevokeDevice`, the approval calls, `healthReport`, `breachCheck`, `authorizeExport`, `exportFile`, `prepareImport` and the rest), and the Apple screens show what each does. Open, for Android:
+  - how to cut it
+  - how approvals reach a phone with no push yet (D57)
+  - the breach check's requests
+  - how export and import pick files
+  - deleting an imported plain-text file
+
+  Proposal:
+  1. **Two PRs, one decision:**
+     - **M6.8, the account:**
+       - **Devices:** the list, rename and revoke.
+       - **Approving a new device.**
+       - **Signing in again.**
+     - **M6.11 (new), the data:**
+       - **The health report,** with the breach check.
+       - **Export.**
+       - **Import.**
+     - **Why:** each half is about the size of an earlier M6 task, and they touch different screens.
+  2. **Devices:**
+     - **The list:** each device's name, platform, when it was added and last used, and "This device" on this one.
+     - **Rename** any device; the name is sealed as D43 §6 says.
+     - **Revoke** any other device, after asking. This one signs out instead.
+  3. **Approving a new device (D46, the signed-in side):**
+     - **Where:** "Approve a new device" in Settings lists open requests.
+     - **Accepting:** shows the matching code, and "The codes match" sends the Secret Key sealed for the new device. Deny ends the request.
+     - **No push on Android yet (D57):** the screen checks for requests every 3 seconds while it shows, and when the app opens.
+       - **The new device's own screen** says where to look ("open Settings, then Approve a new device"), as it does on Apple.
+       - **A notice from the background sync** wouldn't help: requests last 10 minutes and the job runs every 15. Logged as a gap until M6.9.
+  4. **Signing in again (D50 §5):**
+     - **When sync is refused:** the vault's notice becomes "Sign in again to sync", which asks for the master password only. The email and Secret Key are on the device.
+     - **The sign-in:** the normal login, with the same device id (the D58 fix keeps it for this account). The cache and unsent changes are kept, and fingerprint unlock stays on. It counts as typing the master password for the 14-day rule.
+  5. **The health report (M6.11, as D44):**
+     - **The screen:** counts of weak, reused and leaked passwords, each opening its list; each item opens its edit screen, with Generate.
+     - **The breach check:**
+       - **The switch:** "Check for leaked passwords" in Settings, on by default, with D22's sentence.
+       - **The requests:** one per 5-character hash prefix, straight to `api.pwnedpasswords.com` with the core's padding header, through `HttpURLConnection` with no caching and no cookies.
+       - **Results stay in memory** for the session only.
+  6. **Export (M6.11, as D24):**
+     - **The format:** `.pwmx` (encrypted), JSON or CSV.
+     - **The master password first;** a fingerprint doesn't count.
+     - **`.pwmx`:** an export password twice, with the strength meter.
+     - **JSON and CSV:** the warning that anyone with the file can read every password.
+     - **Saving:** through the system's "Save to" (as the Emergency Kit, D53 §2): the bytes go straight to the file picked, with no temporary copy. The lock timeout ignores that trip (D54 notes).
+     - **Every plan,** with no plan check.
+  7. **Import (M6.11, as D51 and M8.2):**
+     - **The file:** through the system's file picker, read once into memory. Files over 50 MB are refused before reading, as the core's limit says.
+     - **The steps, as the other apps:** the core guesses the format; there's a password for encrypted exports, a key file for KeePass, and column mapping for unknown CSVs; then a preview of what will come in, and Import.
+     - **Deleting the file afterwards:** for a plain-text import, "Delete the file" asks Android to delete it (`DocumentsContract.deleteDocument`). Where the place it came from can't delete (some cloud drives), the screen says to delete it by hand (`delete_failed`).
+  8. **Tests:**
+     - **JVM view-model tests** with the fake account, for each screen's steps:
+       - the device list, rename and revoke
+       - the approval steps and a denied request
+       - signing in again keeping unsent changes
+       - health counts
+       - export's checks
+       - import's steps, the delete line and a refused large file
+     - **The server test,** extended inside its one account:
+       - devices and rename
+       - an approval end to end between its two sessions
+       - signing in again
+       - health and export (M6.11), with a fake breach service
+     - **A device test:** rename this device and see the new name come back from the server (M6.8). Import a small CSV from a file the test writes, and export JSON to a file (M6.11).
+     - **By hand (`QUALITY.md`):** approving a phone from another phone, and the pickers on a real phone.
+  9. **No new libraries.**
+
+  Alternatives:
+  - **One PR for all six:** fewer steps, but too large to review well, and the two halves share nothing but Settings.
+  - **A notice for approvals from the background job:** too slow for a request that lasts 10 minutes; push (M6.9) is the real answer.
+  - **Copying the imported file into the app first:** simpler to read, but the plain text would sit in app storage too.
+
+  Implementation notes (M6.8):
+  - **Device conversations** go through the step loop like sync; offline is `network`, a revoked device `device_revoked`, a refused session `signed_out`.
+  - **"Sign in again to sync"** replaces the old "signed out" notice on the list. It's kept in the app's preferences, set by a refused sync in the app or the background job, and cleared by signing in again, signing in, or signing out.
+  - **PATCH on the JVM:** renaming a device is a `PATCH`, which the JDK's `HttpURLConnection` refuses while Android's sends it. The JVM server test uses a `java.net.http` transport (`JdkTransport`, tests only); the device test checks the app's own transport renames.
+  - **Run on this machine:** the JVM tests and the server test (devices, rename, an approval end to end, signing in again) against a local server, the build, and the 5 device tests on an Android 16 emulator. Not run: approving from a real second phone (the `QUALITY.md` checklist).

@@ -55,6 +55,8 @@ class VaultModel internal constructor(
     internal val clipboard: SecretClipboard,
     internal val work: CoroutineDispatcher,
     private val onSignedOut: () -> Unit,
+    /** A sync was told the session ended: "Sign in again to sync" (D50 §5). */
+    private val onSessionEnded: () -> Unit = {},
 ) {
     /** The screens above the list, the last one showing. */
     sealed class Route {
@@ -132,7 +134,10 @@ class VaultModel internal constructor(
             val notice = when (val result = account.sync()) {
                 is SyncResult.Synced -> if (result.failed > 0) SyncNotice.SOME_FAILED else null
                 is SyncResult.Retry -> SyncNotice.OFFLINE
-                SyncResult.SignedOut -> SyncNotice.SIGNED_OUT
+                SyncResult.SignedOut -> {
+                    onSessionEnded()
+                    null
+                }
                 SyncResult.DeviceRevoked -> {
                     // The core has cleared the cache; finish signing out.
                     runCatching { account.signOut() }

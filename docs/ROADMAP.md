@@ -604,9 +604,15 @@ Phase 3  Teams           months 16–24 M16–M19
     - **Health, devices, approving, export, import and signing in again:** M6.8.
     - **`FLAG_SECURE` on the detail and edit screens, and the app-switcher preview:** M6.4. **Fingerprint and face unlock:** M6.2.
     - **On a real phone and a tablet:** the checklist in `QUALITY.md`.
-- [ ] M6.8 Health, devices, approving a new device, export, import and signing in again, as M5.9, M5.10, D50 §5 and M8.2 (D52 §1).
+- [x] M6.8 Health, devices, approving a new device, export, import and signing in again, as M5.9, M5.10, D50 §5 and M8.2 (D52 §1). Split by D59: this task is devices, approving a new device and signing in again; health, export and import are M6.11.
+  - Done per D59 (implementation notes there):
+    - **`:kit`:** `Session` lists, renames and revokes devices, accepts, completes and denies approvals, and signs in again; `DevicesModel`, `ApprovalsModel` and `SignInAgainModel`, the last kept across launches (`signInAgain`) so a refusal a background sync met shows at the next open.
+    - **`:app`:** Settings' Devices and "Approve a new device" pages (the list read every 3 seconds while it shows), and "Sign in again to sync" over the vault list.
+    - **Tests:** 5 JVM view-model tests; the server test lists and renames devices, runs an approval end to end between two sessions, and signs in again; the UI test renames this device.
+  - **Deferred:** health, export and import (M6.11); approval notices (M6.9, push); approving from a real phone (`QUALITY.md`).
 - [ ] M6.9 Push for Android (D57 §1), after M6.3 and M6.8: needs a decision on Google Play services' licence (an allow-list exception) or UnifiedPush, a Firebase project, and the server's RS256 signer for FCM.
 - [ ] M6.10 The Credential Manager provider for Android 14+ (D58 §1): passwords and passkeys, with its own decision on the passkey request format for apps (the provider builds the client data with an `android:apk-key-hash` origin), checking an app against the site's Digital Asset Links file, and the browsers allowed to pass a client data hash.
+- [ ] M6.11 Health, export and import on Android (D59 §1, §5-7): the health report with the breach check, export through the system's "Save to", and import through its file picker with the delete line.
 
 ### M7 — Windows + Linux desktop
 - [ ] M7.1 Tauri app (pending D3) with same screens; Windows Hello unlock; Linux unlock via password (+ polkit/fprintd later).

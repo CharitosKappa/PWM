@@ -333,6 +333,82 @@ class Session(
         Unit
     }
 
+    // --- Devices (D43 §6, D59 §2) ---
+
+    override suspend fun devices(): List<DeviceEntry> = on {
+        val outcome = runOnline(core { client.startListDevices() })
+        (outcome as? Outcome.Devices ?: throw PwmError("protocol")).devices.map {
+            DeviceEntry(it.id, it.platform, it.name, it.createdAt, it.lastSeenAt, it.revokedAt, it.current)
+        }
+    }
+
+    override suspend fun renameDevice(deviceId: String, name: String) = on {
+        expect<Outcome.DeviceUpdated>(runOnline(core { client.startRenameDevice(deviceId, name) }))
+    }
+
+    override suspend fun revokeDevice(deviceId: String) = on {
+        expect<Outcome.DeviceUpdated>(runOnline(core { client.startRevokeDevice(deviceId) }))
+    }
+
+    // --- Approving a new device, the signed-in side (D46, D59 §3) ---
+
+    override suspend fun approvalRequests(): List<ApprovalEntry> = on {
+        val outcome = runOnline(core { client.startListApprovals() })
+        (outcome as? Outcome.Approvals ?: throw PwmError("protocol")).approvals.map {
+            ApprovalEntry(it.id, it.platform, it.createdAt, it.state, it.code)
+        }
+    }
+
+    override suspend fun acceptApproval(id: String) = on {
+        expect<Outcome.ApprovalUpdated>(runOnline(core { client.startAcceptApproval(id) }))
+    }
+
+    /** After the user saw the same code on both devices: the Secret Key, sealed for the new one. */
+    override suspend fun completeApproval(id: String) = on {
+        val secretKey = keys.get(KeyName.SECRET_KEY) ?: throw PwmError("not_signed_in")
+        expect<Outcome.ApprovalUpdated>(runOnline(core { client.startCompleteApproval(id, secretKey) }))
+    }
+
+    override suspend fun denyApproval(id: String) = on {
+        expect<Outcome.ApprovalUpdated>(runOnline(core { client.startDenyApproval(id) }))
+    }
+
+    // --- Signing in again (D50 §5, D59 §4) ---
+
+    /**
+     * After the server refused this device's refresh token: the master
+     * password only, since the email and Secret Key are here. The cache and
+     * its unsent changes stay, and so does fingerprint unlock; it counts as
+     * typing the master password. Then syncs.
+     */
+    override suspend fun signInAgain(password: Redacted<String>): SyncResult = on {
+        val email = keys.get(KeyName.EMAIL)
+        val secretKey = keys.get(KeyName.SECRET_KEY)
+        if (email == null || secretKey == null) throw PwmError("signed_out")
+        val first = core { client.startLogin(email, password.value, secretKey, deviceIdFor(email), Platform.ANDROID, "") }
+        if (run(first) != Outcome.LoggedIn) throw PwmError("protocol")
+        passwordTyped()
+        syncNow()
+    }
+
+    /** A conversation that needs the server: offline is `network`, and a refused session says so. */
+    private suspend fun runOnline(first: Step): Outcome {
+        val outcome = try {
+            run(first)
+        } catch (e: Wait) {
+            throw PwmError("network")
+        }
+        return when (outcome) {
+            Outcome.DeviceRevoked -> throw PwmError("device_revoked")
+            Outcome.SignedOut -> throw PwmError("signed_out")
+            else -> outcome
+        }
+    }
+
+    private inline fun <reified T : Outcome> expect(outcome: Outcome) {
+        if (outcome !is T) throw PwmError("protocol")
+    }
+
     // --- Asking another device (D46) ---
 
     override suspend fun askForApproval(email: String, onCode: suspend (String) -> Unit): Redacted<String> {

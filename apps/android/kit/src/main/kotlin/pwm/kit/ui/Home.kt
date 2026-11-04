@@ -35,6 +35,8 @@ class HomeModel internal constructor(
     val vault: VaultModel,
     val generator: GeneratorModel,
     val settings: SettingsModel,
+    /** "Sign in again to sync" over the vault list (D50 §5). */
+    val signInAgain: SignInAgainModel,
 ) {
     enum class Tab { VAULT, GENERATOR, SETTINGS }
 
@@ -131,7 +133,7 @@ class SettingsModel internal constructor(
     private val onSignedOut: () -> Unit,
     private val onHideFromCapture: (Boolean) -> Unit = {},
 ) {
-    enum class Page { MAIN, NOTICES }
+    enum class Page { MAIN, NOTICES, DEVICES, APPROVALS }
 
     data class State(
         val email: String? = null,
@@ -148,6 +150,9 @@ class SettingsModel internal constructor(
         val kitSaved: Boolean = false,
         val signOutAsked: Boolean = false,
         val page: Page = Page.MAIN,
+        /** The account screens, made when shown (D59). */
+        val devices: DevicesModel? = null,
+        val approvals: ApprovalsModel? = null,
         val error: String? = null,
     )
 
@@ -212,10 +217,17 @@ class SettingsModel internal constructor(
 
     fun showNotices() = mutable.update { it.copy(page = Page.NOTICES) }
 
+    fun showDevices() {
+        val devices = DevicesModel(scope, account).also { it.load() }
+        mutable.update { it.copy(page = Page.DEVICES, devices = devices) }
+    }
+
+    fun showApprovals() = mutable.update { it.copy(page = Page.APPROVALS, approvals = ApprovalsModel(scope, account)) }
+
     /** Back from a page of Settings; false on Settings itself. */
     fun back(): Boolean {
         if (mutable.value.page == Page.MAIN) return false
-        mutable.update { it.copy(page = Page.MAIN) }
+        mutable.update { it.copy(page = Page.MAIN, devices = null, approvals = null) }
         return true
     }
 

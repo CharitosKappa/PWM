@@ -100,7 +100,7 @@ fun Home(app: AppModel, home: HomeModel) {
     val content: @Composable (Modifier) -> Unit = { modifier ->
         Box(modifier.testTag("vaultScreen")) {
             when (state.tab) {
-                HomeModel.Tab.VAULT -> VaultTab(app, home.vault)
+                HomeModel.Tab.VAULT -> VaultTab(app, home.vault, home.signInAgain)
                 HomeModel.Tab.GENERATOR -> GeneratorTab(home.generator)
                 HomeModel.Tab.SETTINGS -> SettingsTab(app, home.settings)
             }
@@ -140,7 +140,7 @@ fun Home(app: AppModel, home: HomeModel) {
 // --- The vault tab ---
 
 @Composable
-private fun VaultTab(app: AppModel, vault: VaultModel) {
+private fun VaultTab(app: AppModel, vault: VaultModel, signInAgain: pwm.kit.ui.SignInAgainModel) {
     val state by vault.state.collectAsState()
     val top = state.stack.lastOrNull()
     if (state.discardAsked) {
@@ -153,7 +153,7 @@ private fun VaultTab(app: AppModel, vault: VaultModel) {
     }
     if (isWide()) {
         Row(Modifier.fillMaxSize()) {
-            VaultList(vault, state, Modifier.width(360.dp).fillMaxHeight())
+            VaultList(vault, state, signInAgain, Modifier.width(360.dp).fillMaxHeight())
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 when (top) {
                     null -> Text(
@@ -167,7 +167,7 @@ private fun VaultTab(app: AppModel, vault: VaultModel) {
         }
     } else {
         when (top) {
-            null -> VaultList(vault, state, Modifier.fillMaxSize())
+            null -> VaultList(vault, state, signInAgain, Modifier.fillMaxSize())
             is VaultModel.Route.Detail -> ItemDetail(vault, top.model)
             is VaultModel.Route.Edit -> ItemEdit(app, vault, top.model)
         }
@@ -176,7 +176,7 @@ private fun VaultTab(app: AppModel, vault: VaultModel) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun VaultList(vault: VaultModel, state: VaultModel.State, modifier: Modifier) {
+private fun VaultList(vault: VaultModel, state: VaultModel.State, signInAgain: pwm.kit.ui.SignInAgainModel, modifier: Modifier) {
     var menu by remember { mutableStateOf(false) }
     Box(modifier) {
         Column(Modifier.fillMaxSize()) {
@@ -186,6 +186,7 @@ private fun VaultList(vault: VaultModel, state: VaultModel.State, modifier: Modi
                 modifier = Modifier.fillMaxWidth().padding(horizontal = Tokens.Space.s4.dp, vertical = Tokens.Space.s2.dp).testTag("search"),
             )
             Sections(vault, state)
+            SignInAgainLine(signInAgain)
             val notice = when (state.notice) {
                 SyncNotice.SOME_FAILED -> stringResource(R.string.notice_some_failed)
                 SyncNotice.OFFLINE -> stringResource(R.string.notice_offline)

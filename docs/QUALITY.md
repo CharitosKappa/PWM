@@ -123,6 +123,12 @@ Autofill (D58), with the same build:
 4. Locked: "Unlock PWM to fill" asks for the fingerprint or the master password, then fills.
 5. A login with a one-time code: on a screen with no code field, the code is on the clipboard after the fill.
 
+Devices and approving (D59), with the same build:
+
+1. Settings, Devices: every device shows, this one marked. Rename one: another device sees the new name after a sync. Sign out another device: it is asked to sign in again.
+2. On a second phone or the extension, sign in with "Sign in with another device". On this phone, Settings, Approve a new device: the request shows within a few seconds; the codes match on both; the new device signs in.
+3. Revoke this phone's session from another device's list: the next sync here shows "Sign in again to sync"; the master password brings it back, with unsent changes kept.
+
 ### Import checklist (D51)
 
 Before the beta, with a real export from each manager (made with a throwaway account holding synthetic items, never real ones):
