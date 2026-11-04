@@ -2458,3 +2458,85 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **A run with the app's process gone** starts it: `PwmApplication` builds the model and opens the account as at launch, and the run uses it while the screen stays on unlock.
   - **Versions:** `work-runtime-ktx` 2.10.0 (Apache-2.0), which brings Room and SQLite for its own queue; the licence check covers 118 libraries, all allowed. `work-testing` is in the device tests only.
   - **Run on this machine:** the JVM tests, the server test's locked sync against a local server, the build and licence check, and the 4 device tests on an Android 16 emulator. Not run: a real phone's scheduling over hours (the `QUALITY.md` checklist).
+
+- **D58 — Android autofill: the split, which callers to trust, matching apps, unlocking, and what is filled** · settled 2026-11-04 · founder (approved as proposed).
+  M6.3 says "AutofillService + Credential Manager provider (passwords + passkeys), inline suggestions". `AUTOFILL.md` asks for inline suggestions on keyboards that support them, with the dataset picker as a fallback. These are two separate Android systems:
+  - **The autofill service** (Android 8+) fills fields in apps and browsers.
+  - **The Credential Manager provider** (Android 14+) answers apps' and browsers' requests for passwords and passkeys.
+
+  The core already classifies fields (`classify_fields`) and matches web pages (`autofill_matches`, D33). It can't match a native app yet. Open:
+  - how to cut the task
+  - which callers' web domains to believe
+  - how native apps are matched
+  - how a locked vault fills
+  - what is filled, and what isn't yet
+
+  Proposal:
+  1. **Split M6.3, as D52 split M6.1:**
+     - **M6.3:** the autofill service for passwords, in apps and browsers, with inline suggestions and the dropdown.
+     - **M6.10 (new): the Credential Manager provider** for passwords and passkeys on Android 14+. It needs its own decision:
+       - the passkey request format for apps, where the provider builds the client data with an `android:apk-key-hash` origin
+       - checking an app against the site's Digital Asset Links file
+       - the browsers allowed to pass a client data hash
+     - **Until then:** passkeys on Android are a logged gap.
+  2. **The service:** `PwmAutofillService`, which the user turns on in the system's autofill settings.
+     - **The card:** Settings shows "Turn on PWM for autofill" with a button that opens the system's choice (`ACTION_REQUEST_SET_AUTOFILL_SERVICE`), until it's on. No prompt anywhere else (D47 §7).
+     - **What it reads from the screen:** each field's autofill hints, input type, resource id, hint text, and, for web pages, the HTML tag and attributes Android passes. These map to the core's field description and go to `classify_fields`. Only username, email, current password, new password and one-time code fields are used.
+     - **Never read:** field values. Nothing about the screen is logged.
+  3. **Which web domains to believe:** any app can claim a web domain in what it hands the service, so a fake "bank.example" would get the bank's password.
+     - **Trusted:** the domain only from a list of known browsers, each a package name with its signing certificate's SHA-256: Chrome, Firefox, Edge, Brave, Samsung Internet, DuckDuckGo and Vivaldi. The list is in the app, and the signed rules file (`AUTOFILL.md`) can extend it.
+     - **Everything else** is treated as the app it is (§4), including web pages shown inside other apps.
+     - **Browsers that need Android's compatibility mode** are left out. That mode reads the screen through accessibility, which is fragile. A browser that doesn't pass web domains gets nothing.
+  4. **Matching native apps (new in the core):**
+     - **The link:** a login's website list can hold `android-app://<package>?sha256=<certificate digest>`.
+     - **New core rule** (`autofill_app_matches`), tested first: the package must be equal, and so must the digest of the app's signing certificate, which the platform reads from Android. Linking the certificate means an app reinstalled from elsewhere under the same name doesn't get the login.
+     - **Making a link:** PWM writes one when the user picks a login from search for an app ("Use for this app" saves the link, with the certificate).
+     - **Links without a digest** (`androidapp://…` from other managers' exports) are offered only from search, never as a suggestion.
+     - **No guessing from package names** (`com.bank.app` → `bank.com`): a wrong guess fills the wrong app.
+     - **Digital Asset Links** (an app proving it belongs to a site) waits for M6.10, which needs it anyway.
+  5. **When the vault is unlocked** (the app's process holds it open, as the lock timeout allows):
+     - the matching logins are offered by title and username, and a tap fills
+     - "Search PWM" is always there, for apps not linked yet
+  6. **When the vault is locked:** one entry, "Unlock PWM to fill".
+     - **A tap opens PWM's fill screen:** fingerprint or face when that's on, or the master password (the service runs in the app, so the key derivation is fine here, unlike the iOS extension, D47 §3). Then the matches, with search; a tap fills and the screen closes.
+     - **Nothing is stored outside the vault's encryption for this:** no list of usernames or domains for before unlocking. iOS keeps one because QuickType needs it (D47 §5); Android doesn't.
+  7. **What it fills:**
+     - **The username and password,** after a tap, never by itself.
+     - **The one-time code:**
+       - filled when a field is a one-time code with high confidence (the core's 0.8)
+       - otherwise copied for 30 seconds after the fill, as the other apps do
+     - **Not yet, and logged as gaps:**
+       - **saving new logins** from what the user typed, as on iOS (D47 §4)
+       - **cards and identities,** which need a confirmation step (`AUTOFILL.md`)
+  8. **Inline suggestions** (Android 11+, keyboards that support them) through AndroidX Autofill's `InlineSuggestionUi`, with the dropdown otherwise. Both show the same entries. There's no "Save" or "Upgrade" entry, and nothing a page can style (`AUTOFILL.md`).
+  9. **Tests:**
+     - **Core (tests first):**
+       - app matching: equal, another package, another certificate, a link without a digest
+       - a fuzz case for the new link format
+     - **JVM:**
+       - the screen-to-field mapping over fake nodes
+       - the browser list, and refusing a web domain from another app
+       - building the entries locked and unlocked
+       - "Use for this app" writing the link
+       - the one-time code rule
+     - **On the emulator:**
+       - the service is turned on with `adb` (`settings put secure autofill_service …`)
+       - a test login screen in the test app is filled through the dropdown, driven by UiAutomator
+       - a second test screen claiming a web domain gets nothing
+     - **By hand (`QUALITY.md`):** Chrome and Firefox with a real site, Gboard's inline suggestions, and a bank-style app.
+  10. **Downloads:** the first build fetches AndroidX Autofill (`androidx.autofill:autofill`, Apache-2.0), and UiAutomator for the device tests. The founder approves that here.
+
+  Alternatives:
+  - **Everything in M6.3, passkeys included:** one task, but the Credential Manager adds a second protocol, Digital Asset Links over the network, and the browser allowlist for client data hashes. Each deserves its own review.
+  - **A list of usernames and domains for before unlocking,** as iOS has: suggestions could name the login while locked. But it puts vault metadata outside our encryption on a platform that doesn't need it.
+  - **Believing every caller's web domain:** more apps would fill, and so would a fake one.
+  - **Guessing apps from package names,** as some managers do: convenient, and sometimes wrong in a way that hands a password to another app.
+
+  Implementation notes (M6.3):
+  - **The browsers' certificates** are their release signing certificates' SHA-256, from Google's list of browsers privileged for Credential Manager (`gpm-passkeys-privileged-apps/apps.json`), checked against the raw file.
+  - **Reading another app's certificate** needs package visibility: the manifest's `<queries>` names the 7 browsers and asks for apps with a launcher icon. No `QUERY_ALL_PACKAGES`.
+  - **What a match fills:** while unlocked, an entry carries the login's values and fills at once; one with a one-time code and no code field goes through PWM's fill screen without showing it, so the code is copied after the fill. Locked, the entry opens the fill screen, which unlocks with the app's unlock screen (without the fingerprint offer, D45 §3).
+  - **Never into PWM itself:** a request from PWM's own screens gets nothing.
+  - **The device test and keyboards:** a keyboard that takes inline suggestions (Gboard on the emulator) shows PWM's entries as chips that UiAutomator can't read. Debug builds read a switch the test sets, `pwm.test`/`dropdownOnly`, to send the dropdown instead; a release build never reads it.
+  - **Found while testing, fixed here:** signing out kept the device id, so a new account signed up on the same phone was refused by the server (`device_conflict`, shown as a server error). Android now gives a sign-up a new device id, and reuses the stored id only for the account it belongs to (kept as `device-account`). The Apple app keeps the device id the same way and has the same gap; it's logged here for M5's next touch.
+  - **Run on this machine:** the core tests and clippy, the JVM tests and the server test, the build and licence check (118 libraries), and the 5 device tests on an Android 16 emulator against a local server. Not run: a real phone with Chrome, Firefox and Gboard (the `QUALITY.md` checklist).

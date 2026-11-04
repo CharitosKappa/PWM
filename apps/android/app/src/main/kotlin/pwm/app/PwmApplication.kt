@@ -38,6 +38,9 @@ class PwmApplication : Application() {
         private set
     private var shown: FragmentActivity? = null
 
+    /** The sensitive clipboard, for the app and the fill screen. */
+    val clipboard: AndroidClipboard by lazy { AndroidClipboard(this) }
+
     override fun onCreate() {
         super.onCreate()
         val keys = KeystoreKeys(this)
@@ -71,7 +74,7 @@ class PwmApplication : Application() {
             prefs = AndroidPrefs(this),
             // The model, such as "Pixel 8": no permission needed (D53 §5).
             deviceName = Build.MODEL?.takeIf { it.isNotBlank() } ?: "Android",
-            clipboard = AndroidClipboard(this),
+            clipboard = clipboard,
             paper = EmergencyKit.Paper.of(Locale.getDefault().country),
             makeAccount = { server -> Session(cache, server, keys, biometrics = biometrics) },
             // Keeps counting while the phone sleeps; ignores the wall clock (D54 §5).

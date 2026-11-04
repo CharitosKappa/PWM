@@ -115,6 +115,14 @@ Background sync (D57), with the same build:
 1. Sign in, lock the phone and leave it for an hour. On another device, add an item. Unlock: it's there without waiting for a sync.
 2. With the phone offline, edit an item, lock, and go back online: within the next half hour the other device has it, with the app closed.
 
+Autofill (D58), with the same build:
+
+1. Settings shows "Turn on PWM for autofill"; its button opens the system's choice. Pick PWM: the card goes.
+2. Chrome and Firefox on a site with a saved login: the login is offered; a tap fills. With Gboard, it shows as a chip above the keyboard.
+3. A bank-style app: "Search PWM", pick the login with "Use for this app": it fills, and is offered by name next time.
+4. Locked: "Unlock PWM to fill" asks for the fingerprint or the master password, then fills.
+5. A login with a one-time code: on a screen with no code field, the code is on the clipboard after the fill.
+
 ### Import checklist (D51)
 
 Before the beta, with a real export from each manager (made with a throwaway account holding synthetic items, never real ones):

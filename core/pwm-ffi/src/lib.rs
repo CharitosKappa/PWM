@@ -986,6 +986,28 @@ impl PwmClient {
             .collect())
     }
 
+    /// The logins linked to an Android app and one of its signing
+    /// certificates' SHA-256 digests (D58 §4), linked ones first.
+    pub fn autofill_app_matches(
+        &self,
+        package: String,
+        cert_sha256: Vec<String>,
+    ) -> Result<Vec<AutofillMatch>, PwmError> {
+        Ok(self
+            .lock_inner()
+            .autofill_app_matches(&package, &cert_sha256)?
+            .into_iter()
+            .map(|m| AutofillMatch {
+                vault_id: m.vault_id,
+                item_id: m.item_id,
+                title: m.title,
+                username: m.username,
+                matched: m.matched.to_owned(),
+                decision: m.decision.to_owned(),
+            })
+            .collect())
+    }
+
     /// Field descriptions (JSON array, never values) in, `[{class, confidence}]` out.
     pub fn classify_fields(
         &self,
@@ -1309,6 +1331,16 @@ pub fn scan_kit(text: String) -> Result<ScannedKit, PwmError> {
         email: kit.email,
         secret_key: kit.secret_key.expose_secret().clone(),
         server: kit.server,
+    })
+}
+
+/// The website-list entry linking a login to an Android app (D58 §4):
+/// `android-app://<package>?sha256=<digest>`. `invalid_url` for a bad package
+/// name or digest.
+#[uniffi::export]
+pub fn android_app_link(package: String, cert_sha256: String) -> Result<String, PwmError> {
+    pwm_client::app_link(&package, &cert_sha256).map_err(|_| PwmError::Failed {
+        code: "invalid_url".to_owned(),
     })
 }
 

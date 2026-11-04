@@ -44,6 +44,9 @@ enum class KeyName(val key: String) {
     ACCESS_TOKEN("access-token"),
     REFRESH_TOKEN("refresh-token"),
     DEVICE_ID("device-id"),
+
+    /** The account [DEVICE_ID] belongs to, kept at sign-out: the id is reused only for that account. */
+    DEVICE_ACCOUNT("device-account"),
     EMAIL("email"),
 
     /** Fingerprint and face unlock (D55 §4): the core's blob, the wrapped unlock key, and when the master password was last typed. */

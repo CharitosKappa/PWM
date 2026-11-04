@@ -1,6 +1,10 @@
 package pwm.app
 
 import android.webkit.WebView
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import android.view.autofill.AutofillManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -33,6 +37,7 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import pwm.kit.BiometricState
 import pwm.kit.PwmError
 import pwm.kit.design.Tokens
@@ -153,6 +158,7 @@ internal fun SettingsTab(app: AppModel, model: SettingsModel) {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: ""
     }
     Page(stringResource(R.string.tab_settings), null, tag = "settingsScreen") {
+        AutofillCard()
         Heading(stringResource(R.string.account))
         Text(state.email ?: "", style = Tokens.Text.body.compose(), color = color(Tokens.Color.text))
         Text(
@@ -267,3 +273,34 @@ private fun Notices(model: SettingsModel) {
         }
     }
 }
+
+/**
+ * "Turn on PWM for autofill" (D58 §2): shown until PWM is the autofill
+ * service, with a button to the system's choice. No prompt anywhere else.
+ */
+@Composable
+private fun AutofillCard() {
+    val context = LocalContext.current
+    val manager = remember { context.getSystemService(AutofillManager::class.java) }
+    var enabled by remember { mutableStateOf(true) }
+    // Checked again each time Settings comes back, as after the system's screen.
+    LifecycleResumeEffect(Unit) {
+        enabled = manager == null || !manager.isAutofillSupported || manager.hasEnabledAutofillServices()
+        onPauseOrDispose {}
+    }
+    if (enabled) return
+    Surface(color = color(Tokens.Color.surface), shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth().testTag("autofillCard")) {
+        Column(Modifier.padding(Tokens.Space.s4.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s2.dp)) {
+            Text(stringResource(R.string.autofill_card), style = Tokens.Text.bodyStrong.compose(), color = color(Tokens.Color.text))
+            Text(stringResource(R.string.autofill_card_hint), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))
+            OutlinedButton(onClick = {
+                runCatching {
+                    context.startActivity(
+                        Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE, Uri.parse("package:${context.packageName}")),
+                    )
+                }
+            }) { Text(stringResource(R.string.autofill_turn_on)) }
+        }
+    }
+}
+

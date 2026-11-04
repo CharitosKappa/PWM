@@ -68,7 +68,8 @@ class OnboardingUITest {
         val server = InstrumentationRegistry.getArguments().getString("server").orEmpty()
         assumeTrue("needs a server: -Pandroid.testInstrumentationRunnerArguments.server=…", server.isNotEmpty())
 
-        tap("otherServerSwitch")
+        // Another test may have left it on.
+        if (!exists("otherServer")) tap("otherServerSwitch")
         replace("otherServer", server)
 
         // Create an account.

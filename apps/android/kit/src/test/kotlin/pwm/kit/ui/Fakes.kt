@@ -196,6 +196,33 @@ class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = 
     override suspend fun currentCode(itemId: String, vaultId: String): CurrentCode? =
         if (items[itemId]?.totp.isNullOrEmpty()) null else CurrentCode(Redacted("123456"), 20)
 
+    // Autofill: logins whose title starts with the app's package or the web host match.
+    override suspend fun item(itemId: String, vaultId: String): Item? = items[itemId]
+
+    var classes: String = "[]"
+
+    override suspend fun classifyFields(fieldsJson: String, pageUrl: String): String = classes
+
+    override suspend fun autofillMatches(caller: pwm.kit.Caller): List<pwm.kit.AutofillMatch> {
+        if (!unlocked) return emptyList()
+        val key = when (caller) {
+            is pwm.kit.Caller.Web -> java.net.URI(caller.url).host
+            is pwm.kit.Caller.App -> caller.packageName
+        }
+        return items.values.filter { it.kind == Item.Kind.LOGIN && it.urls.any { u -> key in u.url } }
+            .map { pwm.kit.AutofillMatch(VAULT, it.id!!, it.title, it.username, "fill") }
+    }
+
+    val links = mutableListOf<String>()
+
+    override suspend fun linkApp(itemId: String, vaultId: String, packageName: String, cert: String) {
+        links += "$itemId $packageName"
+        val item = items.getValue(itemId)
+        items[itemId] = item.edited { setUrls(item.urls + Item.Url("android-app://$packageName?sha256=$cert", "exact")) }
+    }
+
+    override suspend fun isUnlocked(): Boolean = unlocked
+
     /** Adds an item as if it had synced from another device. */
     fun add(item: Item) {
         items[item.id!!] = item

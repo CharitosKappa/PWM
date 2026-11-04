@@ -565,7 +565,13 @@ Phase 3  Teams           months 16–24 M16–M19
   - **Deferred:**
     - **On a real phone:** the checklist in `QUALITY.md` (a new finger, removing the screen lock).
     - **The autofill service** unlocks with the same key in M6.3.
-- [ ] M6.3 AutofillService + Credential Manager provider (passwords + passkeys), inline suggestions.
+- [x] M6.3 AutofillService + Credential Manager provider (passwords + passkeys), inline suggestions. Split by D58: this task is the autofill service for passwords; the Credential Manager provider and passkeys are M6.10.
+  - Done per D58 (implementation notes there):
+    - **Core:** app links (`android-app://<package>?sha256=<digest>`) in `pwm-autofill` (`app_link`, `match_app`), `Client::autofill_app_matches`, and `android_app_link` through UniFFI; the `url_match` fuzz target covers the link parser.
+    - **`:kit`:** `FieldMapping` (the screen's fields to the core's descriptions, and back to roles), `Callers` (the 7 browsers whose web domain is believed, by package and certificate), the Account calls, `AutofillPlan` and the fill screen's `FillModel`.
+    - **`:app`:** `PwmAutofillService` (the dropdown and inline suggestions), `FillActivity` (unlock, the matches, search and "Use for this app"), and the Settings card that offers to turn it on.
+    - **Tests:** 6 core and 2 client tests; 11 JVM tests (fields, callers, the plan, the fill screen, linking); a device test that turns the service on, sees a fake web domain refused, fills another app through search and links it, fills it again by name, and fills while locked through the master password.
+  - **Deferred:** saving new logins, cards and identities (D58 §7); the Credential Manager provider and passkeys (M6.10); a real phone with Chrome, Firefox and Gboard (`QUALITY.md`).
 - [x] M6.4 FLAG_SECURE on sensitive screens.
   - Done per D56 (implementation notes there):
     - **`AppModel`** says whether the window is left out of capture (the Secret Key screen always; the vault unless the switch is off) and out of the app switcher (both, whatever the switch). The Activity applies `FLAG_SECURE` and, on Android 13+, `setRecentsScreenshotEnabled`.
@@ -600,6 +606,7 @@ Phase 3  Teams           months 16–24 M16–M19
     - **On a real phone and a tablet:** the checklist in `QUALITY.md`.
 - [ ] M6.8 Health, devices, approving a new device, export, import and signing in again, as M5.9, M5.10, D50 §5 and M8.2 (D52 §1).
 - [ ] M6.9 Push for Android (D57 §1), after M6.3 and M6.8: needs a decision on Google Play services' licence (an allow-list exception) or UnifiedPush, a Firebase project, and the server's RS256 signer for FCM.
+- [ ] M6.10 The Credential Manager provider for Android 14+ (D58 §1): passwords and passkeys, with its own decision on the passkey request format for apps (the provider builds the client data with an `android:apk-key-hash` origin), checking an app against the site's Digital Asset Links file, and the browsers allowed to pass a client data hash.
 
 ### M7 — Windows + Linux desktop
 - [ ] M7.1 Tauri app (pending D3) with same screens; Windows Hello unlock; Linux unlock via password (+ polkit/fprintd later).

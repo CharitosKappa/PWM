@@ -26,6 +26,7 @@ Autofill reliability is our top promise and the top complaint against every comp
   - Suggestions are each login's domains (the registrable domain for the default match, the host otherwise; regex and never URLs are left out) and username, plus passkeys by RP id. The switch "Suggest logins above the keyboard" is in Settings, on by default.
   - Passkeys use the core's hashed calls (`passkey_register_hashed`, `passkey_assert_hashed`), since iOS passes only the client data hash.
 - Android: AutofillService + Credential Manager provider; inline suggestions on keyboards that support them; fall back to dataset picker.
+  - Per D58: the service fills passwords after a tap. A web domain is believed only from 7 listed browsers, each checked by package and signing certificate; any other app is matched as itself, through links `android-app://<package>?sha256=<digest>` that the user makes once ("Use for this app"). Unlocked, the matches are offered by name; locked, one "Unlock PWM to fill" entry opens PWM. Nothing about the vault is kept outside its encryption for this. The Credential Manager provider and passkeys are M6.10.
 
 ## Test harness (`tests/autofill-harness`)
 

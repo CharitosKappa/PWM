@@ -350,7 +350,7 @@ private fun Asking(code: String?, onCancel: () -> Unit) {
 // --- Unlock ---
 
 @Composable
-private fun Unlock(model: UnlockModel) {
+internal fun Unlock(model: UnlockModel) {
     val state by model.state.collectAsState()
     // The finger or face once by itself (D45, D55 §3); a cancel leaves the password.
     LaunchedEffect(model) { model.tryBiometricsOnce() }
