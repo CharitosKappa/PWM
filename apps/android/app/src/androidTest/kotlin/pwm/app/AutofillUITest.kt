@@ -81,9 +81,7 @@ class AutofillUITest {
     @Test
     fun anotherAppFillsThroughPwmAndAFakeWebDomainGetsNothing() {
         // An app claiming the bank's web domain isn't a listed browser: no bank login.
-        open(FakeWebActivity::class.java)
-        tapField("username")
-        check(device.wait(Until.hasObject(By.text("Search PWM")), 10_000)) { "no PWM entry" }
+        openUntilOffered(FakeWebActivity::class.java)
         assertFalse("a fake web domain got the bank's login", device.hasObject(By.text("Bank")))
         device.pressBack()
 
@@ -141,6 +139,21 @@ class AutofillUITest {
                 if (attempt == 2) throw e
                 device.waitForIdle()
             }
+        }
+    }
+
+    /**
+     * Opens a test screen and taps its username field until PWM's entry
+     * shows. The first request after the service is chosen can be lost on a
+     * slow emulator, so the screen is opened again, at most three times.
+     */
+    private fun openUntilOffered(screen: Class<*>) {
+        repeat(3) { attempt ->
+            open(screen)
+            tapField("username")
+            if (device.wait(Until.hasObject(By.text("Search PWM")), 15_000)) return
+            check(attempt < 2) { "no PWM entry, on ${model.state.value.screen::class.simpleName}; showing: ${onScreen()}" }
+            device.pressBack()
         }
     }
 
