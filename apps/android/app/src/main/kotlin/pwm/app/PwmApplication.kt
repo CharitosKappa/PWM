@@ -1,13 +1,21 @@
 package pwm.app
 
 import android.app.Application
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PersistableBundle
+import android.os.SystemClock
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.MainScope
@@ -39,8 +47,28 @@ class PwmApplication : Application() {
             clipboard = AndroidClipboard(this),
             paper = EmergencyKit.Paper.of(Locale.getDefault().country),
             makeAccount = { server -> Session(cache, server, keys) },
+            // Keeps counting while the phone sleeps; ignores the wall clock (D54 §5).
+            clock = SystemClock::elapsedRealtime,
         )
         model.start()
+        // The whole app's background and foreground, so moving between its
+        // own screens never counts as leaving.
+        ProcessLifecycleOwner.get().lifecycle.addObserver(
+            object : DefaultLifecycleObserver {
+                override fun onStart(owner: LifecycleOwner) = model.appForegrounded()
+
+                override fun onStop(owner: LifecycleOwner) = model.appBackgrounded()
+            },
+        )
+        // The screen turning off locks the vault, whatever the timeout.
+        ContextCompat.registerReceiver(
+            this,
+            object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) = model.screenOff()
+            },
+            IntentFilter(Intent.ACTION_SCREEN_OFF),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 }
 
@@ -56,9 +84,14 @@ class AndroidPrefs(context: Context) : AppPrefs {
         get() = prefs.getBoolean(KIT_PENDING, false)
         set(value) = prefs.edit().putBoolean(KIT_PENDING, value).apply()
 
+    override var lockTimeoutMinutes: Int?
+        get() = if (prefs.contains(LOCK_TIMEOUT)) prefs.getInt(LOCK_TIMEOUT, 0) else null
+        set(value) = prefs.edit().apply { if (value == null) remove(LOCK_TIMEOUT) else putInt(LOCK_TIMEOUT, value) }.apply()
+
     private companion object {
         const val SERVER = "server"
         const val KIT_PENDING = "kitPending"
+        const val LOCK_TIMEOUT = "lockTimeoutMinutes"
     }
 }
 

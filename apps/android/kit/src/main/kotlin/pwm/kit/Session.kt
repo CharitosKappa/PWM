@@ -153,23 +153,36 @@ class Session(
 
     override suspend fun sync(): SyncResult = on { syncNow() }
 
-    suspend fun vaultIds(): List<String> = on { core { client.vaultIds() } }
+    override suspend fun vaultIds(): List<String> = on { core { client.vaultIds() } }
 
     /** Every item of a vault, trashed ones included. */
-    suspend fun items(vaultId: String): List<Item> = on {
+    override suspend fun items(vaultId: String): List<Item> = on {
         core { client.items(vaultId) }.map(Item::parse)
     }
 
-    override suspend fun itemCount(): Int = on {
-        core { client.vaultIds() }.sumOf { vault ->
-            core { client.items(vault) }.map(Item::parse).count { it.trashedAtMs == null }
-        }
+    /** One item, or null when it's gone. */
+    suspend fun item(itemId: String, vaultId: String): Item? = on {
+        core { client.item(vaultId, itemId) }?.let(Item::parse)
     }
 
-    fun newItem(kind: Item.Kind, title: String): Item = Item.new(kind, title, core { newId() }, now())
+    override suspend fun setTrashed(itemId: String, vaultId: String, trashed: Boolean) = on {
+        core { client.setTrashed(vaultId, itemId, trashed, now()) }
+    }
+
+    override suspend fun delete(itemId: String, vaultId: String) = on {
+        core { client.deleteItem(vaultId, itemId) }
+    }
+
+    override suspend fun purgeTrash(): Int = on { core { client.purgeTrash(now()) }.toInt() }
+
+    override suspend fun currentCode(itemId: String, vaultId: String): CurrentCode? = on {
+        core { client.currentCode(vaultId, itemId, now()) }?.let { CurrentCode(Redacted(it.code), it.secondsLeft.toLong()) }
+    }
+
+    override fun newItem(kind: Item.Kind, title: String): Item = Item.new(kind, title, core { newId() }, now())
 
     /** Saves locally (history and times are the core's); sync uploads it. */
-    suspend fun save(item: Item, vaultId: String): String = on {
+    override suspend fun save(item: Item, vaultId: String): String = on {
         core { client.saveItem(vaultId, item.toJson().value, now()) }
     }
 

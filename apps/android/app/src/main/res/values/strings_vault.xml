@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The vault, generator and Settings (D54), the same words as the Apple app. -->
+<resources>
+    <!-- Tabs -->
+    <string name="tab_vault">Vault</string>
+    <string name="tab_generator">Generator</string>
+    <string name="tab_settings">Settings</string>
+
+    <!-- The list -->
+    <string name="search">Search</string>
+    <string name="section_all">All items</string>
+    <string name="section_favorites">Favorites</string>
+    <string name="section_trash">Trash</string>
+    <string name="kind_login">Logins</string>
+    <string name="kind_card">Cards</string>
+    <string name="kind_identity">Identities</string>
+    <string name="kind_note">Notes</string>
+    <string name="new_item">New item</string>
+    <string name="new_login">Login</string>
+    <string name="new_card">Card</string>
+    <string name="new_identity">Identity</string>
+    <string name="new_note">Note</string>
+    <string name="empty_vault">Nothing here yet.</string>
+    <string name="empty_search">No items match.</string>
+    <string name="empty_trash">The trash is empty.</string>
+    <string name="notice_some_failed">Some changes couldn\'t sync. They\'ll be sent again.</string>
+    <string name="notice_offline">Couldn\'t sync. Showing what\'s on this device.</string>
+    <string name="card_ending">Ending %1$s</string>
+    <string name="select_item">Choose an item.</string>
+
+    <!-- Detail -->
+    <string name="edit">Edit</string>
+    <string name="show">Show</string>
+    <string name="hide">Hide</string>
+    <string name="open">Open</string>
+    <string name="username">Username</string>
+    <string name="password">Password</string>
+    <string name="one_time_code">One-time code</string>
+    <string name="code_seconds">%1$d s</string>
+    <string name="code_unsupported">This code type isn\'t supported yet.</string>
+    <string name="websites">Websites</string>
+    <string name="passkey_for">Passkey for %1$s</string>
+    <string name="password_history">Password history</string>
+    <string name="replaced_on">Replaced %1$s</string>
+    <string name="notes">Notes</string>
+    <string name="other_fields">Other fields</string>
+    <string name="folder">Folder</string>
+    <string name="tags">Tags</string>
+    <string name="favorite">Favorite</string>
+    <string name="move_to_trash">Move to Trash</string>
+    <string name="restore">Restore</string>
+    <string name="delete_forever">Delete forever</string>
+    <string name="delete_forever_ask">Delete this item for good? It can\'t be brought back.</string>
+    <string name="read_only">This item was made by a newer version of the app. Update to edit it.</string>
+    <string name="cardholder">Cardholder</string>
+    <string name="card_number">Card number</string>
+    <string name="expiry">Expiry</string>
+    <string name="expiry_month">Month</string>
+    <string name="expiry_year">Year</string>
+    <string name="security_code">Security code</string>
+    <string name="brand">Brand</string>
+    <string name="first_name">First name</string>
+    <string name="middle_name">Middle name</string>
+    <string name="last_name">Last name</string>
+    <string name="phone">Phone</string>
+    <string name="company">Company</string>
+    <string name="address">Address</string>
+    <string name="city">City</string>
+    <string name="region">State or region</string>
+    <string name="postal_code">Postal code</string>
+    <string name="country">Country</string>
+
+    <!-- Edit -->
+    <string name="new_item_title">New item</string>
+    <string name="edit_item_title">Edit item</string>
+    <string name="title">Title</string>
+    <string name="save">Save</string>
+    <string name="saving">Saving…</string>
+    <string name="generate">Generate</string>
+    <string name="use_password">Use this password</string>
+    <string name="scan_qr">Scan QR code</string>
+    <string name="scan_totp_hint">Point the camera at the site\'s one-time-code QR code.</string>
+    <string name="totp_hint">Paste the setup key or otpauth:// link, or scan the QR code.</string>
+    <string name="add_website">Add website</string>
+    <string name="website">Website</string>
+    <string name="match">Match</string>
+    <string name="remove">Remove</string>
+    <string name="add_field">Add field</string>
+    <string name="field_name">Name</string>
+    <string name="field_value">Value</string>
+    <string name="no_folder">No folder</string>
+    <string name="new_folder">New folder…</string>
+    <string name="folder_name">Folder name</string>
+    <string name="create">Create</string>
+    <string name="tags_hint">Separate tags with commas.</string>
+    <string name="discard_ask">Discard your changes?</string>
+    <string name="discard">Discard</string>
+    <string name="keep_editing">Keep editing</string>
+    <string-array name="match_names">
+        <item>Domain</item>
+        <item>Host</item>
+        <item>Starts with</item>
+        <item>Exact</item>
+        <item>Regular expression</item>
+        <item>Never</item>
+    </string-array>
+    <string-array name="field_kinds">
+        <item>Text</item>
+        <item>Hidden</item>
+        <item>Link</item>
+        <item>Date</item>
+    </string-array>
+
+    <!-- Generator -->
+    <string name="mode_password">Password</string>
+    <string name="mode_passphrase">Passphrase</string>
+    <string name="length">Length: %1$d</string>
+    <string name="lowercase">Lowercase (a–z)</string>
+    <string name="uppercase">Uppercase (A–Z)</string>
+    <string name="digits">Digits (0–9)</string>
+    <string name="symbols">Symbols (!@#…)</string>
+    <string name="avoid_lookalikes">Avoid look-alikes (l, 1, O, 0)</string>
+    <string name="words">Words: %1$d</string>
+    <string name="separator">Separator</string>
+    <string name="separator_space">Space</string>
+    <string name="capitalize">Capitalize words</string>
+    <string name="add_digit">Add a digit</string>
+    <string name="regenerate">Regenerate</string>
+
+    <!-- Settings -->
+    <string name="account">Account</string>
+    <string name="server">Server</string>
+    <string name="hosted_server">PWM (hosted)</string>
+    <string name="lock_timeout">Lock after leaving the app</string>
+    <string name="lock_timeout_hint">Turning the screen off always locks.</string>
+    <string-array name="lock_timeouts">
+        <item>Immediately</item>
+        <item>1 minute</item>
+        <item>5 minutes</item>
+        <item>15 minutes</item>
+        <item>1 hour</item>
+        <item>8 hours</item>
+    </string-array>
+    <string name="lock_now">Lock now</string>
+    <string name="emergency_kit">Emergency Kit</string>
+    <string name="kit_saved">Saved.</string>
+    <string name="sign_out_ask">Sign out of this device? The vault on it is deleted. Your account and other devices stay as they are.</string>
+    <string name="notices">Third-party notices</string>
+    <string name="notices_missing">The notices aren\'t in this build. Release builds include them.</string>
+    <string name="version">Version %1$s</string>
+</resources>

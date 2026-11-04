@@ -2220,3 +2220,101 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Plain HTTP to `[::1]`:** the core accepts it, but a network security config can't name an IPv6 address, so Android refuses it. `localhost` and `127.0.0.1` work.
   - **A new message,** `kit_save_failed`, is in `design/messages.json` for both apps.
   - **Run on this machine:** the JVM tests, the build and licence check, and all 4 device tests on an Android 16 emulator, the full flow included, against a local server on a throwaway Postgres. Not run: a real camera, and the save and print pickers (the `QUALITY.md` checklist).
+
+- **D54 — Android vault screens: layout, moving between screens, items in Kotlin, the lock timeout, the scanner for one-time codes, and third-party notices** · settled 2026-11-04 · founder (approved as proposed).
+  M6.7 (D52 §1) is the Android version of M5.3: the vault list, search, sections, detail, editing every type, the generator, Settings and the lock timeout. D43 settled what these screens do for every platform, and the core already has every call they need: listing, saving, trash and purge, one-time codes, the generator, and checking a one-time-code setup (`normalize_totp`). Health, devices and export are M6.8. Open, for Android only:
+  - the layout on phones and tablets, and how screens follow each other
+  - which Kotlin pieces are missing
+  - how the lock timeout works on Android
+  - scanning a one-time-code QR code
+  - showing the third-party notices
+
+  Proposal:
+  1. **The screens do what D43 §2-4 says,** with no change in behavior:
+     - **Sections:** All items, Favorites, Logins, Cards, Identities, Notes, each folder, and Trash.
+     - **Search:** D43 §3's rule, in the view model, with no index. 5,000 items filter without a visible delay.
+     - **Detail:** hidden values masked until tapped, Copy on every field through the 30-second clipboard (D53), the one-time code with its countdown, passkeys read-only, the password history.
+     - **Edit and new item:**
+       - every D18 field for each type
+       - a folder picker that can make a new folder
+       - tags as text
+       - a one-time-code setup the core checks
+       - Generate next to the password
+       - a "discard changes?" question when leaving with edits
+       - items from a newer app version read-only
+     - **Trash:** Restore, and Delete forever after asking. Old trash is purged after each sync.
+     - **The generator tab:** the extension's options, the strength meter, Copy and Regenerate, kept in memory only.
+     - **Settings:**
+       - the email and server
+       - the lock timeout
+       - Lock now
+       - Save Emergency Kit again (the same Save and Print as onboarding)
+       - Sign out, after asking
+       - Third-party notices
+       - the app version
+     - **No website icons:** fetching them would tell other sites what's in the vault.
+     - **Pull to refresh syncs,** and so does every save.
+  2. **The layout:**
+     - **Phones:** a bottom bar with Vault, Generator and Settings (Material 3's navigation bar).
+     - **Tablets and wide windows** (600 dp and up): the same three as a side rail, with the list and the open item side by side, as on the iPad.
+     - **No new library:** both come from Material 3, which the app already uses.
+  3. **Moving between screens,** as in M6.6, with no navigation library:
+     - **A stack in `VaultModel`:** the list, then an item, then its edit screen. The back gesture pops it, through the edit screen's discard question.
+     - **Each tab keeps its own place** when the user switches tabs.
+     - **Turning the phone** keeps the stack and what was typed, because the models live in the app (D53 §1).
+  4. **Kotlin pieces in `:kit`,** ported from the Apple app's `PWMKit`:
+     - **`Item` accessors** for cards, identities, custom fields, folders, tags, favorites, the one-time code, passkeys and the password history. They edit the D18 JSON in place, so fields a newer app wrote are kept (D43 §4).
+     - **`Session` gains** `item`, `setTrashed`, `delete`, `purgeTrash`, `currentCode`, `normalizeTotp` and the generator, all calling the core.
+     - **The view models** in `pwm.kit.ui`: `VaultModel` (sections, search, the stack), `ItemDetailModel`, `ItemEditModel`, `GeneratorModel` and `SettingsModel`. They replace M6.6's placeholder `VaultModel`.
+  5. **The lock timeout on Android:**
+     - **The choices:** as D43 §5: Immediately, 1, 5, 15 or 60 minutes, or 8 hours. The default is 15 minutes. It's kept in the app's private preferences.
+     - **What the time counts:** the time the app spends in the background.
+       - **Background and foreground** are the whole app's, from `ProcessLifecycleOwner` (AndroidX `lifecycle-process`, Apache-2.0), so a picker or the print dialog doesn't count as leaving.
+       - **The clock:** `SystemClock.elapsedRealtime`, which keeps running while the phone sleeps and ignores changes to the wall clock.
+       - **On return after the timeout,** the app locks before it shows anything.
+     - **Turning the screen off locks too,** whatever the setting, as the device lock does on Apple. This uses Android's screen-off broadcast while the app is running.
+     - **If Android ends the app,** the keys go with the process, and the next launch asks to unlock, as now.
+     - **Fingerprint and face unlock** (M6.2) will shorten this; the timeout rules stay.
+  6. **Scanning a one-time-code QR code:** the M6.6 kit scanner becomes a general `QrScanner`, used for both. A code from a site goes to the core's `normalize_totp`, like a pasted one. The camera permission is asked on tap, as in M6.6.
+  7. **Third-party notices** (S6 requires them in every app):
+     - **What's bundled:**
+       - the Rust crates' notices, `THIRD_PARTY_NOTICES/rust.html`, and the word-list and site-data notices, when `just notices` has made them, as on Apple
+       - the Android libraries' notices, from the licence report the build already makes, written into the app as plain text
+     - **The screen:** a Settings page. It shows the HTML in a `WebView` with JavaScript off and no network, loading only the app's own files.
+     - **Without the files,** the page says so. The release pipeline (M10.1) runs `just notices` first, as on Apple.
+  8. **Screenshots:** the Secret Key screen keeps `FLAG_SECURE` (M6.6). The detail and edit screens get it in M6.4, with the app-switcher preview.
+  9. **Tests:**
+     - **JVM view-model tests** (tests first), with the fake account:
+       - search and order, including 5,000 generated items
+       - the section filters and Trash
+       - editing each type, with unknown fields kept
+       - the discard question and read-only newer items
+       - the folder picker making a folder
+       - the generator's options
+       - the lock timeout, with an injected clock
+       - the back stack
+     - **`Item` accessors** against D18 JSON, with fields from a newer version kept.
+     - **The server test** adds a trash and restore round trip, and a one-time code.
+     - **A Compose UI test on the emulator,** extending M6.6's flow:
+       - add a login with a generated password
+       - find it by search, edit it, copy the password
+       - trash it and restore it
+       - set Immediately, send the app to the background, and see the unlock screen
+  10. **Downloads:** the first build fetches `lifecycle-process` from Google's servers. The founder approves that here.
+
+  Alternatives:
+  - **Jetpack Navigation:** standard, but the stack in the model is what M6.6 does, and the JVM tests can drive it.
+  - **The adaptive list-detail library** (`material3-adaptive`): it gives the tablet layout for free, but it's another library, and a check on the window width does the same.
+  - **Counting idle time in the foreground:** as D43 said, the phone's own screen lock covers it.
+  - **Notices from Google's `oss-licenses` plugin:** it builds the list automatically, but it's tied to Play services and covers only the Android libraries, not the Rust ones.
+
+  Implementation notes (M6.7):
+  - **The app's own system screens:** Save to and Print belong to the system, so opening them puts the whole app in the background. The app marks when it opens one: that trip doesn't count as leaving, even with Immediately, unless it lasts over 10 minutes. Without this, Immediately would lock mid-save and drop the picked file. The screen turning off still locks.
+  - **Locking** hides the vault at once (its screens close, the kit leaves memory), then locks the core. Unsaved edits are lost, as on Apple.
+  - **The list's order** uses `java.text.Collator` for the device's language, at secondary strength (case aside), then the id.
+  - **One edit model per screen:** the form holds text, and secrets (password, card number and code, one-time-code setup, other fields' values) as `Redacted`. Saving applies it to the item's JSON in place; opening and leaving an item unchanged isn't an edit (empty and absent fields count as the same).
+  - **A sync notice** (couldn't sync, some changes not sent, signed out) is a code the screen words; a revoked device signs out.
+  - **Notices:** the licence report also writes `android-libraries.txt`. A Gradle task copies it, with `rust.html` and the data notices when `just notices` made them, into the app's `assets/notices/`. `THIRD_PARTY_NOTICES/` is gitignored, so CI builds carry the Android list only.
+  - **Versions:** `lifecycle-process` 2.8.7 (Apache-2.0). The licence check still covers 107 libraries: it was already a dependency of another library.
+  - **Icons:** Material's core set only. The extended set is large, and no item type needs a site's logo.
+  - **Run on this machine:** the JVM tests and the server test, the build and licence check, and all 5 device tests on an Android 16 emulator, the full vault flow included, against a local server on a throwaway Postgres. Not run: a real phone, a tablet, and a real camera (the `QUALITY.md` checklist).

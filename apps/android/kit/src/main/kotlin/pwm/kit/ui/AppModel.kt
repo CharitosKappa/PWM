@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import pwm.kit.Account
 import pwm.kit.EmergencyKit
 import pwm.kit.Redacted
@@ -25,6 +26,11 @@ class AppModel(
     private val paper: EmergencyKit.Paper,
     private val makeAccount: (URL) -> Account,
     private val work: CoroutineDispatcher = Dispatchers.Default,
+    /**
+     * Milliseconds that keep counting while the phone sleeps and ignore the
+     * wall clock (D54 §5): `SystemClock.elapsedRealtime` in the app.
+     */
+    private val clock: () -> Long = { System.nanoTime() / 1_000_000 },
 ) {
     sealed class Screen {
         data object Loading : Screen()
@@ -39,7 +45,8 @@ class AppModel(
 
         class Unlock(val model: UnlockModel) : Screen()
 
-        class Vault(val model: VaultModel) : Screen()
+        /** The unlocked vault: its three tabs (D54 §2). */
+        class Vault(val model: HomeModel) : Screen()
     }
 
     data class State(
@@ -55,6 +62,11 @@ class AppModel(
 
     private var account: Account? = null
     private var accountServer: String? = null
+
+    /** When the app went to the background, while the vault showed. */
+    private var backgroundedAt: Long? = null
+    /** The app opened a system screen (Save to, Print) that puts it in the background. */
+    private var systemScreenOpened = false
 
     fun start() {
         val saved = prefs.server?.let { runCatching { Server.address(it) }.getOrNull() } ?: Server.HOSTED
@@ -117,6 +129,7 @@ class AppModel(
             showWelcome()
             true
         }
+        is Screen.Vault -> screen.model.back()
         else -> false
     }
 
@@ -145,14 +158,73 @@ class AppModel(
     }
 
     private fun showVault(account: Account) {
-        val model = VaultModel(scope, account, onLocked = { showUnlock(account) }, onSignedOut = ::didSignOut)
-        model.load()
-        show(Screen.Vault(model))
+        val vault = VaultModel(scope, account, clipboard, work, onSignedOut = ::didSignOut)
+        val home = HomeModel(
+            vault = vault,
+            generator = GeneratorModel(scope, work, clipboard).also { it.regenerate() },
+            settings = SettingsModel(scope, account, prefs, paper, onLock = { lock(account) }, onSignedOut = ::didSignOut),
+        )
+        show(Screen.Vault(home))
+        scope.launch {
+            vault.load()
+            vault.refresh()
+        }
+    }
+
+    /** Hides the vault at once, then locks the core; the unlock screen shows. */
+    private fun lock(account: Account) {
+        (mutable.value.screen as? Screen.Vault)?.model?.let {
+            it.vault.closeAll()
+            it.settings.drop()
+        }
+        showUnlock(account)
+        scope.launch { account.lock() }
+    }
+
+    // --- The lock timeout (D54 §5) ---
+
+    /** The whole app left the screen. */
+    fun appBackgrounded() {
+        if (mutable.value.screen !is Screen.Vault) return
+        if (!systemScreenOpened && LockTimeout.of(prefs.lockTimeoutMinutes) == LockTimeout.IMMEDIATELY) {
+            account?.let(::lock)
+            return
+        }
+        backgroundedAt = clock()
+    }
+
+    /** The app is back: it locks first if it was away for longer than the timeout. */
+    fun appForegrounded() {
+        val at = backgroundedAt
+        backgroundedAt = null
+        val forSystemScreen = systemScreenOpened
+        systemScreenOpened = false
+        if (at == null || mutable.value.screen !is Screen.Vault) return
+        val timeout = LockTimeout.of(prefs.lockTimeoutMinutes).millis
+        // A picker or print dialog the app opened counts only once it runs long.
+        val limit = if (forSystemScreen) maxOf(timeout, SYSTEM_SCREEN_GRACE_MS) else timeout
+        if (clock() - at >= limit) account?.let(::lock)
+    }
+
+    /** Right before the app opens Save to or Print, which belong to the system. */
+    fun openingSystemScreen() {
+        systemScreenOpened = true
+    }
+
+    /** The screen turned off: the vault locks, whatever the timeout. */
+    fun screenOff() {
+        if (mutable.value.screen is Screen.Vault) account?.let(::lock)
     }
 
     private fun didSignOut() {
         prefs.kitPending = false
+        backgroundedAt = null
         showWelcome()
+    }
+
+    private companion object {
+        /** How long a system screen the app opened may stay before it counts as leaving. */
+        const val SYSTEM_SCREEN_GRACE_MS = 10 * 60_000L
     }
 
     // --- Accounts ---

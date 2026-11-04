@@ -63,7 +63,6 @@ import pwm.kit.ui.CreateAccountModel
 import pwm.kit.ui.SecretKeyModel
 import pwm.kit.ui.SignInModel
 import pwm.kit.ui.UnlockModel
-import pwm.kit.ui.VaultModel
 
 // The onboarding screens (D53 §2), the same as the Apple app's (D42 §4).
 // Each field and button has a test tag for the UI test.
@@ -78,16 +77,16 @@ fun AppScreen(app: AppModel) {
             AppModel.Screen.Loading -> Unit
             AppModel.Screen.Welcome -> Welcome(app, state)
             is AppModel.Screen.CreateAccount -> CreateAccount(app, screen.model)
-            is AppModel.Screen.SecretKey -> SecretKey(screen.model)
+            is AppModel.Screen.SecretKey -> SecretKey(app, screen.model)
             is AppModel.Screen.SignIn -> SignIn(app, state, screen.model)
             is AppModel.Screen.Unlock -> Unlock(screen.model)
-            is AppModel.Screen.Vault -> Vault(screen.model)
+            is AppModel.Screen.Vault -> Home(app, screen.model)
         }
     }
 }
 
 @Composable
-private fun Page(title: String, subtitle: String?, tag: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun Page(title: String, subtitle: String?, tag: String, content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -106,14 +105,14 @@ private fun Page(title: String, subtitle: String?, tag: String, content: @Compos
 }
 
 @Composable
-private fun ErrorLine(error: String?) {
+internal fun ErrorLine(error: String?) {
     if (error != null) {
         Text(error, style = Tokens.Text.body.compose(), color = color(Tokens.Color.danger), modifier = Modifier.testTag("error"))
     }
 }
 
 @Composable
-private fun Field(
+internal fun Field(
     label: String,
     value: String,
     onChange: (String) -> Unit,
@@ -135,12 +134,12 @@ private fun Field(
 }
 
 @Composable
-private fun Primary(title: String, enabled: Boolean, tag: String, onClick: () -> Unit) {
+internal fun Primary(title: String, enabled: Boolean, tag: String, onClick: () -> Unit) {
     Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().testTag(tag)) { Text(title) }
 }
 
 @Composable
-private fun Secondary(title: String, tag: String, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun Secondary(title: String, tag: String, enabled: Boolean = true, onClick: () -> Unit) {
     TextButton(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().testTag(tag)) { Text(title) }
 }
 
@@ -193,7 +192,7 @@ private fun CreateAccount(app: AppModel, model: CreateAccountModel) {
 }
 
 @Composable
-private fun StrengthMeter(score: Int?) {
+internal fun StrengthMeter(score: Int?) {
     val words = stringArrayResource(R.array.strength_words)
     val shown = score?.coerceIn(0, 4)
     val word = shown?.let { words[it] } ?: ""
@@ -219,26 +218,15 @@ private fun StrengthMeter(score: Int?) {
 // --- The Secret Key ---
 
 @Composable
-private fun SecretKey(model: SecretKeyModel) {
+private fun SecretKey(app: AppModel, model: SecretKeyModel) {
     val state by model.state.collectAsState()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     // No screenshots or recordings of the Secret Key (D53 §5); the rest is M6.4.
     DisposableEffect(Unit) {
         val window = (context as? Activity)?.window
         window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
     }
-    val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
-        val kit = state.kit ?: return@rememberLauncherForActivityResult
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            val written = withContext(Dispatchers.IO) { KitFiles.write(context, uri, kit.value) }
-            if (written) model.didSaveKit() else model.saveFailed()
-        }
-    }
-    val fileName = stringResource(R.string.kit_file_name)
-    val jobName = stringResource(R.string.kit_print_job)
     Page(stringResource(R.string.secret_key_title), stringResource(R.string.secret_key_subtitle), tag = "secretKeyScreen") {
         Surface(color = color(Tokens.Color.surface), shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
             Text(
@@ -250,14 +238,7 @@ private fun SecretKey(model: SecretKeyModel) {
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s2.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(
-                onClick = { save.launch(fileName) }, enabled = state.kit != null,
-                modifier = Modifier.weight(1f).testTag("saveKit"),
-            ) { Text(stringResource(R.string.save_kit)) }
-            OutlinedButton(
-                onClick = { state.kit?.let { KitFiles.print(context, jobName, it.value, model::didSaveKit, model::saveFailed) } },
-                enabled = state.kit != null, modifier = Modifier.testTag("printKit"),
-            ) { Text(stringResource(R.string.print_kit)) }
+            KitButtons(app, state.kit?.value, onSaved = model::didSaveKit, onFailed = model::saveFailed, modifier = Modifier.weight(1f))
             OutlinedButton(onClick = model::copy, modifier = Modifier.testTag("copy")) {
                 Text(stringResource(if (state.copied) R.string.copied else R.string.copy))
             }
@@ -269,6 +250,43 @@ private fun SecretKey(model: SecretKeyModel) {
         ErrorLine(state.error)
         Primary(stringResource(R.string.i_saved_it), enabled = state.canContinue, tag = "saved", onClick = model::done)
     }
+}
+
+/**
+ * Save Emergency Kit and Print (D53 §2), for onboarding and Settings. The
+ * app is told first, since both screens put it in the background (D54 §5).
+ */
+@Composable
+internal fun KitButtons(app: AppModel, kit: ByteArray?, onSaved: () -> Unit, onFailed: () -> Unit, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        if (uri == null || kit == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val written = withContext(Dispatchers.IO) { KitFiles.write(context, uri, kit) }
+            if (written) onSaved() else onFailed()
+        }
+    }
+    val fileName = stringResource(R.string.kit_file_name)
+    val jobName = stringResource(R.string.kit_print_job)
+    OutlinedButton(
+        onClick = {
+            app.openingSystemScreen()
+            save.launch(fileName)
+        },
+        enabled = kit != null,
+        modifier = modifier.testTag("saveKit"),
+    ) { Text(stringResource(R.string.save_kit)) }
+    OutlinedButton(
+        onClick = {
+            if (kit != null) {
+                app.openingSystemScreen()
+                KitFiles.print(context, jobName, kit, onSaved, onFailed)
+            }
+        },
+        enabled = kit != null,
+        modifier = Modifier.testTag("printKit"),
+    ) { Text(stringResource(R.string.print_kit)) }
 }
 
 // --- Sign in ---
@@ -284,7 +302,7 @@ private fun SignIn(app: AppModel, appState: AppModel.State, model: SignInModel) 
     }
     if (scanning) {
         BackHandler { scanning = false }
-        KitScanner(onCode = { text -> model.scanned(text).also { if (it) scanning = false } }, onClose = { scanning = false })
+        QrScanner(stringResource(R.string.scan_kit_hint), onCode = { text -> model.scanned(text).also { if (it) scanning = false } }, onClose = { scanning = false })
         return
     }
     Page(stringResource(R.string.sign_in), stringResource(R.string.sign_in_subtitle), tag = "signInScreen") {
@@ -345,23 +363,5 @@ private fun Unlock(model: UnlockModel) {
         ErrorLine(state.error)
         Primary(stringResource(if (state.busy) R.string.unlocking else R.string.unlock), enabled = state.canSubmit, tag = "unlock", onClick = model::submit)
         Secondary(stringResource(R.string.sign_out), tag = "signOut", enabled = !state.busy, onClick = model::signOut)
-    }
-}
-
-// --- The vault, until M6.7 ---
-
-@Composable
-private fun Vault(model: VaultModel) {
-    val state by model.state.collectAsState()
-    Page(stringResource(R.string.vault_title), stringResource(R.string.vault_coming), tag = "vaultScreen") {
-        val count = state.itemCount
-        Text(
-            if (count == null) stringResource(R.string.vault_loading) else pluralStringResource(R.plurals.vault_items, count, count),
-            style = Tokens.Text.title.compose(), color = color(Tokens.Color.text),
-            modifier = Modifier.testTag(if (count == null) "vaultLoading" else "vaultCount"),
-        )
-        ErrorLine(state.error)
-        Primary(stringResource(R.string.lock), enabled = true, tag = "lock", onClick = model::lock)
-        Secondary(stringResource(R.string.sign_out), tag = "signOut", onClick = model::signOut)
     }
 }

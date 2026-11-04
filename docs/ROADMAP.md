@@ -571,7 +571,16 @@ Phase 3  Teams           months 16–24 M16–M19
     - **The Apple app's kit-pending flag** (D53 §4): a gap, for M5's next touch.
     - **Fingerprint and face unlock:** M6.2. **The rest of `FLAG_SECURE`:** M6.4. **Renaming the device:** M6.8.
     - **A real camera, and the save and print pickers:** the manual checklist in `QUALITY.md`.
-- [ ] M6.7 The vault screens, as M5.3: list, search, sections, detail, editing every type, the generator, Settings and the lock timeout (D52 §1).
+- [x] M6.7 The vault screens, as M5.3: list, search, sections, detail, editing every type, the generator, Settings and the lock timeout (D52 §1).
+  - Done per D54 (implementation notes there):
+    - **`:kit`:** `Item` reads and edits every D18 field (cards, identities, custom fields, tags, passkeys, the password history), keeping unknown ones; `Session` adds trash, delete, purge, one-time codes and the generator; the view models `HomeModel`, `VaultModel`, `ItemDetailModel`, `ItemEditModel`, `GeneratorModel` and `SettingsModel`, with `LockTimeout`.
+    - **`:app`:** three tabs (a bottom bar, or a side rail with list and item side by side on wide screens), the list with search, sections and pull to refresh, detail, edit, the generator, Settings and the third-party notices; `QrScanner` for the kit and one-time codes.
+    - **The lock timeout:** the app's background time from `ProcessLifecycleOwner` and `elapsedRealtime`; the screen turning off locks.
+    - **Tests:** 20 vault view-model tests and 6 item tests on the JVM; the server test adds a one-time code and a trash round trip; the UI test adds a login with a generated password, search, edit, copy, trash and restore, and the Immediately timeout.
+  - **Deferred:**
+    - **Health, devices, approving, export, import and signing in again:** M6.8.
+    - **`FLAG_SECURE` on the detail and edit screens, and the app-switcher preview:** M6.4. **Fingerprint and face unlock:** M6.2.
+    - **On a real phone and a tablet:** the checklist in `QUALITY.md`.
 - [ ] M6.8 Health, devices, approving a new device, export, import and signing in again, as M5.9, M5.10, D50 §5 and M8.2 (D52 §1).
 
 ### M7 — Windows + Linux desktop

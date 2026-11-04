@@ -1,9 +1,6 @@
 package pwm.kit.ui
 
-import java.net.URL
 import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -12,31 +9,14 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import pwm.kit.Account
 import pwm.kit.EmergencyKit
 import pwm.kit.PwmError
 import pwm.kit.Redacted
 import pwm.kit.Server
-import pwm.kit.SyncResult
 
 /** The onboarding view models (D53 §6), over a fake account and the real core's strength meter. */
 class OnboardingTest {
     private val strong = "lantern orbit velvet granite 42"
-
-    private class Copied(val value: String, val clearAfterMs: Long)
-
-    private class Harness(scope: TestScope, val prefs: MemoryPrefs = MemoryPrefs()) {
-        val accounts = mutableListOf<FakeAccount>()
-        var nextAccount: (URL) -> FakeAccount = { FakeAccount(it) }
-        val copied = mutableListOf<Copied>()
-        val app = AppModel(
-            scope, prefs, "Pixel 8", { value, after -> copied += Copied(value.value, after) },
-            EmergencyKit.Paper.A4,
-            makeAccount = { server -> nextAccount(server).also { accounts += it } },
-            work = StandardTestDispatcher(scope.testScheduler),
-        )
-        val screen get() = app.state.value.screen
-    }
 
     @Test
     fun createAccountNeedsAnEmailAStrongPasswordAndTheSameAgain() = runTest {
@@ -95,7 +75,7 @@ class OnboardingTest {
         assertTrue(h.screen is AppModel.Screen.Vault)
         assertFalse(h.prefs.kitPending)
         assertNull("the kit is dropped", key.state.value.kit)
-        assertEquals(2, (h.screen as AppModel.Screen.Vault).model.state.value.itemCount)
+        assertTrue("the vault synced", h.accounts.single().syncs > 0)
     }
 
     @Test
@@ -155,8 +135,7 @@ class OnboardingTest {
         unlock.setPassword(FakeAccount.PASSWORD)
         unlock.submit()
         advanceUntilIdle()
-        val vault = (h.screen as AppModel.Screen.Vault).model
-        vault.lock()
+        h.home.settings.lockNow()
         advanceUntilIdle()
         assertTrue(h.screen is AppModel.Screen.Unlock)
         assertFalse(h.accounts.single().unlocked)
@@ -330,76 +309,5 @@ class OnboardingTest {
     companion object {
         /** A well-formed Secret Key, the same as the Apple tests'. */
         const val KIT_KEY = "A1-014D2P-F2DBSQ-QZXQ5T-K1V58C-GGA"
-    }
-}
-
-/** An account with no server: the right password is [PASSWORD]. */
-class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = false) : Account {
-    private var signedIn = signedIn
-    private var email: String? = if (signedIn) "ada@example.com" else null
-    var unlocked = false
-    val calls = mutableListOf<String>()
-    var approval: suspend (suspend (String) -> Unit) -> Redacted<String> = { throw PwmError("approval_ended") }
-    var approvalCancelled = false
-
-    override suspend fun signUp(email: String, password: Redacted<String>, deviceName: String): Redacted<String> {
-        calls += "signUp $email $deviceName"
-        signedIn = true
-        unlocked = true
-        this.email = email
-        return Redacted(KEY)
-    }
-
-    override suspend fun logIn(
-        email: String,
-        password: Redacted<String>,
-        secretKey: Redacted<String>,
-        deviceName: String,
-    ): SyncResult {
-        if (password.value != PASSWORD) throw PwmError("invalid_credentials")
-        calls += "logIn $email ${secretKey.value} $deviceName"
-        signedIn = true
-        unlocked = true
-        this.email = email
-        return SyncResult.Synced(0, 0, 0, 0)
-    }
-
-    override suspend fun askForApproval(email: String, onCode: suspend (String) -> Unit): Redacted<String> = try {
-        approval(onCode)
-    } catch (e: kotlinx.coroutines.CancellationException) {
-        approvalCancelled = true
-        throw e
-    }
-
-    override suspend fun unlock(password: Redacted<String>) {
-        if (password.value != PASSWORD) throw PwmError("wrong_password")
-        unlocked = true
-    }
-
-    override suspend fun lock() {
-        unlocked = false
-    }
-
-    override fun isSignedIn(): Boolean = signedIn
-
-    override fun email(): String? = email
-
-    override fun secretKey(): Redacted<String>? = if (signedIn) Redacted(KEY) else null
-
-    override suspend fun emergencyKit(paper: EmergencyKit.Paper): Redacted<ByteArray> = Redacted("%PDF-1.4".toByteArray())
-
-    override suspend fun signOut() {
-        signedIn = false
-        unlocked = false
-        email = null
-    }
-
-    override suspend fun sync(): SyncResult = SyncResult.Synced(0, 0, 0, 0)
-
-    override suspend fun itemCount(): Int = 2
-
-    companion object {
-        const val PASSWORD = "right horse battery staple"
-        const val KEY = "A1-FAKE00-SECRET-KEY000-000000-AAA"
     }
 }
