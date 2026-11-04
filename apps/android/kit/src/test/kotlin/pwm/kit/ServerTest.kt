@@ -40,11 +40,18 @@ class ServerTest {
             username = "ada"
             this.password = "hunter2-synthetic"
             setUrls(listOf(Item.Url("https://example.com")))
+            totp = OneTimeCode.normalize("JBSWY3DPEHPK3PXP", "Example")
         }
         val id = first.save(item, vault)
         val pushed = first.sync() as SyncResult.Synced
         assertEquals(1L, pushed.pushed)
-        assertEquals(1, first.itemCount())
+        // A one-time code, then trash and restore (D54 §9).
+        assertEquals(6, first.currentCode(id, vault)!!.code.value.length)
+        first.setTrashed(id, vault, trashed = true)
+        assertTrue(first.item(id, vault)!!.trashedAtMs != null)
+        first.setTrashed(id, vault, trashed = false)
+        assertEquals(null, first.item(id, vault)!!.trashedAtMs)
+        assertEquals(0, first.purgeTrash())
 
         val keys = MemoryKeyStore()
         val second = Session(cachePath = null, server = server, keys = keys)

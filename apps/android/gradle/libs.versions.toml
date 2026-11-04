@@ -16,6 +16,8 @@ androidxTestRunner = "1.7.0"
 espresso = "3.7.0"
 # The kit scanner (D53 §3): CameraX shows the camera, ZXing decodes the QR code.
 camerax = "1.4.2"
+# The lock timeout's whole-app background (D54 §5).
+lifecycle = "2.8.7"
 zxing = "3.5.3"
 
 [libraries]
@@ -39,6 +41,7 @@ camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "cam
 camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
 camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
+lifecycle-process = { module = "androidx.lifecycle:lifecycle-process", version.ref = "lifecycle" }
 
 [plugins]
 license-report = { id = "com.github.jk1.dependency-license-report", version = "2.9" }

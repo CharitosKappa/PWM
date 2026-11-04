@@ -3,8 +3,8 @@ package pwm.kit
 import java.net.URL
 
 /**
- * What the screens need from a signed-in (or signing-in) device (D53 §1):
- * [Session] in the app, a fake in the tests.
+ * What the screens need from a signed-in (or signing-in) device (D53 §1,
+ * D54 §4): [Session] in the app, a fake in the tests.
  */
 interface Account {
     val server: URL
@@ -44,6 +44,26 @@ interface Account {
 
     suspend fun sync(): SyncResult
 
-    /** Items not in the trash, across this account's vaults. */
-    suspend fun itemCount(): Int
+    // --- Items (D54 §4) ---
+
+    suspend fun vaultIds(): List<String>
+
+    /** Every item of a vault, trashed ones and folders included. */
+    suspend fun items(vaultId: String): List<Item>
+
+    fun newItem(kind: Item.Kind, title: String): Item
+
+    /** Saves locally (the core checks it); sync uploads it. Returns its id. */
+    suspend fun save(item: Item, vaultId: String): String
+
+    suspend fun setTrashed(itemId: String, vaultId: String, trashed: Boolean)
+
+    /** Deletes a trashed item for good. */
+    suspend fun delete(itemId: String, vaultId: String)
+
+    /** Deletes items trashed long enough ago (D19); how many went. */
+    suspend fun purgeTrash(): Int
+
+    /** The login's one-time code now; null when it has none, or a kind this version can't make. */
+    suspend fun currentCode(itemId: String, vaultId: String): CurrentCode?
 }

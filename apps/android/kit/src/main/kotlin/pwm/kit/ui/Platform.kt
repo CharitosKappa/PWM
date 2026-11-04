@@ -13,9 +13,16 @@ interface AppPrefs {
      * shows the Secret Key screen again after unlocking.
      */
     var kitPending: Boolean
+
+    /** The lock timeout's minutes (D54 §5); null for the default. */
+    var lockTimeoutMinutes: Int?
 }
 
-class MemoryPrefs(override var server: String? = null, override var kitPending: Boolean = false) : AppPrefs
+class MemoryPrefs(
+    override var server: String? = null,
+    override var kitPending: Boolean = false,
+    override var lockTimeoutMinutes: Int? = null,
+) : AppPrefs
 
 /** A copy that is hidden from the clipboard preview and cleared after a while. */
 fun interface SecretClipboard {

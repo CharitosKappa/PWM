@@ -5,7 +5,7 @@ The Android app (D52): Kotlin and Jetpack Compose over the Rust core.
 | Module | What it holds |
 | --- | --- |
 | `:core` | The UniFFI Kotlin bindings, generated from the host build of `pwm-ffi`. Never edited. |
-| `:kit` | The Kotlin layer the screens use: `Session` (the step loop over HTTP), `Item`, `PwmError`, `Redacted`, `KeyStore`, the design tokens and the error messages, and the screens' view models in `pwm.kit.ui` (D53). Plain JVM, so its tests run without Android. |
+| `:kit` | The Kotlin layer the screens use: `Session` (the step loop over HTTP), `Item`, `PwmError`, `Redacted`, `KeyStore`, the design tokens and the error messages, and the screens' view models in `pwm.kit.ui` (D53, D54). Plain JVM, so its tests run without Android. |
 | `:app` | The Compose screens, the Activity and the platform pieces: `KeystoreKeys` (the device's keys sealed under an Android Keystore key), the kit scanner (CameraX), saving and printing the kit, and the clipboard. The core is built for `arm64-v8a`, `armeabi-v7a` and `x86_64` with `cargo-ndk` before every build. |
 
 ## Building

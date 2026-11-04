@@ -87,6 +87,15 @@ Onboarding (D53), with the same build:
 4. Sign out, then Sign in, Scan Emergency Kit: the camera permission is asked only now. Scan the printed kit: the email and Secret Key fill in, never the password. Refuse the permission once: the screen says how to allow it, and typing still works.
 5. Sign in with another device, approving from the extension: the codes match on both.
 
+The vault (D54), with the same build:
+
+1. Add a login, a card, an identity and a note; find each by search; open a login's website in the browser.
+2. Set up a one-time code by scanning a site's QR code: the code and its countdown show.
+3. On a tablet, or with the window wider than 600 dp: a side rail, and the list beside the open item.
+4. Lock timeout 1 minute: leave the app for 2 minutes and come back: it asks to unlock. Turn the screen off and on: it asks to unlock, whatever the setting.
+5. With Immediately set, Save Emergency Kit in Settings: the picker opens and the file saves without the vault locking.
+6. Settings, Third-party notices: each file opens and nothing loads from the network.
+
 ### Import checklist (D51)
 
 Before the beta, with a real export from each manager (made with a throwaway account holding synthetic items, never real ones):

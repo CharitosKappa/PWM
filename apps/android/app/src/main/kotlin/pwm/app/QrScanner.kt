@@ -35,12 +35,13 @@ import pwm.kit.QrDecoder
 import pwm.kit.design.Tokens
 
 /**
- * The camera, looking for the kit's QR code (D53 §3): CameraX shows it and
- * hands frames to ZXing, all on the device. [onCode] gets each code found
- * and returns true when it was a kit, which closes the camera.
+ * The camera, looking for a QR code (D53 §3, D54 §6): the Emergency Kit's,
+ * or a site's one-time-code setup. CameraX shows it and hands frames to
+ * ZXing, all on the device. [onCode] gets each code found and returns true
+ * when it was the one wanted, which closes the camera.
  */
 @Composable
-fun KitScanner(onCode: (String) -> Boolean, onClose: () -> Unit) {
+fun QrScanner(hint: String, onCode: (String) -> Boolean, onClose: () -> Unit) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val found by rememberUpdatedState(onCode)
@@ -78,7 +79,7 @@ fun KitScanner(onCode: (String) -> Boolean, onClose: () -> Unit) {
                 Modifier.safeDrawingPadding().padding(Tokens.Space.s5.dp),
                 verticalArrangement = Arrangement.spacedBy(Tokens.Space.s3.dp),
             ) {
-                Text(stringResource(R.string.scan_kit_hint), style = Tokens.Text.body.compose(), color = color(Tokens.Color.text))
+                Text(hint, style = Tokens.Text.body.compose(), color = color(Tokens.Color.text))
                 Button(onClick = onClose, modifier = Modifier.fillMaxWidth().testTag("closeScanner")) { Text(stringResource(R.string.cancel)) }
             }
         }
