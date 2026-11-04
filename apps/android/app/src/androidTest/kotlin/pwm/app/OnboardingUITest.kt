@@ -101,8 +101,12 @@ class OnboardingUITest {
         tap("generate")
         tap("useGenerated")
         compose.waitUntil(10_000) { !exists("useGenerated") }
-        tap("save")
-        compose.waitUntil(30_000) { exists("item.Bank") }
+        // On a slow emulator the first tap can land while the sheet is still closing.
+        repeat(3) {
+            if (exists("editScreen")) tap("save")
+            runCatching { compose.waitUntil(10_000) { exists("item.Bank") } }
+        }
+        compose.waitUntil(10_000) { exists("item.Bank") }
 
         // Found by search, edited, its password copied.
         type("search", "ban")
