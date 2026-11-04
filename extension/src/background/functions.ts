@@ -15,6 +15,8 @@ export function coreFunctions(wasm: typeof Wasm): CoreFunctions {
     emergencyKit: (email, secretKey, server, accountId, created, paper) =>
       wasm.emergencyKit(email, secretKey, server, accountId, created, paper),
     breachRangeUrl: (prefix) => wasm.breachRangeUrl(prefix),
+    detectImport: (name, bytes) => wasm.detectImport(name, bytes),
+    importColumns: (bytes) => wasm.importColumns(bytes),
     newApprovalAsk: (email) => new wasm.WasmApprovalAsk(email, "extension"),
   };
 }

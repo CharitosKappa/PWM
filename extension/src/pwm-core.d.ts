@@ -16,6 +16,11 @@ export declare const WasmClient: {
 
 export function newId(): string;
 export function breachRangeUrl(prefix: string): string;
+export function detectImport(
+  name: string,
+  bytes: Uint8Array,
+): string | undefined;
+export function importColumns(bytes: Uint8Array): string;
 export declare const WasmApprovalAsk: {
   new (email: string, platform: string): CoreApprovalAsk;
 };

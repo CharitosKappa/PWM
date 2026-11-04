@@ -744,6 +744,65 @@ export class FakeCore implements Core {
     );
   }
 
+  // Import (D51): a CSV's lines after the header become logins named by
+  // their first cell; `bitwarden` needs the password "export-pw".
+  pendingImport: string[] | null = null;
+  importsPrepared = 0;
+
+  prepareImport(
+    vaultId: string,
+    format: string,
+    bytes: Uint8Array,
+    password: string,
+  ): string {
+    if (!this.unlocked) throw coreError("locked");
+    if (vaultId !== "") throw coreError("unknown_vault");
+    if (format === "bitwarden" && password === "")
+      throw coreError("import_password_needed");
+    if (format === "bitwarden" && password !== "export-pw")
+      throw coreError("import_wrong_password");
+    if (!["lastpass", "csv", "bitwarden"].includes(format))
+      throw coreError("import_unreadable");
+    const lines = new TextDecoder()
+      .decode(bytes)
+      .split(/\r?\n/)
+      .slice(1)
+      .filter((l) => l.trim() !== "");
+    this.pendingImport = lines.map((l) => l.split(",")[0] ?? "");
+    this.importsPrepared += 1;
+    return JSON.stringify({
+      logins: lines.length,
+      notes: 0,
+      cards: 0,
+      identities: 0,
+      folders: 0,
+      trashed: 0,
+      left_out: [["attachments", 1]],
+    });
+  }
+
+  finishImport(): string {
+    if (this.pendingImport === null) throw coreError("not_running");
+    const titles = this.pendingImport;
+    this.pendingImport = null;
+    for (const title of titles) {
+      this.addLogin("vault-1", { id: `imported-${title}`, title });
+    }
+    return JSON.stringify({
+      logins: titles.length,
+      notes: 0,
+      cards: 0,
+      identities: 0,
+      folders: 0,
+      trashed: 0,
+      left_out: [["attachments", 1]],
+    });
+  }
+
+  cancelImport(): void {
+    this.pendingImport = null;
+  }
+
   /**
    * Adds an item in the core's JSON shape (D18): login fields go under
    * `login`, as `items()` lists them. Same id replaces.
@@ -890,6 +949,25 @@ export function fakeFunctions(): CoreFunctions & {
       password === PASSWORD || password === EXPORT_PASSWORD ? 4 : 1,
     breachRangeUrl: (prefix) =>
       `https://api.pwnedpasswords.com/range/${prefix}`,
+    detectImport: (name, bytes) => {
+      const text = new TextDecoder().decode(bytes);
+      if (text.startsWith("url,username,password,totp,extra"))
+        return JSON.stringify({ format: "lastpass", needs_password: false });
+      if (text.startsWith("{"))
+        return JSON.stringify({ format: "bitwarden", needs_password: true });
+      if (name.endsWith(".csv"))
+        return JSON.stringify({ format: "csv", needs_password: false });
+      return undefined;
+    },
+    importColumns: (bytes) => {
+      const header = new TextDecoder().decode(bytes).split(/\r?\n/)[0] ?? "";
+      const headers = header.split(",");
+      return JSON.stringify({
+        headers,
+        suggested: { title: headers.indexOf("name"), url: null },
+        rows: 1,
+      });
+    },
     emergencyKit: (email, secretKey, server, accountId, created, paper) =>
       new TextEncoder().encode(
         `%PDF-fake ${[email, secretKey, server ?? "hosted", accountId, created, paper].join(" ")}`,
