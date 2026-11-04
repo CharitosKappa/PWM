@@ -5,6 +5,9 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 ## Open
 
 - **D1 — Product name and brand** · open · founder. "PWM" is a placeholder.
+  - **Visual direction: Calm** · settled 2026-11-05 · founder. Picked from three directions (Audit, Signal, Calm) on the design canvas "PWM app mockups": white and lavender surfaces, one indigo accent (`#4F3FD6` light, `#A79BFF` dark), radius 12 / 16 / 20, pill buttons. The values are in `design/tokens.json`, plus a new `accent-soft` color for secondary buttons and selected chips. Every text/background pair meets WCAG AA in both themes. The name stays open.
+  - **Fonts, still open:** the mockups use Manrope and DM Mono (SIL OFL 1.1), which is not on the S6 allow-list. Proposal: allow `OFL-1.1` for bundled font files only, never code (like CC-BY for the wordlist, D21), with the notice in `THIRD_PARTY_NOTICES`. Until then the tokens keep system fonts.
+  - **Not done yet:** buttons in the apps use `radius.md` (now 16); making them pills needs a change in each app's button style.
 - **D3 — Windows/Linux UI framework**: Tauri (default in this plan, faster) vs native WinUI 3 + GTK (better platform feel, more work).
 - **D4 — Launch segment**: consumers first (this plan) vs SMB self-hosted first.
 - **D5 — Company jurisdiction and hosting region**: EU (Greece/Switzerland/Germany hosting) is a selling point.
