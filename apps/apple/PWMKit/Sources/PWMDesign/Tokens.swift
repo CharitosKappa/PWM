@@ -5,19 +5,18 @@ public enum Tokens {
     public static let version = 1
 
     public enum Color {
-        public static let bg = ThemedColor(light: RGBA(0xFF, 0xFF, 0xFF, alpha: 1), dark: RGBA(0x13, 0x12, 0x1F, alpha: 1))
-        public static let surface = ThemedColor(light: RGBA(0xF4, 0xF3, 0xFB, alpha: 1), dark: RGBA(0x1C, 0x1B, 0x2C, alpha: 1))
-        public static let surfaceRaised = ThemedColor(light: RGBA(0xFF, 0xFF, 0xFF, alpha: 1), dark: RGBA(0x25, 0x24, 0x38, alpha: 1))
-        public static let border = ThemedColor(light: RGBA(0xE2, 0xE0, 0xF0, alpha: 1), dark: RGBA(0x34, 0x32, 0x4A, alpha: 1))
-        public static let text = ThemedColor(light: RGBA(0x1E, 0x1B, 0x3A, alpha: 1), dark: RGBA(0xEE, 0xED, 0xF7, alpha: 1))
-        public static let textMuted = ThemedColor(light: RGBA(0x5D, 0x5A, 0x78, alpha: 1), dark: RGBA(0xA9, 0xA6, 0xC4, alpha: 1))
-        public static let accent = ThemedColor(light: RGBA(0x4F, 0x3F, 0xD6, alpha: 1), dark: RGBA(0xA7, 0x9B, 0xFF, alpha: 1))
-        public static let accentText = ThemedColor(light: RGBA(0xFF, 0xFF, 0xFF, alpha: 1), dark: RGBA(0x13, 0x12, 0x1F, alpha: 1))
-        public static let accentSoft = ThemedColor(light: RGBA(0xEC, 0xEA, 0xFD, alpha: 1), dark: RGBA(0x2A, 0x26, 0x50, alpha: 1))
-        public static let focus = ThemedColor(light: RGBA(0x4F, 0x3F, 0xD6, alpha: 1), dark: RGBA(0xA7, 0x9B, 0xFF, alpha: 1))
-        public static let success = ThemedColor(light: RGBA(0x1C, 0x7C, 0x54, alpha: 1), dark: RGBA(0x5F, 0xD3, 0x9A, alpha: 1))
-        public static let warning = ThemedColor(light: RGBA(0x8A, 0x5A, 0x00, alpha: 1), dark: RGBA(0xF0, 0xB4, 0x4C, alpha: 1))
-        public static let danger = ThemedColor(light: RGBA(0xC0, 0x30, 0x4A, alpha: 1), dark: RGBA(0xFF, 0x80, 0x95, alpha: 1))
+        public static let bg = ThemedColor(light: RGBA(0xFF, 0xFF, 0xFF, alpha: 1), dark: RGBA(0x0F, 0x11, 0x15, alpha: 1))
+        public static let surface = ThemedColor(light: RGBA(0xF5, 0xF6, 0xF8, alpha: 1), dark: RGBA(0x18, 0x1B, 0x21, alpha: 1))
+        public static let surfaceRaised = ThemedColor(light: RGBA(0xFF, 0xFF, 0xFF, alpha: 1), dark: RGBA(0x20, 0x24, 0x2C, alpha: 1))
+        public static let border = ThemedColor(light: RGBA(0xD9, 0xDC, 0xE1, alpha: 1), dark: RGBA(0x2E, 0x33, 0x3D, alpha: 1))
+        public static let text = ThemedColor(light: RGBA(0x14, 0x17, 0x1C, alpha: 1), dark: RGBA(0xEC, 0xEE, 0xF2, alpha: 1))
+        public static let textMuted = ThemedColor(light: RGBA(0x5B, 0x62, 0x70, alpha: 1), dark: RGBA(0x9A, 0xA1, 0xAE, alpha: 1))
+        public static let accent = ThemedColor(light: RGBA(0x24, 0x57, 0xD6, alpha: 1), dark: RGBA(0x6F, 0x95, 0xF5, alpha: 1))
+        public static let accentText = ThemedColor(light: RGBA(0xFF, 0xFF, 0xFF, alpha: 1), dark: RGBA(0x0F, 0x11, 0x15, alpha: 1))
+        public static let focus = ThemedColor(light: RGBA(0x24, 0x57, 0xD6, alpha: 1), dark: RGBA(0x6F, 0x95, 0xF5, alpha: 1))
+        public static let success = ThemedColor(light: RGBA(0x1E, 0x7F, 0x4F, alpha: 1), dark: RGBA(0x4C, 0xC3, 0x8A, alpha: 1))
+        public static let warning = ThemedColor(light: RGBA(0x9A, 0x61, 0x00, alpha: 1), dark: RGBA(0xE2, 0xA3, 0x36, alpha: 1))
+        public static let danger = ThemedColor(light: RGBA(0xC4, 0x2B, 0x2B, alpha: 1), dark: RGBA(0xF0, 0x70, 0x70, alpha: 1))
     }
 
     /// Sizes are the web sizes in points; SwiftUI scales them with Dynamic Type.
@@ -44,9 +43,9 @@ public enum Tokens {
 
     public enum Radius {
         public static let none: Double = 0
-        public static let sm: Double = 12
-        public static let md: Double = 16
-        public static let lg: Double = 20
+        public static let sm: Double = 4
+        public static let md: Double = 8
+        public static let lg: Double = 12
         public static let full: Double = 9999
     }
 }
