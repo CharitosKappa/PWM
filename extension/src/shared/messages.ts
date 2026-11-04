@@ -75,7 +75,61 @@ export type Request =
       format: ExportFormat;
       /** For `pwmx` only. */
       exportPassword: string;
-    };
+    }
+  /** Import (D51 §9): the picked file as base64, never stored. */
+  | { kind: "importDetect"; name: string; file: string }
+  | {
+      kind: "importPrepare";
+      file: string;
+      format: string;
+      /** The export's own password, or "". */
+      password: string;
+      /** A KeePass key file as base64, or "". */
+      keyFile: string;
+      /** For a generic CSV: which column holds what. */
+      columns: ImportMapping | null;
+    }
+  | { kind: "importFinish" }
+  | { kind: "importCancel" };
+
+export type ImportField =
+  | "title"
+  | "url"
+  | "username"
+  | "password"
+  | "notes"
+  | "totp"
+  | "folder"
+  | "favorite"
+  | "tags";
+
+/** A column index per field; null leaves the field out. */
+export type ImportMapping = Partial<Record<ImportField, number | null>>;
+
+export interface ImportColumnsView {
+  headers: string[];
+  suggested: ImportMapping;
+  rows: number;
+}
+
+export interface ImportDetected {
+  /** `bitwarden`, `1password`, ..., `csv`, `pwm`; null when not recognised. */
+  format: string | null;
+  needsPassword: boolean;
+  /** For a generic CSV. */
+  columns: ImportColumnsView | null;
+}
+
+export interface ImportPreviewView {
+  logins: number;
+  notes: number;
+  cards: number;
+  identities: number;
+  folders: number;
+  trashed: number;
+  /** Reasons such as `attachments` or `duplicates`, with counts. */
+  leftOut: { reason: string; count: number }[];
+}
 
 export type ExportFormat = "pwmx" | "json" | "csv";
 
@@ -228,6 +282,10 @@ export interface Replies {
   setTouchId: boolean;
   /** The file as base64, with the name to save it under. */
   exportVault: { file: string; name: string };
+  importDetect: ImportDetected;
+  importPrepare: ImportPreviewView;
+  importFinish: ImportPreviewView;
+  importCancel: null;
   askApproval: AskView;
   askApprovalPoll: AskView;
   askApprovalCancel: null;
@@ -279,6 +337,10 @@ const KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "checkLeaks",
   "setLeakCheck",
   "exportVault",
+  "importDetect",
+  "importPrepare",
+  "importFinish",
+  "importCancel",
   "askApproval",
   "askApprovalPoll",
   "askApprovalCancel",

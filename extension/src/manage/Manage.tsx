@@ -1,6 +1,6 @@
 /**
- * The manage page (D44): password health, devices and export, in a tab of
- * its own. Like the popup it only sends messages to the background; it
+ * The manage page (D44): password health, devices, import (D51) and export,
+ * in a tab of its own. Like the popup it only sends messages to the background; it
  * receives an export only when the user asks for one with the master
  * password, and drops it once the download starts.
  */
@@ -12,9 +12,13 @@ import type {
   ExportFormat,
   HealthItem,
   HealthView,
+  ImportDetected,
+  ImportField,
+  ImportMapping,
+  ImportPreviewView,
   Status,
 } from "../shared/messages.ts";
-import { fromBase64 } from "../shared/bytes.ts";
+import { fromBase64, toBase64 } from "../shared/bytes.ts";
 import { RequestError, describe, describeCode, send } from "../popup/api.ts";
 import { Unlock } from "../popup/App.tsx";
 import { Field, Notice } from "../popup/ui.tsx";
@@ -22,18 +26,19 @@ import { Field, Notice } from "../popup/ui.tsx";
 /** The leak check's origin, asked for from a click (D44 §2). */
 const LEAK_CHECK_ORIGIN = "https://api.pwnedpasswords.com/*";
 
-type Tab = "health" | "devices" | "export";
+type Tab = "health" | "devices" | "import" | "export";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "health", label: "Password health" },
   { id: "devices", label: "Devices" },
+  { id: "import", label: "Import" },
   { id: "export", label: "Export" },
 ];
 
 export function Manage(): JSX.Element {
   const [status, setStatus] = useState<Status | null>(null);
   const [tab, setTab] = useState<Tab>(
-    (["health", "devices", "export"] as const).find(
+    (["health", "devices", "import", "export"] as const).find(
       (t) => `#${t}` === location.hash,
     ) ?? "health",
   );
@@ -87,6 +92,7 @@ export function Manage(): JSX.Element {
             <Devices onLocked={refresh} />
           </>
         )}
+        {tab === "import" && <Import onLocked={refresh} />}
         {tab === "export" && <Export onLocked={refresh} />}
       </section>
     </main>
@@ -519,6 +525,313 @@ const FORMAT_NOTES: Record<ExportFormat, string> = {
   json: "Every item, folder and history entry, readable by anyone who has the file.",
   csv: "Logins, notes, cards and identities as a spreadsheet, readable by anyone who has the file.",
 };
+
+// --- Import (D51 §9) ---
+
+/** The page's own limit: the file must fit in one extension message. */
+const MAX_IMPORT_BYTES = 32 * 1024 * 1024;
+
+const IMPORT_FORMATS: { id: string; label: string }[] = [
+  { id: "bitwarden", label: "Bitwarden (.json)" },
+  { id: "1password", label: "1Password (.1pux)" },
+  { id: "keeper", label: "Keeper (.json)" },
+  { id: "keepass", label: "KeePass (.kdbx)" },
+  { id: "nordpass", label: "NordPass (.csv)" },
+  { id: "protonpass", label: "Proton Pass (.zip or .json)" },
+  { id: "dashlane", label: "Dashlane (.zip, .csv or .json)" },
+  { id: "lastpass", label: "LastPass (.csv)" },
+  { id: "csv", label: "Other CSV, such as a browser's" },
+  { id: "pwm", label: "PWM export (.pwmx, .json or .csv)" },
+];
+
+const MAPPED_FIELDS: { id: ImportField; label: string }[] = [
+  { id: "title", label: "Title" },
+  { id: "url", label: "Website" },
+  { id: "username", label: "Username" },
+  { id: "password", label: "Password" },
+  { id: "notes", label: "Notes" },
+  { id: "totp", label: "One-time code" },
+  { id: "folder", label: "Folder" },
+];
+
+const LEFT_OUT: Record<string, string> = {
+  attachments: "attachments and documents",
+  ssh_keys: "SSH keys",
+  aliases: "email aliases",
+  passkeys: "passkeys this export can't carry",
+  unknown_types: "items of a type PWM doesn't have",
+  empty: "empty rows",
+  too_large: "items too large to sync",
+  duplicates: "items already in your vault",
+};
+
+function counts(p: ImportPreviewView): string {
+  const parts = [
+    [p.logins, "login", "logins"],
+    [p.notes, "note", "notes"],
+    [p.cards, "card", "cards"],
+    [p.identities, "identity", "identities"],
+    [p.folders, "folder", "folders"],
+  ] as const;
+  const listed = parts
+    .filter(([n]) => n > 0)
+    .map(([n, one, many]) => `${String(n)} ${n === 1 ? one : many}`);
+  return listed.length > 0 ? listed.join(", ") : "nothing new";
+}
+
+function Import({ onLocked }: { onLocked: () => void }): JSX.Element {
+  const [file, setFile] = useState<{ name: string; data: string } | null>(null);
+  const [detected, setDetected] = useState<ImportDetected | null>(null);
+  const [format, setFormat] = useState("");
+  const [password, setPassword] = useState("");
+  /** A KeePass key file, as base64. */
+  const [keyFile, setKeyFile] = useState<{ name: string; data: string } | null>(
+    null,
+  );
+  const [columns, setColumns] = useState<ImportMapping>({});
+  const [preview, setPreview] = useState<ImportPreviewView | null>(null);
+  const [done, setDone] = useState<ImportPreviewView | null>(null);
+  /** The imported file had no password: it holds passwords in plain text. */
+  const [plain, setPlain] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
+  const { error, busy, run } = useRequest(onLocked);
+
+  const reset = (): void => {
+    setPreview(null);
+    setDone(null);
+  };
+
+  const pick = async (input: HTMLInputElement): Promise<void> => {
+    const picked = input.files?.[0];
+    input.value = "";
+    setPickError(null);
+    reset();
+    setFile(null);
+    setDetected(null);
+    setPassword("");
+    setKeyFile(null);
+    if (!picked) return;
+    if (picked.size > MAX_IMPORT_BYTES) {
+      setPickError(describeCode("import_too_large"));
+      return;
+    }
+    // Read into memory only; the file is never copied anywhere.
+    const data = toBase64(new Uint8Array(await picked.arrayBuffer()));
+    const found = await run(() =>
+      send({ kind: "importDetect", name: picked.name, file: data }),
+    );
+    if (!found) return;
+    setFile({ name: picked.name, data });
+    setDetected(found);
+    setFormat(found.format ?? "");
+    setColumns(found.columns?.suggested ?? {});
+  };
+
+  const check = async (event: Event): Promise<void> => {
+    event.preventDefault();
+    if (!file) return;
+    reset();
+    const result = await run(() =>
+      send({
+        kind: "importPrepare",
+        file: file.data,
+        format,
+        password,
+        keyFile: format === "keepass" ? (keyFile?.data ?? "") : "",
+        columns: format === "csv" ? columns : null,
+      }),
+    );
+    if (result) setPreview(result);
+  };
+
+  const finish = async (): Promise<void> => {
+    const result = await run(() => send({ kind: "importFinish" }));
+    if (!result) return;
+    setDone(result);
+    setPlain(password === "" && keyFile === null);
+    setPreview(null);
+    setFile(null);
+    setPassword("");
+    setKeyFile(null);
+  };
+
+  const pickKey = async (input: HTMLInputElement): Promise<void> => {
+    const picked = input.files?.[0];
+    input.value = "";
+    reset();
+    if (!picked || picked.size > 1024 * 1024) {
+      setKeyFile(null);
+      return;
+    }
+    setKeyFile({
+      name: picked.name,
+      data: toBase64(new Uint8Array(await picked.arrayBuffer())),
+    });
+  };
+
+  const headers = detected?.columns?.headers ?? [];
+  const leftOut = (preview ?? done)?.leftOut ?? [];
+
+  return (
+    <div class="stack">
+      <p>
+        Bring in logins, cards, notes and folders from another password manager
+        or a PWM export. The file stays on this computer.
+      </p>
+      <label class="field">
+        <span class="label">Export file</span>
+        <input
+          id="import-file"
+          type="file"
+          accept=".json,.csv,.zip,.1pux,.pwmx,.kdbx"
+          onChange={(e) => void pick(e.currentTarget)}
+        />
+      </label>
+      {file && (
+        <form class="stack" onSubmit={(e) => void check(e)}>
+          <label class="field">
+            <span class="label">From</span>
+            <select
+              id="import-format"
+              value={format}
+              onChange={(e) => {
+                setFormat(e.currentTarget.value);
+                reset();
+              }}
+            >
+              <option value="" disabled>
+                Choose where this file is from
+              </option>
+              {IMPORT_FORMATS.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+            {detected?.format === null && (
+              <span class="caption muted">
+                PWM couldn't tell which manager made this file.
+              </span>
+            )}
+          </label>
+          {(detected?.needsPassword === true ||
+            format === "bitwarden" ||
+            format === "keepass" ||
+            format === "pwm") && (
+            <Field
+              label="Export password"
+              type="password"
+              value={password}
+              onInput={setPassword}
+              autoComplete="off"
+              hint="Only if the export was made with a password."
+            />
+          )}
+          {format === "keepass" && (
+            <label class="field">
+              <span class="label">Key file</span>
+              <input
+                id="import-key-file"
+                type="file"
+                onChange={(e) => void pickKey(e.currentTarget)}
+              />
+              <span class="caption muted">
+                {keyFile
+                  ? `Using ${keyFile.name}.`
+                  : "Only if the database needs one."}
+              </span>
+            </label>
+          )}
+          {format === "csv" && headers.length > 0 && (
+            <fieldset class="stack">
+              <legend>Which column holds what</legend>
+              {MAPPED_FIELDS.map((f) => (
+                <label class="field" key={f.id}>
+                  <span class="label">{f.label}</span>
+                  <select
+                    id={`import-column-${f.id}`}
+                    value={String(columns[f.id] ?? "")}
+                    onChange={(e) => {
+                      const value = e.currentTarget.value;
+                      setColumns({
+                        ...columns,
+                        [f.id]: value === "" ? null : Number(value),
+                      });
+                      reset();
+                    }}
+                  >
+                    <option value="">None</option>
+                    {headers.map((h, i) => (
+                      <option key={i} value={String(i)}>
+                        {h === "" ? `Column ${String(i + 1)}` : h}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </fieldset>
+          )}
+          <button id="import-check" disabled={busy || format === ""}>
+            {busy && !preview ? "Reading…" : "Check file"}
+          </button>
+        </form>
+      )}
+      <div class="slot">
+        {(pickError ?? error) && (
+          <Notice kind="danger">{pickError ?? error}</Notice>
+        )}
+      </div>
+      {preview && (
+        <section class="stack card" id="import-preview">
+          <p>Ready to import {counts(preview)}.</p>
+          {preview.trashed > 0 && (
+            <p class="caption muted">
+              {String(preview.trashed)} of them come in the trash, as they were
+              archived or deleted there.
+            </p>
+          )}
+          {leftOut.length > 0 && (
+            <ul class="caption muted">
+              {leftOut.map((l) => (
+                <li key={l.reason}>
+                  Left out: {String(l.count)} {LEFT_OUT[l.reason] ?? l.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+          <button
+            class="primary"
+            id="import"
+            disabled={busy}
+            onClick={() => void finish()}
+          >
+            {busy ? "Importing…" : "Import"}
+          </button>
+        </section>
+      )}
+      {done && (
+        <section class="stack" id="import-done">
+          <Notice kind="info">Imported {counts(done)}.</Notice>
+          {leftOut.length > 0 && (
+            <ul class="caption muted">
+              {leftOut.map((l) => (
+                <li key={l.reason}>
+                  Left out: {String(l.count)} {LEFT_OUT[l.reason] ?? l.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+          {plain && (
+            <Notice kind="danger">
+              The export file holds your passwords in plain text. Delete it now,
+              and empty the trash.
+            </Notice>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
 
 function Export({ onLocked }: { onLocked: () => void }): JSX.Element {
   const [format, setFormat] = useState<ExportFormat>("pwmx");

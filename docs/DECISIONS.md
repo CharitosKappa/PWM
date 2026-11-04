@@ -2046,6 +2046,24 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The vector:** `core/test-vectors/bitwarden_export.mjs` makes `bitwarden_export.json` with Node's crypto; `verify.mjs` checks it in Node and `pwm-import` reads it. The Argon2id variant is tested in Rust with the vetted `argon2`, since Node 22 has no Argon2.
   - **Not done as proposed:** Proton passkeys (above).
   - **Not run on this machine:** the fuzz targets (libFuzzer doesn't build on Windows); CI runs them.
+
+  Implementation notes (M8.2):
+  - **Extension:** an Import tab on the manage page; the background's `Importer` passes the file to the core as bytes and drops them after. The page's limit is 32 MB, lower than the core's 50 MB, because the file travels as base64 in one extension message (64 MiB in Chrome). The preview lives in the core and goes when the vault locks.
+  - **iOS and macOS:** `ImportModel` in `PWMUI` with an `ImportFiles` seam (security-scoped reading and deleting), and `ImportView` in Settings, next to Export. The file's size is checked before it is read.
+  - **What counts as plain text:** a file imported without a password. That covers every unencrypted export, our JSON and CSV included; Bitwarden's protected export and `.pwmx` don't get the delete line.
+  - **The Mac sandbox** gets `com.apple.security.files.user-selected.read-write`, so the picked file can be read and then deleted. CI's ad-hoc build still runs with no entitlements.
+  - **After importing,** the apps sync at once; a failed sync leaves the items queued like any change.
+  - **Not run on this machine:** the Swift tests and app targets (no Xcode, Docker not running); CI runs them first.
+
+  Implementation notes (M8.4):
+  - **The crate:** `keepass` 0.17 (MIT), with no features in the app and `save_kdbx4` in the tests only. It also reads KeePass 1, which our header check refuses (`import_keepass_kdb`): D51 covers 3.1 and 4.
+  - **The header check** reads the outer header's fields without decrypting anything: KDBX 3.1's AES-KDF rounds, and KDBX 4's KDF parameter dictionary (its id, rounds, memory, iterations, lanes). Over the bounds it says `import_keepass_too_costly`, with a line to lower them in KeePass; an unknown KDF or version says `import_keepass_version`.
+  - **Mapping as built:** an entry with no username, password, URL or other fields becomes a note. KeePass 2's TOTP fields are read when the secret is in base32 (with its length, period and algorithm); the other encodings stay as hidden fields. Protected fields are hidden. Entries with nothing in them are counted as empty.
+  - **The key file** is passed as bytes (at most 1 MB from the screens); a file with a key file counts as protected, so no delete line shows after it.
+  - **Fuzzing:** `import_files` reaches the KeePass header check (no password, so no key derivation); a target past it would run Argon2 with up to 1 GiB per input, so there is none.
+  - **KDBX 3.1 fixtures:** the crate can't write 3.1, so the test reads any `.kdbx` in `core/pwm-import/fixtures/keepass/`, made once in KeePass or KeePassXC as its README says, and skips while there are none.
+  - **Not run on this machine:** the Swift tests and app targets; CI runs them first.
+
 - **D52 — The Android app: split, project layout, the core as native libraries, the Kotlin layer, storage, tokens, dependencies and tests** · settled 2026-11-04 · founder (approved as proposed).
   The roadmap's M6.1 says "Compose app over UniFFI core, same screens as M5.3". On Apple that took five tasks (M5.1 package, M5.2 onboarding, M5.3 vault screens, M5.9 approvals, M5.10 health, devices and export), plus M8.2's import. The core's API and its Kotlin bindings already exist; CI compiles a Kotlin smoke test against them.
 

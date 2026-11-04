@@ -390,16 +390,20 @@ impl WasmClient {
     }
 
     /// Reads a picked file to import into `vault_id` (empty: the first
-    /// vault) and returns the preview as JSON (D51): `{logins, notes, cards,
+    /// vault) and returns the preview as JSON (D51), with the export's
+    /// `password` and a KeePass `key_file` (empty: none): `{logins, notes, cards,
     /// identities, folders, trashed, left_out: [[reason, count]]}`. `mapping`
     /// is the CSV column mapping as JSON, or empty for the suggestion.
     #[wasm_bindgen(js_name = prepareImport)]
+    // Each input is one thing the import screen collects.
+    #[allow(clippy::too_many_arguments)]
     pub fn prepare_import(
         &mut self,
         vault_id: &str,
         format: &str,
         bytes: &[u8],
         password: &str,
+        key_file: &[u8],
         mapping: &str,
         now: f64,
     ) -> Result<String, JsValue> {
@@ -415,6 +419,7 @@ impl WasmClient {
                 format,
                 bytes,
                 (!password.is_empty()).then_some(password),
+                (!key_file.is_empty()).then_some(key_file),
                 mapping,
                 ms(now),
             )

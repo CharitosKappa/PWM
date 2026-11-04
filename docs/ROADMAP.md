@@ -581,9 +581,20 @@ Phase 3  Teams           months 16–24 M16–M19
     - **KeePass:** M8.4.
     - **Proton Pass passkeys:** left out and counted, since Proton doesn't document their content.
     - **Checks against real exports:** the fixtures follow each vendor's published format; a real export from each manager is a manual check before the beta (`QUALITY.md`).
-- [ ] M8.2 Import in memory; if a file was picked, offer to securely delete the source export afterwards.
-- [ ] M8.3 Fuzz every parser; sample files in `core/pwm-import/fixtures/` (synthetic data only).
-- [ ] M8.4 KeePass `.kdbx` (KDBX 3.1/4) with the `keepass` crate, behind our own header and KDF limits (D51 §5).
+- [x] M8.2 Import in memory; if a file was picked, offer to securely delete the source export afterwards.
+  - Done per D51 §9 (implementation notes there):
+    - **Extension:** an Import tab on the manage page: pick a file, check where it's from (and a CSV's columns), the export's password when it has one, what will come in and what is left out, then Import, which saves and syncs. After a file with no password it says to delete it; a browser can't delete files.
+    - **iOS and macOS:** Import in Settings, the same steps, with a button that deletes the picked export file after a plaintext import. The Mac app's sandbox gets read and write access to files the user picks.
+    - **Tests:** 5 Vitest tests through the background, 1 against the real WASM build, 6 Swift view-model tests and 1 Swift test against the real server.
+  - **Deferred:**
+    - **Android:** M6. **Windows and Linux:** M7.
+    - **A check on devices:** picking and deleting files from Files, iCloud Drive and Finder (manual, `QUALITY.md`).
+- [x] M8.3 Fuzz every parser; sample files in `core/pwm-import/fixtures/` (synthetic data only).
+  - `import_files` runs every format (KeePass up to its header check, since its key derivation runs per input) and `import_bitwarden_encrypted` Bitwarden's protected export, in CI. Fixtures are hand-written and synthetic; KDBX 4 databases are made in the tests.
+- [x] M8.4 KeePass `.kdbx` (KDBX 3.1/4) with the `keepass` crate, behind our own header and KDF limits (D51 §5).
+  - Done per D51 §5 (implementation notes there): KDBX 3.1 and 4 with a password, a key file or both; our header check refuses AES-KDF over 100 million rounds and Argon2 over 1 GiB, 100 iterations or 64 lanes before anything runs, and KeePass 1 files. Groups become nested folders, the recycle bin comes in trashed, `otp` and KeePass 2's `TimeOtp-*` fields become the one-time code, extra `KP2A_URL*` fields become URLs, entry history becomes password history. The import screens offer KeePass and a key file.
+  - **Tests:** 5 Rust tests on KDBX 4 databases made in the tests (mapping, password, key file, both, AES-KDF, the header limits on crafted headers), plus KDBX 3.1 files in `core/pwm-import/fixtures/keepass/` when present; 1 extension and 1 Swift test for the key file.
+  - **Deferred:** KDBX 3.1 files from a real KeePass app (made once by the founder, see the fixtures README); until then 3.1 is read by the crate but not tested here.
 
 ### M9 — Plans and billing
 - [ ] M9.1 Entitlements service (decision D6); Stripe web checkout; App Store / Play Billing.

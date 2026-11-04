@@ -107,13 +107,17 @@ fn same_key(item: &Item) -> Option<String> {
 impl<S: Store> Client<S> {
     /// Reads `bytes` as `format` (from [`detect_import`] or the user's
     /// choice) and checks it against `vault_id` (default: the first vault).
+    /// `password` is the export's own; `key_file` is a KeePass key file.
     /// Nothing is saved until [`finish_import`](Self::finish_import).
+    // Each input is one thing the import screen collects.
+    #[allow(clippy::too_many_arguments)]
     pub fn prepare_import(
         &mut self,
         vault_id: Option<&str>,
         format: &str,
         bytes: &[u8],
         password: Option<&str>,
+        key_file: Option<&[u8]>,
         mapping: Option<ColumnMapping>,
         now_ms: i64,
     ) -> Result<ImportPreview, ClientError> {
@@ -125,6 +129,7 @@ impl<S: Store> Client<S> {
         let format = Format::parse(format).ok_or(ClientError::Import("import_unreadable"))?;
         let options = Options {
             password: password.map(|p| Secret::new(p.to_owned())),
+            key_file: key_file.map(|k| Secret::new(k.to_vec())),
             mapping,
             now_ms,
         };

@@ -19,6 +19,7 @@ import { ServiceError } from "./errors.ts";
 import { Approvals } from "./approvals.ts";
 import { TouchIdUnlock } from "./touchid.ts";
 import { Autofill } from "./fill.ts";
+import { Importer } from "./importer.ts";
 import { Manager } from "./manage.ts";
 import { Passkeys } from "./passkeys.ts";
 import { Reporter } from "./report.ts";
@@ -96,6 +97,7 @@ export class Background {
   readonly reporter: Reporter;
   /** Devices, the health report and export (D44). */
   readonly manager: Manager;
+  readonly importer: Importer;
   /** Approving a new device from a signed-in one (D46). */
   readonly approvals: Approvals;
   private readonly touchId: TouchIdUnlock;
@@ -138,6 +140,16 @@ export class Background {
       ended: (step) => this.handleOutcome(step),
       secretKey: () => platform.disk.get("secretKey"),
       touch: () => this.touch(),
+    });
+    this.importer = new Importer({
+      core: () => this.core,
+      fns,
+      platform,
+      touch: () => this.touch(),
+      saved: async () => {
+        await this.persist();
+        void this.sync();
+      },
     });
     this.approvals = new Approvals({
       core: () => this.core,
@@ -383,6 +395,21 @@ export class Background {
           request.format,
           request.exportPassword,
         );
+      case "importDetect":
+        return this.importer.detect(request.name, request.file);
+      case "importPrepare":
+        return this.importer.prepare(
+          request.file,
+          request.format,
+          request.password,
+          request.keyFile,
+          request.columns,
+        );
+      case "importFinish":
+        return this.importer.finish();
+      case "importCancel":
+        this.importer.cancel();
+        return null;
     }
   }
 

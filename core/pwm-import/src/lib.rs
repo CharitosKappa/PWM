@@ -16,6 +16,7 @@ mod dashlane;
 mod error;
 mod generic;
 mod json;
+mod keepass;
 mod keeper;
 mod lastpass;
 mod nordpass;
@@ -30,6 +31,9 @@ use pwm_vault::{Item, ItemId};
 pub use build::{LeftOut, Report};
 pub use error::ImportError;
 pub use generic::{ColumnMapping, Columns, csv_columns};
+pub use keepass::{
+    MAX_AES_ROUNDS, MAX_ARGON2_ITERATIONS, MAX_ARGON2_MEMORY, MAX_ARGON2_PARALLELISM,
+};
 
 /// Files larger than this are refused (D51 §7).
 pub const MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
@@ -49,6 +53,8 @@ pub enum Format {
     OnePassword,
     /// Keeper JSON.
     Keeper,
+    /// KeePass `.kdbx`, versions 3.1 and 4 (D51 §5).
+    KeePass,
     /// NordPass CSV.
     NordPass,
     /// Proton Pass ZIP (unencrypted) or its `data.json`.
@@ -65,10 +71,11 @@ pub enum Format {
 }
 
 impl Format {
-    pub const ALL: [Format; 9] = [
+    pub const ALL: [Format; 10] = [
         Format::Bitwarden,
         Format::OnePassword,
         Format::Keeper,
+        Format::KeePass,
         Format::NordPass,
         Format::ProtonPass,
         Format::Dashlane,
@@ -83,6 +90,7 @@ impl Format {
             Self::Bitwarden => "bitwarden",
             Self::OnePassword => "1password",
             Self::Keeper => "keeper",
+            Self::KeePass => "keepass",
             Self::NordPass => "nordpass",
             Self::ProtonPass => "protonpass",
             Self::Dashlane => "dashlane",
@@ -111,6 +119,8 @@ pub struct Options {
     /// The export's own password (Bitwarden's password-protected export,
     /// our `.pwmx`).
     pub password: Option<Secret<String>>,
+    /// A KeePass key file, with or instead of the password.
+    pub key_file: Option<Secret<Vec<u8>>>,
     /// Which column holds what, for [`Format::Csv`]; `None` takes the
     /// suggestion from [`csv_columns`].
     pub mapping: Option<ColumnMapping>,
@@ -147,6 +157,12 @@ pub fn detect(file_name: &str, bytes: &[u8]) -> Option<Detected> {
             needs_password: false,
         })
     };
+    if keepass::is_kdbx(bytes) {
+        return Some(Detected {
+            format: Format::KeePass,
+            needs_password: true,
+        });
+    }
     if own::is_pwmx(bytes) {
         return Some(Detected {
             format: Format::Pwm,
@@ -183,7 +199,10 @@ pub fn detect(file_name: &str, bytes: &[u8]) -> Option<Detected> {
     if dashlane::is_credentials_csv(&headers) {
         return plain(Format::Dashlane);
     }
-    if name.ends_with(".json") || name.ends_with(".pwmx") || name.ends_with(".1pux") {
+    if [".json", ".pwmx", ".1pux", ".kdbx", ".kdb"]
+        .iter()
+        .any(|e| name.ends_with(e))
+    {
         return None;
     }
     plain(Format::Csv)
@@ -230,6 +249,12 @@ pub fn parse(format: Format, bytes: &[u8], options: &Options) -> Result<Parsed, 
         Format::Bitwarden => bitwarden::parse(bytes, options.password.as_ref(), now),
         Format::OnePassword => onepassword::parse(bytes, now),
         Format::Keeper => keeper::parse(bytes, now),
+        Format::KeePass => keepass::parse(
+            bytes,
+            options.password.as_ref(),
+            options.key_file.as_ref(),
+            now,
+        ),
         Format::NordPass => nordpass::parse(bytes, now),
         Format::ProtonPass => proton::parse(bytes, now),
         Format::Dashlane => dashlane::parse(bytes, now),

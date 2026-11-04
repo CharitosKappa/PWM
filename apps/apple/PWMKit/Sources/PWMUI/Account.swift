@@ -40,6 +40,15 @@ public protocol Account: AnyObject, Sendable {
     func authorizeExport(password: Redacted<String>) async throws
     func export(_ format: ExportFile.Format) async throws -> Redacted<Data>
 
+    // Import (D51).
+    func guessImport(fileName: String, data: Redacted<Data>) async -> ImportGuess?
+    func importColumns(_ data: Redacted<Data>) async throws -> CSVColumns
+    func prepareImport(
+        format: String, data: Redacted<Data>, password: Redacted<String>?, keyFile: Redacted<Data>?, columns: ColumnMap?
+    ) async throws -> ImportSummary
+    func finishImport() async throws -> ImportSummary
+    func cancelImport() async
+
     // Approving a new device (D46).
     func askForApproval(email: String, onCode: @escaping @Sendable (String) async -> Void) async throws -> Redacted<String>
     func approvalRequests() async throws -> [ApprovalEntry]

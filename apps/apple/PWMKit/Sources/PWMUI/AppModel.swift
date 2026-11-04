@@ -59,6 +59,8 @@ public final class AppModel {
     let browserTouchID: (any BrowserTouchID)?
     /// The notice for a new device's sign-in request (D50 §3).
     let approvalNotices: any ApprovalNotices
+    /// Reading and deleting an import's file (D51 §9).
+    let importFiles: any ImportFiles
     /// "Sign in again to sync" (D50 §5), while the vault shows.
     public private(set) var signInAgain: SignInAgainModel?
     private let clock: @MainActor () -> ContinuousClock.Instant
@@ -79,6 +81,7 @@ public final class AppModel {
         autofill: any AutoFillSystem = NoAutoFillSystem(),
         browserTouchID: (any BrowserTouchID)? = nil,
         approvalNotices: any ApprovalNotices = NoApprovalNotices(),
+        importFiles: any ImportFiles = SystemImportFiles(),
         clock: @escaping @MainActor () -> ContinuousClock.Instant = { ContinuousClock.now }
     ) {
         self.makeAccount = makeAccount
@@ -88,6 +91,7 @@ public final class AppModel {
         self.autofill = autofill
         self.browserTouchID = browserTouchID
         self.approvalNotices = approvalNotices
+        self.importFiles = importFiles
         self.clock = clock
     }
 

@@ -67,6 +67,22 @@ const MESSAGES: Record<string, string> = {
   export_not_authorized: "Enter your master password to export.",
   export_expired: "Enter your master password again to export.",
   locked: "Unlock first.",
+  import_too_large: "This file is too large to import.",
+  import_unreadable:
+    "This file can't be read as that format. Check the format, or export again.",
+  import_password_needed: "Enter the password this export was made with.",
+  import_wrong_password: "Wrong password for this export.",
+  import_bitwarden_account_restricted:
+    "This Bitwarden export is locked to the Bitwarden account. Export again as “Password protected” or unencrypted.",
+  import_proton_encrypted:
+    "This Proton Pass export is encrypted. Export again without encryption.",
+  not_running: "Check the file again, then import.",
+  import_keepass_kdb:
+    "This is a KeePass 1 database. Open it in KeePass 2 or KeePassXC and save it as a .kdbx first.",
+  import_keepass_version:
+    "This KeePass database uses a version or setting PWM can't open yet.",
+  import_keepass_too_costly:
+    "This database's key settings would take too long here. Lower them in KeePass, then try again.",
   helper_missing:
     "Touch ID needs the PWM app for Mac, with browser unlock turned on in its Settings.",
   touch_id_off: "Turn on Touch ID in Settings first.",
