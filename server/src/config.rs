@@ -6,6 +6,7 @@ use pwm_crypto::{Secret, ServerSecrets};
 
 use crate::ServerError;
 use crate::limits::TrustedProxies;
+use crate::push::PushConfig;
 
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:8080";
 
@@ -18,6 +19,8 @@ pub struct Config {
     pub server_secrets: ServerSecrets,
     /// Proxies whose `X-Forwarded-For` gives the client IP (D29).
     pub trusted_proxies: TrustedProxies,
+    /// APNs (D50 §3), from `PWM_APNS_*`; `None` leaves push off.
+    pub push: Option<PushConfig>,
 }
 
 impl Config {
@@ -27,7 +30,8 @@ impl Config {
 
     /// Reads `PWM_DATABASE_URL` and `PWM_SERVER_SECRETS` (both required),
     /// `PWM_LISTEN` (default [`DEFAULT_LISTEN`]) and `PWM_TRUSTED_PROXIES`
-    /// (addresses and CIDR ranges, default none) through `var`.
+    /// (addresses and CIDR ranges, default none) through `var`, and the
+    /// optional `PWM_APNS_*` settings ([`PushConfig::from_vars`]).
     pub fn from_vars(var: impl Fn(&str) -> Option<String>) -> Result<Self, ServerError> {
         let database_url = var("PWM_DATABASE_URL")
             .filter(|url| !url.is_empty())
@@ -49,11 +53,13 @@ impl Config {
         .map_err(|_| {
             ServerError::Config("PWM_TRUSTED_PROXIES is not a list like 10.0.0.0/8, 192.0.2.1")
         })?;
+        let push = PushConfig::from_vars(&var)?;
         Ok(Self {
             database_url: Secret::new(database_url),
             listen,
             server_secrets,
             trusted_proxies,
+            push,
         })
     }
 }

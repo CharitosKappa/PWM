@@ -286,6 +286,7 @@ async fn write(
     };
     set_vault_seq(&mut tx, path.vault_id, seq).await?;
     tx.commit().await?;
+    state.push.vault_changed(path.vault_id, auth.device_id);
     let written = Written {
         revision: revision.to_string(),
         seq: seq.to_string(),
@@ -334,6 +335,7 @@ async fn remove(
     .await?;
     set_vault_seq(&mut tx, path.vault_id, seq).await?;
     tx.commit().await?;
+    state.push.vault_changed(path.vault_id, auth.device_id);
     Ok(Json(Written {
         revision: expected.to_string(),
         seq: seq.to_string(),

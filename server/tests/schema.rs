@@ -32,6 +32,8 @@ const TEXT_COLUMNS: &[(&str, &str)] = &[
         "the reported site's origin (D38), not tied to any account",
     ),
     ("devices.platform", "enum, CHECK constraint"),
+    ("push_tokens.app", "enum, CHECK constraint (D50)"),
+    ("push_tokens.environment", "enum, CHECK constraint (D50)"),
     ("subscriptions.currency", "ISO 4217 code, CHECK constraint"),
     ("subscriptions.plan", "enum, CHECK constraint"),
     ("subscriptions.provider", "enum, CHECK constraint"),
