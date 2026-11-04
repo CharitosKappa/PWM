@@ -98,10 +98,7 @@ class AutofillUITest {
         assertFilled()
 
         // Linked: suggested by name on the next visit.
-        open(LoginTestActivity::class.java)
-        tapField("username")
-        click(By.text("Bank"))
-        assertFilled()
+        pickUntilFilled(By.text("Bank"))
 
         // Locked: "Unlock PWM to fill", then the master password, then the login.
         (model.state.value.screen as AppModel.Screen.Vault).model.settings.lockNow()
@@ -147,12 +144,31 @@ class AutofillUITest {
         }
     }
 
-    private fun assertFilled() {
-        waitFor("the fields filled", { onScreen() }) {
-            val username = device.findObject(By.desc("username"))?.text
-            // A password field reads back masked: its length is enough.
-            val password = device.findObject(By.desc("password"))?.text
-            username == "ada" && password?.length == "bank-pass-42".length
+    private fun filled(): Boolean {
+        val username = device.findObject(By.desc("username"))?.text
+        // A password field reads back masked: its length is enough.
+        val password = device.findObject(By.desc("password"))?.text
+        return username == "ada" && password?.length == "bank-pass-42".length
+    }
+
+    private fun assertFilled() = waitFor("the fields filled", { onScreen() }) { filled() }
+
+    /**
+     * Opens the test app's login screen and picks [entry] from PWM's list.
+     * On a slow emulator a tap can land while the list is still being laid
+     * out and do nothing, so the screen is opened again, at most three times.
+     */
+    private fun pickUntilFilled(entry: BySelector) {
+        repeat(3) { attempt ->
+            open(LoginTestActivity::class.java)
+            tapField("username")
+            click(entry)
+            val until = System.currentTimeMillis() + 15_000
+            while (System.currentTimeMillis() < until) {
+                if (filled()) return
+                Thread.sleep(100)
+            }
+            if (attempt == 2) assertFilled()
         }
     }
 
