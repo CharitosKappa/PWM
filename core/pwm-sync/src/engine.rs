@@ -9,7 +9,7 @@ use pwm_store::{Store, SyncState, VaultRecord};
 use pwm_vault::{Item, ItemId, decrypt_item, encrypt_item_fitting};
 
 use crate::SyncError;
-use crate::apply::{apply_change, merge, move_to_copy, put, reseal, reupload_missing};
+use crate::apply::{apply_change, merge, move_to_copy, need, put, reseal, reupload_missing};
 use crate::backoff::{backoff_delay_ms, parse_retry_after, random_fraction};
 use crate::devices::{DeviceRecord, DeviceTask, device_list};
 use crate::http::{HttpRequest, HttpResponse, Method};
@@ -85,7 +85,8 @@ pub enum SyncEvent {
 
 pub struct SyncEngine<S> {
     store: S,
-    keyset: AccountKeyset,
+    /// `None` in a locked sync (D50 §1).
+    keyset: Option<AccountKeyset>,
     tokens: Tokens,
     keys: HashMap<Id, SymmetricKey>,
     run: Option<Run>,
@@ -121,6 +122,9 @@ enum Task {
         seen: Option<HashSet<ItemId>>,
         /// The server was restored (new epoch): pull every vault from 0.
         resync_all: bool,
+        /// A change in this vault needs the key (locked sync): its cursor
+        /// stays, so the next unlocked sync pulls it again.
+        hold: bool,
     },
     Push {
         queue: VecDeque<Pending>,
@@ -162,7 +166,7 @@ impl<S: Store> SyncEngine<S> {
         }
         Ok(Self {
             store,
-            keyset,
+            keyset: Some(keyset),
             tokens,
             keys,
             run: None,
@@ -172,9 +176,68 @@ impl<S: Store> SyncEngine<S> {
         })
     }
 
+    /// An engine without keys, for syncing while locked (D50 §1). It stores
+    /// pulled changes that need no key as ciphertext and uploads queued
+    /// changes as they are; whatever needs the key waits for the next
+    /// unlocked sync. Items can't be read or changed.
+    pub fn locked(store: S, tokens: Tokens) -> Result<Self, SyncError> {
+        Ok(Self {
+            store,
+            keyset: None,
+            tokens,
+            keys: HashMap::new(),
+            run: None,
+            failures: 0,
+            page_limit: DEFAULT_PAGE_LIMIT,
+            events: Vec::new(),
+        })
+    }
+
     /// The unlocked account keyset (for sealing device secrets, D34).
-    pub fn keyset(&self) -> &AccountKeyset {
-        &self.keyset
+    pub fn keyset(&self) -> Result<&AccountKeyset, SyncError> {
+        self.keyset.as_ref().ok_or(SyncError::Locked)
+    }
+
+    /// Whether this engine runs without keys.
+    pub fn is_locked(&self) -> bool {
+        self.keyset.is_none()
+    }
+
+    /// Gives a locked engine its keys, even during a run: the rest of the
+    /// run syncs as unlocked. Tokens stay the engine's own (they may have
+    /// been refreshed during the run).
+    pub fn unlock(&mut self, keyset: AccountKeyset) -> Result<(), SyncError> {
+        self.keys.clear();
+        for vault in self.store.vaults()? {
+            if let Ok(key) = keyset.unwrap_vault_key(&vault.wrapped_key, &vault.vault_id) {
+                self.keys.insert(vault.vault_id, key);
+            }
+        }
+        self.keyset = Some(keyset);
+        Ok(())
+    }
+
+    /// Drops the keys, even during a run: the rest of the run syncs as
+    /// locked, so a token refresh in flight is not lost. A run that is
+    /// pulling a vault again after a restore needs the key to finish, so it
+    /// is abandoned and the next unlocked sync starts it over.
+    pub fn drop_keys(&mut self) {
+        let resyncing = matches!(
+            &self.run,
+            Some(Run {
+                task: Task::Pull { seen: Some(_), .. }
+                    | Task::Pull {
+                        resync_all: true,
+                        ..
+                    },
+                ..
+            })
+        );
+        if resyncing {
+            self.run = None;
+        }
+        self.keyset = None;
+        self.keys.clear();
     }
 
     pub fn store(&self) -> &S {
@@ -195,7 +258,18 @@ impl<S: Store> SyncEngine<S> {
     }
 
     fn key(&self, vault_id: &Id) -> Result<&SymmetricKey, SyncError> {
+        self.keyset()?;
         self.keys.get(vault_id).ok_or(SyncError::UnknownVault)
+    }
+
+    /// The vaults a run pulls and pushes: those whose key opened, or every
+    /// cached vault when locked.
+    fn synced_vaults(&self) -> Result<HashSet<Id>, SyncError> {
+        Ok(if self.is_locked() {
+            self.store.vaults()?.iter().map(|v| v.vault_id).collect()
+        } else {
+            self.keys.keys().copied().collect()
+        })
     }
 
     // --- Local changes (D28 §3) ---
@@ -236,6 +310,7 @@ impl<S: Store> SyncEngine<S> {
         item_id: &ItemId,
         item: &Item,
     ) -> Result<(), SyncError> {
+        self.keyset()?;
         let key = self.keys.get(vault_id).ok_or(SyncError::UnknownVault)?;
         let revision = match self.store.item(vault_id, item_id)? {
             None => 1,
@@ -256,18 +331,17 @@ impl<S: Store> SyncEngine<S> {
         )
     }
 
-    /// Deletes an item: queued for upload, or simply removed if the server
-    /// never had it.
+    /// Deletes an item, queued for upload. An item never confirmed is
+    /// deleted at revision 1: its upload may have reached the server with
+    /// the answer lost, and a 404 just removes it (D50 §4).
     pub fn delete_item(&mut self, vault_id: &Id, item_id: &ItemId) -> Result<(), SyncError> {
+        self.key(vault_id)?;
         let Some(r) = self.store.item(vault_id, item_id)? else {
             return Ok(());
         };
         let base = match r.state {
             SyncState::Synced => r.revision,
-            SyncState::Modified if r.revision == 1 => {
-                self.store.delete_item(vault_id, item_id)?;
-                return Ok(());
-            }
+            SyncState::Modified if r.revision == 1 => 1,
             SyncState::Modified => r.revision - 1,
             SyncState::Deleted => return Ok(()),
         };
@@ -284,6 +358,7 @@ impl<S: Store> SyncEngine<S> {
     /// Deletes items that have been in the trash for 30 days (D19); call at
     /// unlock. Returns how many.
     pub fn purge_trash(&mut self, now_ms: i64) -> Result<usize, SyncError> {
+        self.keyset()?;
         let vaults: Vec<Id> = self.keys.keys().copied().collect();
         let mut purged = 0;
         for vault_id in vaults {
@@ -319,9 +394,10 @@ impl<S: Store> SyncEngine<S> {
         if self.run.is_some() {
             return Err(SyncError::Busy);
         }
+        let keyset = self.keyset()?;
         let key = SymmetricKey::generate()?;
         let vault_id = *ItemId::generate()?.as_bytes();
-        let wrapped = self.keyset.wrap_vault_key(&key, &vault_id)?;
+        let wrapped = keyset.wrap_vault_key(&key, &vault_id)?;
         let step = self.start(Task::CreateVault {
             vault_id,
             key,
@@ -453,11 +529,12 @@ impl<S: Store> SyncEngine<S> {
                     if let Some(epoch) = run.new_epoch.take() {
                         self.store.set_server_epoch(&epoch)?;
                     }
+                    let synced = self.synced_vaults()?;
                     let queue = self
                         .store
                         .pending_items()?
                         .into_iter()
-                        .filter(|r| self.keys.contains_key(&r.vault_id))
+                        .filter(|r| synced.contains(&r.vault_id))
                         .map(|r| Pending {
                             vault_id: r.vault_id,
                             item_id: r.item_id,
@@ -649,9 +726,15 @@ impl<S: Store> SyncEngine<S> {
             .into_iter()
             .map(|v| (v.vault_id, v))
             .collect();
+        // Locked, a vault's key is kept as it is and opened at unlock.
+        let mut pulled = Vec::new();
         for vault in own {
-            let Ok(key) = self.keyset.unwrap_vault_key(&vault.wrapped_key, &vault.id) else {
-                continue;
+            let key = match &self.keyset {
+                Some(keyset) => match keyset.unwrap_vault_key(&vault.wrapped_key, &vault.id) {
+                    Ok(key) => Some(key),
+                    Err(_) => continue,
+                },
+                None => None,
             };
             let cursor = cached.get(&vault.id).map(|v| v.sync_cursor);
             if cached.get(&vault.id).map(|v| &v.wrapped_key) != Some(&vault.wrapped_key) {
@@ -661,7 +744,10 @@ impl<S: Store> SyncEngine<S> {
                     sync_cursor: cursor.unwrap_or(0),
                 })?;
             }
-            self.keys.insert(vault.id, key);
+            if let Some(key) = key {
+                self.keys.insert(vault.id, key);
+            }
+            pulled.push(vault.id);
         }
         for vault_id in cached.keys().filter(|id| !listed.contains(id)) {
             self.store.delete_vault(vault_id)?;
@@ -677,11 +763,17 @@ impl<S: Store> SyncEngine<S> {
             .map(|e| *e.as_bytes());
         let stored = self.store.server_epoch()?;
         let resync_all = matches!((stored, epoch), (Some(old), Some(new)) if old != new);
-        if epoch.is_some() && epoch != stored {
-            run.new_epoch = epoch;
+        // Locked, a restore waits for the unlocked sync: what the server
+        // lost can only go up again with the key. Queued changes still go.
+        if resync_all && self.is_locked() {
+            pulled.clear();
+        } else {
+            if epoch.is_some() && epoch != stored {
+                run.new_epoch = epoch;
+            }
+            run.report.resynced |= resync_all;
         }
-        run.report.resynced |= resync_all;
-        let mut vaults: Vec<Id> = self.keys.keys().copied().collect();
+        let mut vaults = pulled;
         vaults.sort_unstable();
         let since = match vaults.first() {
             Some(id) if !resync_all => self.cursor(id)?,
@@ -693,6 +785,7 @@ impl<S: Store> SyncEngine<S> {
             since,
             seen: resync_all.then(HashSet::new),
             resync_all,
+            hold: false,
         };
         self.request(run)
     }
@@ -732,56 +825,79 @@ impl<S: Store> SyncEngine<S> {
             since,
             seen,
             resync_all,
+            hold,
         } = task
         else {
             unreachable!("checked by the caller");
         };
         let vault_id = vaults[*index];
+        let locked = self.keyset.is_none();
+        let key = if locked {
+            None
+        } else {
+            Some(self.keys.get(&vault_id).ok_or(SyncError::UnknownVault)?)
+        };
         let mut finished = response.status == 404;
         if response.status == 200 {
             let Some(page) = wire::page(&response.body) else {
                 return Ok(self.wait(None));
             };
             // The server is behind this device: pull the vault again from 0.
+            // Locked, that waits for the unlocked sync.
             if *since > 0 && page.next < *since && seen.is_none() {
-                self.set_cursor(&vault_id, 0)?;
-                report.resynced = true;
-                *seen = Some(HashSet::new());
-                *since = 0;
-                return self.request(run);
-            }
-            let key = self.keys.get(&vault_id).ok_or(SyncError::UnknownVault)?;
-            for change in page.changes {
-                if let Some(seen) = seen.as_mut() {
-                    seen.insert(change.id);
+                if locked {
+                    *hold = true;
+                    finished = true;
+                } else {
+                    self.set_cursor(&vault_id, 0)?;
+                    report.resynced = true;
+                    *seen = Some(HashSet::new());
+                    *since = 0;
+                    return self.request(run);
                 }
-                let applied = apply_change(
-                    &mut self.store,
-                    key,
-                    &vault_id,
-                    &change.id,
-                    change.revision,
-                    change.envelope,
-                    now_ms,
-                )?;
-                report.pulled += 1;
-                report.conflicts += usize::from(applied.conflict);
-            }
-            // Saved after the items, so a crash repeats only this page.
-            self.set_cursor(&vault_id, page.next)?;
-            *since = page.next;
-            if !page.more {
-                if let Some(seen) = seen.take() {
-                    let key = self.keys.get(&vault_id).ok_or(SyncError::UnknownVault)?;
-                    reupload_missing(&mut self.store, key, &vault_id, &seen)?;
+            } else {
+                for change in page.changes {
+                    if let Some(seen) = seen.as_mut() {
+                        seen.insert(change.id);
+                    }
+                    match apply_change(
+                        &mut self.store,
+                        key,
+                        &vault_id,
+                        &change.id,
+                        change.revision,
+                        change.envelope,
+                        now_ms,
+                    ) {
+                        Ok(applied) => {
+                            report.pulled += 1;
+                            report.conflicts += usize::from(applied.conflict);
+                        }
+                        // Nothing was written; it is pulled again after unlock.
+                        Err(SyncError::Locked) => *hold = true,
+                        Err(err) => return Err(err),
+                    }
                 }
-                finished = true;
+                // Saved after the items, so a crash repeats only this page.
+                // Held, the cursor stays so the unlocked sync sees the change.
+                if !*hold {
+                    self.set_cursor(&vault_id, page.next)?;
+                }
+                *since = page.next;
+                if !page.more {
+                    if let Some(seen) = seen.take() {
+                        let key = need(self.keys.get(&vault_id))?;
+                        reupload_missing(&mut self.store, key, &vault_id, &seen)?;
+                    }
+                    finished = true;
+                }
             }
         } else if !finished {
             return Ok(self.wait(None));
         }
         if finished {
             *index += 1;
+            *hold = false;
             *seen = resync_all.then(HashSet::new);
             if let Some(next) = vaults.get(*index).copied() {
                 *since = if *resync_all { 0 } else { self.cursor(&next)? };
@@ -819,7 +935,11 @@ impl<S: Store> SyncEngine<S> {
             item_id,
             attempts,
         } = sent.pending;
-        let key = self.keys.get(&vault_id).ok_or(SyncError::UnknownVault)?;
+        let key = if self.keyset.is_none() {
+            None
+        } else {
+            Some(self.keys.get(&vault_id).ok_or(SyncError::UnknownVault)?)
+        };
         let local = self.store.item(&vault_id, &item_id)?;
         // A deleted record cannot be edited, so it is still as sent.
         let deleting = sent.delete;
@@ -831,7 +951,12 @@ impl<S: Store> SyncEngine<S> {
                 if deleting {
                     self.store.delete_item(&vault_id, &item_id)?;
                 } else {
-                    uploaded(&mut self.store, key, &vault_id, &item_id, &sent, local)?;
+                    match uploaded(&mut self.store, key, &vault_id, &item_id, &sent, local) {
+                        // Locked: nothing was written, and the item stays queued
+                        // for the next unlocked sync without counting as a failure.
+                        Err(SyncError::Locked) => return self.request(run),
+                        other => other?,
+                    }
                 }
                 run.report.pushed += 1;
                 self.advance_cursor(&vault_id, seq)?;
@@ -840,12 +965,22 @@ impl<S: Store> SyncEngine<S> {
                 (None, _) => return Ok(self.wait(None)),
                 // Our own write, sent again after a lost answer.
                 (Some((_, envelope)), local) if envelope == sent.envelope && !deleting => {
-                    uploaded(&mut self.store, key, &vault_id, &item_id, &sent, local)?;
+                    match uploaded(&mut self.store, key, &vault_id, &item_id, &sent, local) {
+                        // Locked: nothing was written, and the item stays queued
+                        // for the next unlocked sync without counting as a failure.
+                        Err(SyncError::Locked) => return self.request(run),
+                        other => other?,
+                    }
                 }
                 (Some((revision, envelope)), Some(l)) if l.state == SyncState::Modified => {
+                    let copy = match merge(&mut self.store, key, &l, revision, envelope, now_ms) {
+                        // Locked: nothing was written, and the item stays queued
+                        // for the next unlocked sync without counting as a failure.
+                        Err(SyncError::Locked) => return self.request(run),
+                        other => other?,
+                    };
                     run.report.conflicts += 1;
-                    if let Some(copy) = merge(&mut self.store, key, &l, revision, envelope, now_ms)?
-                    {
+                    if let Some(copy) = copy {
                         queue.push_back(Pending {
                             vault_id,
                             item_id: copy,
@@ -870,8 +1005,14 @@ impl<S: Store> SyncEngine<S> {
             409 | 404 if deleting => self.store.delete_item(&vault_id, &item_id)?,
             409 => {
                 if let Some(l) = local.filter(|l| l.state == SyncState::Modified) {
+                    let copy = match move_to_copy(&mut self.store, key, &l) {
+                        // Locked: nothing was written, and the item stays queued
+                        // for the next unlocked sync without counting as a failure.
+                        Err(SyncError::Locked) => return self.request(run),
+                        other => other?,
+                    };
                     run.report.conflicts += 1;
-                    if let Some(copy) = move_to_copy(&mut self.store, key, &l)? {
+                    if let Some(copy) = copy {
                         queue.push_back(Pending {
                             vault_id,
                             item_id: copy,
@@ -885,7 +1026,12 @@ impl<S: Store> SyncEngine<S> {
             // The server lost the item (restore): upload it again as new.
             404 if sent.revision > 1 => {
                 if let Some(l) = local.filter(|l| l.state == SyncState::Modified) {
-                    reseal(&mut self.store, key, &l, 1)?;
+                    match reseal(&mut self.store, key, &l, 1) {
+                        // Locked: nothing was written, and the item stays queued
+                        // for the next unlocked sync without counting as a failure.
+                        Err(SyncError::Locked) => return self.request(run),
+                        other => other?,
+                    }
                     retry = true;
                 }
             }
@@ -922,7 +1068,7 @@ fn is_revoked(response: &HttpResponse) -> bool {
 /// changed the item while the request was in flight.
 fn uploaded<S: Store>(
     store: &mut S,
-    key: &SymmetricKey,
+    key: Option<&SymmetricKey>,
     vault_id: &Id,
     item_id: &ItemId,
     sent: &Sent,

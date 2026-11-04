@@ -1833,3 +1833,90 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Tests:** 5 new package tests on Linux (recording, screenshots, the Secret Key and the generator, dropped listeners, the macOS switch).
   - **Not done as proposed:** a UI test for the switcher cover. XCUITest has no reliable way to hold the app in the inactive state. A manual step covers it in `QUALITY.md`, with recording, mirroring, screenshots and the macOS setting.
   - **Not run on this machine:** the views and the system feeds (no Xcode); CI builds them first.
+- **D50 — Background sync: syncing while locked, background refresh, push over APNs, the delete edge case, and signing in again** · settled 2026-11-04 · founder (approved as proposed).
+  The roadmap's M5.8 says: pull while locked, iOS background refresh and a macOS timer, a content-free push over APNs, and the `pwm-sync` delete edge case. Earlier tasks also left these here:
+  - fresh data in the AutoFill extension while the app hasn't run (D47)
+  - push for device approval requests (D46)
+  - signing in again after a refused refresh token, keeping unsent changes (D43)
+
+  What the code allows today:
+  - **The engine needs the keyset for only a few cases:** two versions to merge, an unsent edit to move to a new id, or a server behind the device (D28 §6, §7, §9). Most pulled changes are stored as ciphertext without being opened.
+  - **Uploading needs no key:** a queued change is already sealed (D28 §3).
+  - **The Apple apps keep their tokens in the Keychain,** readable after the device's first unlock. The cache file can be opened then too (D41). So a locked app can reach the server. The extension's tokens are sealed under the keyset (D34), so it can't, and doesn't need to.
+  - **Signing in again** with the same device id and account keeps the cache (the core clears it only for another account), and the server accepts a known device. Only the screens are missing.
+
+  Open:
+  - how a locked sync handles a change that needs the key
+  - when background sync runs on each platform
+  - what the push says, who gets one, and how the server sends it
+  - the delete fix
+  - the sign-in-again screens
+
+  Proposal:
+  1. **Syncing while locked (core):**
+     - **The call:** `pwm-client` gets a locked sync that needs only the tokens. It runs the same steps as D28 §4: the vault list, then pull, then push. It goes through UniFFI. WASM doesn't need it.
+     - **The vault list:** stored as now. A new vault's wrapped key is kept as it is, and opened at unlock.
+     - **Pulling:** changes that need no key are stored as ciphertext: new items, newer versions of synced items, tombstones of synced items, and an edit that beats a local delete.
+     - **A change that needs the key:** both sides changed the item, a tombstone over an unsent edit, or a server behind the device. That vault's pull stops just before it, and its cursor stays there. The next unlocked sync continues from that point, and applying a change twice changes nothing (D28 §4). This needs no change to the cache format.
+     - **Pushing:** queued changes go up as they are. A 412 or a 409 needs the key to merge, so that item stays queued for the unlocked sync, without counting as a failure.
+     - **Tokens:** refreshed tokens go to the Keychain as now. A refused refresh token or a revoked device works as when unlocked (D28 §2, §8).
+     - **What it gives:** the AutoFill extension's list and passkeys see new items at once, and a passkey made in the extension uploads without opening the app. QuickType suggestions need the decrypted names, so they still update at the next unlock (D47).
+  2. **When it runs:**
+     - **iOS:** a background refresh task, `pwm.sync`, asked for no sooner than 15 minutes after each run. iOS decides when it actually runs. A silent push also starts one (point 3). If the vault is unlocked at that moment, it is a normal sync.
+     - **macOS:** every 15 minutes while the app runs, through `NSBackgroundActivityScheduler` (the system may defer it on battery), and on a push. The app quits when its window closes, so a closed app doesn't sync. That gap is logged; a menu-bar mode could come later.
+     - **Unchanged:** at unlock, after a local change, every 5 minutes while open, and on demand (D28 §8).
+  3. **Push over APNs:**
+     - **The payload:** `{"aps":{"content-available":1}}`, sent as a background push at low priority. No vault id, account id or count. Apple learns only that some device token had a change, and when. That goes in the threat model.
+     - **Who gets one:** after an item write or delete commits, every other device of that vault's members that has a push token. The device that made the change gets none. Each device gets at most one push a minute; APNs throttles background pushes further on its own.
+     - **Approval requests (D46):** a visible notification with fixed text: "A new device wants to sign in. Open PWM to compare the code." It names no email or device. iOS and macOS show it only if the user allowed notifications. The app asks for that permission only from a switch in Settings, "Notify me when a new device asks to sign in", which is off until the user turns it on: no prompt at launch. The app still checks approvals when it comes to the front, as now.
+     - **Registering:** the apps register for remote notifications at each launch; silent pushes need no permission. They send the token when it changes and after a sign-in, with `PUT /v1/devices/self/push {app: "ios" | "macos", token, environment: "sandbox" | "production"}`. `DELETE` removes it.
+     - **Storage (migration 0006):** a `push_tokens` table with one row per device: app, token, environment and when it was last updated. Signing out, revoking or removing a device deletes its row. The token is never logged.
+     - **The sender:** a background task in the server, fed after each commit. It speaks HTTP/2 to APNs with token auth: an ES256 JWT from the `.p8` key, signed with `p256` (already vetted, D37) and made again every 50 minutes. It uses `hyper` with `rustls` (MIT/Apache, on the allow-list).
+     - **Best effort:** a push lost to a restart or an APNs error isn't retried, since background refresh and opening the app still sync. A 410 or `BadDeviceToken` deletes the token. Logs keep only counts and statuses.
+     - **Settings:** `PWM_APNS_KEY_FILE`, `PWM_APNS_KEY_ID`, `PWM_APNS_TEAM_ID`, and the two bundle ids as topics. With none set, push is off and registration still works. `PWM_APNS_URL` points tests at a fake. The founder makes the APNs key in the Apple developer account; `DEPLOYMENT.md` documents it.
+     - **Entitlements:** `aps-environment` in the iOS and macOS apps. CI's ad-hoc builds leave it out, so registering fails there and the app carries on without push.
+  4. **The delete edge case (`pwm-sync`):**
+     - **The change:** deleting an item that was never confirmed (revision 1, `Modified`) marks it `Deleted` at revision 1, instead of removing it.
+     - **The next push** sends `DELETE` with `If-Match: "1"`:
+       - **404:** the server never had it; it is removed locally, as now.
+       - **Success:** it was ours, and it's now a tombstone.
+       - **412:** another device already edited it, so the edit wins (D28 §7).
+     - **A pull meanwhile** that brings back our own upload doesn't revive it: it isn't newer than the delete.
+     - **The cost:** one request for each such delete, since the engine can't tell whether the upload reached the server.
+  5. **Signing in again after a refused refresh token:**
+     - **iOS and macOS:** a line over the vault list, "Sign in again to sync", opens a sheet that asks for the master password only. The email and Secret Key are already on the device. It runs the normal login with the same device id. The cache and its unsent changes are kept, and the next sync uploads them. A locked sync that gets the refusal keeps it, so the line shows at the next open.
+     - **Face ID / Touch ID stays on:** the account and keyset haven't changed, and the master password was just typed. This counts as a master password unlock for the 14-day rule. It differs from D45 §4, which is about a sign-in on a new or wiped device.
+     - **The extension:** the same line and a password field in the popup, for parity. It also has the email and Secret Key (D34).
+  6. **Tests:**
+     - **Core:**
+       - every locked-pull case
+       - stopping at a change that needs the key, then continuing after unlock
+       - locked push, with 412 and 409 left queued
+       - a revoked device while locked
+       - the delete edge case: a lost answer, then a delete, then a pull
+       - randomized multi-device runs with some locked syncs, still converging with no edit lost
+     - **Server:**
+       - the push endpoints
+       - a write pushes to the other devices only, and at most once a minute
+       - the exact payload bytes
+       - an approval sends the alert
+       - a 410 deletes the token
+       - nothing about tokens in the logs
+       - against a fake APNs over HTTP/2
+     - **Swift:**
+       - the background runner and the push token, with fakes
+       - signing in again keeps unsent changes and Face ID
+       - the line and the notification switch
+     - **Extension:** signing in again keeps unsent changes.
+     - **Not testable in CI:** real APNs delivery and iOS's scheduling of background refresh. They go in a manual checklist in `QUALITY.md`.
+  7. **Parity, logged as gaps:**
+     - **Android:** FCM and WorkManager in M6.5.
+     - **Windows and Linux:** M7.
+     - **The browser extension:** no push, since Web Push would add another service. It already syncs every 5 minutes while the browser runs, and when the popup opens.
+     - **macOS:** syncs only while the app runs (point 2).
+
+  Alternatives:
+  - **Storing the server's versions while locked, to merge at unlock:** a vault's pull would never stop. But it needs a new cache table and migration, for a case that only arises with unsent edits or a restored server.
+  - **A push service from a third party:** one more processor that sees device tokens and timing, and no less work.
+  - **A silent push for approvals:** iOS delays or drops silent pushes, and a request lasts only 10 minutes.
+  - **Asking for notification permission at first launch:** more people would get approval alerts, but it's a prompt nobody asked for.

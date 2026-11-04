@@ -56,7 +56,7 @@ impl<S: Store> Client<S> {
         let account_id = self.account_record()?.account_id;
         let (envelope, key) = self
             .engine_ref()?
-            .keyset()
+            .keyset()?
             .export_biometric_unlock(&account_id, &device)?;
         let mut blob = vec![BIOMETRIC_VERSION];
         blob.extend_from_slice(&account_id);
@@ -108,7 +108,7 @@ impl<S: Store> Client<S> {
         let account_id = self.account_record()?.account_id;
         let (envelope, key) = self
             .engine_ref()?
-            .keyset()
+            .keyset()?
             .export_browser_unlock(&account_id, &device)?;
         let mut blob = vec![BROWSER_UNLOCK_VERSION];
         blob.extend_from_slice(&account_id);

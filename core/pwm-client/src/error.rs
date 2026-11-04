@@ -211,6 +211,7 @@ impl From<SyncError> for ClientError {
             SyncError::Busy => Self::Busy,
             SyncError::NotRunning => Self::NotRunning,
             SyncError::UnknownVault => Self::UnknownVault,
+            SyncError::Locked => Self::Locked,
             SyncError::ItemDeleted => Self::ItemDeleted,
             SyncError::UnknownDevice => Self::UnknownDevice,
             SyncError::Refused(status) => Self::Server(status),

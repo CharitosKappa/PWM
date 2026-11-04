@@ -528,6 +528,15 @@ impl PwmClient {
         Ok(step(self.lock_inner().start_sync()?))
     }
 
+    /// A sync that needs only the tokens (D50 §1): locked, it stores what
+    /// needs no key and uploads what is queued; unlocked, a normal sync.
+    pub fn start_locked_sync(&self, access: String, refresh: String) -> Result<Step, PwmError> {
+        Ok(step(
+            self.lock_inner()
+                .start_locked_sync(Tokens::new(access, refresh))?,
+        ))
+    }
+
     /// Sync, then create a vault only if the account has none.
     pub fn start_ensure_vault(&self) -> Result<Step, PwmError> {
         Ok(step(self.lock_inner().start_ensure_vault()?))

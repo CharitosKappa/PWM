@@ -13,6 +13,9 @@ pub enum SyncError {
     NotRunning,
     #[error("unknown vault")]
     UnknownVault,
+    /// The engine runs without keys (a locked sync, D50 §1).
+    #[error("the vault is locked")]
+    Locked,
     #[error("the item is deleted")]
     ItemDeleted,
     /// Not one of the account's devices, or revoked already.
