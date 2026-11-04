@@ -49,6 +49,9 @@ pub enum Outcome {
     ApprovalUpdated,
     /// This device's push token was registered or removed (D50 §3).
     PushTokenSet,
+    /// The session is over on the server, from [`Client::start_sign_out`]
+    /// (D61): the app wipes the device next with [`Client::sign_out`].
+    LoggedOut,
 }
 
 /// This device's APNs token, for [`Client::start_push_token`].
@@ -88,6 +91,8 @@ pub(crate) enum Running {
     Approval(crate::approval::ApprovalCall),
     /// Registering or removing the push token, locked or not (D50 §3).
     PushToken,
+    /// Ending the session before signing out, locked or not (D61).
+    SignOut,
 }
 
 pub struct Client<S: Store> {
@@ -199,7 +204,11 @@ impl<S: Store> Client<S> {
     /// Idle, or only a sync that can carry on unlocked.
     fn idle_for_unlock(&self) -> Result<(), ClientError> {
         match self.running {
-            Running::Idle | Running::Sync | Running::LockedSync | Running::PushToken => Ok(()),
+            Running::Idle
+            | Running::Sync
+            | Running::LockedSync
+            | Running::PushToken
+            | Running::SignOut => Ok(()),
             _ => Err(ClientError::Busy),
         }
     }
@@ -332,9 +341,11 @@ impl<S: Store> Client<S> {
 
     /// Locks and deletes the cached account, its vaults and items, so the
     /// device keeps nothing of it. The platform deletes its stored tokens and
-    /// Secret Key; the device id stays.
+    /// Secret Key; the device id stays. Events not yet taken go too, so
+    /// tokens refreshed by an abandoned run are never stored afterwards (D61).
     pub fn sign_out(&mut self) -> Result<(), ClientError> {
         self.stop();
+        self.events.clear();
         let State::Locked(store) = &mut self.state else {
             unreachable!("locked just now");
         };
@@ -477,6 +488,41 @@ impl<S: Store> Client<S> {
             step
         };
         self.running = Running::PushToken;
+        self.after_engine(step)
+    }
+
+    /// Ends this device's session on the server before signing out (D61):
+    /// `POST /v1/auth/logout`, after a token refresh if needed. Whatever is
+    /// running is abandoned first. Unlocked, it uses the open session's
+    /// tokens; locked, `tokens` from secure storage (`None` answers
+    /// `locked`). Ends with `LoggedOut` when the session is over, a revoked
+    /// device included. It never clears anything: the app calls
+    /// [`sign_out`] next whatever happened, so being offline never blocks
+    /// signing out.
+    ///
+    /// [`sign_out`]: Client::sign_out
+    pub fn start_sign_out(&mut self, tokens: Option<Tokens>) -> Result<Step, ClientError> {
+        self.cancel();
+        let path = "/v1/auth/logout".to_owned();
+        let step = if self.is_unlocked() {
+            self.engine()?
+                .start_call(pwm_sync::Method::Post, path, None)
+        } else {
+            let Some(tokens) = tokens else {
+                return Err(ClientError::Locked);
+            };
+            if self.store().account()?.is_none() {
+                return Err(ClientError::Locked);
+            }
+            let State::Locked(store) = std::mem::replace(&mut self.state, State::Moving) else {
+                unreachable!("cancelled and not unlocked");
+            };
+            let mut engine = Box::new(SyncEngine::locked(store, tokens)?);
+            let step = engine.start_call(pwm_sync::Method::Post, path, None);
+            self.state = State::Syncing(engine);
+            step
+        };
+        self.running = Running::SignOut;
         self.after_engine(step)
     }
 
@@ -656,6 +702,23 @@ impl<S: Store> Client<S> {
         let step = match step {
             pwm_sync::Step::Send(request) => return Ok(Step::Send(request)),
             pwm_sync::Step::Wait { delay_ms } => Step::Wait { delay_ms },
+            pwm_sync::Step::Done(
+                SyncOutcome::Answered { status: 204, .. } | SyncOutcome::SignedOut,
+            ) if matches!(self.running, Running::SignOut) => Step::Done(Outcome::LoggedOut),
+            pwm_sync::Step::Done(SyncOutcome::Answered { status, .. })
+                if matches!(self.running, Running::SignOut) =>
+            {
+                self.running = Running::Idle;
+                return Err(ClientError::Server(status));
+            }
+            pwm_sync::Step::Done(SyncOutcome::DeviceRevoked)
+                if matches!(self.running, Running::SignOut) =>
+            {
+                // The engine cleared the cache: the session is over too.
+                self.running = Running::Idle;
+                self.lock();
+                return Ok(Step::Done(Outcome::LoggedOut));
+            }
             pwm_sync::Step::Done(SyncOutcome::Synced(report)) => match self.running {
                 Running::CreateVault(vault_id) => Step::Done(Outcome::VaultCreated {
                     vault_id: auth::id_text(&vault_id),

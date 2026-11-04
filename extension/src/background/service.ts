@@ -30,6 +30,8 @@ import type { AlarmName, Platform } from "./platform.ts";
 
 export const RULES_PATH = "/autofill-rules.bin";
 const CLIPBOARD_CLEAR_MS = 30_000;
+/** How long signing out waits for the server (D61). */
+const SIGN_OUT_MS = 5_000;
 const RULES_EVERY_MS = 24 * 60 * 60 * 1000;
 const RULES_SPREAD_MS = 2 * 60 * 60 * 1000;
 const DEVICE_NAME = "Browser extension";
@@ -635,6 +637,7 @@ export class Background {
   }
 
   private async signOut(): Promise<void> {
+    await this.endSession();
     await this.touchId.turnOff();
     await this.lock();
     await this.platform.disk.remove([
@@ -646,6 +649,26 @@ export class Background {
     this.core = this.fns.newCore();
     await this.persist();
     await this.loadRules();
+  }
+
+  /**
+   * Ends this device's session on the server (D61): at most
+   * `SIGN_OUT_MS`, any failure ignored, so being offline never blocks
+   * signing out. Unlocked only: the tokens are sealed while locked (D34),
+   * and Settings, where sign-out is, needs the vault unlocked.
+   */
+  private async endSession(): Promise<void> {
+    if (!this.core.isUnlocked()) return;
+    const ended = this.run(() => this.core.startSignOut()).then(
+      () => undefined,
+      () => undefined,
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, SIGN_OUT_MS);
+    });
+    await Promise.race([ended, late]);
+    clearTimeout(timer);
   }
 
   /** Restarts the auto-lock timer (D34: 15 minutes idle by default). */

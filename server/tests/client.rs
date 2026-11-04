@@ -643,3 +643,81 @@ async fn a_signed_in_device_approves_a_new_one() {
     ));
     db.drop().await;
 }
+
+#[tokio::test]
+async fn signing_out_ends_the_session_on_the_server() {
+    let Some((db, app)) = setup().await else {
+        return;
+    };
+    let mut laptop = new_client();
+    let step = laptop.start_signup(EMAIL, PASSWORD, &new_id().unwrap(), Platform::Macos, "Mac");
+    let Outcome::SignedUp { secret_key } = run(&app, &mut laptop, step).await.unwrap() else {
+        panic!("not signed up");
+    };
+    let secret_key = secret_key.expose_secret().clone();
+    let laptop_tokens = latest_tokens(&mut laptop);
+    let mut phone = new_client();
+    let step = phone.start_login(
+        EMAIL,
+        PASSWORD,
+        &secret_key,
+        &new_id().unwrap(),
+        Platform::Ios,
+        "Phone",
+    );
+    run(&app, &mut phone, step).await.unwrap();
+    let phone_tokens = latest_tokens(&mut phone);
+    let copy = |t: &Tokens| Tokens::new(t.access().to_owned(), t.refresh().to_owned());
+    let push = pwm_client::PushToken {
+        app: "ios".to_owned(),
+        token: "ab".repeat(32),
+        sandbox: true,
+    };
+    let step = phone.start_push_token(copy(&phone_tokens), Some(push));
+    run(&app, &mut phone, step).await.unwrap();
+
+    // Locked, with the stored tokens (D61); then the device is wiped.
+    phone.lock();
+    let step = phone.start_sign_out(Some(copy(&phone_tokens)));
+    assert!(matches!(
+        run(&app, &mut phone, step).await.unwrap(),
+        Outcome::LoggedOut
+    ));
+    phone.sign_out().unwrap();
+    assert_eq!(
+        common::flows::refresh(&app, phone_tokens.refresh()).await,
+        common::flows::unauthorized()
+    );
+    assert_eq!(
+        common::flows::get_account(&app, phone_tokens.access()).await,
+        axum::http::StatusCode::UNAUTHORIZED
+    );
+    let pushes: i64 = sqlx::query_scalar("SELECT count(*) FROM push_tokens")
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    assert_eq!(pushes, 0);
+
+    // The laptop stays signed in, then signs out unlocked.
+    let step = laptop.start_sync();
+    assert!(matches!(
+        run(&app, &mut laptop, step).await.unwrap(),
+        Outcome::Synced(_)
+    ));
+    let step = laptop.start_sign_out(None);
+    assert!(matches!(
+        run(&app, &mut laptop, step).await.unwrap(),
+        Outcome::LoggedOut
+    ));
+    laptop.sign_out().unwrap();
+    assert_eq!(
+        common::flows::refresh(&app, laptop_tokens.refresh()).await,
+        common::flows::unauthorized()
+    );
+    let sessions: i64 = sqlx::query_scalar("SELECT count(*) FROM sessions")
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    assert_eq!(sessions, 0);
+    db.drop().await;
+}

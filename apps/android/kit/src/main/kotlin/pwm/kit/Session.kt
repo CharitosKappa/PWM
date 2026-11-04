@@ -15,6 +15,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.pwm_ffi.ApprovalAsk
 import uniffi.pwm_ffi.androidAppLink
 import uniffi.pwm_ffi.breachPaddingHeader
@@ -243,12 +244,35 @@ class Session(
         Redacted(bytes)
     }
 
-    /** Deletes the account from this device: its cache, tokens, Secret Key and email. */
+    /**
+     * Ends this device's session on the server (D61), then deletes the
+     * account from this device: its cache, tokens, Secret Key and email.
+     * The server gets at most [SIGN_OUT_MS] and any failure is ignored, so
+     * being offline never blocks signing out.
+     */
     override suspend fun signOut() = on {
+        endSession()
         core { client.signOut() }
         disableBiometrics()
         for (name in listOf(KeyName.SECRET_KEY, KeyName.ACCESS_TOKEN, KeyName.REFRESH_TOKEN, KeyName.EMAIL, KeyName.PASSWORD_UNLOCKED_AT)) {
             keys.delete(name)
+        }
+    }
+
+    /** `POST /v1/auth/logout` with the stored tokens, locked or not; a revoked device's sends nothing. */
+    private suspend fun endSession() {
+        val access = keys.get(KeyName.ACCESS_TOKEN) ?: return
+        val refresh = keys.get(KeyName.REFRESH_TOKEN) ?: return
+        try {
+            val ended = withTimeoutOrNull(SIGN_OUT_MS) {
+                run(core { client.startSignOut(access, refresh) }, transport.withTimeout(SIGN_OUT_MS.toInt()))
+            }
+            if (ended == null) client.cancel()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Offline, refused or timed out: the device is wiped all the same.
+            client.cancel()
         }
     }
 
@@ -559,7 +583,7 @@ class Session(
      * failure goes back to the core as `networkFailed`; a cancelled coroutine
      * cancels the conversation.
      */
-    private suspend fun run(first: Step): Outcome {
+    private suspend fun run(first: Step, via: HttpTransport = transport): Outcome {
         var step = first
         while (true) {
             try {
@@ -568,7 +592,7 @@ class Session(
                     is Step.Wait -> throw Wait(step.delayMs.toLong())
                     is Step.Send -> {
                         val response = try {
-                            transport.send(httpRequest(step.request))
+                            via.send(httpRequest(step.request))
                         } catch (e: IOException) {
                             null
                         }
@@ -622,6 +646,9 @@ class Session(
 
     private companion object {
         const val APPROVAL_POLL_MS = 2_000L
+
+        /** How long signing out waits for the server (D61), as for the push token (D60 §4). */
+        const val SIGN_OUT_MS = 5_000L
     }
 
     private fun deviceId(): String {

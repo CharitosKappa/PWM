@@ -618,6 +618,12 @@ Phase 3  Teams           months 16–24 M16–M19
     - **`:app`:** Settings' Password health, Export (through "Save to") and Import (through the file picker, with Delete export file) pages.
     - **Tests:** 5 JVM view-model tests; the server test checks health with a fake breach service, an export and a CSV import; the UI test opens health, imports a CSV and deletes it, and exports JSON.
   - **Deferred:** the system's pickers and real exports from each manager (`QUALITY.md`).
+- [x] M6.12 Signing out ends the session on the server on every client (D61): found during M6.9, no client called `POST /v1/auth/logout`, so a signed-out device's refresh token stayed valid for up to 90 days.
+  - Done per D61:
+    - **Core:** `start_sign_out` (UniFFI `startSignOut(access, refresh)`, WASM `startSignOut()` unlocked only), locked or not, ending with `LoggedOut`; it abandons a running sync and never clears anything. `sign_out` now also drops events not yet taken, so tokens refreshed by an abandoned logout are never stored after the wipe.
+    - **Apple (`PWMKit`), Android (`:kit`), extension:** sign-out tries it for at most 5 seconds (each app's HTTP transport with a 5-second timeout for it), ignores any failure, then wipes the device as before.
+    - **Tests:** 8 core tests (`tests/sign_out.rs`); a server test runs it end to end, locked and unlocked, and checks the refresh and push tokens are gone; Android: 2 JVM tests and the server test (session refused after sign-out, offline sign-out still wipes); Apple: 2 session tests and 2 server tests (the same, and a logout that never answers); extension: 4 Vitest tests and the WASM core's method list.
+  - **Deferred:** dropping the separate push token removal before sign-out (Apple's `forgetPushToken`, Android's D60 §4), now redundant online (D61 §5). The Swift tests were written on Windows and run in CI only.
 
 ### M7 — Windows + Linux desktop
 - [ ] M7.1 Tauri app (pending D3) with same screens; Windows Hello unlock; Linux unlock via password (+ polkit/fprintd later).

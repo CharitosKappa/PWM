@@ -140,15 +140,41 @@ public actor Session {
     /// Whether an account is signed in on this device (it may be locked).
     public func isSignedIn() throws -> Bool { try keys.get(.secretKey) != nil }
 
-    /// Deletes the account from this device: its cache, tokens, Secret Key
-    /// and email. The device id stays. Unsent changes are lost.
-    public func signOut() throws {
+    /// Ends this device's session on the server (D61), then deletes the
+    /// account from this device: its cache, tokens, Secret Key and email.
+    /// The device id stays. Unsent changes are lost. The server gets at most
+    /// `signOutTimeout` and any failure is ignored, so being offline never
+    /// blocks signing out.
+    public func signOut() async throws {
+        await endSession()
         try core { try client.signOut() }
         suggestions?.clear()
         try disableBiometricUnlock()
         for name in [KeyName.secretKey, .accessToken, .refreshToken, .email, .passwordUnlockedAt] {
             try keys.delete(name)
         }
+    }
+
+    /// How long signing out waits for the server (D61), as for the push token on Android (D60 §4).
+    static let signOutTimeout: TimeInterval = 5
+
+    /// `POST /v1/auth/logout` with the stored tokens, locked or not; a
+    /// revoked device's cache is gone, so it sends nothing.
+    private func endSession() async {
+        guard let access = try? keys.get(.accessToken),
+              let refresh = try? keys.get(.refreshToken),
+              let first = try? core({ try client.startSignOut(access: access, refresh: refresh) })
+        else { return }
+        let via = transport.withTimeout(Session.signOutTimeout)
+        let ending = Task { _ = try? await self.run(first, via: via) }
+        let timer = Task {
+            try? await Task.sleep(nanoseconds: UInt64(Session.signOutTimeout * 1_000_000_000))
+            ending.cancel()
+        }
+        // A request in flight ends within the transport's timeout; the run then sees the cancel.
+        await ending.value
+        timer.cancel()
+        client.cancel()
     }
 
     // MARK: Face ID / Touch ID (D45)
@@ -592,7 +618,7 @@ public actor Session {
     /// Sends each request the core asks for until it is done. A transport
     /// failure goes back to the core as `networkFailed`; cancelling the task
     /// cancels the conversation.
-    private func run(_ first: Step) async throws -> Outcome {
+    private func run(_ first: Step, via: (any HTTPTransport)? = nil) async throws -> Outcome {
         var step = first
         while true {
             defer { drainEvents() }
@@ -605,7 +631,7 @@ public actor Session {
                 let outgoing = try httpRequest(request)
                 let response: HTTPResponse
                 do {
-                    response = try await transport.send(outgoing)
+                    response = try await (via ?? transport).send(outgoing)
                     try Task.checkCancellation()
                 } catch is CancellationError {
                     client.cancel()

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { HOSTED_SERVER } from "../shared/config.ts";
 import { fromBase64 } from "../shared/bytes.ts";
 import type { Request } from "../shared/messages.ts";
@@ -601,12 +601,57 @@ describe("settings", () => {
     });
   });
 
-  it("signs out: forgets the account, keeps the device id", async () => {
-    const { background, platform } = await signedUp();
+  it("signs out: ends the session on the server, forgets the account, keeps the device id", async () => {
+    const { background, platform, core } = await signedUp();
+    const ending = core();
     await background.handle({ kind: "signOut" });
+    expect(ending.loggedOut).toBe(1);
+    expect(platform.requests.at(-1)?.url).toMatch(/\/v1\/auth\/logout$/);
     expect(await background.status()).toEqual({ state: "signedOut" });
     expect([...platform.disk.values.keys()].sort()).toEqual(["deviceId"]);
     expect(platform.sessionBytes.value).toBeUndefined();
+  });
+
+  it("signs out offline all the same (D61)", async () => {
+    const { background, platform, core } = await signedUp();
+    const ending = core();
+    platform.network.down = true;
+    await background.handle({ kind: "signOut" });
+    expect(ending.loggedOut).toBe(0);
+    expect(await background.status()).toEqual({ state: "signedOut" });
+    expect([...platform.disk.values.keys()].sort()).toEqual(["deviceId"]);
+  });
+
+  it("signs out after 5 seconds when the server doesn't answer (D61)", async () => {
+    vi.useFakeTimers();
+    try {
+      const { background, platform } = await signedUp();
+      const fetch = platform.fetch;
+      platform.fetch = (url, init) =>
+        url.endsWith("/v1/auth/logout")
+          ? new Promise<Response>(() => undefined)
+          : fetch(url, init);
+      let finished = false;
+      const signingOut = background
+        .handle({ kind: "signOut" })
+        .then(() => (finished = true));
+      await vi.advanceTimersByTimeAsync(4_900);
+      expect(finished).toBe(false);
+      await vi.advanceTimersByTimeAsync(200);
+      await signingOut;
+      expect(await background.status()).toEqual({ state: "signedOut" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("signs out locked without the server: its tokens are sealed (D34)", async () => {
+    const { background, core } = await signedUp();
+    await background.handle({ kind: "lock" });
+    const ending = core();
+    await background.handle({ kind: "signOut" });
+    expect(ending.loggedOut).toBe(0);
+    expect(await background.status()).toEqual({ state: "signedOut" });
   });
 });
 

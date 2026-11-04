@@ -27,6 +27,7 @@ const CORE_METHODS: (keyof Core)[] = [
   "startSignup",
   "startLogin",
   "startSync",
+  "startSignOut",
   "startEnsureVault",
   "receive",
   "networkFailed",
@@ -80,6 +81,8 @@ describe("the WASM core", () => {
     expect(() => core.startListDevices()).toThrow(locked);
     expect(() => core.exportFile("json", "", Date.now())).toThrow(locked);
     expect(() => core.startListApprovals()).toThrow(locked);
+    // Its tokens are sealed while locked (D61).
+    expect(() => core.startSignOut()).toThrow(locked);
     expect(() =>
       core.prepareImport(
         "",
