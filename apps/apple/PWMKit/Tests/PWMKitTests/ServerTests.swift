@@ -56,9 +56,9 @@ final class ServerTests: XCTestCase {
     }
 
     /// D50: a locked device syncs with its tokens only, uploading what it
-    /// had queued, and sends its push token while locked too. One login, as
-    /// the server limits them.
-    func testALockedBackgroundSyncAndThePushToken() async throws {
+    /// had queued, and sends its push token while locked too; then D51's
+    /// import. One login, as the server limits them.
+    func testALockedBackgroundSyncThePushTokenAndImport() async throws {
         let session = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
         try await logInShared(session)
         let vault = try await XCTUnwrapAsync(try await session.vaultIds().first)
@@ -82,13 +82,9 @@ final class ServerTests: XCTestCase {
         let copy = try await session.item(itemId, in: vault)
         XCTAssertEqual(copy?.title, "Locked sync")
         try await session.setPushToken(nil, sandbox: true)
-    }
 
-    /// D51: a browser's CSV comes in through the core, is saved and syncs;
-    /// the same file again adds nothing.
-    func testImportingACSV() async throws {
-        let session = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
-        try await logInShared(session)
+        // D51, on the same login: a browser's CSV comes in through the core,
+        // is saved and syncs; the same file again adds nothing.
         let title = "Imported \(UUID().uuidString.prefix(8))"
         let file = Redacted(Data("name,url,username,password\n\(title),https://import.example,ada,pw\n".utf8))
         XCTAssertEqual(session.guessImport(fileName: "passwords.csv", data: file)?.format, "csv")
@@ -97,7 +93,6 @@ final class ServerTests: XCTestCase {
         XCTAssertEqual(preview.logins, 1)
         let done = try await session.finishImport()
         XCTAssertEqual(done.logins, 1)
-        let vault = try await XCTUnwrapAsync(try await session.vaultIds().first)
         let titles = try await session.items(in: vault).map(\.title)
         XCTAssertTrue(titles.contains(title))
         let again = try await session.prepareImport(format: "csv", data: file, password: nil, columns: nil)
