@@ -70,7 +70,8 @@ class AutofillUITest {
     fun tidyUp() {
         shell("settings delete secure autofill_service")
         testPrefs().edit().clear().commit()
-        // The test app's screens leave the front, so the next test's taps reach PWM.
+        // The test app's and PWM's fill screens leave the front, so the next test's taps reach PWM.
+        repeat(3) { device.pressBack() }
         device.pressHome()
         signOut()
     }
@@ -147,7 +148,7 @@ class AutofillUITest {
     }
 
     private fun assertFilled() {
-        waitFor("the fields filled") {
+        waitFor("the fields filled", { onScreen() }) {
             val username = device.findObject(By.desc("username"))?.text
             // A password field reads back masked: its length is enough.
             val password = device.findObject(By.desc("password"))?.text
@@ -165,10 +166,17 @@ class AutofillUITest {
         waitFor("welcome") { model.state.value.screen == AppModel.Screen.Welcome }
     }
 
-    private fun waitFor(what: String, condition: () -> Boolean) {
+    /** The texts and descriptions on screen, for a failure's message; never a field's value. */
+    private fun onScreen(): String = device.findObjects(By.clickable(true)).joinToString(" | ") {
+        runCatching { (it.contentDescription ?: it.resourceName ?: it.text ?: "?").toString() }.getOrDefault("?")
+    }
+
+    private fun waitFor(what: String, detail: () -> String = { "" }, condition: () -> Boolean) {
         val until = System.currentTimeMillis() + 60_000
         while (!condition()) {
-            check(System.currentTimeMillis() < until) { "timed out waiting for $what, on ${model.state.value.screen::class.simpleName}" }
+            check(System.currentTimeMillis() < until) {
+                "timed out waiting for $what, on ${model.state.value.screen::class.simpleName}; showing: ${detail()}"
+            }
             Thread.sleep(100)
         }
     }
