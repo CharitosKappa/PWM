@@ -55,6 +55,34 @@ final class ServerTests: XCTestCase {
         XCTAssertEqual(copy?.login?.password, "hunter2")
     }
 
+    /// D50: a locked device pulls with its tokens only, and sends its push
+    /// token while locked too.
+    func testALockedBackgroundSyncAndThePushToken() async throws {
+        let laptop = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
+        let account = try await logInShared(laptop)
+        let phone = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
+        _ = try await phone.logIn(email: account.email, password: strong, secretKey: account.secretKey, deviceName: "Phone")
+        await phone.lock()
+
+        let vault = try await XCTUnwrapAsync(try await laptop.vaultIds().first)
+        let itemId = try await laptop.save(try await laptop.newItem(.note, title: "Locked sync"), in: vault)
+        _ = try await laptop.sync()
+
+        guard case let .synced(pulled, _, _, failed) = try await phone.backgroundSync() else {
+            return XCTFail("the locked device did not sync")
+        }
+        XCTAssertGreaterThanOrEqual(pulled, 1)
+        XCTAssertEqual(failed, 0)
+        let stillLocked = await phone.isUnlocked
+        XCTAssertFalse(stillLocked)
+        try await phone.setPushToken(Data(repeating: 0xab, count: 32), sandbox: true)
+
+        try await phone.unlock(password: strong)
+        let copy = try await phone.item(itemId, in: vault)
+        XCTAssertEqual(copy?.title, "Locked sync")
+        try await phone.setPushToken(nil, sandbox: true)
+    }
+
     func testUnlockOfflineAfterLocking() async throws {
         let keys = MemoryKeyStore()
         let session = try Session(cachePath: nil, server: server, keys: keys)

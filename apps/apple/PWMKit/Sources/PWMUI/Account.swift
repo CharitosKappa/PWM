@@ -15,6 +15,12 @@ public protocol Account: AnyObject, Sendable {
 
     // The vault (D43).
     func sync() async throws -> SyncResult
+    /// Locked or not, with the tokens only (D50 §1).
+    func backgroundSync() async throws -> SyncResult
+    /// This device's APNs token on the server; nil removes it (D50 §3).
+    func setPushToken(_ token: Data?, sandbox: Bool) async throws
+    /// After a refused refresh token, with the master password (D50 §5).
+    func signInAgain(password: Redacted<String>) async throws -> SyncResult
     func vaultIds() async throws -> [String]
     /// Every item of a vault, trashed ones included.
     func items(in vaultId: String) async throws -> [Item]

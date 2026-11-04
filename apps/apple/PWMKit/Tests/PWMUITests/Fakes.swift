@@ -92,6 +92,29 @@ actor FakeAccount: Account {
         return syncResult
     }
 
+    // Background sync, push and signing in again (D50).
+    var pushFails = false
+
+    func setPushFails(_ fails: Bool) { pushFails = fails }
+
+    func backgroundSync() throws -> SyncResult {
+        try check()
+        calls.append("backgroundSync")
+        return syncResult
+    }
+
+    func setPushToken(_ token: Data?, sandbox: Bool) throws {
+        if pushFails { throw PWMError(code: "network") }
+        let hex = token.map { $0.map { String(format: "%02x", $0) }.joined() } ?? "none"
+        calls.append("push \(hex) \(sandbox ? "sandbox" : "production")")
+    }
+
+    func signInAgain(password: Redacted<String>) throws -> SyncResult {
+        guard password.value == unlockPassword else { throw PWMError(code: "invalid_credentials") }
+        calls.append("signInAgain")
+        return .synced(pulled: 0, pushed: 1, conflicts: 0, failed: 0)
+    }
+
     func vaultIds() -> [String] { vaults }
 
     func items(in vaultId: String) throws -> [Item] {

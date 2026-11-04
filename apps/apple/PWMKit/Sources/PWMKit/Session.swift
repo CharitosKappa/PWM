@@ -264,6 +264,27 @@ public actor Session {
         } catch RunEnd.wait(let delayMs) {
             return .retry(afterMs: delayMs)
         }
+        return try syncResult(outcome)
+    }
+
+    /// A sync for background refresh and pushes (D50 §1-2): it needs only
+    /// the tokens, so it runs while locked too. Locked, it stores what needs
+    /// no key and uploads what is queued; the rest waits for the next
+    /// unlocked sync. Unlocked, it is `sync()`.
+    public func backgroundSync() async throws -> SyncResult {
+        guard let access = try keys.get(.accessToken), let refresh = try keys.get(.refreshToken) else {
+            return .signedOut
+        }
+        let outcome: Outcome
+        do {
+            outcome = try await run(try core { try client.startLockedSync(access: access, refresh: refresh) })
+        } catch RunEnd.wait(let delayMs) {
+            return .retry(afterMs: delayMs)
+        }
+        return try syncResult(outcome)
+    }
+
+    private func syncResult(_ outcome: Outcome) throws -> SyncResult {
         switch outcome {
         case let .synced(pulled, pushed, conflicts, failed, _):
             if pulled > 0 || pushed > 0 { refreshSuggestions() }
@@ -272,6 +293,42 @@ public actor Session {
         case .deviceRevoked: return .deviceRevoked
         default: throw PWMError(code: "protocol")
         }
+    }
+
+    /// This device's APNs token on the server, or none (D50 §3). It needs
+    /// only the tokens, so it works while locked.
+    public func setPushToken(_ token: Data?, sandbox: Bool) async throws {
+        guard let access = try keys.get(.accessToken), let refresh = try keys.get(.refreshToken) else { return }
+        let hex = token.map { $0.map { String(format: "%02x", $0) }.joined() }
+        let app = Session.platform == .macos ? "macos" : "ios"
+        let first = try core {
+            try client.startPushToken(access: access, refresh: refresh, app: app, token: hex, sandbox: sandbox)
+        }
+        do {
+            guard case .pushTokenSet = try await run(first) else { throw PWMError(code: "protocol") }
+        } catch RunEnd.wait {
+            throw PWMError(code: "network")
+        }
+    }
+
+    /// After the server refused this device's refresh token (D50 §5): the
+    /// master password only, since the email and Secret Key are here. The
+    /// cache and its unsent changes stay, and so does Face ID; it counts as
+    /// a master password unlock. Then syncs.
+    public func signInAgain(password: Redacted<String>) async throws -> SyncResult {
+        guard let email = try keys.get(.email), let secretKey = try keys.get(.secretKey) else {
+            throw PWMError(code: "signed_out")
+        }
+        let deviceId = try self.deviceId()
+        let first = try core {
+            try client.startLogin(
+                email: email, password: password.value, secretKey: secretKey,
+                deviceId: deviceId, platform: Session.platform, deviceName: ""
+            )
+        }
+        guard case .loggedIn = try await run(first) else { throw PWMError(code: "protocol") }
+        try passwordTyped()
+        return try await sync()
     }
 
     // MARK: Items

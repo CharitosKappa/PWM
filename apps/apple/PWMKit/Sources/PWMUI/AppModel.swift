@@ -57,6 +57,10 @@ public final class AppModel {
     let autofill: any AutoFillSystem
     /// macOS: the browser extensions' Touch ID unlock (D48 §5); nil elsewhere.
     let browserTouchID: (any BrowserTouchID)?
+    /// The notice for a new device's sign-in request (D50 §3).
+    let approvalNotices: any ApprovalNotices
+    /// "Sign in again to sync" (D50 §5), while the vault shows.
+    public private(set) var signInAgain: SignInAgainModel?
     private let clock: @MainActor () -> ContinuousClock.Instant
     private var backgroundedAt: ContinuousClock.Instant?
 
@@ -74,6 +78,7 @@ public final class AppModel {
         deviceName: String,
         autofill: any AutoFillSystem = NoAutoFillSystem(),
         browserTouchID: (any BrowserTouchID)? = nil,
+        approvalNotices: any ApprovalNotices = NoApprovalNotices(),
         clock: @escaping @MainActor () -> ContinuousClock.Instant = { ContinuousClock.now }
     ) {
         self.makeAccount = makeAccount
@@ -82,6 +87,7 @@ public final class AppModel {
         self.deviceName = deviceName
         self.autofill = autofill
         self.browserTouchID = browserTouchID
+        self.approvalNotices = approvalNotices
         self.clock = clock
     }
 
@@ -94,6 +100,7 @@ public final class AppModel {
             let account = try open(saved)
             if try await account.isSignedIn() {
                 await showUnlock()
+                await sendPushToken()
             } else {
                 screen = .welcome
             }
@@ -114,6 +121,7 @@ public final class AppModel {
                 self.secretKey = nil
                 self.showVault()
             }
+            self.signedIn()
             self.screen = .secretKey
         }
         screen = .createAccount
@@ -130,6 +138,7 @@ public final class AppModel {
             },
             onSignedIn: { [unowned self] in
                 self.signIn = nil
+                self.signedIn()
                 self.showVault()
             }
         )
@@ -149,15 +158,25 @@ public final class AppModel {
             self.unlock = nil
             self.showVault()
         }, onSignedOut: { [unowned self] in
-            self.unlock = nil
-            self.showWelcome()
+            self.didSignOut()
+        }, beforeSignOut: { [unowned self] in
+            await self.forgetPushToken()
         })
         screen = .unlock
     }
 
     private func showVault() {
         guard let account else { return }
-        vault = VaultModel(account: account, pasteboard: pasteboard) { [unowned self] in self.didSignOut() }
+        let vault = VaultModel(account: account, pasteboard: pasteboard) { [unowned self] in self.didSignOut() }
+        // Signing in again already synced; the server needs the push token again.
+        let again = SignInAgainModel(account: account, defaults: defaults) { [weak self, weak vault] in
+            await vault?.load()
+            self?.defaults.removeObject(forKey: AppModel.pushSentKey)
+            await self?.sendPushToken()
+        }
+        vault.signInAgain = again
+        self.vault = vault
+        signInAgain = again
         generator = GeneratorModel(pasteboard: pasteboard)
         let server = accountServer.flatMap { $0 == Server.hosted ? nil : $0 }
         settings = SettingsModel(server: server, app: self, account: account)
@@ -168,6 +187,8 @@ public final class AppModel {
     func didSignOut() {
         dropVault()
         unlock = nil
+        SignInAgainModel.clear(in: defaults)
+        defaults.removeObject(forKey: Self.pushSentKey)
         showWelcome()
     }
 
@@ -175,7 +196,81 @@ public final class AppModel {
         vault = nil
         generator = nil
         settings = nil
+        signInAgain = nil
         backgroundedAt = nil
+    }
+
+    /// A new sign-in on this device: its session is new, and the server
+    /// needs this device's push token again.
+    private func signedIn() {
+        SignInAgainModel.clear(in: defaults)
+        defaults.removeObject(forKey: Self.pushSentKey)
+        Task { await sendPushToken() }
+    }
+
+    // MARK: Background sync and push (D50)
+
+    static let pushTokenKey = "pushToken"
+    static let pushSandboxKey = "pushSandbox"
+    /// The token the server last accepted.
+    static let pushSentKey = "pushTokenSent"
+
+    /// The system gave this device's APNs token (at every launch). It goes
+    /// to the server when it changed, and after each sign-in.
+    public func pushTokenReceived(_ token: Data, sandbox: Bool) async {
+        defaults.set(token, forKey: Self.pushTokenKey)
+        defaults.set(sandbox, forKey: Self.pushSandboxKey)
+        await sendPushToken()
+    }
+
+    func sendPushToken() async {
+        guard let account, let token = defaults.data(forKey: Self.pushTokenKey),
+              defaults.data(forKey: Self.pushSentKey) != token,
+              (try? await account.isSignedIn()) == true
+        else { return }
+        do {
+            try await account.setPushToken(token, sandbox: defaults.bool(forKey: Self.pushSandboxKey))
+            defaults.set(token, forKey: Self.pushSentKey)
+        } catch {
+            // Sent again at the next launch.
+        }
+    }
+
+    /// Removes this device's push token from the server before signing out.
+    func forgetPushToken() async {
+        guard let account, defaults.data(forKey: Self.pushSentKey) != nil else { return }
+        try? await account.setPushToken(nil, sandbox: defaults.bool(forKey: Self.pushSandboxKey))
+        defaults.removeObject(forKey: Self.pushSentKey)
+    }
+
+    /// From background refresh or a push, locked or not (D50 §2). The vault
+    /// and the approval count are read again if they show.
+    public func backgroundSync() async -> BackgroundResult {
+        guard let account, (try? await account.isSignedIn()) == true else { return .noData }
+        do {
+            switch try await account.backgroundSync() {
+            case let .synced(pulled, pushed, _, _):
+                await vault?.load()
+                await settings?.checkApprovals()
+                return pulled + pushed > 0 ? .newData : .noData
+            case .retry:
+                return .failed
+            case .signedOut:
+                if let signInAgain {
+                    signInAgain.sessionEnded()
+                } else {
+                    SignInAgainModel.sessionEnded(in: defaults)
+                }
+                return .noData
+            case .deviceRevoked:
+                // The core has cleared the cache; finish signing out.
+                try? await account.signOut()
+                didSignOut()
+                return .noData
+            }
+        } catch {
+            return .failed
+        }
     }
 
     // MARK: Locking (D43 §5)

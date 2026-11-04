@@ -77,8 +77,17 @@ extension AppModel {
             pasteboard: SystemPasteboard(),
             deviceName: currentDeviceName,
             autofill: liveAutoFill,
-            browserTouchID: liveBrowserTouchID
+            browserTouchID: liveBrowserTouchID,
+            approvalNotices: liveApprovalNotices
         )
+    }
+
+    static var liveApprovalNotices: any ApprovalNotices {
+        #if canImport(UserNotifications) && (os(iOS) || os(macOS))
+        SystemApprovalNotices()
+        #else
+        NoApprovalNotices()
+        #endif
     }
 
     static var liveBrowserTouchID: (any BrowserTouchID)? {

@@ -387,6 +387,7 @@ struct SettingsView: View {
     let model: SettingsModel
     @State private var confirmSignOut = false
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
 
     private var lockTimeout: Binding<LockTimeout> {
         Binding(get: { model.lockTimeout }, set: { model.setLockTimeout($0) })
@@ -473,6 +474,15 @@ struct SettingsView: View {
                     }
                 }
                 .accessibilityIdentifier("approvals")
+                Toggle("Notify me when a new device asks to sign in", isOn: Binding(
+                    get: { model.approvalNoticesOn },
+                    set: { on in
+                        Task {
+                            if let url = await model.setApprovalNotices(on) { openURL(url) }
+                        }
+                    }
+                ))
+                .accessibilityIdentifier("approvalNotices")
                 NavigationLink("Export vault") { ExportHost(settings: model) }
                     .accessibilityIdentifier("exportVault")
             } footer: {

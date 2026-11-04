@@ -69,6 +69,8 @@ export class FakeCore implements Core {
   rulesVersions: { version: number; minVersion: number }[] = [];
   restoreFails = false;
   cancelled = 0;
+  /** The device name each login sent. */
+  loginNames: string[] = [];
 
   snapshot(): Uint8Array {
     return new TextEncoder().encode(
@@ -111,8 +113,10 @@ export class FakeCore implements Core {
     platform: string,
     deviceName: string,
   ): CoreStep {
-    if (deviceId === "" || platform !== "extension" || deviceName === "")
+    if (deviceId === "" || platform !== "extension")
       throw coreError("invalid_id");
+    // Empty sends no name, as the core does (signing in again, D50 §5).
+    this.loginNames.push(deviceName);
     this.next = () => {
       if (password !== PASSWORD || secretKey !== SECRET_KEY || email === "")
         throw coreError("invalid_credentials");

@@ -46,6 +46,8 @@ public final class VaultModel {
     /// A sync notice, such as "Couldn't sync"; the vault still shows.
     public private(set) var status: String?
     public private(set) var error: String?
+    /// "Sign in again to sync" (D50 §5); set by the app.
+    public internal(set) var signInAgain: SignInAgainModel?
 
     let account: any Account
     let pasteboard: any SecretPasteboard
@@ -160,7 +162,12 @@ public final class VaultModel {
             case .retry:
                 status = "Couldn't sync. Showing what's on this device."
             case .signedOut:
-                status = PWMError(code: "signed_out").message
+                if let signInAgain {
+                    signInAgain.sessionEnded()
+                    status = nil
+                } else {
+                    status = PWMError(code: "signed_out").message
+                }
             case .deviceRevoked:
                 // The core has cleared the cache; finish signing out.
                 try? await account.signOut()
