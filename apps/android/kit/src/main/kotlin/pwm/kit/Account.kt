@@ -56,6 +56,9 @@ interface Account {
 
     suspend fun sync(): SyncResult
 
+    /** The background job's sync: locked or not, with the stored tokens (D57 §2). */
+    suspend fun backgroundSync(): SyncResult
+
     // --- Items (D54 §4) ---
 
     suspend fun vaultIds(): List<String>

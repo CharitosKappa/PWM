@@ -110,6 +110,11 @@ Screenshots and screen sharing (D56), with the same build:
 2. The app switcher shows no picture of the vault.
 3. Settings, turn off "Hide PWM from screenshots and screen sharing": the vault shows in a screenshot; on Android 13+ the switcher still shows no picture. The Secret Key screen stays black.
 
+Background sync (D57), with the same build:
+
+1. Sign in, lock the phone and leave it for an hour. On another device, add an item. Unlock: it's there without waiting for a sync.
+2. With the phone offline, edit an item, lock, and go back online: within the next half hour the other device has it, with the app closed.
+
 ### Import checklist (D51)
 
 Before the beta, with a real export from each manager (made with a throwaway account holding synthetic items, never real ones):

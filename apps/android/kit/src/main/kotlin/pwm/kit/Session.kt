@@ -249,6 +249,31 @@ class Session(
 
     override suspend fun sync(): SyncResult = on { syncNow() }
 
+    /**
+     * A sync for the background job (D50 §1, D57 §2): it needs only the
+     * tokens, so it runs while locked too. Locked, it stores what needs no
+     * key and uploads what is queued; the rest waits for the next unlocked
+     * sync. Unlocked, it is [sync].
+     */
+    override suspend fun backgroundSync(): SyncResult = on {
+        val access = keys.get(KeyName.ACCESS_TOKEN)
+        val refresh = keys.get(KeyName.REFRESH_TOKEN)
+        if (access == null || refresh == null) return@on SyncResult.SignedOut
+        val outcome = try {
+            run(core { client.startLockedSync(access, refresh) })
+        } catch (e: Wait) {
+            return@on SyncResult.Retry(e.delayMs)
+        }
+        when (outcome) {
+            is Outcome.Synced -> SyncResult.Synced(
+                outcome.pulled.toLong(), outcome.pushed.toLong(), outcome.conflicts.toLong(), outcome.failed.toLong(),
+            )
+            Outcome.SignedOut -> SyncResult.SignedOut
+            Outcome.DeviceRevoked -> SyncResult.DeviceRevoked
+            else -> throw PwmError("protocol")
+        }
+    }
+
     override suspend fun vaultIds(): List<String> = on { core { client.vaultIds() } }
 
     /** Every item of a vault, trashed ones included. */

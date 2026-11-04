@@ -76,6 +76,8 @@ class PwmApplication : Application() {
             makeAccount = { server -> Session(cache, server, keys, biometrics = biometrics) },
             // Keeps counting while the phone sleeps; ignores the wall clock (D54 §5).
             clock = SystemClock::elapsedRealtime,
+            // The periodic background sync while someone is signed in (D57 §2).
+            background = WorkManagerScheduler(this),
         )
         model.start()
         // The whole app's background and foreground, so moving between its

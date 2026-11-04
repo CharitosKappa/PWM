@@ -24,12 +24,23 @@ class Harness(scope: TestScope, val prefs: MemoryPrefs = MemoryPrefs()) {
     var nextAccount: (URL) -> FakeAccount = { FakeAccount(it) }
     val copied = mutableListOf<Copied>()
     var now = 1_000_000L
+    /** What the fake scheduler was asked, in order. */
+    val scheduled = mutableListOf<String>()
     val app = AppModel(
         scope, prefs, "Pixel 8", { value, after -> copied += Copied(value.value, after) },
         EmergencyKit.Paper.A4,
         makeAccount = { server -> nextAccount(server).also { accounts += it } },
         work = StandardTestDispatcher(scope.testScheduler),
         clock = { now },
+        background = object : BackgroundScheduler {
+            override fun schedule() {
+                scheduled += "schedule"
+            }
+
+            override fun cancel() {
+                scheduled += "cancel"
+            }
+        },
     )
     val screen get() = app.state.value.screen
     val home get() = (screen as AppModel.Screen.Vault).model
@@ -143,6 +154,14 @@ class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = 
     override suspend fun sync(): SyncResult {
         syncs += 1
         return syncResult
+    }
+
+    var backgroundSyncs = 0
+    var backgroundResult: SyncResult = SyncResult.Synced(0, 0, 0, 0)
+
+    override suspend fun backgroundSync(): SyncResult {
+        backgroundSyncs += 1
+        return backgroundResult
     }
 
     override suspend fun vaultIds(): List<String> = listOf(VAULT)

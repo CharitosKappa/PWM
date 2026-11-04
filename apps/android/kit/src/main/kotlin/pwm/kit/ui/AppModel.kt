@@ -12,6 +12,7 @@ import pwm.kit.Account
 import pwm.kit.EmergencyKit
 import pwm.kit.Redacted
 import pwm.kit.Server
+import pwm.kit.SyncResult
 
 /**
  * Which screen shows, and the models behind it (D53 §1). The app keeps one
@@ -31,6 +32,7 @@ class AppModel(
      * wall clock (D54 §5): `SystemClock.elapsedRealtime` in the app.
      */
     private val clock: () -> Long = { System.nanoTime() / 1_000_000 },
+    private val background: BackgroundScheduler = NoBackgroundScheduler,
 ) {
     sealed class Screen {
         data object Loading : Screen()
@@ -93,7 +95,12 @@ class AppModel(
         mutable.update { it.copy(usesOtherServer = other, otherServer = if (other) saved.toString() else "") }
         try {
             val account = open(saved)
-            if (account.isSignedIn()) showUnlock(account) else show(Screen.Welcome)
+            if (account.isSignedIn()) {
+                background.schedule()
+                showUnlock(account)
+            } else {
+                show(Screen.Welcome)
+            }
         } catch (e: Exception) {
             mutable.update { it.copy(error = message(e), screen = Screen.Welcome) }
         }
@@ -113,6 +120,7 @@ class AppModel(
                 CreateAccountModel(scope, work, deviceName, ::chosenAccount, onCreated = { account, key ->
                     // Until "I saved it", the kit is offered again after unlocking (D53 §4).
                     prefs.kitPending = true
+                    background.schedule()
                     showSecretKey(account, key)
                 }),
             ),
@@ -129,7 +137,10 @@ class AppModel(
                             it.copy(usesOtherServer = server != null, otherServer = server?.toString() ?: "")
                         }
                     },
-                    onSignedIn = { account?.let(::showVault) },
+                    onSignedIn = {
+                        background.schedule()
+                        account?.let(::showVault)
+                    },
                 ),
             ),
         )
@@ -203,6 +214,37 @@ class AppModel(
         scope.launch { account.lock() }
     }
 
+    // --- Background sync (D57 §2) ---
+
+    /**
+     * The periodic job's run: the locked sync with the stored tokens. A
+     * refused refresh token shows at the next open, when the vault's own
+     * sync meets it; a revoked device is signed out.
+     */
+    suspend fun backgroundSync(): BackgroundResult {
+        val account = account?.takeIf { it.isSignedIn() } ?: return BackgroundResult.NO_DATA
+        return try {
+            when (val result = account.backgroundSync()) {
+                is SyncResult.Synced -> {
+                    (mutable.value.screen as? Screen.Vault)?.model?.vault?.load()
+                    if (result.pulled + result.pushed > 0) BackgroundResult.NEW_DATA else BackgroundResult.NO_DATA
+                }
+                is SyncResult.Retry -> BackgroundResult.FAILED
+                SyncResult.SignedOut -> BackgroundResult.NO_DATA
+                SyncResult.DeviceRevoked -> {
+                    // The core has cleared the cache; finish signing out.
+                    runCatching { account.signOut() }
+                    didSignOut()
+                    BackgroundResult.NO_DATA
+                }
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            BackgroundResult.FAILED
+        }
+    }
+
     // --- The lock timeout (D54 §5) ---
 
     /** The whole app left the screen. */
@@ -239,6 +281,7 @@ class AppModel(
     }
 
     private fun didSignOut() {
+        background.cancel()
         prefs.kitPending = false
         backgroundedAt = null
         showWelcome()

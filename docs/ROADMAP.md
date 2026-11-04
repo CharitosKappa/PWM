@@ -572,7 +572,12 @@ Phase 3  Teams           months 16–24 M16–M19
     - **Settings:** "Hide PWM from screenshots and screen sharing", on by default.
     - **Tests:** 3 JVM tests of the rule and the switch; the UI test checks the window's flag on welcome, the Secret Key, the vault, and with the switch off and on.
   - **Deferred:** a real phone's screenshots, recording and casting: the checklist in `QUALITY.md`.
-- [ ] M6.5 Background sync and push (FCM) for Android, the same as M5.8 (WorkManager for periodic refresh).
+- [x] M6.5 Background sync and push (FCM) for Android, the same as M5.8 (WorkManager for periodic refresh). Split by D57: this task is the background sync; push is M6.9.
+  - Done per D57 (implementation notes there):
+    - **`:kit`:** `Session.backgroundSync` (the core's locked sync with the stored tokens), `AppModel.backgroundSync` (reloads a showing vault, signs a revoked device out) and a `BackgroundScheduler` it schedules at sign-up, sign-in and a launch with an account, and cancels at sign-out.
+    - **`:app`:** `SyncWorker` and `WorkManagerScheduler`: every 15 minutes with a network connection.
+    - **Tests:** 4 JVM tests of the rules; the server test's locked sync stores another device's change and uploads a queued one; the UI test checks the job is scheduled, runs, and is cancelled at sign-out.
+  - **Deferred:** push (M6.9); a real phone's scheduling (`QUALITY.md`).
 - [x] M6.6 Onboarding, as M5.2: create an account, the Emergency Kit, sign in, and asking another device to approve (D52 §1).
   - Done per D53 (implementation notes there):
     - **`:kit`:** the view models (`AppModel`, `CreateAccountModel`, `SecretKeyModel`, `SignInModel`, `UnlockModel`, a placeholder `VaultModel`) over an `Account` interface; `Session` gains the kit PDF, asking another device (D46) and the item count; `Server`, `EmergencyKit`, `PasswordStrength` and `QrDecoder` (ZXing).
@@ -594,6 +599,7 @@ Phase 3  Teams           months 16–24 M16–M19
     - **`FLAG_SECURE` on the detail and edit screens, and the app-switcher preview:** M6.4. **Fingerprint and face unlock:** M6.2.
     - **On a real phone and a tablet:** the checklist in `QUALITY.md`.
 - [ ] M6.8 Health, devices, approving a new device, export, import and signing in again, as M5.9, M5.10, D50 §5 and M8.2 (D52 §1).
+- [ ] M6.9 Push for Android (D57 §1), after M6.3 and M6.8: needs a decision on Google Play services' licence (an allow-list exception) or UnifiedPush, a Firebase project, and the server's RS256 signer for FCM.
 
 ### M7 — Windows + Linux desktop
 - [ ] M7.1 Tauri app (pending D3) with same screens; Windows Hello unlock; Linux unlock via password (+ polkit/fprintd later).
