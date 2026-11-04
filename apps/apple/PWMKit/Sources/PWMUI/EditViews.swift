@@ -483,6 +483,8 @@ struct SettingsView: View {
                     }
                 ))
                 .accessibilityIdentifier("approvalNotices")
+                NavigationLink("Import") { ImportHost(settings: model) }
+                    .accessibilityIdentifier("importVault")
                 NavigationLink("Export vault") { ExportHost(settings: model) }
                     .accessibilityIdentifier("exportVault")
             } footer: {

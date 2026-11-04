@@ -2046,3 +2046,11 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The vector:** `core/test-vectors/bitwarden_export.mjs` makes `bitwarden_export.json` with Node's crypto; `verify.mjs` checks it in Node and `pwm-import` reads it. The Argon2id variant is tested in Rust with the vetted `argon2`, since Node 22 has no Argon2.
   - **Not done as proposed:** Proton passkeys (above).
   - **Not run on this machine:** the fuzz targets (libFuzzer doesn't build on Windows); CI runs them.
+
+  Implementation notes (M8.2):
+  - **Extension:** an Import tab on the manage page; the background's `Importer` passes the file to the core as bytes and drops them after. The page's limit is 32 MB, lower than the core's 50 MB, because the file travels as base64 in one extension message (64 MiB in Chrome). The preview lives in the core and goes when the vault locks.
+  - **iOS and macOS:** `ImportModel` in `PWMUI` with an `ImportFiles` seam (security-scoped reading and deleting), and `ImportView` in Settings, next to Export. The file's size is checked before it is read.
+  - **What counts as plain text:** a file imported without a password. That covers every unencrypted export, our JSON and CSV included; Bitwarden's protected export and `.pwmx` don't get the delete line.
+  - **The Mac sandbox** gets `com.apple.security.files.user-selected.read-write`, so the picked file can be read and then deleted. CI's ad-hoc build still runs with no entitlements.
+  - **After importing,** the apps sync at once; a failed sync leaves the items queued like any change.
+  - **Not run on this machine:** the Swift tests and app targets (no Xcode, Docker not running); CI runs them first.

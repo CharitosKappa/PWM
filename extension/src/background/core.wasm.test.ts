@@ -66,6 +66,9 @@ const CORE_METHODS: (keyof Core)[] = [
   "startAcceptApproval",
   "startCompleteApproval",
   "startDenyApproval",
+  "prepareImport",
+  "finishImport",
+  "cancelImport",
 ];
 
 describe("the WASM core", () => {
@@ -77,6 +80,9 @@ describe("the WASM core", () => {
     expect(() => core.startListDevices()).toThrow(locked);
     expect(() => core.exportFile("json", "", Date.now())).toThrow(locked);
     expect(() => core.startListApprovals()).toThrow(locked);
+    expect(() =>
+      core.prepareImport("", "csv", new Uint8Array(), "", "", Date.now()),
+    ).toThrow(locked);
     expect(fns.breachRangeUrl("ABCDE")).toBe(
       "https://api.pwnedpasswords.com/range/ABCDE",
     );
@@ -237,5 +243,26 @@ describe("the WASM core", () => {
     expect(() => ask.poll()).toThrow(
       expect.objectContaining({ code: "not_running" }) as Error,
     );
+  });
+
+  it("detects an import file and reads a CSV's columns (D51)", () => {
+    const csv = new TextEncoder().encode(
+      "url,username,password,totp,extra,name,grouping,fav\nhttps://b.example,ada,pw,,,Bank,,0\n",
+    );
+    expect(JSON.parse(fns.detectImport("export.csv", csv) ?? "null")).toEqual({
+      format: "lastpass",
+      needs_password: false,
+    });
+    expect(fns.detectImport("photo.png", new Uint8Array([1, 2, 3]))).toBe(
+      undefined,
+    );
+    const generic = new TextEncoder().encode("name,url,username,password\n");
+    const columns = JSON.parse(fns.importColumns(generic)) as {
+      headers: string[];
+      suggested: Record<string, number | null>;
+    };
+    expect(columns.headers).toEqual(["name", "url", "username", "password"]);
+    expect(columns.suggested.password).toBe(3);
+    expect(columns.suggested.notes).toBeNull();
   });
 });

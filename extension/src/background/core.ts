@@ -200,6 +200,22 @@ export interface Core {
   authorizeExport(password: string, secretKey: string, nowMs: number): void;
   /** `pwmx` (with `exportPassword`), `json` or `csv`; uses up the grant. */
   exportFile(format: string, exportPassword: string, nowMs: number): Uint8Array;
+  /**
+   * Reads a file to import into `vaultId` ("" for the first vault) and
+   * previews it as JSON `{logins, notes, cards, identities, folders,
+   * trashed, left_out: [[reason, count]]}` (D51). `mapping` is JSON or "".
+   */
+  prepareImport(
+    vaultId: string,
+    format: string,
+    bytes: Uint8Array,
+    password: string,
+    mapping: string,
+    nowMs: number,
+  ): string;
+  /** Saves the prepared import; the preview JSON. */
+  finishImport(nowMs: number): string;
+  cancelImport(): void;
   /** Device approvals (D46), the signed-in side: end with `approvals` or `approval_updated`. */
   startListApprovals(): CoreStep;
   startAcceptApproval(approvalId: string): CoreStep;
@@ -225,6 +241,10 @@ export interface CoreFunctions {
   ): Uint8Array;
   /** The HIBP range URL for a 5-character prefix (D22 §4). */
   breachRangeUrl(prefix: string): string;
+  /** An import file's format as JSON `{format, needs_password}`, or undefined. */
+  detectImport(name: string, bytes: Uint8Array): string | undefined;
+  /** A CSV's header and suggested columns as JSON `{headers, suggested, rows}`. */
+  importColumns(bytes: Uint8Array): string;
   /** A new device's request to a signed-in one (D46). */
   newApprovalAsk(email: string): CoreApprovalAsk;
 }
