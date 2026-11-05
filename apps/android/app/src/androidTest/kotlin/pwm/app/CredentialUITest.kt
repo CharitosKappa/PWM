@@ -93,7 +93,7 @@ class CredentialUITest {
         // A new passkey: the sheet, then PWM asks to confirm with the master password.
         val create = """{"challenge":"${b64("challenge-create-0001".toByteArray())}","rp":{"id":"example.com","name":"Example"},"user":{"id":"${b64("ada".toByteArray())}","name":"ada","displayName":"Ada"},"pubKeyCredParams":[{"type":"public-key","alg":-7}],"authenticatorSelection":{"residentKey":"required","userVerification":"required"}}"""
         ask("createPasskey", create, user = "ada")
-        confirmInSheet()
+        throughSheet { device.hasObject(By.res("password")) || hasResult() }
         typeMasterPassword()
         val registration = JSONObject(result())
         val response = registration.getJSONObject("response")
@@ -106,7 +106,7 @@ class CredentialUITest {
         // Signing in, within a minute of confirming: no second prompt.
         val get = """{"challenge":"${b64("challenge-get-0001".toByteArray())}","rpId":"example.com","userVerification":"required"}"""
         ask("getPasskey", get)
-        confirmInSheet("ada")
+        throughSheet("ada") { hasResult() }
         val assertion = JSONObject(result())
         assertEquals(registration.getString("id"), assertion.getString("id"))
         val signed = assertion.getJSONObject("response")
@@ -117,11 +117,11 @@ class CredentialUITest {
 
         // A password the app asks to save: "Save in PWM", then used.
         ask("createPassword", user = "bob", secret = "app-pass-42")
-        confirmInSheet()
+        throughSheet { device.hasObject(By.res("saveLogin")) || hasResult() }
         click(By.res("saveLogin"), 30_000)
         assertEquals("saved", result())
         ask("getPassword")
-        confirmInSheet("bob")
+        throughSheet("bob") { hasResult() }
         assertEquals("bob|app-pass-42", result())
     }
 
@@ -146,26 +146,40 @@ class CredentialUITest {
         device.waitForIdle()
     }
 
-    /** The system's sheet: PWM's entry, or its one button when PWM is the only choice. */
-    private fun confirmInSheet(vararg entries: String) {
-        val until = System.currentTimeMillis() + 30_000
+    /**
+     * Goes through the system's sheet until [done]: PWM's entry, or the
+     * sheet's own button. Android 14's sheet and later ones differ, and some
+     * take two taps (the provider, then the action), so it taps until done.
+     */
+    private fun throughSheet(vararg entries: String, done: () -> Boolean) {
+        val until = System.currentTimeMillis() + 45_000
         while (System.currentTimeMillis() < until) {
-            for (text in entries.toList() + listOf("Create", "Save", "Continue", "Sign in", "Use passkey")) {
-                val found = device.findObject(By.text(text).clickable(true)) ?: device.findObject(By.text(text))
-                if (found != null && found.applicationPackage != testPackage && found.applicationPackage != appPackage) {
-                    runCatching { found.click() }
-                    device.waitForIdle()
-                    return
-                }
+            if (done()) return
+            val texts = entries.toList() + listOf("Create", "Save", "Continue", "Sign in", "Use passkey", "PWM")
+            val found = texts.firstNotNullOfOrNull { text ->
+                device.findObject(By.text(text))?.takeIf { it.applicationPackage != testPackage && it.applicationPackage != appPackage }
             }
-            if (resultText()?.startsWith("ok:") == true || device.hasObject(By.pkg(appPackage))) return
-            Thread.sleep(200)
+            if (found != null) {
+                runCatching { found.click() }
+                device.waitForIdle()
+                Thread.sleep(1_000)
+            } else {
+                Thread.sleep(200)
+            }
         }
-        error("no sheet; showing: ${onScreen()}")
+        if (done()) return
+        error("stuck in the sheet; it shows: ${sheetTexts()}")
     }
 
+    /** Every text and description the sheet shows, for a failure's message. */
+    private fun sheetTexts(): String = device.findObjects(By.pkg(SHEET)).mapNotNull {
+        runCatching { (it.text ?: it.contentDescription)?.toString() }.getOrNull()?.takeIf(String::isNotBlank)
+    }.joinToString(" | ").ifEmpty { onScreen() }
+
+    private fun hasResult(): Boolean = resultText()?.let { it != "waiting" } == true
+
     private fun typeMasterPassword() {
-        val field = device.wait(Until.findObject(By.res("password")), 30_000) ?: error("no confirm screen; showing: ${onScreen()}")
+        val field = device.wait(Until.findObject(By.res("password")), 30_000) ?: error("no confirm screen; the sheet shows: ${sheetTexts()}")
         field.click()
         field.text = password
         click(By.res("unlock"))
@@ -230,6 +244,11 @@ class CredentialUITest {
             check(System.currentTimeMillis() < until) { "timed out waiting for $what, on ${model.state.value.screen::class.simpleName}" }
             Thread.sleep(100)
         }
+    }
+
+    private companion object {
+        /** The platform's Credential Manager sheet. */
+        const val SHEET = "com.android.credentialmanager"
     }
 
     private fun shell(command: String) {
