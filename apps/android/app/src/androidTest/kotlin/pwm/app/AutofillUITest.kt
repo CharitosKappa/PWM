@@ -64,6 +64,14 @@ class AutofillUITest {
         edit.edit { s -> s.copy(urls = s.urls.map { it.copy(url = "https://bank.example") }) }
         edit.save()
         waitFor("the login saved") { vault.state.value.visible.any { it.item.title == "Bank" } }
+        // Scheduling the background sync lets WorkManager turn its own components
+        // on a moment later, and a package change makes Android choose the
+        // autofill service again, closing any list on screen. Let that pass first.
+        waitFor("the background sync scheduled") {
+            androidx.work.WorkManager.getInstance(app).getWorkInfosForUniqueWork(WorkManagerScheduler.NAME).get()
+                .any { it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.RUNNING }
+        }
+        Thread.sleep(3_000)
     }
 
     @After
@@ -81,16 +89,12 @@ class AutofillUITest {
     @Test
     fun anotherAppFillsThroughPwmAndAFakeWebDomainGetsNothing() {
         // An app claiming the bank's web domain isn't a listed browser: no bank login.
-        open(FakeWebActivity::class.java)
-        tapField("username")
-        check(device.wait(Until.hasObject(By.text("Search PWM")), 10_000)) { "no PWM entry" }
+        openUntilOffered(FakeWebActivity::class.java)
         assertFalse("a fake web domain got the bank's login", device.hasObject(By.text("Bank")))
         device.pressBack()
 
         // Another app's login screen, not linked yet: search, pick, and link it.
-        open(LoginTestActivity::class.java)
-        tapField("username")
-        click(By.text("Search PWM"))
+        tapEntryUntil(LoginTestActivity::class.java, "Search PWM", By.res("fillSearch"))
         val search = device.wait(Until.findObject(By.res("fillSearch")), 10_000) ?: error("no fill screen")
         search.click()
         search.text = "Bank"
@@ -103,9 +107,7 @@ class AutofillUITest {
         // Locked: "Unlock PWM to fill", then the master password, then the login.
         (model.state.value.screen as AppModel.Screen.Vault).model.settings.lockNow()
         waitFor("locked") { model.state.value.screen is AppModel.Screen.Unlock }
-        open(LoginTestActivity::class.java)
-        tapField("username")
-        click(By.text("Unlock PWM to fill"))
+        tapEntryUntil(LoginTestActivity::class.java, "Unlock PWM to fill", By.res("password"))
         val field = device.wait(Until.findObject(By.res("password")), 10_000) ?: error("no unlock screen")
         field.click()
         field.text = password
@@ -141,6 +143,39 @@ class AutofillUITest {
                 if (attempt == 2) throw e
                 device.waitForIdle()
             }
+        }
+    }
+
+    /**
+     * Opens a test screen and taps its username field until PWM's entry
+     * shows. The first request after the service is chosen can be lost on a
+     * slow emulator, so the screen is opened again, at most three times.
+     */
+    private fun openUntilOffered(screen: Class<*>) {
+        repeat(3) { attempt ->
+            open(screen)
+            tapField("username")
+            if (device.wait(Until.hasObject(By.text("Search PWM")), 15_000)) return
+            check(attempt < 2) { "no PWM entry, on ${model.state.value.screen::class.simpleName}; showing: ${onScreen()}" }
+            device.pressBack()
+        }
+    }
+
+    /**
+     * Opens a test screen, taps its username field and then PWM's [entry],
+     * until [next] shows: a list closed by Android under the tap is tried
+     * again, at most three times.
+     */
+    private fun tapEntryUntil(screen: Class<*>, entry: String, next: BySelector) {
+        repeat(3) { attempt ->
+            open(screen)
+            tapField("username")
+            if (device.wait(Until.hasObject(By.text(entry)), 15_000)) {
+                runCatching { device.findObject(By.text(entry))?.click() }
+                if (device.wait(Until.hasObject(next), 10_000)) return
+            }
+            check(attempt < 2) { "no $entry, on ${model.state.value.screen::class.simpleName}; showing: ${onScreen()}" }
+            device.pressBack()
         }
     }
 

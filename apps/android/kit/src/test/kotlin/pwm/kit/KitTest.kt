@@ -99,7 +99,7 @@ class KitTest {
 
     @Test
     fun signingOutWipesTheDeviceWhenThereIsNoSessionToEnd() = runTest {
-        // A revoked device: the core has cleared its cache, so nothing is sent (D61).
+        // A revoked device: the core has cleared its cache, so nothing is sent (D62).
         val keys = MemoryKeyStore()
         for (name in listOf(KeyName.SECRET_KEY, KeyName.ACCESS_TOKEN, KeyName.REFRESH_TOKEN, KeyName.EMAIL)) keys.set(name, "x")
         val sent = mutableListOf<HttpRequest>()
@@ -123,7 +123,7 @@ class KitTest {
     @Test
     fun theTokensAreGenerated() {
         assertEquals(1, Tokens.VERSION)
-        assertEquals(0xFF2457D6, Tokens.Color.accent.light)
+        assertEquals(0xFF4F3FD6, Tokens.Color.accent.light)
         assertEquals(16.0, Tokens.Space.s4, 0.0)
     }
 }

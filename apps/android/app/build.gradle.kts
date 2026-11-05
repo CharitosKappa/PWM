@@ -30,9 +30,25 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += abis }
+        // Firebase's settings for push (D60 §1), from Gradle properties such as
+        // `pwm.firebase.projectId` in ~/.gradle/gradle.properties or CI. Without
+        // them push is off; no google-services file or plugin.
+        for ((field, property) in listOf(
+            "FIREBASE_PROJECT_ID" to "projectId",
+            "FIREBASE_APP_ID" to "appId",
+            "FIREBASE_API_KEY" to "apiKey",
+            "FIREBASE_SENDER_ID" to "senderId",
+        )) {
+            val value = (project.findProperty("pwm.firebase.$property") as String?).orEmpty()
+            require(value.all { it.isLetterOrDigit() || it in ":-_." }) { "pwm.firebase.$property has an odd character" }
+            buildConfigField("String", field, "\"$value\"")
+        }
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -107,6 +123,11 @@ dependencies {
     implementation(libs.work.runtime)
     // Autofill's inline suggestions (D58 §8).
     implementation(libs.autofill)
+    // Push over FCM (D60): messaging only; its Play services libraries are
+    // the one licence exception in allowed-licenses.json.
+    implementation(libs.firebase.messaging)
+    // The Credential Manager provider (D61); not credentials-play-services-auth, which is for callers.
+    implementation(libs.credentials)
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)

@@ -115,6 +115,13 @@ Background sync (D57), with the same build:
 1. Sign in, lock the phone and leave it for an hour. On another device, add an item. Unlock: it's there without waiting for a sync.
 2. With the phone offline, edit an item, lock, and go back online: within the next half hour the other device has it, with the app closed.
 
+Push (D60), with a build that has the Firebase project's settings and a server with `PWM_FCM_CREDENTIALS_FILE`:
+
+1. Sign in and lock the phone. On another device, add an item: within a minute the phone has it, without opening the app.
+2. Settings, "Notify me when a new device asks to sign in": on Android 13+ the permission is asked now, and only now. Refuse it: the switch stays off and says where to allow it. Allow it in system settings, then turn the switch on.
+3. Ask to sign in from a new device: the phone shows "A new device wants to sign in. Open PWM to compare the code." Tap it while locked: after unlocking, Approve a new device shows the request.
+4. Sign out: the server's push_tokens row for the phone goes, and no more pushes arrive.
+
 Autofill (D58), with the same build:
 
 1. Settings shows "Turn on PWM for autofill"; its button opens the system's choice. Pick PWM: the card goes.
@@ -122,6 +129,14 @@ Autofill (D58), with the same build:
 3. A bank-style app: "Search PWM", pick the login with "Use for this app": it fills, and is offered by name next time.
 4. Locked: "Unlock PWM to fill" asks for the fingerprint or the master password, then fills.
 5. A login with a one-time code: on a screen with no code field, the code is on the clipboard after the fill.
+
+Passkeys and the Credential Manager (D61), on an Android 14+ phone with the same build:
+
+1. With PWM chosen for autofill, Settings shows no "Turn on PWM for passkeys". Turn PWM off under "Passwords, passkeys & accounts": the card shows, and its button opens that screen.
+2. Chrome, webauthn.io: register a passkey with PWM (the fingerprint or master password is asked), then sign in with it. Locked, the sheet shows "Unlock PWM", then the passkey.
+3. A real app that uses passkeys and lists itself in its site's `assetlinks.json`: create and sign in. An app its site doesn't list gets no PWM entry for passkeys.
+4. An app that asks the Credential Manager to save a password: "Save in PWM" shows the username and the app; the login is saved, linked to the app, and offered next time. Saving again with the same username updates it.
+5. Sync, then sign in on another phone's PWM or the extension with the passkey made here.
 
 Devices and approving (D59), with the same build:
 

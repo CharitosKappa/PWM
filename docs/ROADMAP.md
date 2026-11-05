@@ -610,20 +610,33 @@ Phase 3  Teams           months 16–24 M16–M19
     - **`:app`:** Settings' Devices and "Approve a new device" pages (the list read every 3 seconds while it shows), and "Sign in again to sync" over the vault list.
     - **Tests:** 5 JVM view-model tests; the server test lists and renames devices, runs an approval end to end between two sessions, and signs in again; the UI test renames this device.
   - **Deferred:** health, export and import (M6.11); approval notices (M6.9, push); approving from a real phone (`QUALITY.md`).
-- [ ] M6.9 Push for Android (D57 §1), after M6.3 and M6.8: needs a decision on Google Play services' licence (an allow-list exception) or UnifiedPush, a Firebase project, and the server's RS256 signer for FCM.
-- [ ] M6.10 The Credential Manager provider for Android 14+ (D58 §1): passwords and passkeys, with its own decision on the passkey request format for apps (the provider builds the client data with an `android:apk-key-hash` origin), checking an app against the site's Digital Asset Links file, and the browsers allowed to pass a client data hash.
+- [x] M6.9 Push for Android (D57 §1), after M6.3 and M6.8: needs a decision on Google Play services' licence (an allow-list exception) or UnifiedPush, a Firebase project, and the server's RS256 signer for FCM.
+  - Done per D60 (implementation notes there):
+    - **Server:** migration 0007 takes Android's FCM tokens; the sender speaks FCM's HTTP v1 API with an RS256 assertion signed with `ring`, beside APNs, each on or off by itself (`PWM_FCM_CREDENTIALS_FILE`).
+    - **Core:** `start_push_token` takes `"android"` with the FCM token's text.
+    - **`:kit`:** the token is sent when it changes and removed at sign-out; a `sync` push starts the background job, an `approval` push shows the notice when its switch is on; tapping it opens Approve a new device.
+    - **`:app`:** Firebase from the build's settings only (messaging, nothing else), the messaging service, the "New devices" channel, and the Settings switch that asks for the permission.
+    - **Tests:** core token checks; server unit tests and three against a fake FCM and token endpoint; migration 0007's test; 5 JVM view-model tests; the server test registers a token; the UI test runs a push of each kind.
+  - **Deferred:** the Firebase project and its settings (the founder, D60 §7); phones without Play services (D60 §6); a real phone (`QUALITY.md`).
+- [x] M6.10 The Credential Manager provider for Android 14+ (D58 §1): passwords and passkeys, with its own decision on the passkey request format for apps (the provider builds the client data with an `android:apk-key-hash` origin), checking an app against the site's Digital Asset Links file, and the browsers allowed to pass a client data hash.
+  - Done per D61 (implementation notes there):
+    - **Core:** an app's client data with the `android:apk-key-hash` origin and its package; a browser's hash signed as given; the Digital Asset Links reader; `passkey_*_android` calls that refuse an app its site doesn't list, and link a new passkey's login to the app. New vectors (`passkey_android.json`) and a fuzz target.
+    - **`:kit`:** who is asking (D58's browsers, checked again), the asset links fetcher, and the provider's screen model: unlock, confirm each passkey, "Save in PWM".
+    - **`:app`:** `PwmCredentialService`, the entry screen, and "Turn on PWM for passkeys" in Settings.
+    - **Tests:** core tests and vectors; 13 JVM tests; a device test that makes and uses a passkey and a password through the system's sheet.
+  - **Deferred:** the single-tap fingerprint prompt in the system's sheet, Android 15's credential fields in autofill, saving from the autofill service, Android 13 and older (D61 §9); a real site and app (`QUALITY.md`).
 - [x] M6.11 Health, export and import on Android (D59 §1, §5-7): the health report with the breach check, export through the system's "Save to", and import through its file picker with the delete line.
   - Done per D59 (implementation notes there):
     - **`:kit`:** `Session` reads the health report, runs the breach check through its own transport, authorizes and makes exports, and guesses, previews, finishes and cancels imports; `HealthModel`, `ExportModel` and `ImportModel`, and the "Check for leaked passwords" switch.
     - **`:app`:** Settings' Password health, Export (through "Save to") and Import (through the file picker, with Delete export file) pages.
     - **Tests:** 5 JVM view-model tests; the server test checks health with a fake breach service, an export and a CSV import; the UI test opens health, imports a CSV and deletes it, and exports JSON.
   - **Deferred:** the system's pickers and real exports from each manager (`QUALITY.md`).
-- [x] M6.12 Signing out ends the session on the server on every client (D61): found during M6.9, no client called `POST /v1/auth/logout`, so a signed-out device's refresh token stayed valid for up to 90 days.
-  - Done per D61:
+- [x] M6.12 Signing out ends the session on the server on every client (D62): found during M6.9, no client called `POST /v1/auth/logout`, so a signed-out device's refresh token stayed valid for up to 90 days.
+  - Done per D62:
     - **Core:** `start_sign_out` (UniFFI `startSignOut(access, refresh)`, WASM `startSignOut()` unlocked only), locked or not, ending with `LoggedOut`; it abandons a running sync and never clears anything. `sign_out` now also drops events not yet taken, so tokens refreshed by an abandoned logout are never stored after the wipe.
     - **Apple (`PWMKit`), Android (`:kit`), extension:** sign-out tries it for at most 5 seconds (each app's HTTP transport with a 5-second timeout for it), ignores any failure, then wipes the device as before.
     - **Tests:** 8 core tests (`tests/sign_out.rs`); a server test runs it end to end, locked and unlocked, and checks the refresh and push tokens are gone; Android: 2 JVM tests and the server test (session refused after sign-out, offline sign-out still wipes); Apple: 2 session tests and 2 server tests (the same, and a logout that never answers); extension: 4 Vitest tests and the WASM core's method list.
-  - **Deferred:** dropping the separate push token removal before sign-out (Apple's `forgetPushToken`, Android's D60 §4), now redundant online (D61 §5). The Swift tests were written on Windows and run in CI only.
+  - **Deferred:** dropping the separate push token removal before sign-out (Apple's `forgetPushToken`, Android's D60 §4), now redundant online (D62 §5). The Swift tests were written on Windows and run in CI only.
 
 ### M7 — Windows + Linux desktop
 - [ ] M7.1 Tauri app (pending D3) with same screens; Windows Hello unlock; Linux unlock via password (+ polkit/fprintd later).

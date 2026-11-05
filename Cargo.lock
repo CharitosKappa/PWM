@@ -2122,6 +2122,7 @@ name = "pwm-client"
 version = "0.0.0"
 dependencies = [
  "base64 0.23.1",
+ "hex",
  "pwm-autofill",
  "pwm-crypto",
  "pwm-export",
@@ -2135,6 +2136,7 @@ dependencies = [
  "pwm-vault",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
  "url",
 ]
@@ -2294,6 +2296,7 @@ dependencies = [
  "pwm-store",
  "pwm-sync",
  "pwm-vault",
+ "ring",
  "serde",
  "serde_json",
  "sqlx",

@@ -14,6 +14,6 @@ final class TokensTests: XCTestCase {
         XCTAssertFalse(Tokens.Text.body.monospaced)
         XCTAssertEqual(Tokens.Text.bodyStrong.weight, 600)
         XCTAssertEqual(Tokens.Space.s4, 16)
-        XCTAssertEqual(Tokens.Radius.md, 8)
+        XCTAssertEqual(Tokens.Radius.md, 16)
     }
 }

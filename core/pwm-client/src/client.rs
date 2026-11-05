@@ -50,18 +50,19 @@ pub enum Outcome {
     /// This device's push token was registered or removed (D50 §3).
     PushTokenSet,
     /// The session is over on the server, from [`Client::start_sign_out`]
-    /// (D61): the app wipes the device next with [`Client::sign_out`].
+    /// (D62): the app wipes the device next with [`Client::sign_out`].
     LoggedOut,
 }
 
-/// This device's APNs token, for [`Client::start_push_token`].
+/// This device's push token, for [`Client::start_push_token`]: APNs (D50) or FCM (D60).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PushToken {
-    /// `"ios"` or `"macos"`.
+    /// `"ios"`, `"macos"` or `"android"`.
     pub app: String,
-    /// The token as hex, as the system gives it.
+    /// APNs: the token as hex, as the system gives it. FCM: the
+    /// registration token's text.
     pub token: String,
-    /// A development build's token (APNs sandbox).
+    /// A development build's token (APNs sandbox); ignored for FCM.
     pub sandbox: bool,
 }
 
@@ -91,7 +92,7 @@ pub(crate) enum Running {
     Approval(crate::approval::ApprovalCall),
     /// Registering or removing the push token, locked or not (D50 §3).
     PushToken,
-    /// Ending the session before signing out, locked or not (D61).
+    /// Ending the session before signing out, locked or not (D62).
     SignOut,
 }
 
@@ -342,7 +343,7 @@ impl<S: Store> Client<S> {
     /// Locks and deletes the cached account, its vaults and items, so the
     /// device keeps nothing of it. The platform deletes its stored tokens and
     /// Secret Key; the device id stays. Events not yet taken go too, so
-    /// tokens refreshed by an abandoned run are never stored afterwards (D61).
+    /// tokens refreshed by an abandoned run are never stored afterwards (D62).
     pub fn sign_out(&mut self) -> Result<(), ClientError> {
         self.stop();
         self.events.clear();
@@ -455,13 +456,28 @@ impl<S: Store> Client<S> {
         let path = "/v1/devices/self/push".to_owned();
         let (method, body) = match push {
             Some(push) => {
-                let hex = push.token.len() % 2 == 0
-                    && (64..=200).contains(&push.token.len())
-                    && push.token.bytes().all(|b| b.is_ascii_hexdigit());
-                if !hex || !["ios", "macos"].contains(&push.app.as_str()) {
+                let valid = match push.app.as_str() {
+                    // APNs: the token as hex.
+                    "ios" | "macos" => {
+                        push.token.len() % 2 == 0
+                            && (64..=200).contains(&push.token.len())
+                            && push.token.bytes().all(|b| b.is_ascii_hexdigit())
+                    }
+                    // FCM (D60 §5): the registration token as its text.
+                    "android" => {
+                        (100..=1024).contains(&push.token.len())
+                            && push
+                                .token
+                                .bytes()
+                                .all(|b| b.is_ascii_alphanumeric() || b"_-:".contains(&b))
+                    }
+                    _ => false,
+                };
+                if !valid {
                     return Err(ClientError::InvalidPushToken);
                 }
-                let environment = if push.sandbox {
+                // FCM has no sandbox.
+                let environment = if push.sandbox && push.app != "android" {
                     "sandbox"
                 } else {
                     "production"
@@ -491,7 +507,7 @@ impl<S: Store> Client<S> {
         self.after_engine(step)
     }
 
-    /// Ends this device's session on the server before signing out (D61):
+    /// Ends this device's session on the server before signing out (D62):
     /// `POST /v1/auth/logout`, after a token refresh if needed. Whatever is
     /// running is abandoned first. Unlocked, it uses the open session's
     /// tokens; locked, `tokens` from secure storage (`None` answers

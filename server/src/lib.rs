@@ -27,7 +27,10 @@ pub use error::ServerError;
 pub use items::{MAX_ITEM_BLOB_BYTES, MAX_ITEMS_PER_VAULT};
 pub use limits::{Clock, Limits, ManualClock, Rate, TrustedProxies, system_clock};
 pub use logging::{LogFormat, install_panic_hook, log_subscriber, scrub};
-pub use push::{APPROVAL_NOTICE, BACKGROUND_PAYLOAD, PUSH_EVERY, Push, PushConfig};
+pub use push::{
+    APPROVAL_NOTICE, BACKGROUND_PAYLOAD, FCM_APPROVAL_DATA, FCM_SCOPE, FCM_SYNC_DATA, FcmConfig,
+    PUSH_EVERY, Push, PushConfig,
+};
 pub use reports::{MAX_REPORT_BYTES, REPORT_RETENTION_DAYS, check_report, export_reports};
 pub use routes::{MAX_BODY_BYTES, app};
 pub use session::{ACCESS_TTL_SECS, REFRESH_TTL_SECS};

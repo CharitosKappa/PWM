@@ -197,4 +197,9 @@
     <string name="biometric_offer">Use fingerprint or face unlock next time?</string>
     <string name="turn_on">Turn on</string>
     <string name="not_now">Not now</string>
+    <!-- Push (D60 §4) -->
+    <string name="approval_notices">Notify me when a new device asks to sign in</string>
+    <string name="approval_notices_refused">Notifications are off for PWM. Turn them on in Android’s settings, under Apps, PWM, Notifications.</string>
+    <string name="approval_notice">A new device wants to sign in. Open PWM to compare the code.</string>
+    <string name="notice_channel">New devices</string>
 </resources>

@@ -28,7 +28,8 @@ pub use error::ClientError;
 pub use import::{ImportPreview, detect_import};
 pub use kit::{ScannedKit, emergency_kit, scan_kit};
 pub use passkey::{
-    CredentialIdentity, HashedAssertion, HashedPasskey, PasskeyCandidate, PasskeyCreateCheck,
+    AndroidPasskeyCaller, CredentialIdentity, HashedAssertion, HashedPasskey, PasskeyCandidate,
+    PasskeyCreateCheck, asset_links_includes, passkey_asset_links_url,
 };
 pub use pwm_autofill::{AppLinkError, app_link};
 pub use pwm_crypto::{KdfParams, Secret};

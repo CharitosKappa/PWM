@@ -134,7 +134,7 @@ export class FakeCore implements Core {
     return send("/v1/sync");
   }
 
-  /** Sessions ended on the server (D61). */
+  /** Sessions ended on the server (D62). */
   loggedOut = 0;
 
   startSignOut(): CoreStep {

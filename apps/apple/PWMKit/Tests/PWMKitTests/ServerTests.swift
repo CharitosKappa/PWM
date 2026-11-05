@@ -139,7 +139,7 @@ final class ServerTests: XCTestCase {
         try await session.signOut()
         XCTAssertLessThan(Date().timeIntervalSince(start), 10)
         XCTAssertNil(keys.get(.refreshToken))
-        // Offline at sign-out, the session stays on the server until it expires (D61 §4).
+        // Offline at sign-out, the session stays on the server until it expires (D62 §4).
         let status = try await refreshStatus(kept)
         XCTAssertEqual(status, 200)
     }
@@ -158,7 +158,7 @@ final class ServerTests: XCTestCase {
         let deviceId = keys.get(.deviceId)
         let ended = try XCTUnwrap(keys.get(.refreshToken))
         try await session.signOut()
-        // The session is over on the server too (D61).
+        // The session is over on the server too (D62).
         let status = try await refreshStatus(ended)
         XCTAssertEqual(status, 401)
         let signedIn = try await session.isSignedIn()

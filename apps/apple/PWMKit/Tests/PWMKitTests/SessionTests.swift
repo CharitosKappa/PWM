@@ -81,7 +81,7 @@ final class SessionTests: XCTestCase {
     }
 
     func testSigningOutWithNoSessionToEndStillWipesTheDevice() async throws {
-        // A revoked device: the core has cleared its cache, so nothing is sent (D61).
+        // A revoked device: the core has cleared its cache, so nothing is sent (D62).
         let keys = MemoryKeyStore()
         for name in [KeyName.secretKey, .accessToken, .refreshToken, .email] { keys.set(name, "x") }
         let transport = FakeTransport { _ in throw URLError(.notConnectedToInternet) }

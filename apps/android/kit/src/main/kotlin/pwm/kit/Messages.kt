@@ -31,6 +31,8 @@ internal object Messages {
         "approval_ended" to "The request ended. Ask again, or sign in with your Secret Key.",
         "unknown_approval" to "That request ended. Ask the new device to try again.",
         "approval_failed" to "The approval didn't arrive safely. Sign in with your Secret Key.",
+        "passkey_app_not_linked" to "This app's website doesn't list it, so PWM can't use a passkey here.",
+        "passkey_exists" to "PWM already has a passkey for this account.",
         "biometric_cancelled" to "Unlock with your master password, or try again.",
         "biometric_changed" to "Your fingerprint or face unlock changed. Enter your master password to turn it back on.",
         "biometric_unavailable" to "Fingerprint or face unlock is not available on this device.",

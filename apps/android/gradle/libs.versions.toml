@@ -22,9 +22,13 @@ lifecycle = "2.8.7"
 biometric = "1.1.0"
 # The periodic background sync (D57 §2).
 work = "2.10.0"
+# Push (D60): FCM only, no other Firebase product.
+firebase-messaging = "26.0.1"
 # Autofill (D58): inline suggestions, and UiAutomator for its device test.
 autofill = "1.1.0"
 uiautomator = "2.3.0"
+# The Credential Manager provider (D61).
+credentials = "1.6.0"
 zxing = "3.5.3"
 
 [libraries]
@@ -52,8 +56,10 @@ lifecycle-process = { module = "androidx.lifecycle:lifecycle-process", version.r
 biometric = { module = "androidx.biometric:biometric", version.ref = "biometric" }
 work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 work-testing = { module = "androidx.work:work-testing", version.ref = "work" }
+firebase-messaging = { module = "com.google.firebase:firebase-messaging", version.ref = "firebase-messaging" }
 autofill = { module = "androidx.autofill:autofill", version.ref = "autofill" }
 uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
+credentials = { module = "androidx.credentials:credentials", version.ref = "credentials" }
 
 [plugins]
 license-report = { id = "com.github.jk1.dependency-license-report", version = "2.9" }

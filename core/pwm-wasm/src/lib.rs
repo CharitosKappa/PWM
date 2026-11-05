@@ -485,7 +485,7 @@ impl WasmClient {
         self.inner.start_sync().map(step).map_err(js_error)
     }
 
-    /// Ends this device's session on the server before signing out (D61),
+    /// Ends this device's session on the server before signing out (D62),
     /// with the open session's tokens: the extension has none while locked,
     /// so locked it answers `locked`. Ends with `logged_out`.
     #[wasm_bindgen(js_name = startSignOut)]

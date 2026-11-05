@@ -32,7 +32,7 @@ pub fn routes() -> ApiRouter {
 #[serde(deny_unknown_fields)]
 struct PushToken {
     app: String,
-    /// The APNs device token, as hex.
+    /// The APNs device token as hex, or the FCM registration token's text (D60 §5).
     token: String,
     environment: String,
 }
@@ -44,12 +44,13 @@ async fn set_push(
     auth: Authenticated,
     ApiJson(req): ApiJson<PushToken>,
 ) -> Result<StatusCode, ApiError> {
-    if !["ios", "macos"].contains(&req.app.as_str())
-        || !["sandbox", "production"].contains(&req.environment.as_str())
-    {
-        return Err(ApiError::InvalidRequest);
+    let token = match (req.app.as_str(), req.environment.as_str()) {
+        ("ios" | "macos", "sandbox" | "production") => hex_token(&req.token),
+        // FCM has no sandbox.
+        ("android", "production") => fcm_token(&req.token),
+        _ => None,
     }
-    let token = hex_token(&req.token).ok_or(ApiError::InvalidRequest)?;
+    .ok_or(ApiError::InvalidRequest)?;
     let mut tx = state.pool.begin().await?;
     sqlx::query("DELETE FROM push_tokens WHERE token = $1 AND device_id <> $2")
         .bind(&token)
@@ -80,6 +81,16 @@ async fn clear_push(
         .execute(&state.pool)
         .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// An FCM registration token: 100 to 1,024 characters of letters, digits,
+/// `_`, `-` and `:`, kept as its bytes; the table also checks the length.
+fn fcm_token(text: &str) -> Option<Vec<u8>> {
+    let valid = (100..=1024).contains(&text.len())
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_-:".contains(&b));
+    valid.then(|| text.as_bytes().to_vec())
 }
 
 /// 32 to 100 bytes as hex, which the table also checks.

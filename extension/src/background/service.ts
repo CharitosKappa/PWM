@@ -30,7 +30,7 @@ import type { AlarmName, Platform } from "./platform.ts";
 
 export const RULES_PATH = "/autofill-rules.bin";
 const CLIPBOARD_CLEAR_MS = 30_000;
-/** How long signing out waits for the server (D61). */
+/** How long signing out waits for the server (D62). */
 const SIGN_OUT_MS = 5_000;
 const RULES_EVERY_MS = 24 * 60 * 60 * 1000;
 const RULES_SPREAD_MS = 2 * 60 * 60 * 1000;
@@ -652,7 +652,7 @@ export class Background {
   }
 
   /**
-   * Ends this device's session on the server (D61): at most
+   * Ends this device's session on the server (D62): at most
    * `SIGN_OUT_MS`, any failure ignored, so being offline never blocks
    * signing out. Unlocked only: the tokens are sealed while locked (D34),
    * and Settings, where sign-out is, needs the vault unlocked.

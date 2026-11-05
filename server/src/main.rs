@@ -186,13 +186,13 @@ async fn run() -> Result<(), ServerError> {
         env!("CARGO_PKG_VERSION"),
         listener.local_addr()?
     );
-    let push = match config.push {
-        Some(push) => {
-            tracing::info!("push over APNs is on");
-            Push::start(pool.clone(), push)
-        }
-        None => Push::off(),
-    };
+    if config.push.is_some() {
+        tracing::info!("push over APNs is on");
+    }
+    if config.fcm.is_some() {
+        tracing::info!("push over FCM is on");
+    }
+    let push = Push::start(pool.clone(), config.push, config.fcm);
     let state = AppState::new(pool.clone(), config.server_secrets)
         .with_trusted_proxies(config.trusted_proxies)
         .with_push(push);

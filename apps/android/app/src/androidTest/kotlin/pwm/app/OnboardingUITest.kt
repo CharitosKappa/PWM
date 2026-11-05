@@ -197,6 +197,27 @@ class OnboardingUITest {
         check("Bank" in json && "Imported" in json) { "the export is missing items" }
         tap("back")
 
+        // Push (D60 §8), without a real FCM: a change starts the sync job at once,
+        // and with the switch on and the permission given, a request shows the notice.
+        val pwm = context.applicationContext as PwmApplication
+        compose.runOnUiThread { pwm.model.pushReceived("sync") }
+        compose.waitUntil(10_000) {
+            WorkManager.getInstance(context).getWorkInfosForUniqueWork(WorkManagerScheduler.NOW).get().isNotEmpty()
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            InstrumentationRegistry.getInstrumentation().uiAutomation
+                .grantRuntimePermission(context.packageName, android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        val prefs = AndroidPrefs(context)
+        prefs.approvalNotices = true
+        val manager = context.getSystemService(android.app.NotificationManager::class.java)
+        compose.runOnUiThread { pwm.model.pushReceived("approval") }
+        compose.waitUntil(10_000) { manager.activeNotifications.any { it.id == AndroidNotices.NOTICE_ID } }
+        val notice = manager.activeNotifications.single { it.id == AndroidNotices.NOTICE_ID }.notification
+        check(notice.channelId == AndroidNotices.CHANNEL) { "the notice isn't on its channel" }
+        manager.cancel(AndroidNotices.NOTICE_ID)
+        prefs.approvalNotices = false
+
         // The switch lets the vault show in screenshots and screen sharing (D56 §2).
         tap("hideFromCaptureSwitch")
         compose.waitUntil(5_000) { !secure() }

@@ -140,7 +140,7 @@ public actor Session {
     /// Whether an account is signed in on this device (it may be locked).
     public func isSignedIn() throws -> Bool { try keys.get(.secretKey) != nil }
 
-    /// Ends this device's session on the server (D61), then deletes the
+    /// Ends this device's session on the server (D62), then deletes the
     /// account from this device: its cache, tokens, Secret Key and email.
     /// The device id stays. Unsent changes are lost. The server gets at most
     /// `signOutTimeout` and any failure is ignored, so being offline never
@@ -155,7 +155,7 @@ public actor Session {
         }
     }
 
-    /// How long signing out waits for the server (D61), as for the push token on Android (D60 §4).
+    /// How long signing out waits for the server (D62), as for the push token on Android (D60 §4).
     static let signOutTimeout: TimeInterval = 5
 
     /// `POST /v1/auth/logout` with the stored tokens, locked or not; a

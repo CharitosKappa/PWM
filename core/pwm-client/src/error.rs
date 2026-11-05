@@ -151,6 +151,8 @@ impl ClientError {
                 pwm_passkey::PasskeyError::InvalidRpId => "invalid_rp_id",
                 pwm_passkey::PasskeyError::UnsupportedAlgorithm => "unsupported_algorithm",
                 pwm_passkey::PasskeyError::InvalidKey => "invalid_passkey",
+                pwm_passkey::PasskeyError::InvalidAssetLinks => "invalid_asset_links",
+                pwm_passkey::PasskeyError::AppNotLinked => "passkey_app_not_linked",
             },
             Self::Kit(e) => match e {
                 pwm_kit::KitError::InvalidEmail => "invalid_email",

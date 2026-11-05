@@ -532,3 +532,70 @@ async fn deleting_an_account_removes_everything_it_owns() {
     );
     db.drop().await;
 }
+
+/// APNs tokens written under 0006 survive 0007, which also takes FCM's
+/// longer Android tokens, always production (D60 §5).
+#[tokio::test]
+async fn push_tokens_take_android_after_0007() {
+    let Some(db) = test_db().await else { return };
+    MIGRATOR.run_to(6, &db.pool).await.unwrap();
+    exec(&db.pool, seed()).await.unwrap();
+    let device = "00000000-0000-4000-8000-0000000000d1";
+    exec(
+        &db.pool,
+        format!(
+            "INSERT INTO push_tokens (device_id, app, token, environment) VALUES ('{device}', 'ios', {}, 'sandbox')",
+            bytes(32)
+        ),
+    )
+    .await
+    .unwrap();
+    let android = format!(
+        "UPDATE push_tokens SET app = 'android', token = {}, environment = 'production'",
+        bytes(160)
+    );
+    assert!(
+        exec(&db.pool, android.clone()).await.is_err(),
+        "refused before 0007"
+    );
+
+    migrate(&db.pool).await.unwrap();
+    assert_eq!(
+        count(&db.pool, "push_tokens").await,
+        1,
+        "the APNs row is kept"
+    );
+    for sql in [
+        format!("UPDATE push_tokens SET token = {}", bytes(101)),
+        format!(
+            "UPDATE push_tokens SET app = 'android', token = {}, environment = 'production'",
+            bytes(99)
+        ),
+        format!(
+            "UPDATE push_tokens SET app = 'android', token = {}, environment = 'production'",
+            bytes(1025)
+        ),
+        format!(
+            "UPDATE push_tokens SET app = 'android', token = {}, environment = 'sandbox'",
+            bytes(160)
+        ),
+        "UPDATE push_tokens SET app = 'windows'".to_owned(),
+    ] {
+        let err = exec(&db.pool, sql.clone())
+            .await
+            .expect_err(&format!("accepted: {sql}"));
+        let code = err
+            .as_database_error()
+            .and_then(|e| e.code())
+            .map(|c| c.into_owned());
+        assert_eq!(code.as_deref(), Some("23514"), "{sql}: {err}");
+    }
+    exec(&db.pool, android).await.unwrap();
+    exec(
+        &db.pool,
+        format!("UPDATE push_tokens SET token = {}", bytes(1024)),
+    )
+    .await
+    .unwrap();
+    db.drop().await;
+}

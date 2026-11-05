@@ -676,7 +676,7 @@ async fn signing_out_ends_the_session_on_the_server() {
     let step = phone.start_push_token(copy(&phone_tokens), Some(push));
     run(&app, &mut phone, step).await.unwrap();
 
-    // Locked, with the stored tokens (D61); then the device is wiped.
+    // Locked, with the stored tokens (D62); then the device is wiped.
     phone.lock();
     let step = phone.start_sign_out(Some(copy(&phone_tokens)));
     assert!(matches!(

@@ -70,7 +70,7 @@ export interface Core {
     deviceName: string,
   ): CoreStep;
   startSync(): CoreStep;
-  /** Ends the session on the server before signing out (D61); unlocked only. Ends with `logged_out`. */
+  /** Ends the session on the server before signing out (D62); unlocked only. Ends with `logged_out`. */
   startSignOut(): CoreStep;
   startEnsureVault(): CoreStep;
   receive(

@@ -612,7 +612,7 @@ describe("settings", () => {
     expect(platform.sessionBytes.value).toBeUndefined();
   });
 
-  it("signs out offline all the same (D61)", async () => {
+  it("signs out offline all the same (D62)", async () => {
     const { background, platform, core } = await signedUp();
     const ending = core();
     platform.network.down = true;
@@ -622,7 +622,7 @@ describe("settings", () => {
     expect([...platform.disk.values.keys()].sort()).toEqual(["deviceId"]);
   });
 
-  it("signs out after 5 seconds when the server doesn't answer (D61)", async () => {
+  it("signs out after 5 seconds when the server doesn't answer (D62)", async () => {
     vi.useFakeTimers();
     try {
       const { background, platform } = await signedUp();

@@ -83,6 +83,9 @@ class PwmApplication : Application() {
             background = WorkManagerScheduler(this),
             // Files picked for import, read once through the system (D59 §7).
             importFiles = AndroidImportFiles(this),
+            // Push over FCM, when the build has Firebase's settings (D60).
+            push = FcmPush(this),
+            notices = AndroidNotices(this),
         )
         model.start()
         // The whole app's background and foreground, so moving between its
@@ -122,6 +125,14 @@ class AndroidPrefs(context: Context) : AppPrefs {
         get() = prefs.getBoolean(SIGN_IN_AGAIN, false)
         set(value) = prefs.edit().putBoolean(SIGN_IN_AGAIN, value).apply()
 
+    override var approvalNotices: Boolean
+        get() = prefs.getBoolean(APPROVAL_NOTICES, false)
+        set(value) = prefs.edit().putBoolean(APPROVAL_NOTICES, value).apply()
+
+    override var pushToken: String?
+        get() = prefs.getString(PUSH_TOKEN, null)
+        set(value) = prefs.edit().apply { if (value == null) remove(PUSH_TOKEN) else putString(PUSH_TOKEN, value) }.apply()
+
     override var breachCheck: Boolean
         get() = prefs.getBoolean(BREACH_CHECK, true)
         set(value) = prefs.edit().putBoolean(BREACH_CHECK, value).apply()
@@ -146,6 +157,8 @@ class AndroidPrefs(context: Context) : AppPrefs {
         const val HIDE_FROM_CAPTURE = "hideFromCapture"
         const val SIGN_IN_AGAIN = "signInAgain"
         const val BREACH_CHECK = "breachCheck"
+        const val APPROVAL_NOTICES = "approvalNotices"
+        const val PUSH_TOKEN = "pushToken"
     }
 }
 

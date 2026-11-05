@@ -419,6 +419,34 @@ for (const v of load("passkey_hashed")) {
   check("hashed signature", crypto.verify("sha256", signed, { key: pub, dsaEncoding: "der" }, hex(v.signature)));
 }
 
+for (const v of load("passkey_android")) {
+  // Android's Credential Manager (D61): an app's client data is built by the
+  // provider; a privileged browser's is not, and only its hash is signed.
+  const reg = v.registration.response;
+  const auth = b64u(reg.authenticatorData);
+  check(`android ${v.name} rp id hash`, eq(auth.subarray(0, 32), crypto.createHash("sha256").update("example.com").digest()));
+  check(`android ${v.name} create flags`, auth[32] === 0x5d && auth.readUInt32BE(33) === 0);
+  const pub = crypto.createPublicKey({ key: b64u(reg.publicKey), format: "der", type: "spki" });
+  const priv = crypto.createPrivateKey({ key: hex(v.private_key_pkcs8), format: "der", type: "pkcs8" });
+  check(`android ${v.name} private key matches`, eq(crypto.createPublicKey(priv).export({ format: "der", type: "spki" }), b64u(reg.publicKey)));
+  const a = v.assertion.response;
+  const aAuth = b64u(a.authenticatorData);
+  check(`android ${v.name} get flags`, aAuth.length === 37 && aAuth[32] === 0x1d);
+  let hash;
+  if (v.name === "app") {
+    const origin = "android:apk-key-hash:" + hex(v.cert_sha256).toString("base64url");
+    const expect = (type, request) => `{"type":"${type}","challenge":"${JSON.parse(request).challenge}","origin":"${origin}","androidPackageName":"${v.package}"}`;
+    check("android app create client data", b64u(reg.clientDataJSON).toString("utf8") === expect("webauthn.create", v.create_request));
+    const got = b64u(a.clientDataJSON);
+    check("android app get client data", got.toString("utf8") === expect("webauthn.get", v.get_request));
+    hash = crypto.createHash("sha256").update(got).digest();
+  } else {
+    check("android browser placeholders", reg.clientDataJSON === "e30" && a.clientDataJSON === "e30");
+    hash = hex(v.client_data_hash);
+  }
+  check(`android ${v.name} signature`, crypto.verify("sha256", Buffer.concat([aAuth, hash]), { key: pub, dsaEncoding: "der" }, b64u(a.signature)));
+}
+
 // bitwarden_export.json: Bitwarden's password-protected export (D51 §4). The
 // keys are derived again and both values are opened, MAC first.
 for (const v of load("bitwarden_export")) {

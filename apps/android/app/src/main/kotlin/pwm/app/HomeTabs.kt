@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.view.autofill.AutofillManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -164,6 +166,7 @@ internal fun SettingsTab(app: AppModel, model: SettingsModel) {
     }
     Page(stringResource(R.string.tab_settings), null, tag = "settingsScreen") {
         AutofillCard()
+        PasskeyCard()
         Heading(stringResource(R.string.account))
         Text(state.email ?: "", style = Tokens.Text.body.compose(), color = color(Tokens.Color.text))
         Text(
@@ -241,6 +244,7 @@ internal fun SettingsTab(app: AppModel, model: SettingsModel) {
         Heading(stringResource(R.string.devices))
         Secondary(stringResource(R.string.devices), tag = "devices", onClick = model::showDevices)
         Secondary(stringResource(R.string.approve_device), tag = "approvals", onClick = model::showApprovals)
+        if (state.pushAvailable) ApprovalNoticesSwitch(model, state)
 
         Secondary(stringResource(R.string.notices), tag = "notices", onClick = model::showNotices)
         Secondary(stringResource(R.string.sign_out), tag = "signOut", onClick = model::askSignOut)
@@ -326,3 +330,54 @@ private fun AutofillCard() {
     }
 }
 
+/**
+ * "Turn on PWM for passkeys" (D61 §8), Android 14+: the system's preferred
+ * service choice turns on both autofill and the credential provider, so this
+ * shows only when autofill is PWM's and the provider was turned off on its own.
+ */
+@Composable
+private fun PasskeyCard() {
+    if (android.os.Build.VERSION.SDK_INT < 34) return
+    val context = LocalContext.current
+    var shown by remember { mutableStateOf(false) }
+    LifecycleResumeEffect(Unit) {
+        shown = PasskeySettings.autofillOnProviderOff(context)
+        onPauseOrDispose {}
+    }
+    if (!shown) return
+    Surface(color = color(Tokens.Color.surface), shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth().testTag("passkeyCard")) {
+        Column(Modifier.padding(Tokens.Space.s4.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s2.dp)) {
+            Text(stringResource(R.string.passkey_card), style = Tokens.Text.bodyStrong.compose(), color = color(Tokens.Color.text))
+            Text(stringResource(R.string.passkey_card_hint), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))
+            OutlinedButton(onClick = { PasskeySettings.open(context) }) { Text(stringResource(R.string.autofill_turn_on)) }
+        }
+    }
+}
+
+/**
+ * "Notify me when a new device asks to sign in" (D60 §4): off until turned
+ * on, and only then does Android ask for the permission (13+). A refusal
+ * leaves it off and says where to allow it.
+ */
+@Composable
+private fun ApprovalNoticesSwitch(model: SettingsModel, state: SettingsModel.State) {
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        model.noticePermissionAnswered(granted)
+    }
+    LaunchedEffect(state.askNoticePermission) {
+        if (!state.askNoticePermission) return@LaunchedEffect
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            ask.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            // Below 13 there's nothing to ask: notifications are off in system settings.
+            model.noticePermissionAnswered(false)
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text(stringResource(R.string.approval_notices), style = Tokens.Text.body.compose(), color = color(Tokens.Color.text), modifier = Modifier.weight(1f))
+        Switch(checked = state.approvalNotices, onCheckedChange = model::setApprovalNotices, modifier = Modifier.testTag("approvalNoticesSwitch"))
+    }
+    if (state.noticesRefused) {
+        Text(stringResource(R.string.approval_notices_refused), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.warning), modifier = Modifier.testTag("noticesRefused"))
+    }
+}

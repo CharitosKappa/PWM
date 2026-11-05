@@ -1,4 +1,4 @@
-//! Ending the session on the server before signing out (D61), with scripted
+//! Ending the session on the server before signing out (D62), with scripted
 //! answers: it works locked or unlocked, wins over a running sync, ends with
 //! `LoggedOut` whenever the session is over, and never clears anything
 //! itself. The whole path against the real server is in

@@ -31,4 +31,6 @@ thiserror = "2.0.21"
 url = "2.5.8"
 
 [dev-dependencies]
+hex = "0.4.3"
+sha2 = "0.11.1"
 pwm-store = { path = "../pwm-store", default-features = false }

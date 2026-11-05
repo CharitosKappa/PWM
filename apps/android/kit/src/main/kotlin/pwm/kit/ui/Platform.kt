@@ -28,6 +28,12 @@ interface AppPrefs {
 
     /** "Check for leaked passwords" (D22 §5, D59 §5), on by default. */
     var breachCheck: Boolean
+
+    /** "Notify me when a new device asks to sign in" (D60 §4), off until turned on. */
+    var approvalNotices: Boolean
+
+    /** The FCM token last sent to the server for this sign-in; null to send it again. */
+    var pushToken: String?
 }
 
 class MemoryPrefs(
@@ -38,7 +44,39 @@ class MemoryPrefs(
     override var hideFromCapture: Boolean = true,
     override var signInAgain: Boolean = false,
     override var breachCheck: Boolean = true,
+    override var approvalNotices: Boolean = false,
+    override var pushToken: String? = null,
 ) : AppPrefs
+
+/** Push (D60): FCM in the app, when the build has Firebase's settings; a fake in tests. */
+interface PushService {
+    /** Firebase is set up in this build; without it, push is off. */
+    val available: Boolean
+
+    /** This device's current FCM token, or null. */
+    suspend fun token(): String?
+}
+
+object NoPush : PushService {
+    override val available: Boolean = false
+
+    override suspend fun token(): String? = null
+}
+
+/** The new-device notice (D60 §4): a notification in the app, a fake in tests. */
+interface Notices {
+    /** The system lets the app show notifications (always below Android 13). */
+    fun allowed(): Boolean
+
+    /** "A new device wants to sign in. Open PWM to compare the code." */
+    fun showApprovalNotice()
+}
+
+object NoNotices : Notices {
+    override fun allowed(): Boolean = false
+
+    override fun showApprovalNotice() = Unit
+}
 
 /**
  * The files the user picks for import (D59 §7), by the address the system's
@@ -75,6 +113,9 @@ interface BackgroundScheduler {
     fun schedule()
 
     fun cancel()
+
+    /** A push said something changed: one sync now, as soon as Android allows (D60 §4). */
+    fun syncNow() = Unit
 }
 
 object NoBackgroundScheduler : BackgroundScheduler {
