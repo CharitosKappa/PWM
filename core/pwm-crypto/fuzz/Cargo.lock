@@ -1317,6 +1317,7 @@ dependencies = [
  "pwm-kit",
  "pwm-passkey",
  "pwm-vault",
+ "serde_json",
  "url",
 ]
 

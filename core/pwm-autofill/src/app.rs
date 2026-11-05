@@ -28,7 +28,7 @@ const LEGACY_SCHEME: &str = "androidapp://";
 
 /// The link to store for this app: `android-app://<package>?sha256=<hex>`.
 pub fn app_link(package: &str, cert_sha256: &str) -> Result<String, AppLinkError> {
-    if !valid_package(package) {
+    if !is_package_name(package) {
         return Err(AppLinkError::Package);
     }
     let digest = digest(cert_sha256).ok_or(AppLinkError::Digest)?;
@@ -38,7 +38,7 @@ pub fn app_link(package: &str, cert_sha256: &str) -> Result<String, AppLinkError
 /// Whether the login's URL `item` is a link to the app `package`, signed with
 /// one of `certs` (SHA-256 digests, with or without colons).
 pub fn match_app(package: &str, certs: &[String], item: &str) -> Option<AppMatch> {
-    if !valid_package(package) {
+    if !is_package_name(package) {
         return None;
     }
     if let Some(linked) = item.strip_prefix(LEGACY_SCHEME) {
@@ -65,7 +65,7 @@ pub fn match_app(package: &str, certs: &[String], item: &str) -> Option<AppMatch
 
 /// A Java-style package: at least two parts, each a letter then letters,
 /// digits or underscores.
-fn valid_package(package: &str) -> bool {
+pub fn is_package_name(package: &str) -> bool {
     let parts: Vec<&str> = package.split('.').collect();
     parts.len() >= 2
         && parts.iter().all(|p| {

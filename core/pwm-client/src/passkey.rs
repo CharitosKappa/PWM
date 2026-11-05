@@ -3,14 +3,19 @@
 //! `pwm-passkey`; origins come from the platform's browser, never the page.
 //! A platform that builds the client data itself (iOS, D47 §6) uses the
 //! hashed calls, and gets the identities it suggests above the keyboard.
+//! Android's Credential Manager (D61) uses the `_android` calls: a privileged
+//! browser with its origin (and usually a client data hash), or an app, which
+//! gets a site's passkeys only when the site's Digital Asset Links file lists
+//! it, and whose new passkey links the login to it.
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use pwm_autofill::registrable_domain;
+use pwm_autofill::{app_link, registrable_domain};
 use pwm_crypto::Secret;
 use pwm_passkey::{
-    Caller, CreateRequest, GetRequest, PasskeyError, StoredPasskey, authenticate,
-    authenticate_hashed, effective_rp_id, register_hashed_random, register_random,
+    AndroidCaller, Caller, CreateRequest, GetRequest, PasskeyError, StoredPasskey, android_rp_id,
+    asset_links_url, authenticate, authenticate_android, authenticate_hashed, effective_rp_id,
+    read_asset_links, register_android_random, register_hashed_random, register_random,
 };
 use pwm_store::Store;
 use pwm_vault::{Item, ItemId, ItemKind, Login, LoginUrl, Passkey, UrlMatch};
@@ -90,6 +95,97 @@ fn suggested_domain(url: &LoginUrl) -> Option<String> {
     Some(host)
 }
 
+/// Who asks Android's Credential Manager for a passkey (D61 §1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AndroidPasskeyCaller {
+    pub package: String,
+    /// SHA-256 of the app's signing certificate.
+    pub cert_sha256: Vec<u8>,
+    /// Only for a privileged browser: the origin Android returned for it.
+    pub origin: Option<String>,
+    /// A browser's hash of the client data it built. A browser without one
+    /// gets client data built here for its origin.
+    pub client_data_hash: Option<Vec<u8>>,
+    /// For an app: the RP's asset links file and the files it includes, as
+    /// fetched. Any of them listing the app is enough.
+    pub asset_links: Vec<String>,
+}
+
+/// A checked Android caller, for the passkey crate.
+enum Checked<'a> {
+    Web(Caller<'a>),
+    Android(AndroidCaller<'a>),
+}
+
+impl AndroidPasskeyCaller {
+    /// The RP id this caller may use, and how to sign for it. An app must
+    /// be listed by one of its asset links files.
+    fn check(&self, requested: Option<&str>) -> Result<(String, Checked<'_>), ClientError> {
+        let checked = match (&self.origin, &self.client_data_hash) {
+            (Some(origin), None) => {
+                let caller = Caller {
+                    origin,
+                    top_origin: None,
+                };
+                return Ok((effective_rp_id(origin, requested)?, Checked::Web(caller)));
+            }
+            (Some(origin), Some(hash)) => AndroidCaller::Browser {
+                origin,
+                client_data_hash: hash,
+            },
+            (None, _) => AndroidCaller::App {
+                package: &self.package,
+                cert_sha256: &self.cert_sha256,
+            },
+        };
+        let rp_id = android_rp_id(&checked, requested)?;
+        if self.origin.is_none() {
+            let listed = self.asset_links.iter().any(|text| {
+                read_asset_links(text, &self.package, &self.cert_sha256)
+                    .is_ok_and(|links| links.linked)
+            });
+            if !listed {
+                return Err(PasskeyError::AppNotLinked.into());
+            }
+        }
+        Ok((rp_id, Checked::Android(checked)))
+    }
+
+    /// The `android-app://` link a new passkey adds to its login, for apps.
+    fn app_link(&self) -> Result<Option<String>, ClientError> {
+        if self.origin.is_some() {
+            return Ok(None);
+        }
+        let hex: String = self
+            .cert_sha256
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        app_link(&self.package, &hex)
+            .map(Some)
+            .map_err(|_| PasskeyError::InvalidRequest.into())
+    }
+}
+
+/// The asset links file to fetch for a Credential Manager request from an
+/// app (D61 §4): the RP id it names, which it must.
+pub fn passkey_asset_links_url(request_json: &str, create: bool) -> Result<String, ClientError> {
+    let rp_id = if create {
+        CreateRequest::from_json(request_json)?.rp_id
+    } else {
+        GetRequest::from_json(request_json)?.rp_id
+    };
+    Ok(asset_links_url(
+        &rp_id.ok_or(PasskeyError::InvalidRequest)?,
+    )?)
+}
+
+/// The files an asset links file includes, for the platform to fetch one
+/// level deep; none when it is malformed.
+pub fn asset_links_includes(text: &str) -> Vec<String> {
+    pwm_passkey::asset_links_includes(text).unwrap_or_default()
+}
+
 impl From<PasskeyError> for ClientError {
     fn from(err: PasskeyError) -> Self {
         Self::Passkey(err)
@@ -129,6 +225,25 @@ impl<S: Store> Client<S> {
     ) -> Result<PasskeyCreateCheck, ClientError> {
         let request = CreateRequest::from_json(request_json)?;
         let rp_id = effective_rp_id(origin, request.rp_id.as_deref())?;
+        self.create_check(rp_id, request)
+    }
+
+    /// [`Self::passkey_create_check`] for a Credential Manager request.
+    pub fn passkey_create_check_android(
+        &self,
+        caller: &AndroidPasskeyCaller,
+        request_json: &str,
+    ) -> Result<PasskeyCreateCheck, ClientError> {
+        let request = CreateRequest::from_json(request_json)?;
+        let (rp_id, _) = caller.check(request.rp_id.as_deref())?;
+        self.create_check(rp_id, request)
+    }
+
+    fn create_check(
+        &self,
+        rp_id: String,
+        request: CreateRequest,
+    ) -> Result<PasskeyCreateCheck, ClientError> {
         if !request.es256 {
             return Ok(PasskeyCreateCheck::Unsupported);
         }
@@ -167,7 +282,38 @@ impl<S: Store> Client<S> {
         self.engine_ref()?;
         let request = CreateRequest::from_json(request_json)?;
         let registration = register_random(caller(origin, top_origin), &request)?;
-        self.store_passkey(vault_id, origin, &registration.passkey, now_ms)?;
+        self.store_passkey(vault_id, origin, &registration.passkey, now_ms, None)?;
+        Ok(registration.response_json)
+    }
+
+    /// [`Self::passkey_create`] for a Credential Manager request (D61 §3).
+    /// An app's passkey also links the login to the app.
+    pub fn passkey_create_android(
+        &mut self,
+        vault_id: &str,
+        caller: &AndroidPasskeyCaller,
+        request_json: &str,
+        now_ms: i64,
+    ) -> Result<String, ClientError> {
+        self.engine_ref()?;
+        let request = CreateRequest::from_json(request_json)?;
+        let (rp_id, checked) = caller.check(request.rp_id.as_deref())?;
+        let registration = match checked {
+            Checked::Web(web) => register_random(web, &request)?,
+            Checked::Android(android) => register_android_random(android, &request)?,
+        };
+        let origin = match &caller.origin {
+            Some(origin) => origin.clone(),
+            None => format!("https://{rp_id}"),
+        };
+        let link = caller.app_link()?;
+        self.store_passkey(
+            vault_id,
+            &origin,
+            &registration.passkey,
+            now_ms,
+            link.as_deref(),
+        )?;
         Ok(registration.response_json)
     }
 
@@ -185,7 +331,7 @@ impl<S: Store> Client<S> {
         self.engine_ref()?;
         let registration = register_hashed_random(rp_id, user_handle, user_name)?;
         let origin = format!("https://{}", registration.passkey.rp_id);
-        self.store_passkey(vault_id, &origin, &registration.passkey, now_ms)?;
+        self.store_passkey(vault_id, &origin, &registration.passkey, now_ms, None)?;
         Ok(HashedPasskey {
             credential_id: registration.passkey.credential_id.clone(),
             attestation_object: registration.attestation_object,
@@ -193,14 +339,22 @@ impl<S: Store> Client<S> {
     }
 
     /// Stores a new passkey in the site's login with that username, or in
-    /// a new login titled with the RP id.
+    /// a new login titled with the RP id. `app_link` is added to the login
+    /// when it doesn't have it yet.
     fn store_passkey(
         &mut self,
         vault_id: &str,
         origin: &str,
         stored: &StoredPasskey,
         now_ms: i64,
+        app_link: Option<&str>,
     ) -> Result<(), ClientError> {
+        let link_url = |url: &str| {
+            let mut link = LoginUrl::default();
+            link.url = url.to_owned();
+            link.r#match = UrlMatch::Exact;
+            link
+        };
         let mut passkey = Passkey::default();
         passkey.credential_id = stored.credential_id.clone();
         passkey.rp_id = stored.rp_id.clone();
@@ -224,6 +378,11 @@ impl<S: Store> Client<S> {
                 let mut edited = current.clone();
                 if let ItemKind::Login(login) = &mut edited.kind {
                     login.passkeys.push(passkey);
+                    if let Some(app) = app_link
+                        && !login.urls.iter().any(|u| u.url == app)
+                    {
+                        login.urls.push(link_url(app));
+                    }
                 }
                 current.apply_edit(edited, now_ms)?;
                 engine.save_item(&vault, &id, &current)?;
@@ -237,6 +396,7 @@ impl<S: Store> Client<S> {
                 let mut login = Login::default();
                 login.username = user;
                 login.urls = vec![login_url];
+                login.urls.extend(app_link.map(link_url));
                 login.passkeys = vec![passkey];
                 let item = Item::new(ItemKind::Login(login), stored.rp_id.clone(), now_ms);
                 self.engine()?
@@ -256,6 +416,26 @@ impl<S: Store> Client<S> {
         self.engine_ref()?;
         let request = GetRequest::from_json(request_json)?;
         let rp_id = effective_rp_id(origin, request.rp_id.as_deref())?;
+        self.candidates(&rp_id, &request)
+    }
+
+    /// [`Self::passkey_candidates`] for a Credential Manager request.
+    pub fn passkey_candidates_android(
+        &self,
+        caller: &AndroidPasskeyCaller,
+        request_json: &str,
+    ) -> Result<Vec<PasskeyCandidate>, ClientError> {
+        self.engine_ref()?;
+        let request = GetRequest::from_json(request_json)?;
+        let (rp_id, _) = caller.check(request.rp_id.as_deref())?;
+        self.candidates(&rp_id, &request)
+    }
+
+    fn candidates(
+        &self,
+        rp_id: &str,
+        request: &GetRequest,
+    ) -> Result<Vec<PasskeyCandidate>, ClientError> {
         let mut out: Vec<(i64, PasskeyCandidate)> = Vec::new();
         for (vault_id, item_id, item) in self.logins_with_passkeys()? {
             let ItemKind::Login(login) = &item.kind else {
@@ -294,6 +474,24 @@ impl<S: Store> Client<S> {
         let request = GetRequest::from_json(request_json)?;
         let stored = self.stored_passkey(vault_id, item_id, |id| b64(id) == credential_id)?;
         Ok(authenticate(caller(origin, top_origin), &request, &stored)?)
+    }
+
+    /// [`Self::passkey_get`] for a Credential Manager request (D61 §3).
+    pub fn passkey_get_android(
+        &self,
+        caller: &AndroidPasskeyCaller,
+        request_json: &str,
+        vault_id: &str,
+        item_id: &str,
+        credential_id: &str,
+    ) -> Result<String, ClientError> {
+        let request = GetRequest::from_json(request_json)?;
+        let (_, checked) = caller.check(request.rp_id.as_deref())?;
+        let stored = self.stored_passkey(vault_id, item_id, |id| b64(id) == credential_id)?;
+        Ok(match checked {
+            Checked::Web(web) => authenticate(web, &request, &stored)?,
+            Checked::Android(android) => authenticate_android(android, &request, &stored)?,
+        })
     }
 
     /// Signs a sign-in the platform built, given its client data hash

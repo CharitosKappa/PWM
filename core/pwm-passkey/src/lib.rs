@@ -4,8 +4,14 @@
 //! origin, builds `clientDataJSON` itself, makes and signs with P-256 keys
 //! (RustCrypto `p256`), and writes `authenticatorData` and the `none`
 //! attestation object. The page's JSON is untrusted (see `request`).
+//! Android's Credential Manager (D61) adds two callers: a privileged browser
+//! that hands over its client data hash, and an app, whose client data is
+//! built here and whose RP id the site's Digital Asset Links file vouches for
+//! (`android`, `asset_links`).
 #![forbid(unsafe_code)]
 
+mod android;
+mod asset_links;
 mod cbor;
 mod request;
 mod rp;
@@ -17,6 +23,14 @@ use pwm_crypto::Secret;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
+pub use android::{
+    APK_KEY_HASH, AndroidCaller, CLIENT_DATA_PLACEHOLDER, android_rp_id, apk_key_hash_origin,
+    app_client_data_json, authenticate_android, register_android, register_android_random,
+};
+pub use asset_links::{
+    AssetLinks, LOGIN_RELATIONS, MAX_ASSET_LINKS, MAX_INCLUDES, asset_links_includes,
+    asset_links_url, read_asset_links,
+};
 pub use request::{CreateRequest, ES256, GetRequest};
 pub use rp::{checked_rp_id, effective_rp_id, is_secure_origin};
 
@@ -45,6 +59,10 @@ pub enum PasskeyError {
     UnsupportedAlgorithm,
     #[error("the stored key is unusable")]
     InvalidKey,
+    #[error("the site's Digital Asset Links file is malformed")]
+    InvalidAssetLinks,
+    #[error("the site's Digital Asset Links file does not list this app")]
+    AppNotLinked,
 }
 
 /// The ceremony a `clientDataJSON` belongs to.
@@ -83,7 +101,7 @@ pub fn client_data_json(
     text.into_bytes()
 }
 
-fn sha256(data: &[u8]) -> [u8; 32] {
+pub(crate) fn sha256(data: &[u8]) -> [u8; 32] {
     Sha256::digest(data).into()
 }
 
@@ -170,16 +188,34 @@ pub fn register(
     credential_id: [u8; 16],
 ) -> Result<Registration, PasskeyError> {
     let rp_id = effective_rp_id(caller.origin, request.rp_id.as_deref())?;
-    if !request.es256 {
-        return Err(PasskeyError::UnsupportedAlgorithm);
-    }
-    let (key, auth_data) = new_credential(&rp_id, key_seed, &credential_id)?;
     let client_data = client_data_json(
         Ceremony::Create,
         &request.challenge,
         caller.origin,
         caller.top_origin,
     );
+    create(
+        rp_id,
+        request,
+        key_seed,
+        credential_id,
+        &request::b64_text(&client_data),
+    )
+}
+
+/// Makes the credential for an RP id already checked, with the response's
+/// `clientDataJSON` field as given (base64url, or the placeholder).
+pub(crate) fn create(
+    rp_id: String,
+    request: &CreateRequest,
+    key_seed: &Secret<[u8; 32]>,
+    credential_id: [u8; 16],
+    client_data_b64: &str,
+) -> Result<Registration, PasskeyError> {
+    if !request.es256 {
+        return Err(PasskeyError::UnsupportedAlgorithm);
+    }
+    let (key, auth_data) = new_credential(&rp_id, key_seed, &credential_id)?;
     let spki = key
         .verifying_key()
         .to_public_key_der()
@@ -192,7 +228,7 @@ pub fn register(
         "authenticatorAttachment": "platform",
         "clientExtensionResults": {},
         "response": {
-            "clientDataJSON": request::b64_text(&client_data),
+            "clientDataJSON": client_data_b64,
             "attestationObject": request::b64_text(&attestation_object(&auth_data)),
             "authenticatorData": request::b64_text(&auth_data),
             "publicKey": request::b64_text(spki.as_bytes()),
@@ -247,7 +283,7 @@ fn pkcs8(key: &SigningKey) -> Result<Secret<Vec<u8>>, PasskeyError> {
 }
 
 /// Runs `make` with a fresh key seed and credential id.
-fn with_fresh_key<T>(
+pub(crate) fn with_fresh_key<T>(
     make: impl Fn(&Secret<[u8; 32]>, [u8; 16]) -> Result<T, PasskeyError>,
 ) -> Result<T, PasskeyError> {
     // A uniformly random 32-byte string is a valid P-256 scalar except with
@@ -354,19 +390,37 @@ pub fn authenticate(
     passkey: &StoredPasskey,
 ) -> Result<String, PasskeyError> {
     let rp_id = effective_rp_id(caller.origin, request.rp_id.as_deref())?;
-    if rp_id != passkey.rp_id {
-        return Err(PasskeyError::InvalidRpId);
-    }
-    if !request.allow.is_empty() && !request.allow.contains(&passkey.credential_id) {
-        return Err(PasskeyError::InvalidRequest);
-    }
     let client_data = client_data_json(
         Ceremony::Get,
         &request.challenge,
         caller.origin,
         caller.top_origin,
     );
-    let (auth_data, signature) = sign(&rp_id, &sha256(&client_data), passkey)?;
+    assert(
+        &rp_id,
+        request,
+        passkey,
+        &request::b64_text(&client_data),
+        &sha256(&client_data),
+    )
+}
+
+/// Signs for an RP id already checked: `AuthenticationResponseJSON` with the
+/// `clientDataJSON` field as given, signed over `client_data_hash`.
+pub(crate) fn assert(
+    rp_id: &str,
+    request: &GetRequest,
+    passkey: &StoredPasskey,
+    client_data_b64: &str,
+    client_data_hash: &[u8],
+) -> Result<String, PasskeyError> {
+    if rp_id != passkey.rp_id {
+        return Err(PasskeyError::InvalidRpId);
+    }
+    if !request.allow.is_empty() && !request.allow.contains(&passkey.credential_id) {
+        return Err(PasskeyError::InvalidRequest);
+    }
+    let (auth_data, signature) = sign(rp_id, client_data_hash, passkey)?;
     let id = request::b64_text(&passkey.credential_id);
     Ok(json!({
         "id": id,
@@ -375,7 +429,7 @@ pub fn authenticate(
         "authenticatorAttachment": "platform",
         "clientExtensionResults": {},
         "response": {
-            "clientDataJSON": request::b64_text(&client_data),
+            "clientDataJSON": client_data_b64,
             "authenticatorData": request::b64_text(&auth_data),
             "signature": request::b64_text(&signature),
             "userHandle": request::b64_text(&passkey.user_handle),

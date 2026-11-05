@@ -588,6 +588,7 @@ jobs:
           - url_match
           - kit_qr_parse
           - passkey_request
+          - asset_links
           - approval_messages
     steps:
       - uses: actions/checkout@v5

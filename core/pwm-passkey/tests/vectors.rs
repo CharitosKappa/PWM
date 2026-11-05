@@ -4,7 +4,8 @@
 
 use pwm_crypto::Secret;
 use pwm_passkey::{
-    Caller, CreateRequest, GetRequest, authenticate, authenticate_hashed, register, register_hashed,
+    AndroidCaller, Caller, CreateRequest, GetRequest, authenticate, authenticate_android,
+    authenticate_hashed, register, register_android, register_hashed,
 };
 use serde_json::Value;
 
@@ -37,6 +38,44 @@ fn vectors_passkey() {
         let assertion: Value =
             serde_json::from_str(&authenticate(caller, &get, &registration.passkey).unwrap())
                 .unwrap();
+        assert_eq!(assertion, v["assertion"]);
+    }
+}
+
+#[test]
+fn vectors_passkey_android() {
+    let text = include_str!("../../test-vectors/passkey_android.json");
+    let doc: Value = serde_json::from_str(text).unwrap();
+    let vectors = doc["vectors"].as_array().unwrap();
+    assert_eq!(vectors.len(), 2);
+    for v in vectors {
+        let cert = v.get("cert_sha256").map(bytes);
+        let hash = v.get("client_data_hash").map(bytes);
+        let caller = match v["name"].as_str().unwrap() {
+            "app" => AndroidCaller::App {
+                package: v["package"].as_str().unwrap(),
+                cert_sha256: cert.as_deref().unwrap(),
+            },
+            _ => AndroidCaller::Browser {
+                origin: v["origin"].as_str().unwrap(),
+                client_data_hash: hash.as_deref().unwrap(),
+            },
+        };
+        let seed: [u8; 32] = bytes(&v["key_seed"]).try_into().unwrap();
+        let id: [u8; 16] = bytes(&v["credential_id"]).try_into().unwrap();
+        let create = CreateRequest::from_json(v["create_request"].as_str().unwrap()).unwrap();
+        let registration = register_android(caller, &create, &Secret::new(seed), id).unwrap();
+        let response: Value = serde_json::from_str(&registration.response_json).unwrap();
+        assert_eq!(response, v["registration"]);
+        assert_eq!(
+            registration.passkey.private_key.expose_secret(),
+            &bytes(&v["private_key_pkcs8"])
+        );
+        let get = GetRequest::from_json(v["get_request"].as_str().unwrap()).unwrap();
+        let assertion: Value = serde_json::from_str(
+            &authenticate_android(caller, &get, &registration.passkey).unwrap(),
+        )
+        .unwrap();
         assert_eq!(assertion, v["assertion"]);
     }
 }
