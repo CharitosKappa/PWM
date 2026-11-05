@@ -45,9 +45,18 @@
     },
     {
       "page": "cover-pointer-none.html",
-      "expect": "refuse",
-      "reason": "field_hidden",
-      "empty": ["#email", "#password"]
+      "expect": "fill",
+      "values": { "#email": "username", "#password": "password" }
+    },
+    {
+      "page": "icon-in-field.html",
+      "expect": "fill",
+      "values": { "#email": "username", "#password": "password" }
+    },
+    {
+      "page": "rounded-field.html",
+      "expect": "fill",
+      "values": { "#email": "username", "#password": "password" }
     },
     {
       "page": "offscreen-after.html",
@@ -76,6 +85,13 @@
     },
     {
       "page": "frame-covered.html",
+      "expect": "refuse",
+      "reason": "field_hidden",
+      "frames": ["iframe"],
+      "empty": ["#email", "#password"]
+    },
+    {
+      "page": "frame-cover-pointer-none.html",
       "expect": "refuse",
       "reason": "field_hidden",
       "frames": ["iframe"],

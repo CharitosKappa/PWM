@@ -12,6 +12,7 @@ import type {
   InlineRequest,
   Suggestion,
 } from "../shared/autofill.ts";
+import { PROBLEMS } from "../content/checks.ts";
 import type { Core } from "./core.ts";
 import { ServiceError } from "./errors.ts";
 import { iconFields, planFill, watchFields } from "./plan.ts";
@@ -359,7 +360,14 @@ export class Autofill {
         scroll,
       })) as FillReply | undefined;
       if (reply === undefined) throw new ServiceError("page_changed");
-      if (!reply.ok) throw new ServiceError("field_hidden");
+      if (!reply.ok) {
+        // The content script is untrusted: only a known check's name is kept.
+        const known = (PROBLEMS as readonly string[]).includes(reply.reason);
+        throw new ServiceError(
+          "field_hidden",
+          known ? reply.reason : undefined,
+        );
+      }
     }
     let copiedCode = false;
     if (plan.copyCode && code !== "") {

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>A frame hidden by its page, clicks passing through</title>
+    <style>
+      body {
+        font: 16px system-ui;
+        margin: 40px;
+      }
+      input {
+        display: block;
+        width: 280px;
+        height: 32px;
+        margin: 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>A frame hidden by its page, clicks passing through</h1>
+    <iframe
+      src="https://login.site-a.test:8443/plain.html"
+      width="500"
+      height="400"
+    ></iframe>
+    <!-- The parent page hides the login frame under an opaque layer that lets
+         clicks through. Inside the frame the hit test still finds the field;
+         only IntersectionObserver v2 sees the layer, so it must refuse
+         (D63 §1). -->
+    <div
+      style="
+        position: fixed;
+        inset: 0;
+        background: white;
+        z-index: 10;
+        pointer-events: none;
+      "
+    ></div>
+  </body>
+</html>

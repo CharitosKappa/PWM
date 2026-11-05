@@ -18,6 +18,13 @@ export interface StyleInfo {
   clipPath: string;
 }
 
+/**
+ * What a sample point's topmost element is: the field (or its own label),
+ * one of the field's ancestors (the point is where the field doesn't paint,
+ * such as outside a rounded corner; D63 §2), or anything else.
+ */
+export type Hit = "field" | "ancestor" | "other";
+
 export interface FieldState {
   connected: boolean;
   disabled: boolean;
@@ -26,12 +33,26 @@ export interface FieldState {
   viewport: { width: number; height: number };
   /** The field's computed style, then each ancestor's up to the root. */
   styles: StyleInfo[];
-  /** For each sample point: is the field (or its own label) on top there? */
-  onTop: boolean[];
+  /** For each sample point, what is on top there. */
+  onTop: Hit[];
   /** IntersectionObserver v2 `isVisible`; undefined where the browser lacks it. */
   visibleV2: boolean | undefined;
   topFrame: boolean;
 }
+
+/** Every check's name: the only details a fill error may carry (D63 §3). */
+export const PROBLEMS = [
+  "gone",
+  "disabled",
+  "read_only",
+  "no_size",
+  "off_screen",
+  "hidden",
+  "transparent",
+  "covered",
+  "not_visible",
+  "frame_unchecked",
+] as const;
 
 export type Problem =
   | "gone"
@@ -84,11 +105,14 @@ export function fieldProblem(state: FieldState): Problem | null {
     if (Number(style.opacity) !== 1) return "transparent";
     if (style.filter !== "none" && style.filter !== "") return "transparent";
   }
-  if (state.onTop.length === 0 || state.onTop.some((top) => !top))
+  if (state.onTop.length === 0 || state.onTop.some((hit) => hit === "other"))
     return "covered";
+  // v2 is for a frame its parent page may hide or cover (D63 §1). In the top
+  // frame, anything over the field is the matched site's own page, and the
+  // checks above decide.
+  if (state.topFrame) return null;
   if (state.visibleV2 === false) return "not_visible";
   // Without v2 a frame cannot tell whether its parent covers it.
-  if (state.visibleV2 === undefined && !state.topFrame)
-    return "frame_unchecked";
+  if (state.visibleV2 === undefined) return "frame_unchecked";
   return null;
 }

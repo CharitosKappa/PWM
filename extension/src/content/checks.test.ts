@@ -18,7 +18,7 @@ function state(patch: Partial<FieldState> = {}): FieldState {
     rect: { left: 10, top: 10, width: 200, height: 30 },
     viewport: { width: 1000, height: 800 },
     styles: [plain, plain, plain],
-    onTop: [true, true, true],
+    onTop: ["field", "field", "field"],
     visibleV2: true,
     topFrame: true,
     ...patch,
@@ -65,12 +65,33 @@ describe("fieldProblem", () => {
   });
 
   it("refuses a field covered at any sample point", () => {
-    expect(fieldProblem(state({ onTop: [true, false, true] }))).toBe("covered");
+    expect(fieldProblem(state({ onTop: ["field", "other", "field"] }))).toBe(
+      "covered",
+    );
     expect(fieldProblem(state({ onTop: [] }))).toBe("covered");
   });
 
-  it("refuses what IntersectionObserver v2 reports as not visible", () => {
-    expect(fieldProblem(state({ visibleV2: false }))).toBe("not_visible");
+  it("counts the field's own ancestor on top as clear (D63 §2)", () => {
+    // Outside a rounded corner the field doesn't paint; its wrapper is hit.
+    expect(
+      fieldProblem(state({ onTop: ["field", "ancestor", "ancestor"] })),
+    ).toBeNull();
+    expect(
+      fieldProblem(state({ onTop: ["ancestor", "other", "ancestor"] })),
+    ).toBe("covered");
+  });
+
+  it("needs IntersectionObserver v2 only in a frame (D63 §1)", () => {
+    expect(fieldProblem(state({ visibleV2: false, topFrame: false }))).toBe(
+      "not_visible",
+    );
+    // In the top frame, the hit test and style checks decide.
+    expect(fieldProblem(state({ visibleV2: false }))).toBeNull();
+    expect(
+      fieldProblem(
+        state({ visibleV2: false, onTop: ["field", "other", "field"] }),
+      ),
+    ).toBe("covered");
   });
 
   it("without v2, fills only in the top frame", () => {

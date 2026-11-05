@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Rounded fields in a wrapper</title>
+    <style>
+      body {
+        font: 16px system-ui;
+        margin: 40px;
+      }
+      /* The wrapper paints the box; the field inside is fully rounded, so
+         its corners are the wrapper's, where a corner sample point lands.
+         The wrapper is the field's ancestor, so it doesn't cover it
+         (D63 §2). */
+      .field {
+        width: 280px;
+        margin: 8px 0;
+        border-radius: 18px;
+        background: #eeecfb;
+      }
+      input {
+        display: block;
+        box-sizing: border-box;
+        width: 280px;
+        height: 36px;
+        border: 1px solid #4f3fd6;
+        border-radius: 18px;
+        padding: 0 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Rounded fields in a wrapper</h1>
+    <form action="#" onsubmit="return false;">
+      <label for="email">Email</label>
+      <div class="field">
+        <input id="email" type="email" name="email" autocomplete="username" />
+      </div>
+      <label for="password">Password</label>
+      <div class="field">
+        <input
+          id="password"
+          type="password"
+          name="password"
+          autocomplete="current-password"
+        />
+      </div>
+      <button>Sign in</button>
+    </form>
+  </body>
+</html>

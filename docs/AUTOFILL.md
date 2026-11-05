@@ -13,7 +13,7 @@ Autofill reliability is our top promise and the top complaint against every comp
 ## Extension security rules (from the 2025 DEF CON clickjacking research)
 
 - Default fill mode = **on user action**: toolbar click, keyboard shortcut, or our inline icon in a **closed shadow root rendered in the extension's own iframe** (`web_accessible_resources` page), never a plain DOM element the page can restyle or make invisible.
-- Before filling, verify the target input is visible, not covered (`elementsFromPoint` check), opacity 1, and in the viewport.
+- Before filling, verify the target input is visible, not covered (`elementsFromPoint` check), opacity 1, and in the viewport. In a frame, IntersectionObserver v2 must also report it visible (D35 §4, D63).
 - Payment cards, identities and passkeys always need a confirmation step. Passkeys confirm in an extension window of their own, never in the page (D37).
 - TOTP codes are copied to the clipboard (auto-clear 30s) unless the field is classified `totp` with high confidence.
 - Minimal permissions: `activeTab`, `storage`, `scripting`; host permissions requested on demand. `nativeMessaging` is optional, asked on the click that turns on Touch ID through the Mac app (D48 §5); Safari has it in the manifest, since it asks nothing for it. Site access is asked for only when the user turns on the inline icon (D35); without it the content script is injected only on a user action.
