@@ -111,11 +111,12 @@ table push_tokens
   column token bytea not null
   column environment text not null
   column updated_at timestamp with time zone not null default now()
-  constraint push_tokens_app_check: CHECK ((app = ANY (ARRAY['ios'::text, 'macos'::text])))
+  constraint push_tokens_android_production_check: CHECK (((app <> 'android'::text) OR (environment = 'production'::text)))
+  constraint push_tokens_app_check: CHECK ((app = ANY (ARRAY['ios'::text, 'macos'::text, 'android'::text])))
   constraint push_tokens_device_id_fkey: FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
   constraint push_tokens_environment_check: CHECK ((environment = ANY (ARRAY['sandbox'::text, 'production'::text])))
   constraint push_tokens_pkey: PRIMARY KEY (device_id)
-  constraint push_tokens_token_check: CHECK (((octet_length(token) >= 32) AND (octet_length(token) <= 100)))
+  constraint push_tokens_token_check: CHECK ((((app = 'android'::text) AND ((octet_length(token) >= 100) AND (octet_length(token) <= 1024))) OR ((app <> 'android'::text) AND ((octet_length(token) >= 32) AND (octet_length(token) <= 100)))))
   constraint push_tokens_token_key: UNIQUE (token)
   index CREATE UNIQUE INDEX push_tokens_pkey ON public.push_tokens USING btree (device_id)
   index CREATE UNIQUE INDEX push_tokens_token_key ON public.push_tokens USING btree (token)

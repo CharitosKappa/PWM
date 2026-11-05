@@ -571,9 +571,10 @@ impl PwmClient {
         Ok(step(self.lock_inner().start_sync()?))
     }
 
-    /// Registers this device's APNs token (hex) on the server, or removes it
-    /// when `token` is `None`; works locked (D50 §3). `app` is `"ios"` or
-    /// `"macos"`. Ends with `PushTokenSet`.
+    /// Registers this device's push token on the server, or removes it when
+    /// `token` is `None`; works locked (D50 §3). `app` is `"ios"` or
+    /// `"macos"` with an APNs token as hex, or `"android"` with an FCM
+    /// registration token (D60 §5). Ends with `PushTokenSet`.
     pub fn start_push_token(
         &self,
         access: String,

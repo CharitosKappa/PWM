@@ -4,6 +4,14 @@
     { "moduleLicense": "MIT License" },
     { "moduleLicense": "BSD 2-Clause License" },
     { "moduleLicense": "BSD 3-Clause License" },
-    { "moduleLicense": "ISC License" }
+    { "moduleLicense": "ISC License" },
+    { "moduleLicense": "The 3-Clause BSD License" },
+    { "moduleLicense": "Android Software Development Kit License", "moduleName": "com.google.android.gms:play-services-base" },
+    { "moduleLicense": "Android Software Development Kit License", "moduleName": "com.google.android.gms:play-services-basement" },
+    { "moduleLicense": "Android Software Development Kit License", "moduleName": "com.google.android.gms:play-services-tasks" },
+    { "moduleLicense": "Android Software Development Kit License", "moduleName": "com.google.android.gms:play-services-cloud-messaging" },
+    { "moduleLicense": "Android Software Development Kit License", "moduleName": "com.google.android.gms:play-services-stats" },
+    { "moduleLicense": "Android Software Development Kit License", "moduleName": "com.google.firebase:firebase-iid-interop" },
+    { "moduleLicense": "Android Software Development Kit License", "moduleName": "com.google.firebase:firebase-measurement-connector" }
   ]
 }

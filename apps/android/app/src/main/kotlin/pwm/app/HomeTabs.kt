@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.view.autofill.AutofillManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -241,6 +243,7 @@ internal fun SettingsTab(app: AppModel, model: SettingsModel) {
         Heading(stringResource(R.string.devices))
         Secondary(stringResource(R.string.devices), tag = "devices", onClick = model::showDevices)
         Secondary(stringResource(R.string.approve_device), tag = "approvals", onClick = model::showApprovals)
+        if (state.pushAvailable) ApprovalNoticesSwitch(model, state)
 
         Secondary(stringResource(R.string.notices), tag = "notices", onClick = model::showNotices)
         Secondary(stringResource(R.string.sign_out), tag = "signOut", onClick = model::askSignOut)
@@ -326,3 +329,30 @@ private fun AutofillCard() {
     }
 }
 
+/**
+ * "Notify me when a new device asks to sign in" (D60 §4): off until turned
+ * on, and only then does Android ask for the permission (13+). A refusal
+ * leaves it off and says where to allow it.
+ */
+@Composable
+private fun ApprovalNoticesSwitch(model: SettingsModel, state: SettingsModel.State) {
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        model.noticePermissionAnswered(granted)
+    }
+    LaunchedEffect(state.askNoticePermission) {
+        if (!state.askNoticePermission) return@LaunchedEffect
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            ask.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            // Below 13 there's nothing to ask: notifications are off in system settings.
+            model.noticePermissionAnswered(false)
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text(stringResource(R.string.approval_notices), style = Tokens.Text.body.compose(), color = color(Tokens.Color.text), modifier = Modifier.weight(1f))
+        Switch(checked = state.approvalNotices, onCheckedChange = model::setApprovalNotices, modifier = Modifier.testTag("approvalNoticesSwitch"))
+    }
+    if (state.noticesRefused) {
+        Text(stringResource(R.string.approval_notices_refused), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.warning), modifier = Modifier.testTag("noticesRefused"))
+    }
+}

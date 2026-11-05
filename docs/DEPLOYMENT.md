@@ -25,6 +25,8 @@ How to run `pwm-server` outside development (decisions D25, D29, D30). The same 
 | `PWM_APNS_KEY_ID`, `PWM_APNS_TEAM_ID` | with the key | The key's 10-character id and the team id. |
 | `PWM_APNS_IOS_TOPIC`, `PWM_APNS_MACOS_TOPIC` | with the key | The iOS and macOS apps' bundle ids. |
 | `PWM_APNS_URL` | no | Replaces Apple's addresses; for tests only. |
+| `PWM_FCM_CREDENTIALS_FILE` | no | Path to the Firebase service account's JSON key (Firebase console, Project settings, Service accounts), for push to Android (D60). Mount it read-only; keep it like `PWM_SERVER_SECRETS`. Without it, Android push is off and the app still syncs every 15 minutes. APNs and FCM are each on or off by themselves. |
+| `PWM_FCM_URL`, `PWM_FCM_TOKEN_URL` | no | Replace Google's send and token addresses; for tests only. |
 | `PWM_LOG` | no | Log filter, default `info,sqlx=warn`. |
 | `PWM_LOG_FORMAT` | no | `json` (default in the image) or `text`. |
 

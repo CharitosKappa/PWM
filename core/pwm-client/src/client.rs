@@ -51,14 +51,15 @@ pub enum Outcome {
     PushTokenSet,
 }
 
-/// This device's APNs token, for [`Client::start_push_token`].
+/// This device's push token, for [`Client::start_push_token`]: APNs (D50) or FCM (D60).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PushToken {
-    /// `"ios"` or `"macos"`.
+    /// `"ios"`, `"macos"` or `"android"`.
     pub app: String,
-    /// The token as hex, as the system gives it.
+    /// APNs: the token as hex, as the system gives it. FCM: the
+    /// registration token's text.
     pub token: String,
-    /// A development build's token (APNs sandbox).
+    /// A development build's token (APNs sandbox); ignored for FCM.
     pub sandbox: bool,
 }
 
@@ -444,13 +445,28 @@ impl<S: Store> Client<S> {
         let path = "/v1/devices/self/push".to_owned();
         let (method, body) = match push {
             Some(push) => {
-                let hex = push.token.len() % 2 == 0
-                    && (64..=200).contains(&push.token.len())
-                    && push.token.bytes().all(|b| b.is_ascii_hexdigit());
-                if !hex || !["ios", "macos"].contains(&push.app.as_str()) {
+                let valid = match push.app.as_str() {
+                    // APNs: the token as hex.
+                    "ios" | "macos" => {
+                        push.token.len() % 2 == 0
+                            && (64..=200).contains(&push.token.len())
+                            && push.token.bytes().all(|b| b.is_ascii_hexdigit())
+                    }
+                    // FCM (D60 §5): the registration token as its text.
+                    "android" => {
+                        (100..=1024).contains(&push.token.len())
+                            && push
+                                .token
+                                .bytes()
+                                .all(|b| b.is_ascii_alphanumeric() || b"_-:".contains(&b))
+                    }
+                    _ => false,
+                };
+                if !valid {
                     return Err(ClientError::InvalidPushToken);
                 }
-                let environment = if push.sandbox {
+                // FCM has no sandbox.
+                let environment = if push.sandbox && push.app != "android" {
                     "sandbox"
                 } else {
                     "production"

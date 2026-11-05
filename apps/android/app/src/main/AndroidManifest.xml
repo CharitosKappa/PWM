@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The Android app (D52). Backups are off: the device's keys are bound to
      its Keystore and its cache can be synced again, so neither is copied. -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Scanning the Emergency Kit (D53 §3), asked only when the user taps Scan. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <!-- The new-device notice (D60 §4), asked only from its switch in Settings. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Autofill (D58 §4): reading the signing certificate of the app asking,
          among apps with a launcher icon, and of the listed browsers. -->
@@ -49,6 +52,26 @@
             android:excludeFromRecents="true"
             android:taskAffinity=""
             android:windowSoftInputMode="adjustResize" />
+        <!-- Push over FCM (D60): only the kind of push arrives here. -->
+        <service
+            android:name=".PwmMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <!-- Firebase starts from code with the build's settings (D60 §1), never by itself. -->
+        <provider
+            android:name="com.google.firebase.provider.FirebaseInitProvider"
+            android:authorities="${applicationId}.firebaseinitprovider"
+            tools:node="remove" />
+        <!-- No delivery data for BigQuery, and no Analytics. -->
+        <meta-data
+            android:name="delivery_metrics_exported_to_big_query_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="firebase_analytics_collection_deactivated"
+            android:value="true" />
         <!-- Autofill for apps and browsers (D58), turned on in the system's settings. -->
         <service
             android:name=".PwmAutofillService"

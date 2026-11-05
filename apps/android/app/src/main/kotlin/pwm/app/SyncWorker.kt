@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -35,9 +37,19 @@ class WorkManagerScheduler(private val context: Context) : BackgroundScheduler {
 
     override fun cancel() {
         WorkManager.getInstance(context).cancelUniqueWork(NAME)
+        WorkManager.getInstance(context).cancelUniqueWork(NOW)
+    }
+
+    /** A push said something changed (D60 §4): one run as soon as there's a network; a second push while it waits adds nothing. */
+    override fun syncNow() {
+        val request = OneTimeWorkRequestBuilder<SyncWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(NOW, ExistingWorkPolicy.KEEP, request)
     }
 
     companion object {
         const val NAME = "pwm.sync"
+        const val NOW = "pwm.sync.now"
     }
 }

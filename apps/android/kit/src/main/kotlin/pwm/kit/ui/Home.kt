@@ -137,6 +137,9 @@ class SettingsModel internal constructor(
     private val files: ImportFiles = NoImportFiles,
     /** The health report's "Change": the item's edit screen, on the vault tab. */
     private val onEditItem: (Entry) -> Unit = {},
+    /** Push is set up in this build (D60): the notice switch shows. */
+    pushAvailable: Boolean = false,
+    private val notices: Notices = NoNotices,
 ) {
     enum class Page { MAIN, NOTICES, DEVICES, APPROVALS, HEALTH, EXPORT, IMPORT }
 
@@ -160,6 +163,13 @@ class SettingsModel internal constructor(
         val approvals: ApprovalsModel? = null,
         /** "Check for leaked passwords" (D22 §5). */
         val breachCheck: Boolean = true,
+        /** "Notify me when a new device asks to sign in" (D60 §4), shown when push is set up. */
+        val pushAvailable: Boolean = false,
+        val approvalNotices: Boolean = false,
+        /** The screen asks Android for the notification permission now. */
+        val askNoticePermission: Boolean = false,
+        /** Android refused it: the switch stays off and says where to allow it. */
+        val noticesRefused: Boolean = false,
         /** The data screens, made when shown (D59 §5-7). */
         val health: HealthModel? = null,
         val export: ExportModel? = null,
@@ -175,8 +185,26 @@ class SettingsModel internal constructor(
             biometric = runCatching { account.biometricState() }.getOrNull(),
             hideFromCapture = prefs.hideFromCapture,
             breachCheck = prefs.breachCheck,
+            pushAvailable = pushAvailable,
+            approvalNotices = prefs.approvalNotices && notices.allowed(),
         ),
     )
+
+    /** The switch. Turning it on asks Android first where it needs to; nothing asks at launch. */
+    fun setApprovalNotices(on: Boolean) {
+        if (on && !notices.allowed()) {
+            mutable.update { it.copy(askNoticePermission = true, noticesRefused = false) }
+            return
+        }
+        prefs.approvalNotices = on
+        mutable.update { it.copy(approvalNotices = on, noticesRefused = false) }
+    }
+
+    /** Android answered the permission request. */
+    fun noticePermissionAnswered(granted: Boolean) {
+        prefs.approvalNotices = granted
+        mutable.update { it.copy(askNoticePermission = false, approvalNotices = granted, noticesRefused = !granted) }
+    }
 
     /** The switch; the health report reads it when it opens. */
     fun setBreachCheck(on: Boolean) {
@@ -277,6 +305,10 @@ class SettingsModel internal constructor(
         mutable.update { it.copy(signOutAsked = false) }
         scope.launch {
             try {
+                // This phone stops getting pushes (D60 §4); offline, the server drops it with the device.
+                if (prefs.pushToken != null) {
+                    kotlinx.coroutines.withTimeoutOrNull(5_000) { runCatching { account.setPushToken(null) } }
+                }
                 account.signOut()
                 onSignedOut()
             } catch (e: CancellationException) {

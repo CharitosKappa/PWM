@@ -281,6 +281,14 @@ class Session(
         }
     }
 
+    override suspend fun setPushToken(token: String?) = on {
+        val access = keys.get(KeyName.ACCESS_TOKEN)
+        val refresh = keys.get(KeyName.REFRESH_TOKEN)
+        if (access == null || refresh == null) throw PwmError("signed_out")
+        val first = core { client.startPushToken(access, refresh, "android", token, false) }
+        expect<Outcome.PushTokenSet>(runOnline(first))
+    }
+
     override suspend fun vaultIds(): List<String> = on { core { client.vaultIds() } }
 
     /** Every item of a vault, trashed ones included. */

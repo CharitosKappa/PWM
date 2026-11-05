@@ -1,6 +1,7 @@
 package pwm.app
 
 import android.os.Build
+import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.compose.runtime.LaunchedEffect
@@ -19,6 +20,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val model = (application as PwmApplication).model
+        openFrom(intent)
         setContent {
             val state by model.state.collectAsState()
             // One place for the window's capture rules (D56 §4).
@@ -33,5 +35,15 @@ class MainActivity : FragmentActivity() {
             }
             PwmTheme { AppScreen(model) }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        openFrom(intent)
+    }
+
+    /** The new-device notice opens "Approve a new device" (D60 §4), after unlocking if need be. */
+    private fun openFrom(intent: Intent?) {
+        if (intent?.action == AndroidNotices.OPEN_APPROVALS) (application as PwmApplication).model.openApprovals()
     }
 }

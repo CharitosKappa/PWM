@@ -113,6 +113,14 @@ class ServerTest {
         second.sync()
         assertTrue(second.items(vault).any { it.title == "Imported" && it.username == "bob" })
 
+        // Push (D60 §5): an FCM-shaped token is registered, locked too, and removed.
+        val fcm = "dGVzdC1pbnN0YW5jZS1pZA:APA91bH_synthetic-token-for-tests_" + "a".repeat(100)
+        second.lock()
+        second.setPushToken(fcm)
+        assertEquals("invalid_push_token", (runCatching { second.setPushToken("short") }.exceptionOrNull() as PwmError).code)
+        second.setPushToken(null)
+        second.unlock(password)
+
         // Locked, then unlocked offline with the stored keys.
         second.lock()
         second.unlock(password)

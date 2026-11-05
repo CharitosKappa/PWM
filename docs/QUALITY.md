@@ -115,6 +115,13 @@ Background sync (D57), with the same build:
 1. Sign in, lock the phone and leave it for an hour. On another device, add an item. Unlock: it's there without waiting for a sync.
 2. With the phone offline, edit an item, lock, and go back online: within the next half hour the other device has it, with the app closed.
 
+Push (D60), with a build that has the Firebase project's settings and a server with `PWM_FCM_CREDENTIALS_FILE`:
+
+1. Sign in and lock the phone. On another device, add an item: within a minute the phone has it, without opening the app.
+2. Settings, "Notify me when a new device asks to sign in": on Android 13+ the permission is asked now, and only now. Refuse it: the switch stays off and says where to allow it. Allow it in system settings, then turn the switch on.
+3. Ask to sign in from a new device: the phone shows "A new device wants to sign in. Open PWM to compare the code." Tap it while locked: after unlocking, Approve a new device shows the request.
+4. Sign out: the server's push_tokens row for the phone goes, and no more pushes arrive.
+
 Autofill (D58), with the same build:
 
 1. Settings shows "Turn on PWM for autofill"; its button opens the system's choice. Pick PWM: the card goes.

@@ -37,6 +37,10 @@ class AppModel(
     private val background: BackgroundScheduler = NoBackgroundScheduler,
     /** The files the user picks for import (D59 §7). */
     private val importFiles: ImportFiles = NoImportFiles,
+    /** FCM (D60), when the build has Firebase's settings. */
+    private val push: PushService = NoPush,
+    /** The new-device notice (D60 §4). */
+    private val notices: Notices = NoNotices,
 ) {
     sealed class Screen {
         data object Loading : Screen()
@@ -101,6 +105,7 @@ class AppModel(
             val account = open(saved)
             if (account.isSignedIn()) {
                 background.schedule()
+                registerPush(account)
                 showUnlock(account)
             } else {
                 show(Screen.Welcome)
@@ -204,6 +209,7 @@ class AppModel(
                 scope, account, prefs, paper, onLock = { lock(account) }, onSignedOut = ::didSignOut,
                 onHideFromCapture = ::setHideFromCapture,
                 vault = vault, work = work, files = importFiles,
+                pushAvailable = push.available, notices = notices,
                 onEditItem = { entry ->
                     vault.edit(entry)
                     home.setTab(HomeModel.Tab.VAULT)
@@ -212,10 +218,67 @@ class AppModel(
             signInAgain = signInAgain,
         )
         show(Screen.Vault(home))
+        registerPush(account)
+        if (approvalsWaiting) {
+            approvalsWaiting = false
+            openApprovals()
+        }
         scope.launch {
             vault.load()
             vault.refresh()
         }
+    }
+
+    // --- Push (D60 §4) ---
+
+    /** The notice was tapped before the vault was open: "Approve a new device" shows after unlocking. */
+    private var approvalsWaiting = false
+
+    /** Sends this device's FCM token when it differs from the one last sent for this sign-in. */
+    private fun registerPush(account: Account, token: String? = null) {
+        if (!push.available) return
+        scope.launch {
+            try {
+                val current = token ?: push.token() ?: return@launch
+                if (current == prefs.pushToken || !account.isSignedIn()) return@launch
+                account.setPushToken(current)
+                prefs.pushToken = current
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Offline or refused: tried again at the next launch or unlock.
+            }
+        }
+    }
+
+    /** FCM gave this device a new token. */
+    fun pushTokenChanged(token: String) {
+        val account = account ?: return
+        registerPush(account, token)
+    }
+
+    /**
+     * A push arrived: `sync` starts the background sync now; `approval`
+     * shows the new-device notice when the switch is on and Android allows
+     * it. A push names nothing else, and anything else is ignored.
+     */
+    fun pushReceived(kind: String?) {
+        if (account?.isSignedIn() != true) return
+        when (kind) {
+            "sync" -> background.syncNow()
+            "approval" -> if (prefs.approvalNotices && notices.allowed()) notices.showApprovalNotice()
+        }
+    }
+
+    /** The notice was tapped: Settings, then "Approve a new device", once the vault is open. */
+    fun openApprovals() {
+        val home = (mutable.value.screen as? Screen.Vault)?.model
+        if (home == null) {
+            approvalsWaiting = account?.isSignedIn() == true
+            return
+        }
+        home.setTab(HomeModel.Tab.SETTINGS)
+        home.settings.showApprovals()
     }
 
     /** Hides the vault at once, then locks the core; the unlock screen shows. */
@@ -333,6 +396,8 @@ class AppModel(
 
     private fun didSignOut() {
         background.cancel()
+        prefs.pushToken = null
+        approvalsWaiting = false
         prefs.signInAgain = false
         prefs.kitPending = false
         backgroundedAt = null
