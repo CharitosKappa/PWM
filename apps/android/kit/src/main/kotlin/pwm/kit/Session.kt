@@ -15,7 +15,9 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.withContext
+import uniffi.pwm_ffi.AndroidCaller
 import uniffi.pwm_ffi.ApprovalAsk
+import uniffi.pwm_ffi.PasskeyCreateCheck
 import uniffi.pwm_ffi.androidAppLink
 import uniffi.pwm_ffi.breachPaddingHeader
 import uniffi.pwm_ffi.breachRangeUrl
@@ -344,6 +346,34 @@ class Session(
         val linked = item.edited { setUrls(item.urls + Item.Url(link, "exact")) }
         core { client.saveItem(vaultId, linked.toJson().value, now()) }
         Unit
+    }
+
+    // --- Passkeys through the Credential Manager (D61) ---
+
+    private fun PasskeyCaller.ffi(): AndroidCaller = AndroidCaller(
+        caller.packageName, CredentialCallers.bytes(caller.cert), caller.origin, clientDataHash, assetLinks,
+    )
+
+    override suspend fun passkeyCreateCheck(caller: PasskeyCaller, requestJson: String): PasskeyCheck = on {
+        when (val check = core { client.passkeyCreateCheckAndroid(caller.ffi(), requestJson) }) {
+            is PasskeyCreateCheck.Ready -> PasskeyCheck.Ready(check.rpId, check.userName)
+            PasskeyCreateCheck.Excluded -> PasskeyCheck.Excluded
+            PasskeyCreateCheck.Unsupported -> PasskeyCheck.Unsupported
+        }
+    }
+
+    override suspend fun passkeyCreate(vaultId: String, caller: PasskeyCaller, requestJson: String): String = on {
+        core { client.passkeyCreateAndroid(vaultId, caller.ffi(), requestJson, now()) }
+    }
+
+    override suspend fun passkeyOffers(caller: PasskeyCaller, requestJson: String): List<PasskeyOffer> = on {
+        if (!client.isUnlocked()) return@on emptyList()
+        core { client.passkeyCandidatesAndroid(caller.ffi(), requestJson) }
+            .map { PasskeyOffer(it.vaultId, it.itemId, it.credentialId, it.userName, it.title) }
+    }
+
+    override suspend fun passkeyGet(caller: PasskeyCaller, requestJson: String, offer: PasskeyOffer): String = on {
+        core { client.passkeyGetAndroid(caller.ffi(), requestJson, offer.vaultId, offer.itemId, offer.credentialId) }
     }
 
     // --- Devices (D43 §6, D59 §2) ---

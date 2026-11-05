@@ -233,6 +233,51 @@ class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = 
 
     override suspend fun isUnlocked(): Boolean = unlocked
 
+    // Passkeys (D61): kept by RP id; an app needs a site file naming its package.
+    class FakePasskey(val rpId: String, val userName: String, val itemId: String)
+
+    val passkeys = mutableListOf<FakePasskey>()
+    var passkeyChecks = 0
+
+    private fun rpOf(caller: pwm.kit.PasskeyCaller, requestJson: String): String {
+        if (caller.caller.origin == null && caller.assetLinks.none { caller.caller.packageName in it }) {
+            throw PwmError("passkey_app_not_linked")
+        }
+        return Regex("\"(?:id|rpId)\":\"([a-z.]+)\"").find(requestJson)?.groupValues?.get(1) ?: throw PwmError("invalid_passkey_request")
+    }
+
+    override suspend fun passkeyCreateCheck(caller: pwm.kit.PasskeyCaller, requestJson: String): pwm.kit.PasskeyCheck {
+        if (!unlocked) throw PwmError("locked")
+        passkeyChecks += 1
+        val rp = rpOf(caller, requestJson)
+        val user = Regex("\"name\":\"([^\"]+)\"").findAll(requestJson).last().groupValues[1]
+        return if (passkeys.any { it.rpId == rp && it.userName == user }) pwm.kit.PasskeyCheck.Excluded else pwm.kit.PasskeyCheck.Ready(rp, user)
+    }
+
+    override suspend fun passkeyCreate(vaultId: String, caller: pwm.kit.PasskeyCaller, requestJson: String): String {
+        if (!unlocked) throw PwmError("locked")
+        val rp = rpOf(caller, requestJson)
+        val user = Regex("\"name\":\"([^\"]+)\"").findAll(requestJson).last().groupValues[1]
+        val item = newItem(Item.Kind.LOGIN, rp).edited { username = user }
+        save(item, vaultId)
+        passkeys += FakePasskey(rp, user, item.id!!)
+        return "{\"id\":\"cred-${passkeys.size}\"}"
+    }
+
+    override suspend fun passkeyOffers(caller: pwm.kit.PasskeyCaller, requestJson: String): List<pwm.kit.PasskeyOffer> {
+        if (!unlocked) return emptyList()
+        val rp = rpOf(caller, requestJson)
+        return passkeys.withIndex().filter { it.value.rpId == rp }
+            .map { (i, p) -> pwm.kit.PasskeyOffer(VAULT, p.itemId, "cred-${i + 1}", p.userName, p.rpId) }
+    }
+
+    override suspend fun passkeyGet(caller: pwm.kit.PasskeyCaller, requestJson: String, offer: pwm.kit.PasskeyOffer): String {
+        if (!unlocked) throw PwmError("locked")
+        rpOf(caller, requestJson)
+        calls += "passkeyGet ${offer.credentialId}"
+        return "{\"id\":\"${offer.credentialId}\",\"signed\":true}"
+    }
+
     // Devices and approvals: a list in memory.
     val devices = mutableListOf(
         pwm.kit.DeviceEntry("d1", "android", "Pixel 8", 1, 2, null, true),

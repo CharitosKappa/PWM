@@ -9,8 +9,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import pwm.kit.Account
+import pwm.kit.AssetLinks
 import pwm.kit.AutofillMatch
 import pwm.kit.Caller
+import pwm.kit.CredentialCaller
+import pwm.kit.PasskeyCaller
+import pwm.kit.PasskeyCheck
+import pwm.kit.PasskeyOffer
 import pwm.kit.EmergencyKit
 import pwm.kit.Redacted
 import pwm.kit.Server
@@ -41,6 +46,8 @@ class AppModel(
     private val push: PushService = NoPush,
     /** The new-device notice (D60 §4). */
     private val notices: Notices = NoNotices,
+    /** The sites' asset links files for the Credential Manager (D61 §4), kept for an hour. */
+    val assetLinks: AssetLinks = AssetLinks(),
 ) {
     sealed class Screen {
         data object Loading : Screen()
@@ -288,6 +295,7 @@ class AppModel(
             it.settings.drop()
         }
         showUnlock(account)
+        forgetCredentials()
         scope.launch { account.lock() }
     }
 
@@ -316,6 +324,75 @@ class AppModel(
         val account = account?.takeIf { it.isSignedIn() } ?: return null
         return FillModel(scope, account, caller, prefs, onUnlocked = { unlockedElsewhere(account) }, onDone = onDone)
             .also { it.start() }
+    }
+
+    // --- The Credential Manager provider (D61) ---
+
+    /** When the user last unlocked or confirmed, for passkeys right after (D61 §6). */
+    private var verifiedAt: Long? = null
+
+    /** Whether the provider answers, and how: entries, or "Unlock PWM". */
+    suspend fun credentialAccess(): CredentialAccess {
+        val account = account?.takeIf { it.isSignedIn() } ?: return CredentialAccess.SIGNED_OUT
+        return if (account.isUnlocked()) CredentialAccess.UNLOCKED else CredentialAccess.LOCKED
+    }
+
+    /**
+     * The logins to offer as passwords, while unlocked: suggested ones only,
+     * as for autofill, and only those with a password (a passkey's login may
+     * have none).
+     */
+    suspend fun passwordOffers(caller: CredentialCaller): List<AutofillMatch> {
+        val account = account?.takeIf { it.isUnlocked() } ?: return emptyList()
+        return account.autofillMatches(caller.autofillCaller)
+            .filter { it.suggested && !account.item(it.itemId, it.vaultId)?.password.isNullOrEmpty() }
+    }
+
+    /** The passkeys to offer, while unlocked; none when the request is refused (another site, an app not listed). */
+    suspend fun passkeyOffers(caller: PasskeyCaller, requestJson: String): List<PasskeyOffer> {
+        val account = account?.takeIf { it.isUnlocked() } ?: return emptyList()
+        return try {
+            account.passkeyOffers(caller, requestJson)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * Whether to offer "Create a passkey in PWM". Unlocked, the core decides;
+     * locked, an app needs a site file at least, and the rest is checked after
+     * unlocking.
+     */
+    suspend fun passkeyCreatable(caller: PasskeyCaller, requestJson: String): Boolean {
+        val account = account?.takeIf { it.isSignedIn() } ?: return false
+        if (caller.caller.origin == null && caller.assetLinks.isEmpty()) return false
+        if (!account.isUnlocked()) return true
+        return try {
+            account.passkeyCreateCheck(caller, requestJson) is PasskeyCheck.Ready
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** PWM's screen for an entry the user picked in the sheet; [onDone] gets the result, or null. */
+    fun credentialModel(task: CredentialTask, onDone: (CredentialResult?) -> Unit): CredentialModel? {
+        val account = account?.takeIf { it.isSignedIn() } ?: return null
+        return CredentialModel(
+            scope, account, prefs, task,
+            verifiedRecently = { verifiedAt?.let { clock() - it < VERIFIED_FOR_MS } == true },
+            verified = { verifiedAt = clock() },
+            onUnlocked = { unlockedElsewhere(account) },
+            onDone = onDone,
+        ).also { it.start() }
+    }
+
+    private fun forgetCredentials() {
+        verifiedAt = null
+        assetLinks.clear()
     }
 
     /** The fill screen unlocked the vault: the app shows it too when it comes back. */
@@ -395,6 +472,7 @@ class AppModel(
     }
 
     private fun didSignOut() {
+        forgetCredentials()
         background.cancel()
         prefs.pushToken = null
         approvalsWaiting = false
@@ -407,6 +485,9 @@ class AppModel(
     private companion object {
         /** How long a system screen the app opened may stay before it counts as leaving. */
         const val SYSTEM_SCREEN_GRACE_MS = 10 * 60_000L
+
+        /** Unlocking or confirming this long ago still confirms a passkey (D61 §6). */
+        const val VERIFIED_FOR_MS = 60_000L
     }
 
     // --- Accounts ---

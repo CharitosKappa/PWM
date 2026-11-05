@@ -161,6 +161,20 @@ interface Account {
     suspend fun linkApp(itemId: String, vaultId: String, packageName: String, cert: String)
 
     suspend fun isUnlocked(): Boolean
+
+    // --- Passkeys through the Credential Manager (D61) ---
+
+    /** Checks a `create` before asking; `passkey_app_not_linked` when the site doesn't list the app. */
+    suspend fun passkeyCreateCheck(caller: PasskeyCaller, requestJson: String): PasskeyCheck
+
+    /** Makes and stores the passkey; returns `RegistrationResponseJSON`. An app's links the login to it. */
+    suspend fun passkeyCreate(vaultId: String, caller: PasskeyCaller, requestJson: String): String
+
+    /** The passkeys a sign-in may use, newest first. */
+    suspend fun passkeyOffers(caller: PasskeyCaller, requestJson: String): List<PasskeyOffer>
+
+    /** Signs a sign-in with the chosen passkey; returns `AuthenticationResponseJSON`. */
+    suspend fun passkeyGet(caller: PasskeyCaller, requestJson: String, offer: PasskeyOffer): String
 }
 
 /** One of the account's devices (D43 §6). The name is opened by the core; null if it couldn't be. */

@@ -140,6 +140,13 @@ A new kind of envelope gets a new label; labels are never reused.
 - **User verification** means the vault is unlocked and the user confirmed in an extension window (never page DOM).
 - **Keys:** private keys are PKCS#8 inside the login item (D18), so they are encrypted like any item, and the server sees only ciphertext.
 
+**Passkeys on Android (D61).** The Credential Manager provider answers two kinds of caller:
+
+- **A privileged browser:** one of D58's seven, by package and signing certificate, checked by Android (`getOrigin` with our list) and again by the app. Its origin is checked against the RP id as for a page. It builds the client data and hands over the hash, which the core signs; the response carries the placeholder `e30` where `clientDataJSON` goes.
+- **Any other app:** the core builds `clientDataJSON` with the origin `android:apk-key-hash:<base64url SHA-256 of the app's signing certificate>` and `androidPackageName`. The app has no origin, so the RP id must be listed for it by the site's Digital Asset Links file (`https://<rp id>/.well-known/assetlinks.json`): a statement for `android_app` with the package, the certificate's SHA-256, and `delegate_permission/common.get_login_creds` or `.handle_all_urls`. `include` statements are followed one level deep. The app fetches the files (HTTPS only, no cookies, cache or redirects, 5 seconds, 256 KB) and keeps them in memory for an hour, dropped at lock and sign-out; the core reads them. Fetching tells the site only that someone on this network asked for its file. The autofill service never fetches them.
+- **User verification:** every passkey use asks for a fingerprint or face, or the master password, in PWM's own screen, right before signing; unlocking or confirming within the last minute counts. Nothing about the vault names the sheet's entries before unlocking.
+- **Never PWM itself:** a request from PWM's own package gets nothing.
+
 **Signatures (D17).** Ed25519 over `len(label):u8 || label || message`, verified in strict mode (rejects malleable signatures and small-order public keys). Labels are never reused; current labels: `pwm/share-sig` (vault shares) and `pwm/autofill-rules` (the signed autofill rules file, D33: `v:u8 (= 1) || key_id:u8 || signature:64 || json`, signature over `key_id || json`, release keys pinned in the apps, the signing key kept offline).
 
 **Device approval v1 (D46).** A new device ("N") gets the Secret Key from a signed-in, unlocked one ("E") of the same account. N still needs the master password.
