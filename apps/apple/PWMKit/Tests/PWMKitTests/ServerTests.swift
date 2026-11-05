@@ -36,20 +36,6 @@ final class ServerTests: XCTestCase {
         return try await URLSessionTransport().send(request).status
     }
 
-    func testSigningOutDoesNotWaitForADeadServer() async throws {
-        let keys = MemoryKeyStore()
-        let session = try Session(cachePath: nil, server: server, keys: keys, transport: NoLogoutAnswer())
-        try await logInShared(session)
-        let kept = try XCTUnwrap(keys.get(.refreshToken))
-        let start = Date()
-        try await session.signOut()
-        XCTAssertLessThan(Date().timeIntervalSince(start), 10)
-        XCTAssertNil(keys.get(.refreshToken))
-        // Offline at sign-out, the session stays on the server until it expires (D61 §4).
-        let status = try await refreshStatus(kept)
-        XCTAssertEqual(status, 200)
-    }
-
     func testSignUpLogInOnASecondDeviceAndSync() async throws {
         let email = "swift-\(UUID().uuidString.lowercased())@example.com"
         let first = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
@@ -128,9 +114,11 @@ final class ServerTests: XCTestCase {
         await session.cancelImport()
     }
 
-    func testUnlockOfflineAfterLocking() async throws {
+    /// One login for both, to stay under the login limit (30 requests a
+    /// minute per IP): only logout goes unanswered.
+    func testUnlockOfflineAfterLockingAndSignOutPastADeadServer() async throws {
         let keys = MemoryKeyStore()
-        let session = try Session(cachePath: nil, server: server, keys: keys)
+        let session = try Session(cachePath: nil, server: server, keys: keys, transport: NoLogoutAnswer())
         let email = try await logInShared(session).email
         XCTAssertNotNil(keys.get(.accessToken))
         await session.lock()
@@ -145,6 +133,15 @@ final class ServerTests: XCTestCase {
         XCTAssertTrue(unlocked)
         let email2 = try await session.email()
         XCTAssertEqual(email2, email)
+
+        let kept = try XCTUnwrap(keys.get(.refreshToken))
+        let start = Date()
+        try await session.signOut()
+        XCTAssertLessThan(Date().timeIntervalSince(start), 10)
+        XCTAssertNil(keys.get(.refreshToken))
+        // Offline at sign-out, the session stays on the server until it expires (D61 §4).
+        let status = try await refreshStatus(kept)
+        XCTAssertEqual(status, 200)
     }
 
     func testTheKitAndSigningOut() async throws {
