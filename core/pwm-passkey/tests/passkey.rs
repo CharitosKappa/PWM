@@ -10,8 +10,8 @@ use p256::pkcs8::DecodePublicKey;
 use pwm_crypto::Secret;
 use pwm_passkey::{
     AAGUID, Caller, Ceremony, CreateRequest, GetRequest, PasskeyError, StoredPasskey, authenticate,
-    authenticate_hashed, client_data_json, effective_rp_id, is_secure_origin, register,
-    register_hashed, register_hashed_random, register_random,
+    authenticate_hashed, checked_rp_id, client_data_json, effective_rp_id, is_secure_origin,
+    register, register_hashed, register_hashed_random, register_random,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -72,6 +72,35 @@ fn registered() -> (pwm_passkey::Registration, Value) {
     let registration = register(caller(), &request, &Secret::new(SEED), CRED).unwrap();
     let response: Value = serde_json::from_str(&registration.response_json).unwrap();
     (registration, response)
+}
+
+#[test]
+fn rp_ids_fit_in_dns() {
+    // At most 253 characters in ASCII form, and 63 in a label (RFC 1035).
+    let label = "a".repeat(63);
+    let longest = format!("{label}.{label}.{label}.{}.example.com", "a".repeat(49));
+    assert_eq!(longest.len(), 253);
+    assert_eq!(checked_rp_id(&longest).unwrap(), longest);
+    assert_eq!(
+        checked_rp_id(&format!("a{longest}")),
+        Err(PasskeyError::InvalidRpId)
+    );
+    assert_eq!(
+        checked_rp_id(&format!("{}.example.com", "a".repeat(64))),
+        Err(PasskeyError::InvalidRpId)
+    );
+    // Short as typed, too long once converted to its ASCII (IDNA) form.
+    // "㎒" maps to "mhz".
+    let unicode = format!("{}.example.com", vec!["\u{3392}".repeat(20); 4].join("."));
+    assert!(unicode.chars().count() < 253);
+    assert_eq!(checked_rp_id(&unicode), Err(PasskeyError::InvalidRpId));
+    // A page's own host is held to the same.
+    let host = format!("https://{}.{longest}", "a".repeat(10));
+    assert_eq!(effective_rp_id(&host, None), Err(PasskeyError::InvalidRpId));
+    assert_eq!(
+        effective_rp_id(&format!("https://{longest}"), None).unwrap(),
+        longest
+    );
 }
 
 #[test]

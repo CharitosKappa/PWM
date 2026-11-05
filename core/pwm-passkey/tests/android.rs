@@ -144,6 +144,14 @@ fn an_app_must_name_its_rp_id() {
         register_android(app(), &request, &Secret::new(SEED), CRED).err(),
         Some(PasskeyError::InvalidRpId)
     );
+    // Found by the fuzz target: under the request's 256 characters as
+    // typed, over DNS's 253 in ASCII form, so its passkey could never sign in.
+    let long = "Pbc.xn505.39Wan\u{2e2}X.xn50.X50.Xc.xn505.39Wan\u{2e2}X.xn50.X50.xn50.X50.X39Wan\u{2e2}X.3x.X50.X3a.3350.Xc.xn505.39Wan\u{2e2}X.xn50.X50.xn50.X50.X39Wan\u{2e2}X.3x.X50.X3a.338Wan\u{2e2}X.xnX05.39Wan\u{2e2}X.xn50.X50.X39WaN\u{2e2}X.xnX05.39Wan\u{2e2}X.xn50.X50.X39Wan\u{1a2}X.xn50.X50.X39Wan\u{2e2}X.3x.X50.X3a.3x.X50.X3a";
+    let request = CreateRequest::from_json(&create_json(Some(long))).unwrap();
+    assert_eq!(
+        register_android(app(), &request, &Secret::new(SEED), CRED).err(),
+        Some(PasskeyError::InvalidRpId)
+    );
     let bad = AndroidCaller::App {
         package: "not a package",
         cert_sha256: &CERT,

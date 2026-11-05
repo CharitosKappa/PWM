@@ -38,6 +38,7 @@ fuzz_target!(|data: &[u8]| {
         && let Ok(registration) =
             register_android(caller, &request, &Secret::new([0x42; 32]), [7; 16])
     {
+        assert!(registration.passkey.rp_id.len() <= 253);
         let get = format!(
             r#"{{"challenge":"AAAA","rpId":{}}}"#,
             serde_json::json!(registration.passkey.rp_id)

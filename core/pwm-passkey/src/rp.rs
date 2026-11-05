@@ -6,6 +6,14 @@ use pwm_autofill::registrable_domain;
 
 use crate::PasskeyError;
 
+/// A name DNS can hold (RFC 1035 §2.3.4): at most 253 characters in its
+/// ASCII form, and 1 to 63 in each label. The request's own limit is on the
+/// text as given, and an IDNA name can grow past it once converted; a passkey
+/// for such a name could never be asked for again.
+fn fits_dns(name: &str) -> bool {
+    name.len() <= 253 && name.split('.').all(|l| !l.is_empty() && l.len() <= 63)
+}
+
 fn is_localhost(host: &str) -> bool {
     host == "localhost" || host.ends_with(".localhost")
 }
@@ -30,7 +38,7 @@ pub fn effective_rp_id(origin: &str, requested: Option<&str>) -> Result<String, 
     }
     let url = url::Url::parse(origin).map_err(|_| PasskeyError::InsecureOrigin)?;
     let host = match url.host() {
-        Some(url::Host::Domain(host)) => host.to_ascii_lowercase(),
+        Some(url::Host::Domain(host)) if fits_dns(host) => host.to_ascii_lowercase(),
         // WebAuthn RP ids are domains; IP-address origins get none.
         _ => return Err(PasskeyError::InvalidRpId),
     };
@@ -56,7 +64,7 @@ pub fn checked_rp_id(requested: &str) -> Result<String, PasskeyError> {
     }
     // The ASCII (IDNA) form; IP addresses are never RP ids.
     let rp_id = match url::Host::parse(&rp_id) {
-        Ok(url::Host::Domain(domain)) => domain,
+        Ok(url::Host::Domain(domain)) if fits_dns(&domain) => domain,
         _ => return Err(PasskeyError::InvalidRpId),
     };
     // `localhost` has no registrable domain but is its own RP id.
