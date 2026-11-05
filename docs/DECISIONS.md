@@ -2825,3 +2825,39 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Core:** `start_sign_out` takes `Option<Tokens>` in Rust so the WASM build can pass none. `sign_out` also drops events not yet taken: an app that gave up waiting after a token refresh must not store the new tokens after the wipe.
   - **The 5 seconds:** Apple and Android give the sign-out its own transport whose request timeout is 5 seconds (`withTimeout` on the transport; a test fake ignores it) and cancel the run after 5 seconds, so a request in flight ends within the transport's timeout. The extension races the run against a 5-second timer and wipes the device when the timer wins; the abandoned run finishes on the replaced core.
   - **Run on this machine:** the core tests, the server tests against a local Postgres, the Android JVM tests and its server test against a local server, the extension's Vitest and WASM tests, and `just check`. The Swift tests were written on Windows and run in CI.
+
+- **D63 — The checks before filling, on real sites: the top frame, rounded fields, and saying which check failed** · proposed 2026-11-06 · Claude Code.
+  The first top-sites run (D39) that worked, on 2026-11-05, filled 7 of the 54 sites it could reach (13%). M4's target is 90%. A second run logged each D35 §4 check on the fields the engine chose. On most failures the engine found the right fields, and a D35 check then refused them:
+  - **IntersectionObserver v2 alone, 19 sites.** Every other check passed: Google, YouTube, Facebook, Instagram, Microsoft, Heroku, Dropbox, Box, Docker, Costco, IKEA, BBC, Figma, Kraken, ok.ru, Naver, Wells Fargo, Khan Academy, Stack Overflow. v2 reports a field hidden when anything at all is drawn over any part of it. On Heroku that is a small decorative icon at the left end of the email field. These sites are in the top frame, where nothing can cover the frame itself.
+  - **The covering check, about 5 sites:** Twitch, Discord, DigitalOcean, Roblox, Coursera. On most of them, the topmost element at a sample point is one of the field's own wrappers, not something over the field. The likely reason is that the corner points, 2 px inside the field's box, fall outside its rounded corners.
+  - **The rest** are harness and site-list problems (the runner waits 1.5 s, stale login URLs, a tab looked up by its exact URL) and two engine choices of a hidden decoy field (Booking, Airbnb). They are their own tasks, not this decision.
+
+  D35 §4 already lets Firefox and Safari, which lack v2, fill in the top frame without it. D35 §4 uses v2 for a frame hidden or covered by its parent page, which nothing else can see from inside the frame.
+
+  The catch is the fixture `cover-pointer-none.html`. It puts an opaque white layer over a top-frame login form with `pointer-events: none`, so hit testing still finds the field. Only v2 refuses it today, so relaxing v2 in the top frame decides what happens to that fixture.
+
+  Open:
+  - whether v2 is required in the top frame, and what replaces it
+  - what counts as "covered" at a sample point
+  - how the harness learns which check failed
+
+  Proposal:
+  1. **v2 only where it's needed:** a fill into a frame inside another page still needs v2 to report the field visible, as now (`frame-covered.html` keeps refusing). In the top frame, v2 is no longer required, as on Firefox and Safari today. The other D35 §4 checks stay: field state, size and viewport, style, and covering by hit testing.
+     - **Why this is safe enough:** in the top frame, anything drawn over the field is put there by the matched site's own page, which can already read the field. The covering check there keeps us from filling a field hidden by a modal or banner; it doesn't protect the values. Cross-site content in the page sits in its own frames, and hit testing catches a frame drawn over the field.
+     - **What changes:** `cover-pointer-none.html` fills instead of refusing. A new fixture, `frame-cover-pointer-none.html`, puts the same layer, from the parent page, over a login form in a frame, and must refuse.
+     - **The inline icon (D35 §3) is unchanged:** its clicks still need v2 on our own iframe.
+  2. **Rounded fields:** a sample point counts as clear when the topmost element there is the field, its own label, or one of the field's ancestors, looking through open shadow roots. An ancestor is only on top where the field doesn't paint, such as outside a rounded corner. It never covers the field. Anything else on top is still "covered". The sample points stay the centre and two corners 2 px in.
+  3. **Saying which check failed:** the content script already returns the failing check (`covered`, `not_visible`, `transparent`, …), but the background drops it. It is kept on the error as a detail. The popup still shows "The field is hidden or covered". The top-sites report records `field_hidden:<check>`. The "Autofill didn't work here" report (D38) is unchanged.
+  4. **Tests:**
+     - **Unit tests** (`checks.test.ts`):
+       - v2 false in the top frame passes, and in a frame is `not_visible`
+       - an ancestor on top is clear, anything else is covered
+     - **New fixtures that must fill:** `icon-in-field.html` (a decorative icon over the field's left end), `rounded-field.html` (a rounded field in a wrapper).
+     - **Fixtures that must refuse:** `frame-cover-pointer-none.html` (new), and all the current attack fixtures except `cover-pointer-none.html`.
+     - **The top-sites run:** compared before and after with `runner/compare.ts`. About 24 more sites should pass (the 19, plus about 5 rounded fields), taking it from 7 to about 31 of 54.
+  5. **Task:** M4.11 in `ROADMAP.md`, extension only. The engine (`pwm-autofill`) is unchanged, and nothing is stored or sent differently.
+
+  Alternatives:
+  - **Keep v2 in the top frame, but accept "not visible" unless something big covers the field:** refuse when another element that paints (a background colour or image, an image, video, canvas or frame) covers at least half of the field. This keeps `cover-pointer-none.html` refusing. But telling whether that element is above or below the field needs its stacking order, which the page doesn't expose. A filled box drawn behind a transparent field, which some design systems use, would then be refused too. It also guards only against the matched site's own page.
+  - **Keep D35 §4 as it is** and fix only the harness: about 7 of 54 stays the baseline, and the extension refuses to fill Google, Facebook, Microsoft and most of the sites above for real users too.
+  - **Drop v2 everywhere:** it would let a parent page hide a cross-site login frame, which is the case D35 §4 added v2 for.
