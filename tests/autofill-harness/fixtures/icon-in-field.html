@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>An icon drawn over the field</title>
+    <style>
+      body {
+        font: 16px system-ui;
+        margin: 40px;
+      }
+      .field {
+        position: relative;
+        width: 280px;
+        margin: 8px 0;
+      }
+      input {
+        display: block;
+        box-sizing: border-box;
+        width: 280px;
+        height: 36px;
+        padding-left: 34px;
+      }
+      /* A decorative icon over the field's left end, as many sign-in pages
+         draw one. IntersectionObserver v2 calls the field hidden; the hit
+         test at the centre and corners still finds it (D63 §1). */
+      .icon {
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #4f3fd6;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>An icon drawn over the field</h1>
+    <form action="#" onsubmit="return false;">
+      <label for="email">Email</label>
+      <div class="field">
+        <input id="email" type="email" name="email" autocomplete="username" />
+        <div class="icon"></div>
+      </div>
+      <label for="password">Password</label>
+      <div class="field">
+        <input
+          id="password"
+          type="password"
+          name="password"
+          autocomplete="current-password"
+        />
+        <div class="icon"></div>
+      </div>
+      <button>Sign in</button>
+    </form>
+  </body>
+</html>

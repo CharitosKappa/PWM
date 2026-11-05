@@ -188,8 +188,14 @@ export async function runSite(
     }
     const extra: Partial<SiteResult> = {};
     if (targets !== undefined) extra.targets = targets;
-    if (!ok)
-      extra.reason = outcome.code === "ok" ? "wrong_inputs" : outcome.code;
+    if (!ok) {
+      extra.reason =
+        outcome.code === "ok"
+          ? "wrong_inputs"
+          : outcome.detail === undefined
+            ? outcome.code
+            : `${outcome.code}:${outcome.detail}`;
+    }
     return done(ok ? "pass" : "fail", extra);
   } catch (error) {
     // The runner's own failure: say what it was, so the report explains it.

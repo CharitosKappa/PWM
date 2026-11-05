@@ -51,7 +51,8 @@ test("runner: fail when nothing or the wrong inputs fill", async () => {
   ).toMatchObject({ status: "fail", reason: "wrong_inputs" });
   expect(await runSite(harness, site("overlay.html"))).toMatchObject({
     status: "fail",
-    reason: "field_hidden",
+    // The failed check is named (D63 §3).
+    reason: "field_hidden:covered",
   });
 });
 

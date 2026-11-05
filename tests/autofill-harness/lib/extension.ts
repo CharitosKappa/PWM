@@ -57,6 +57,8 @@ export interface LoginSpec {
 /** What a fill gave: "ok" or the background's error code. */
 export interface FillOutcome {
   code: string;
+  /** For `field_hidden`, which check failed (D63 §3). */
+  detail?: string;
   copiedCode: boolean;
 }
 
@@ -186,8 +188,10 @@ export class Harness {
           );
           return { code: "ok", copiedCode: result.copiedCode };
         } catch (error) {
+          const { code, detail } = error as { code?: string; detail?: string };
           return {
-            code: (error as { code?: string }).code ?? String(error),
+            code: code ?? String(error),
+            ...(detail === undefined ? {} : { detail }),
             copiedCode: false,
           };
         }

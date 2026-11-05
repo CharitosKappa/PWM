@@ -391,6 +391,9 @@ Phase 3  Teams           months 16–24 M16–M19
   - Per D44: `manage.html`, opened from the popup's Settings, with Password health (leaked, weak, reused; "Change" opens the login's site, where the update offer saves the new password), Devices (rename, sign out another device) and Export (encrypted `.pwmx`, or JSON/CSV after the warning; the master password every time; a download).
   - **The leak check** asks for HIBP access from a click, with no manifest change, and runs straight from the background.
   - **Parity:** the extension now matches iOS on these three, on Chromium and Firefox (Safari with M5.6).
+- [x] M4.11 The checks before filling, for real sites (D63): v2 only in frames, a field's own wrapper doesn't cover it, and the failed check kept on the error and in the top-sites report. Fixtures `icon-in-field`, `rounded-field` and `frame-cover-pointer-none`; `cover-pointer-none` now fills.
+  - Done per D63: `fieldProblem` takes what is on top at each sample point (the field, an ancestor, or anything else) and asks for v2 only in a frame, so the top frame no longer waits for it. A refused fill keeps the failed check as the error's detail (only a known check's name), and the top-sites report records it as `field_hidden:<check>`.
+  - **Tests:** unit tests for both rules and the detail; the fixture suite in CI with the three new fixtures; a top-sites run on the branch compared with the 2026-11-05 baseline.
 
 **Done when:** fixture suite 100%; top-1,000 classification ≥ 90% (target 95% by launch); overlay attacks never fill. Since D39, the classification target is measured each night by the top-sites runner on a growing list, and gates the launch in M10, not the end of M4.
 

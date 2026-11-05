@@ -14,7 +14,7 @@ import type {
 } from "../shared/autofill.ts";
 import type { Reply } from "../shared/messages.ts";
 import { fieldProblem, samplePoints } from "./checks.ts";
-import type { FieldState, StyleInfo } from "./checks.ts";
+import type { FieldState, Hit, StyleInfo } from "./checks.ts";
 import { Capturer, readTyped } from "./capture.ts";
 import { OfferCard } from "./card.ts";
 import { looksVisible } from "./dom.ts";
@@ -91,6 +91,22 @@ function topAt(x: number, y: number): Element | null {
   return top;
 }
 
+/** The element's parent, crossing out of a shadow root to its host. */
+function parentOf(node: Element): Element | null {
+  const root = node.getRootNode();
+  return node.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
+}
+
+/** What the topmost element at a sample point is, for the field `el`. */
+function hitOf(top: Element | null, el: HTMLInputElement): Hit {
+  if (top === el || (top instanceof HTMLLabelElement && top.control === el))
+    return "field";
+  for (let node = parentOf(el); node; node = parentOf(node)) {
+    if (node === top) return "ancestor";
+  }
+  return "other";
+}
+
 function styleChain(el: Element): StyleInfo[] {
   const out: StyleInfo[] = [];
   let node: Element | null = el;
@@ -103,9 +119,7 @@ function styleChain(el: Element): StyleInfo[] {
       filter: s.filter,
       clipPath: s.clipPath,
     });
-    const root = node.getRootNode();
-    node =
-      node.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
+    node = parentOf(node);
   }
   return out;
 }
@@ -140,12 +154,8 @@ function visibleV2(el: Element): Promise<boolean | undefined> {
 async function measure(el: HTMLInputElement): Promise<FieldState> {
   const r = el.getBoundingClientRect();
   const rect = { left: r.left, top: r.top, width: r.width, height: r.height };
-  const onTop = samplePoints(rect).map(([x, y]) => {
-    const top = topAt(x, y);
-    return (
-      top === el || (top instanceof HTMLLabelElement && top.control === el)
-    );
-  });
+  const onTop = samplePoints(rect).map(([x, y]) => hitOf(topAt(x, y), el));
+  const topFrame = window === window.top;
   return {
     connected: el.isConnected,
     disabled: el.disabled,
@@ -154,8 +164,9 @@ async function measure(el: HTMLInputElement): Promise<FieldState> {
     viewport: { width: window.innerWidth, height: window.innerHeight },
     styles: styleChain(el),
     onTop,
-    visibleV2: await visibleV2(el),
-    topFrame: window === window.top,
+    // Only a frame needs it (D63 §1); the top frame skips the wait.
+    visibleV2: topFrame ? undefined : await visibleV2(el),
+    topFrame,
   };
 }
 

@@ -209,6 +209,24 @@ describe("filling from the popup", () => {
     expect(await errorOf(background.handle(fill()))).toBe("field_hidden");
   });
 
+  it("keeps which check failed on the error, and only a known one (D63 §3)", async () => {
+    const { background, pages } = await setup();
+    const detail = async () => {
+      try {
+        await background.handle(fill());
+      } catch (error) {
+        if (error instanceof ServiceError) return [error.code, error.detail];
+        throw error;
+      }
+      throw new Error("no error");
+    };
+    pages.fillReply = { ok: false, reason: "not_visible" };
+    expect(await detail()).toEqual(["field_hidden", "not_visible"]);
+    // The content script is untrusted: anything else is dropped.
+    pages.fillReply = { ok: false, reason: "<b>page text</b>" };
+    expect(await detail()).toEqual(["field_hidden", undefined]);
+  });
+
   it("fills a code field the engine is sure of", async () => {
     const { background, pages } = await setup();
     pages.frames = [

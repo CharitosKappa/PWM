@@ -30,7 +30,10 @@
       />
       <button>Sign in</button>
     </form>
-    <!-- Clickjacking: a cover that lets clicks through, so hit testing sees the field. -->
+    <!-- A cover that lets clicks through, so hit testing sees the field. In the
+         top frame this fills (D63 §1): the cover is the matched site's own
+         page, which can read the field anyway. The same cover over a frame,
+         from its parent page, must refuse: frame-cover-pointer-none.html. -->
     <div
       style="
         position: fixed;
