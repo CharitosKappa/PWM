@@ -97,6 +97,80 @@ function inspect(frame: Frame) {
     .catch(() => ({ user: false, password: false, passwordField: false }));
 }
 
+/** Diagnostic only (not for main): which D35 check each targeted field fails. */
+function probe(frame: Frame, names: string[]) {
+  return frame
+    .evaluate(async (names: string[]) => {
+      const vis = (el: Element) =>
+        new Promise<string>((res) => {
+          if (!("isVisible" in IntersectionObserverEntry.prototype)) {
+            res("unsupported");
+            return;
+          }
+          const t = setTimeout(() => {
+            o.disconnect();
+            res("timeout");
+          }, 1000);
+          const o = new IntersectionObserver(
+            (es) => {
+              clearTimeout(t);
+              o.disconnect();
+              res(String((es.at(-1) as unknown as { isVisible: boolean }).isVisible));
+            },
+            { trackVisibility: true, delay: 100 } as IntersectionObserverInit,
+          );
+          o.observe(el);
+        });
+      const desc = (e: Element | null) =>
+        e
+          ? e.tagName.toLowerCase() +
+            (e.id ? "#" + e.id.slice(0, 20) : "") +
+            (typeof e.className === "string" && e.className
+              ? "." + e.className.trim().split(/\s+/).slice(0, 2).join(".")
+              : "")
+          : "null";
+      const out: unknown[] = [];
+      for (const el of [...document.querySelectorAll("input")]) {
+        if (!names.includes(el.name) && !names.includes(el.id.toLowerCase())) continue;
+        const r = el.getBoundingClientRect();
+        const inset = Math.min(2, r.width / 4, r.height / 4);
+        const pts = [
+          [r.left + r.width / 2, r.top + r.height / 2],
+          [r.left + inset, r.top + inset],
+          [r.right - inset, r.bottom - inset],
+        ];
+        const covers = pts.map(([x, y]) => {
+          const t = document.elementFromPoint(x ?? 0, y ?? 0);
+          return t === el || (t instanceof HTMLLabelElement && t.control === el) ? "ok" : desc(t);
+        });
+        const chain: string[] = [];
+        let n: Element | null = el;
+        while (n) {
+          const st = getComputedStyle(n);
+          if (st.display === "none" || (st.visibility !== "visible" && st.visibility !== "")) chain.push("hidden@" + desc(n));
+          if (st.clipPath !== "none" && st.clipPath !== "") chain.push("clip@" + desc(n));
+          if (Number(st.opacity) !== 1) chain.push("opacity" + st.opacity + "@" + desc(n));
+          if (st.filter !== "none" && st.filter !== "") chain.push("filter@" + desc(n));
+          if (st.transform !== "none") chain.push("transform@" + desc(n));
+          const root = n.getRootNode();
+          n = n.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
+        }
+        const inView = r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
+        out.push({
+          field: desc(el) + "[" + el.type + "]",
+          size: [Math.round(r.width), Math.round(r.height)],
+          inView,
+          covers,
+          chain,
+          v2: await vis(el),
+          top: window === window.top,
+        });
+      }
+      return out;
+    }, names)
+    .catch(() => []);
+}
+
 /**
  * The value of the first input matching `selector`, or "" when there is
  * none. Never waits for an element to appear: a selector that no longer
@@ -187,6 +261,11 @@ export async function runSite(
       ok = user && (password || !passwordField);
     }
     const extra: Partial<SiteResult> = {};
+    if (outcome.code === "field_hidden" && Array.isArray(targets)) {
+      const names = (targets as unknown as { name: string; id: string }[]).flatMap((t) => [t.name, t.id]).filter((x) => x !== "");
+      const found = (await Promise.all(page.frames().map((f) => probe(f, names)))).flat();
+      console.log(`DIAG ${entry.site} ${JSON.stringify(found)}`);
+    }
     if (targets !== undefined) extra.targets = targets;
     if (!ok)
       extra.reason = outcome.code === "ok" ? "wrong_inputs" : outcome.code;
