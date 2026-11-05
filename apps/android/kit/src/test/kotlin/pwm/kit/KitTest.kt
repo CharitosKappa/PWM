@@ -98,6 +98,29 @@ class KitTest {
     }
 
     @Test
+    fun signingOutWipesTheDeviceWhenThereIsNoSessionToEnd() = runTest {
+        // A revoked device: the core has cleared its cache, so nothing is sent (D62).
+        val keys = MemoryKeyStore()
+        for (name in listOf(KeyName.SECRET_KEY, KeyName.ACCESS_TOKEN, KeyName.REFRESH_TOKEN, KeyName.EMAIL)) keys.set(name, "x")
+        val sent = mutableListOf<HttpRequest>()
+        val session = Session(
+            cachePath = null, server = URL("https://pwm.invalid"), keys = keys,
+            transport = HttpTransport { sent += it; throw IOException("offline") },
+        )
+        session.signOut()
+        assertFalse(session.isSignedIn())
+        for (name in listOf(KeyName.ACCESS_TOKEN, KeyName.REFRESH_TOKEN, KeyName.EMAIL)) assertNull(keys.get(name))
+        assertTrue(sent.isEmpty())
+    }
+
+    @Test
+    fun theSystemTransportTakesAShorterTimeout() {
+        assertTrue(UrlConnectionTransport().withTimeout(5_000) is UrlConnectionTransport)
+        val fake = HttpTransport { throw IOException("offline") }
+        assertTrue(fake.withTimeout(5_000) === fake)
+    }
+
+    @Test
     fun theTokensAreGenerated() {
         assertEquals(1, Tokens.VERSION)
         assertEquals(0xFF4F3FD6, Tokens.Color.accent.light)

@@ -134,6 +134,18 @@ export class FakeCore implements Core {
     return send("/v1/sync");
   }
 
+  /** Sessions ended on the server (D62). */
+  loggedOut = 0;
+
+  startSignOut(): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    this.next = () => {
+      this.loggedOut += 1;
+      return done("logged_out");
+    };
+    return send("/v1/auth/logout");
+  }
+
   startEnsureVault(): CoreStep {
     if (!this.unlocked) throw coreError("locked");
     this.next = () => {

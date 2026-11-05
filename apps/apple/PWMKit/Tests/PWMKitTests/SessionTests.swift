@@ -80,6 +80,25 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(keys.get(.deviceId), first)
     }
 
+    func testSigningOutWithNoSessionToEndStillWipesTheDevice() async throws {
+        // A revoked device: the core has cleared its cache, so nothing is sent (D62).
+        let keys = MemoryKeyStore()
+        for name in [KeyName.secretKey, .accessToken, .refreshToken, .email] { keys.set(name, "x") }
+        let transport = FakeTransport { _ in throw URLError(.notConnectedToInternet) }
+        let session = try session(transport, keys: keys)
+        try await session.signOut()
+        XCTAssertTrue(transport.requests.isEmpty)
+        for name in [KeyName.secretKey, .accessToken, .refreshToken, .email] {
+            XCTAssertNil(keys.get(name), name.rawValue)
+        }
+    }
+
+    func testTheSystemTransportTakesAShorterTimeout() {
+        XCTAssertTrue(URLSessionTransport().withTimeout(5) is URLSessionTransport)
+        let fake = FakeTransport { _ in HTTPResponse(status: 500) }
+        XCTAssertTrue(fake.withTimeout(5) as AnyObject === fake)
+    }
+
     func testUnlockNeedsASignedInDevice() async throws {
         let session = try session(FakeTransport { _ in HTTPResponse(status: 500) })
         do {

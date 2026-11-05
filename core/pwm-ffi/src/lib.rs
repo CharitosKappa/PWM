@@ -106,6 +106,8 @@ pub enum Outcome {
     ApprovalUpdated,
     /// This device's push token was registered or removed (D50 §3).
     PushTokenSet,
+    /// The session is over on the server (D62); call `sign_out` next.
+    LoggedOut,
 }
 
 /// A request from a new device; `code` once this device accepted it and the
@@ -236,6 +238,7 @@ fn step(step: pwm_client::Step) -> Step {
                 },
                 pwm_client::Outcome::ApprovalUpdated => Outcome::ApprovalUpdated,
                 pwm_client::Outcome::PushTokenSet => Outcome::PushTokenSet,
+                pwm_client::Outcome::LoggedOut => Outcome::LoggedOut,
             },
         },
     }
@@ -638,6 +641,16 @@ impl PwmClient {
         Ok(step(
             self.lock_inner()
                 .start_push_token(Tokens::new(access, refresh), push)?,
+        ))
+    }
+
+    /// Ends this device's session on the server before signing out (D62);
+    /// works locked with the stored tokens. Ends with `LoggedOut`. Call
+    /// `sign_out` next whatever happened: being offline never blocks it.
+    pub fn start_sign_out(&self, access: String, refresh: String) -> Result<Step, PwmError> {
+        Ok(step(
+            self.lock_inner()
+                .start_sign_out(Some(Tokens::new(access, refresh)))?,
         ))
     }
 

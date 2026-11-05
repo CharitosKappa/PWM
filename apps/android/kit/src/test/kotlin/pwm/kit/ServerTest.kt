@@ -27,6 +27,13 @@ class ServerTest {
         server = URL(address)
     }
 
+    /** The server's answer to refreshing with [token]. */
+    private fun refresh(token: String): Int {
+        val body = "{\"refresh_token\":\"$token\"}".toByteArray()
+        val url = URL(server.toString().trimEnd('/') + "/v1/auth/refresh")
+        return JdkTransport().send(HttpRequest("POST", url, listOf("content-type" to "application/json"), body)).status
+    }
+
     @Test
     fun signUpSaveSyncAndSignInOnASecondDevice() = runTest {
         val email = "kotlin-${UUID.randomUUID()}@example.com"
@@ -195,16 +202,30 @@ class ServerTest {
         first.signOut()
         assertTrue(firstKeys.get(KeyName.BIOMETRIC_BLOB) == null)
         assertTrue(fingers.deleted > 0)
+        // Signing out ends the session on the server too (D62): its refresh token is refused.
+        val ended = keys.get(KeyName.REFRESH_TOKEN)!!
         second.signOut()
         assertTrue(keys.get(KeyName.SECRET_KEY) == null)
+        assertEquals(401, refresh(ended))
 
         // The same phone, signed out, signs in again to that account as the
         // same device, and a new account signs up there as a new device.
         val device = keys.get(KeyName.DEVICE_ID)
-        val again = Session(cachePath = null, server = server, transport = JdkTransport(), keys = keys)
+        // Offline at sign-out, it signs out all the same; the session stays until it expires.
+        val offlineAtSignOut = object : HttpTransport {
+            private val jdk = JdkTransport()
+
+            override fun send(request: HttpRequest) = jdk.send(request)
+
+            override fun withTimeout(ms: Int) = HttpTransport { throw java.io.IOException("offline") }
+        }
+        val again = Session(cachePath = null, server = server, transport = offlineAtSignOut, keys = keys)
         assertTrue(again.logIn(email, password, secretKey, "Android tablet") is SyncResult.Synced)
         assertEquals(device, keys.get(KeyName.DEVICE_ID))
+        val kept = keys.get(KeyName.REFRESH_TOKEN)!!
         again.signOut()
+        assertTrue(keys.get(KeyName.REFRESH_TOKEN) == null)
+        assertEquals(200, refresh(kept))
         val other = Session(cachePath = null, server = server, transport = JdkTransport(), keys = keys)
         other.signUp("kotlin-${UUID.randomUUID()}@example.com", password, "Android tablet")
         assertTrue("a new device for the new account", keys.get(KeyName.DEVICE_ID) != device)

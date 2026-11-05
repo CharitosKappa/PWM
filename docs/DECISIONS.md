@@ -2702,7 +2702,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Tokens up to 1,024 bytes,** not 4,096: the unique index on `push_tokens.token` can't hold an entry much above 2.7 KB. FCM tokens are about 150 to 250 characters. The core, the route and the table all check 100 to 1,024.
   - **The sender:** one task for both providers. A device whose provider is off on this server is skipped, not counted as failed. A 401 drops the cached access token. A 404 deletes the device's token.
   - **The app:** Firebase's own start-up provider is removed from the manifest, so nothing of Firebase starts without the four settings. Delivery-metrics export and Analytics are switched off in the manifest. A `sync` push queues one network-bound sync (`pwm.sync.now`, kept if already waiting), not expedited work, which would need a foreground notice on older Android.
-  - **Signing out** removes the token from the server first (5 seconds at most), as on Apple (D50 notes). No app calls the server's logout at sign-out yet, so the session itself stays valid until it expires; that is a separate follow-up.
+  - **Signing out** removes the token from the server first (5 seconds at most), as on Apple (D50 notes). At the time no app called the server's logout at sign-out, so the session itself stayed valid until it expired; D62 (M6.12) now ends it too, and logout also drops the push token, so this step only matters when the logout doesn't reach the server.
   - **The device test** calls the model the way the messaging service does, since CI has no Firebase project; a real phone is on the `QUALITY.md` checklist.
   - **Run on this machine:** the core's tests, the server's tests (the FCM tests against fakes, migration 0007's test) against a local Postgres, the JVM tests and the server test against a local server, the build and licence check (161 libraries), and the 5 device tests on an Android 16 emulator.
 
@@ -2797,3 +2797,31 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **"Save in PWM" goes to the first vault,** as the iOS extension's passkeys do (D47 notes). For an app, the login is titled with the app's name and linked to it (`android-app://`); for a browser, its website is the origin.
   - **The device test:** the test app's screen asks the Credential Manager through the platform's API (its process has no AndroidX), with AndroidX's bundle keys. Debug builds read the test's asset links file from the `pwm.test` switch, as D61 §10 says; a release build never reads it. The test makes a passkey, signs in with it (the signature is checked with the platform's P-256), then saves and uses a password, picking PWM in the system's sheet. With it, the Android job's server sees 5 sign-ups, which is its hourly limit from one address; a sixth test that signs up needs the limit raised for tests.
   - **Run on this machine:** the core's tests (11 passkey crate tests, 6 client tests, the vectors in Rust and Node), every Rust test against a local Postgres, the JVM tests (13 new), the build and licence check (163 libraries), `just check`, and the 6 device tests on an Android 16 emulator. Not run: a real site in Chrome, a real app, or the fuzz target (libFuzzer doesn't build on Windows; CI runs it).
+
+- **D62 — Signing out ends the session on the server** · settled 2026-11-05 · founder (approved as proposed).
+  The server has had `POST /v1/auth/logout` since M2 (it deletes the device's session and its push token), but no client calls it: signing out only wipes the device. The device's refresh token then stays valid for up to 90 days unused (D26), so a copy of it taken before sign-out (a backup, malware, a stolen disk image) keeps the account's ciphertext reachable, and the device keeps showing as signed in on the Devices list. Found while building Android push (M6.9). Open: what the core does, how long an app waits, what happens offline, and the extension, whose tokens are sealed while locked (D34).
+
+  Proposal:
+  1. **The core: `start_sign_out(tokens)`**, a step-loop call like `start_push_token` (D50 §3) that works locked or unlocked:
+     - It abandons whatever is running first (a sync, a device call): signing out wins, and what the run would have saved is about to be wiped.
+     - It sends `POST /v1/auth/logout` with the open engine's tokens when unlocked, or with `tokens` from secure storage when locked. A refused access token is refreshed once, as for any call.
+     - It ends with a new outcome, `LoggedOut`, when the session is over: a 204, a refused refresh token (already over) or a revoked device (already over; the engine has cleared the cache, D28).
+     - With no account cached (a revoked device's cache was cleared) it answers `locked` at once and sends nothing.
+     - 429 and 5xx end it with a wait, which the apps do not retry; any other status is `server`.
+     - It never clears anything. The app calls `sign_out` afterwards, whatever happened.
+     - UniFFI: `startSignOut(access, refresh)`. WASM: `startSignOut()`, unlocked only, since the extension has no tokens while locked.
+  2. **The apps: try it, then sign out anyway.** Each app's sign-out first tries `start_sign_out` for at most 5 seconds (as Android's push token removal, D60 §4), ignores any error, then wipes the device as today. Being offline, a dead server or a refused token never blocks signing out.
+     - **Apple (`PWMKit`):** `Session.signOut()` becomes `async` and does both; `forgetPushToken` before it stays.
+     - **Android (`:kit`):** `Session.signOut()` does both, with its own transport whose timeouts are 5 seconds, so a dead network cannot hold the sign-out past the limit while a request is in flight.
+     - **Extension:** the background's sign-out does both. Signing out is only offered in Settings, which needs the vault unlocked, so the tokens are always there; if it were ever locked, it signs out locally only.
+     - A revoked device's sign-out finds no account and sends nothing (1).
+  3. **The server:** no change. Its test already checks that after logout the access token is refused, the refresh token is refused and the other device stays signed in; a new test runs the core's `start_sign_out` against it, locked, and checks the refresh token and the push token are gone.
+  4. **Offline sign-out:** the session then stays on the server until its refresh token goes unused for 90 days, or until the device is signed out from another device's Devices list (M5.10), which ends it at once. `SECURITY.md`'s threat model says so. A later queue that retries the logout after the wipe was considered and left out: it would keep a token on a device the user believes is clean.
+  5. **The push token removal before sign-out** (Apple's `forgetPushToken`, Android's D60 §4) stays as it is. Logout also drops the push token, so it is now redundant when online, but harmless; removing it is not this task.
+
+  Alternative: end the session from the core's `sign_out` itself (one call for the apps). Left out: `sign_out` is synchronous and offline by design, and the step loop is how every other server call works.
+
+  Implementation notes (M6.12):
+  - **Core:** `start_sign_out` takes `Option<Tokens>` in Rust so the WASM build can pass none. `sign_out` also drops events not yet taken: an app that gave up waiting after a token refresh must not store the new tokens after the wipe.
+  - **The 5 seconds:** Apple and Android give the sign-out its own transport whose request timeout is 5 seconds (`withTimeout` on the transport; a test fake ignores it) and cancel the run after 5 seconds, so a request in flight ends within the transport's timeout. The extension races the run against a 5-second timer and wipes the device when the timer wins; the abandoned run finishes on the replaced core.
+  - **Run on this machine:** the core tests, the server tests against a local Postgres, the Android JVM tests and its server test against a local server, the extension's Vitest and WASM tests, and `just check`. The Swift tests were written on Windows and run in CI.

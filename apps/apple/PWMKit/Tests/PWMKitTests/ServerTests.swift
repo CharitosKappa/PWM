@@ -26,6 +26,16 @@ final class ServerTests: XCTestCase {
         return account
     }
 
+    /// The server's answer to refreshing with `token`.
+    func refreshStatus(_ token: String) async throws -> UInt16 {
+        let body = try JSONSerialization.data(withJSONObject: ["refresh_token": token])
+        let request = HTTPRequest(
+            method: "POST", url: server.appendingPathComponent("v1/auth/refresh"),
+            headers: [(name: "content-type", value: "application/json")], body: body
+        )
+        return try await URLSessionTransport().send(request).status
+    }
+
     func testSignUpLogInOnASecondDeviceAndSync() async throws {
         let email = "swift-\(UUID().uuidString.lowercased())@example.com"
         let first = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
@@ -104,9 +114,11 @@ final class ServerTests: XCTestCase {
         await session.cancelImport()
     }
 
-    func testUnlockOfflineAfterLocking() async throws {
+    /// One login for both, to stay under the login limit (30 requests a
+    /// minute per IP): only logout goes unanswered.
+    func testUnlockOfflineAfterLockingAndSignOutPastADeadServer() async throws {
         let keys = MemoryKeyStore()
-        let session = try Session(cachePath: nil, server: server, keys: keys)
+        let session = try Session(cachePath: nil, server: server, keys: keys, transport: NoLogoutAnswer())
         let email = try await logInShared(session).email
         XCTAssertNotNil(keys.get(.accessToken))
         await session.lock()
@@ -121,6 +133,15 @@ final class ServerTests: XCTestCase {
         XCTAssertTrue(unlocked)
         let email2 = try await session.email()
         XCTAssertEqual(email2, email)
+
+        let kept = try XCTUnwrap(keys.get(.refreshToken))
+        let start = Date()
+        try await session.signOut()
+        XCTAssertLessThan(Date().timeIntervalSince(start), 10)
+        XCTAssertNil(keys.get(.refreshToken))
+        // Offline at sign-out, the session stays on the server until it expires (D62 §4).
+        let status = try await refreshStatus(kept)
+        XCTAssertEqual(status, 200)
     }
 
     func testTheKitAndSigningOut() async throws {
@@ -135,7 +156,11 @@ final class ServerTests: XCTestCase {
         XCTAssertTrue(text.contains("(Server)"))
 
         let deviceId = keys.get(.deviceId)
+        let ended = try XCTUnwrap(keys.get(.refreshToken))
         try await session.signOut()
+        // The session is over on the server too (D62).
+        let status = try await refreshStatus(ended)
+        XCTAssertEqual(status, 401)
         let signedIn = try await session.isSignedIn()
         XCTAssertFalse(signedIn)
         let unlocked = await session.isUnlocked
@@ -500,4 +525,16 @@ actor SharedAccount {
 func XCTUnwrapAsync<T>(_ value: @autoclosure () async throws -> T?, file: StaticString = #filePath, line: UInt = #line) async throws -> T {
     let unwrapped = try await value()
     return try XCTUnwrap(unwrapped, file: file, line: line)
+}
+
+/// The real server, except that logout never answers.
+private struct NoLogoutAnswer: HTTPTransport {
+    let real = URLSessionTransport()
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        if request.url.path.hasSuffix("/v1/auth/logout") {
+            try await Task.sleep(nanoseconds: 60_000_000_000)
+        }
+        return try await real.send(request)
+    }
 }

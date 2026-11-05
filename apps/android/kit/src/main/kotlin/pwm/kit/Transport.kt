@@ -22,6 +22,9 @@ class HttpResponse(val status: Int, val headers: List<Pair<String, String>>, val
 fun interface HttpTransport {
     @Throws(IOException::class)
     fun send(request: HttpRequest): HttpResponse
+
+    /** The same transport giving up on a request after [ms]; a fake may ignore it. */
+    fun withTimeout(ms: Int): HttpTransport = this
 }
 
 /**
@@ -29,6 +32,8 @@ fun interface HttpTransport {
  * platform, and a timeout so a dead network ends the step loop.
  */
 class UrlConnectionTransport(private val timeoutMs: Int = 30_000) : HttpTransport {
+    override fun withTimeout(ms: Int): HttpTransport = UrlConnectionTransport(ms)
+
     override fun send(request: HttpRequest): HttpResponse {
         val connection = request.url.openConnection() as HttpURLConnection
         try {

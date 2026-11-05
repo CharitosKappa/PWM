@@ -29,6 +29,12 @@ public struct HTTPResponse: Sendable {
 /// response for the core to read.
 public protocol HTTPTransport: Sendable {
     func send(_ request: HTTPRequest) async throws -> HTTPResponse
+    /// The same transport giving up on a request after `seconds`; a fake may ignore it.
+    func withTimeout(_ seconds: TimeInterval) -> any HTTPTransport
+}
+
+extension HTTPTransport {
+    public func withTimeout(_ seconds: TimeInterval) -> any HTTPTransport { self }
 }
 
 /// `URLSession` with an ephemeral configuration: no cookies and no cache on
@@ -44,6 +50,10 @@ public final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.timeoutIntervalForRequest = timeout
         session = URLSession(configuration: configuration)
+    }
+
+    public func withTimeout(_ seconds: TimeInterval) -> any HTTPTransport {
+        URLSessionTransport(timeout: seconds)
     }
 
     public func send(_ request: HTTPRequest) async throws -> HTTPResponse {

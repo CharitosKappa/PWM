@@ -208,6 +208,7 @@ fn step(step: Step) -> WasmStep {
                 }
                 Outcome::ApprovalUpdated => "approval_updated",
                 Outcome::PushTokenSet => "push_token_set",
+                Outcome::LoggedOut => "logged_out",
             });
         }
     }
@@ -482,6 +483,14 @@ impl WasmClient {
     #[wasm_bindgen(js_name = startSync)]
     pub fn start_sync(&mut self) -> Result<WasmStep, JsValue> {
         self.inner.start_sync().map(step).map_err(js_error)
+    }
+
+    /// Ends this device's session on the server before signing out (D62),
+    /// with the open session's tokens: the extension has none while locked,
+    /// so locked it answers `locked`. Ends with `logged_out`.
+    #[wasm_bindgen(js_name = startSignOut)]
+    pub fn start_sign_out(&mut self) -> Result<WasmStep, JsValue> {
+        self.inner.start_sign_out(None).map(step).map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = startCreateVault)]
