@@ -56,10 +56,37 @@ test("runner: fail when nothing or the wrong inputs fill", async () => {
   });
 });
 
+test("runner: waits for a form drawn late", async () => {
+  expect(await runSite(harness, site("runner-late.html"))).toMatchObject({
+    status: "pass",
+  });
+});
+
+test("runner: finds the tab when the page adds a fragment", async () => {
+  const result = await runSite(harness, {
+    site: "runner.test/plain.html#/signin",
+    login_url: `${R}/plain.html#/signin`,
+  });
+  expect(result).toMatchObject({ status: "pass" });
+  expect(result.final_host).toBeUndefined();
+});
+
+test("runner: says where a moved login ended up", async () => {
+  expect(await runSite(harness, site("runner-moves.html"))).toMatchObject({
+    status: "fail",
+    final_host: "elsewhere.test:8443",
+  });
+});
+
 test("runner: blocked by a challenge page or an error status, left alone", async () => {
   expect(await runSite(harness, site("captcha.html"))).toMatchObject({
     status: "blocked",
     reason: "challenge",
+  });
+  // A wall that is only text: no field ever appears, the text says so.
+  expect(await runSite(harness, site("runner-wall.html"))).toMatchObject({
+    status: "blocked",
+    reason: "bot_wall",
   });
   expect(await runSite(harness, site("status-503"))).toMatchObject({
     status: "blocked",

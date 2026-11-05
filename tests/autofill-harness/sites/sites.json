@@ -1,6 +1,6 @@
 {
   "description": "Sites for the nightly runner (D39 §2): login URL and, where someone checked the page, CSS selectors of the expected inputs. Grow towards 1,000 over M10, ordered by the Tranco top-sites list (CC BY 4.0, https://tranco-list.eu, attribution in THIRD_PARTY_NOTICES when it is used). Entries are unchecked until a nightly run confirms them.",
-  "checked": "2026-11-02: list drafted from public login URLs; selectors only where the form is well known; to be confirmed by the first nightly runs",
+  "checked": "2026-11-02: list drafted from public login URLs; selectors only where the form is well known; to be confirmed by the first nightly runs; 2026-11-06: selectors for facebook.com and microsoft.com, notion.so moved to notion.com, five entries removed (see removed)",
   "sites": [
     {
       "site": "google.com",
@@ -14,8 +14,8 @@
     {
       "site": "facebook.com",
       "login_url": "https://www.facebook.com/login",
-      "username": "#email",
-      "password": "#pass"
+      "username": "input[name=\"email\"]",
+      "password": "input[name=\"pass\"]"
     },
     {
       "site": "instagram.com",
@@ -34,7 +34,7 @@
     {
       "site": "microsoft.com",
       "login_url": "https://login.live.com/",
-      "username": "input[name=\"loginfmt\"]"
+      "username": "input[type=\"email\"]"
     },
     {
       "site": "office.com",
@@ -209,10 +209,6 @@
       "login_url": "https://signin.aws.amazon.com/signin"
     },
     {
-      "site": "azure.com",
-      "login_url": "https://portal.azure.com/"
-    },
-    {
       "site": "npmjs.com",
       "login_url": "https://www.npmjs.com/login"
     },
@@ -257,14 +253,6 @@
       "login_url": "https://accounts.nintendo.com/login"
     },
     {
-      "site": "telegram.org",
-      "login_url": "https://web.telegram.org/"
-    },
-    {
-      "site": "whatsapp.com",
-      "login_url": "https://web.whatsapp.com/"
-    },
-    {
       "site": "mail.yandex.com",
       "login_url": "https://passport.yandex.com/auth"
     },
@@ -301,10 +289,6 @@
     {
       "site": "walmart.com",
       "login_url": "https://www.walmart.com/account/login"
-    },
-    {
-      "site": "target.com",
-      "login_url": "https://www.target.com/login"
     },
     {
       "site": "bestbuy.com",
@@ -363,8 +347,8 @@
       "login_url": "https://www.khanacademy.org/login"
     },
     {
-      "site": "notion.so",
-      "login_url": "https://www.notion.so/login"
+      "site": "notion.com",
+      "login_url": "https://app.notion.com/login"
     },
     {
       "site": "trello.com",
@@ -389,10 +373,6 @@
     {
       "site": "hubspot.com",
       "login_url": "https://app.hubspot.com/login"
-    },
-    {
-      "site": "zendesk.com",
-      "login_url": "https://www.zendesk.com/login/"
     },
     {
       "site": "evernote.com",
@@ -437,6 +417,33 @@
     {
       "site": "kraken.com",
       "login_url": "https://www.kraken.com/sign-in"
+    }
+  ],
+  "removed": [
+    {
+      "site": "zendesk.com",
+      "reason": "asks for the account's subdomain, not a login",
+      "date": "2026-11-06"
+    },
+    {
+      "site": "target.com",
+      "reason": "the login URL redirects to the home page",
+      "date": "2026-11-06"
+    },
+    {
+      "site": "azure.com",
+      "reason": "redirects to login.microsoftonline.com, already office.com",
+      "date": "2026-11-06"
+    },
+    {
+      "site": "telegram.org",
+      "reason": "signs in by QR code or phone code, no password form",
+      "date": "2026-11-06"
+    },
+    {
+      "site": "whatsapp.com",
+      "reason": "signs in by QR code, no password form",
+      "date": "2026-11-06"
     }
   ]
 }

@@ -33,6 +33,8 @@ export interface SiteResult {
   reason?: string;
   /** The inputs the engine would fill, as D38 report fields (no values). */
   targets?: unknown[];
+  /** The host the page ended on, when it isn't the login URL's: the list may be stale. */
+  final_host?: string;
 }
 
 export interface Report {
@@ -57,6 +59,16 @@ const CHALLENGE_SELECTORS = [
   'iframe[title*="captcha" i]',
 ];
 
+/**
+ * Bot walls served as an ordinary page, with no challenge widget: only their
+ * text says so. Checked only when no field ever appeared.
+ */
+const WALL_TEXT =
+  /access (is )?(restricted|denied|blocked)|unusual traffic|automated (access|queries|requests)|not a robot|verify (you are|you're) (a )?human/i;
+
+/** How long a page may take to draw a field before it counts as having none. */
+const FORM_WAIT_MS = 10_000;
+
 /** A bot wall or challenge page; never something to get past. */
 async function looksBlocked(page: Page): Promise<boolean> {
   if (CHALLENGE_TITLE.test(await page.title())) return true;
@@ -64,6 +76,59 @@ async function looksBlocked(page: Page): Promise<boolean> {
     if ((await page.locator(selector).count()) > 0) return true;
   }
   return false;
+}
+
+/** Whether a frame shows a field a login could be typed into. */
+function hasField(frame: Frame): Promise<boolean> {
+  return frame
+    .evaluate(() =>
+      [...document.querySelectorAll("input")].some((el) => {
+        if (!["text", "email", "tel", "password"].includes(el.type))
+          return false;
+        const r = el.getBoundingClientRect();
+        return (
+          !el.disabled &&
+          r.width > 1 &&
+          r.height > 1 &&
+          getComputedStyle(el).visibility === "visible"
+        );
+      }),
+    )
+    .catch(() => false);
+}
+
+/** Waits until some frame shows a field, up to `ms`; false if none did. */
+async function waitForField(page: Page, ms: number): Promise<boolean> {
+  const until = Date.now() + ms;
+  for (;;) {
+    const found = await Promise.all(page.frames().map(hasField));
+    if (found.some(Boolean)) return true;
+    if (Date.now() >= until) return false;
+    await page.waitForTimeout(250);
+  }
+}
+
+/** Lets a fade-in or slide-in finish (at most 2 s; a spinner never ends). */
+async function settle(page: Page): Promise<void> {
+  const until = Date.now() + 2_000;
+  while (Date.now() < until) {
+    const moving = await page
+      .evaluate(() =>
+        document.getAnimations().some((a) => a.playState === "running"),
+      )
+      .catch(() => false);
+    if (!moving) break;
+    await page.waitForTimeout(100);
+  }
+  await page.waitForTimeout(300);
+}
+
+/** A bot wall that is only text, on a page that never showed a field. */
+async function looksWalled(page: Page): Promise<boolean> {
+  const text = await page
+    .evaluate(() => document.body.innerText.slice(0, 2_000))
+    .catch(() => "");
+  return WALL_TEXT.test(text);
 }
 
 /** Which inputs in a frame hold the check values, and whether it has a visible password input. */
@@ -146,13 +211,20 @@ export async function runSite(
     if (response && response.status() >= 400) {
       return done("blocked", { reason: `http_${String(response.status())}` });
     }
-    // Pages that draw their form with script need a moment.
+    // Pages that draw their form with script need a moment: wait for a
+    // field rather than a fixed time, then for any fade-in to finish.
     await page
       .waitForLoadState("load", { timeout: 5_000 })
       .catch(() => undefined);
-    await page.waitForTimeout(1_500);
+    const field = await waitForField(page, FORM_WAIT_MS);
     if (await looksBlocked(page))
       return done("blocked", { reason: "challenge" });
+    if (!field && (await looksWalled(page)))
+      return done("blocked", { reason: "bot_wall" });
+    await settle(page);
+    const landed = new URL(page.url()).host;
+    const moved =
+      landed === new URL(entry.login_url).host ? {} : { final_host: landed };
 
     await page.bringToFront();
     const outcome = await harness.fill(page, item);
@@ -186,7 +258,7 @@ export async function runSite(
       // Multi-step sites ask for the username first; that page is the pass.
       ok = user && (password || !passwordField);
     }
-    const extra: Partial<SiteResult> = {};
+    const extra: Partial<SiteResult> = { ...moved };
     if (targets !== undefined) extra.targets = targets;
     if (!ok) {
       extra.reason =

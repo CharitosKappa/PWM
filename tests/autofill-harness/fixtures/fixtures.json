@@ -185,6 +185,21 @@
       "expect": "flow",
       "test": "runner: never submits"
     },
-    { "page": "trap.html", "expect": "flow", "test": "runner: never submits" }
+    { "page": "trap.html", "expect": "flow", "test": "runner: never submits" },
+    {
+      "page": "runner-late.html",
+      "expect": "flow",
+      "test": "runner: waits for a form drawn late"
+    },
+    {
+      "page": "runner-wall.html",
+      "expect": "flow",
+      "test": "runner: blocked by a challenge page or an error status, left alone"
+    },
+    {
+      "page": "runner-moves.html",
+      "expect": "flow",
+      "test": "runner: says where a moved login ended up"
+    }
   ]
 }

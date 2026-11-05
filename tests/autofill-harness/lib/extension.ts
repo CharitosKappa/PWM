@@ -177,7 +177,16 @@ export class Harness {
     return this.inBackground(
       async ({ url, vault, item, confirmed }) => {
         const b = await globalThis.pwmTest.ready;
-        const [tab] = await chrome.tabs.query({ url });
+        // By URL without its fragment: a match pattern can't hold one, and
+        // single-page sites add one ("#/signin"). Else the tab in front.
+        const bare = (u: string) => u.split("#")[0];
+        const tab =
+          (await chrome.tabs.query({})).find(
+            (t) => t.url !== undefined && bare(t.url) === bare(url),
+          ) ??
+          (
+            await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+          )[0];
         if (tab?.id === undefined) return { code: "no tab", copiedCode: false };
         try {
           const result = await b.autofill.fillTab(
