@@ -10,7 +10,8 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true
   },
   "include": ["*.ts", "tests", "fixtures", "lib", "runner", "firefox"]
 }
