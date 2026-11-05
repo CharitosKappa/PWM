@@ -12,7 +12,7 @@ mod psl;
 mod report;
 mod rules;
 
-pub use app::{AppLinkError, AppMatch, app_link, match_app};
+pub use app::{AppLinkError, AppMatch, app_link, is_package_name, match_app};
 pub use classify::{Class, Field, FieldClass, classify};
 pub use matching::{
     Candidate, Decision, Match, RefuseReason, WarnReason, best_match, match_url, rank,

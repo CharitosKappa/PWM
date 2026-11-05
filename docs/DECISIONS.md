@@ -2700,3 +2700,95 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Signing out** removes the token from the server first (5 seconds at most), as on Apple (D50 notes). No app calls the server's logout at sign-out yet, so the session itself stays valid until it expires; that is a separate follow-up.
   - **The device test** calls the model the way the messaging service does, since CI has no Firebase project; a real phone is on the `QUALITY.md` checklist.
   - **Run on this machine:** the core's tests, the server's tests (the FCM tests against fakes, migration 0007's test) against a local Postgres, the JVM tests and the server test against a local server, the build and licence check (161 libraries), and the 5 device tests on an Android 16 emulator.
+
+- **D61 — The Credential Manager provider on Android: callers, apps' client data, Digital Asset Links, and what is offered** · settled 2026-11-05 · founder (approved as proposed).
+  M6.10 is D58 §1's second half: Android 14's Credential Manager asks providers for passwords and passkeys on behalf of apps and browsers, in the system's own sheet. The core already makes and signs passkeys two ways: from an origin, for the extension (`passkey_create`, `passkey_get`, D37), and from a client data hash, for iOS (`passkey_register_hashed`, `passkey_assert_hashed`, D47 §6). What was checked in Android's provider guide and the AndroidX release notes:
+  - **The service:** a `CredentialProviderService` (`androidx.credentials.provider`) answers `onBeginGetCredentialRequest`, `onBeginCreateCredentialRequest` and `onClearCredentialStateRequest`. It's declared with `BIND_CREDENTIAL_PROVIDER_SERVICE` and an XML file naming the password and passkey capabilities.
+  - **Two steps:** the first answer is only entries (`PasswordCredentialEntry`, `PublicKeyCredentialEntry`, `CreateEntry`, or `AuthenticationAction` when locked), each with a pending intent. The user's choice opens our activity, which reads the full request (`PendingIntentHandler.retrieveProvider…Request`) and returns the credential.
+  - **Who is asking:** `CallingAppInfo` gives the caller's package and signing certificates. `getOrigin(allowlist)` returns a web origin only when the caller matches a privileged-browser list we pass in, by package and certificate.
+  - **Browsers** pass a `clientDataHash` and build the client data themselves; the provider signs the hash and puts a placeholder where the response's `clientDataJSON` goes.
+  - **Apps:** the provider builds the client data, with the origin `android:apk-key-hash:<SHA-256 of the app's signing certificate>`, and must check the app against the site's Digital Asset Links file. Android doesn't check it for us.
+  - **The library:** `androidx.credentials:credentials` 1.6.0 (April 2026, the latest stable).
+
+  Open:
+  - which browsers may pass a hash, and what everything else is
+  - how an app's client data is built, and where
+  - the Digital Asset Links check: what it reads, where it runs, and caching
+  - what is offered locked and unlocked, and how a passkey is confirmed
+  - passwords through the Credential Manager, including saving
+  - how it's turned on, next to D58's autofill service
+
+  Proposal:
+  1. **Two kinds of caller, nothing else:**
+     - **A privileged browser:** D58 §3's seven (Chrome, Firefox, Edge, Brave, Samsung Internet, DuckDuckGo, Vivaldi), each a package and its signing certificate's SHA-256, built into the allowlist we give `getOrigin`. The signed rules file can extend it, as for D58. The origin from `getOrigin` is checked by the core against the RP id as for the extension (HTTPS, a registrable suffix, the PSL).
+     - **Any other app:** treated as the app it is (§3), whatever it claims. A browser that isn't on the list is an app, so it gets passkeys only for sites that list it in their Digital Asset Links file, which in practice means none.
+     - **PWM itself** gets nothing, as in D58's notes.
+  2. **The browser path uses the hashed calls (D47 §6) as they are:** `passkey_register_hashed` and `passkey_assert_hashed`, after the core's origin check. The response JSON is built in the core with a placeholder `clientDataJSON`, as the guide says, so the app never assembles WebAuthn structures.
+  3. **The app path, new in the core** (`pwm-passkey` and `pwm-client`, through UniFFI, tests and vectors first):
+     - **`passkey_create_for_app(vault_id, package, cert_sha256, asset_links, request_json)`** and **`passkey_get_for_app(package, cert_sha256, asset_links, request_json, vault_id, item_id, credential_id)`** return the `RegistrationResponseJSON` and `AuthenticationResponseJSON`.
+     - **The client data:** `{"type":…,"challenge":…,"origin":"android:apk-key-hash:<base64url, no padding>","androidPackageName":<package>}`. Google's own provider includes `androidPackageName`; the exact bytes are checked against a real Google Password Manager response during the build and pinned in vectors.
+     - **The RP id is checked by the Digital Asset Links file** (§4), not by an origin, which an app doesn't have. A request whose file doesn't list the app is refused before the user is asked (`passkey_app_not_linked`).
+     - **The platform passes the file's text, the core decides.** Parsing and matching it is security logic, so it lives with the rest in the core; the app only fetches.
+     - **A new passkey also links the login to the app:** it gets `android-app://<package>?sha256=<digest>` (D58 §4), so the password autofill and §6 find it for that app too.
+  4. **Digital Asset Links:**
+     - **The fetch:** `https://<rp id>/.well-known/assetlinks.json` with the app's own `HttpURLConnection`, no cookies, no cache, no redirects (the Digital Asset Links rule), a 5-second timeout and at most 256 KB.
+     - **What counts:** a statement whose target is `android_app` with the caller's package name and its certificate's SHA-256 among `sha256_cert_fingerprints`, and whose relations include `delegate_permission/common.get_login_creds` or `delegate_permission/common.handle_all_urls`. Many sites list only the second (for app links), and it is the site's owner vouching for the same app either way.
+     - **`include` statements** (a file pointing at another site's file) are followed one level deep, HTTPS only, under the same limits.
+     - **Caching:** results stay in memory for an hour, per RP id, and go at lock and sign-out. Nothing is written to disk. A failed fetch isn't cached.
+     - **What a site learns:** that someone on this network asked for its file, which the app asking would show it anyway.
+     - **Not used for the autofill service (D58):** there, apps still match only through the user's own links. A Digital Asset Links check for every login's domain on every app screen would be a stream of requests revealing which sites are in the vault.
+  5. **What is offered:**
+     - **Unlocked** (the app's process holds the vault, as the lock timeout allows): the matching passkeys and passwords, each with the login's title and username. For a browser, passwords match the origin as D33 matches pages; for an app, through `android-app://` links (§6).
+     - **Locked:** one `AuthenticationAction`, "Unlock PWM". It opens PWM's unlock (fingerprint or face, or the master password), then the entries are sent back with `setBeginGetCredentialResponse`. As in D58 §6, nothing about the vault is kept outside its encryption to name entries before unlocking.
+     - **`allowCredentials`** limits the passkeys offered to those listed; with none of ours listed, no passkey entry is offered.
+     - **Only ES256** (D37 §3). A `create` that doesn't offer it gets no entry.
+     - **`excludeCredentials`** listing one of ours gets no `CreateEntry` for that account.
+  6. **Confirming:**
+     - **Passkeys:** every use asks for a fingerprint or face (`BiometricPrompt`), or the master password when that's off, right before signing. The UV flag is always 1 (D37 §3), and this makes it true on Android, as Face ID does in D47. Coming from "Unlock PWM" a moment earlier counts.
+     - **Passwords:** the tap on the entry is the confirmation, as in D58 §5.
+     - **The sheet is Android's.** We draw nothing in the caller's window.
+  7. **Passwords through the Credential Manager:**
+     - **Getting one:** `GetPasswordOption` is answered with `PasswordCredentialEntry`s, matched as in §5.
+     - **Saving one (`CreatePasswordRequest`):** a `CreateEntry`, "Save in PWM". Picking it opens PWM (unlocking first), which shows the username and the site or app, and the vault, then saves a new login: for a browser with the origin as its website, for an app with its `android-app://` link and the app's name as title. An existing login with the same username for that site or app is updated after asking. This closes D58 §7's "saving new logins" gap for apps that ask through the Credential Manager; saving from the autofill service is still a gap.
+  8. **Turning it on:**
+     - **Android 14+:** the system's "preferred service" choice (`ACTION_REQUEST_SET_AUTOFILL_SERVICE`, D58 §2's card) sets both the autofill service and the credential provider of one package, so D58's card turns on both. When autofill is on but the provider isn't (the user turned it off in the system's "Passwords, passkeys & accounts"), Settings shows "Turn on PWM for passkeys", which opens `CredentialManager.createSettingsPendingIntent()`.
+     - **Android 13 and older:** no Credential Manager, so no card; passkeys stay a logged gap there.
+     - **`onClearCredentialStateRequest`** (an app signing out) has nothing to clear; it answers success.
+  9. **Not included, and logged as gaps:**
+     - **Hybrid / cross-device (QR) sign-in** from another device: Android's, not a provider's.
+     - **The single-tap flow** where the system shows the fingerprint prompt inside its own sheet (`BiometricPromptData`, AndroidX 1.5+): later, once the plain flow is proven on real phones.
+     - **Credential Manager requests from the autofill framework** (Android 15's fields marked for credentials): they reach the autofill service as today.
+     - **Saving from the autofill service** (D58 §7).
+  10. **Tests:**
+      - **Core (tests first):**
+        - the app's client data bytes and the hashed-path response JSON, as new vectors (`core/test-vectors/passkey_android.json`), with signatures checked by Rust and `verify.mjs`
+        - the asset links matcher: listed, another package, another certificate, another relation, a malformed file, a file over the limit, an `include`
+        - a fuzz target for the asset links parser (`asset_links`)
+        - `passkey_create_for_app` / `passkey_get_for_app` in `pwm-client`: refused when not linked, the `android-app://` link written, `allowCredentials` and `excludeCredentials`
+      - **JVM:** the caller rules (a listed browser, a browser under another certificate, an app, PWM itself), the entries built locked and unlocked, the confirmation rule, "Save in PWM", and the asset links fetcher's limits over a fake transport.
+      - **On the emulator:**
+        - the provider turned on with `adb` (the `credential_service` secure settings)
+        - the test app, as a caller, creates a passkey through `CredentialManager.createCredential` and signs in with it, picking PWM in the system sheet with UiAutomator. The test verifies both responses' signatures with the public key it got.
+        - a password saved and then fetched the same way
+        - debug builds only: the `pwm.test` switch (D58's notes) can supply the asset links file for the test's RP id, since CI can't serve HTTPS for one. A release build never reads it.
+      - **By hand (`QUALITY.md`):** a real site in Chrome (webauthn.io), a real app that uses passkeys, and signing in from another phone's PWM after sync.
+  11. **Downloads:** the first build fetches `androidx.credentials:credentials` 1.6.0 (AndroidX, Apache-2.0, to be confirmed by the licence check) and its dependencies. Not `credentials-play-services-auth`, which is for callers on older Android. The founder approves that here.
+
+  Alternatives:
+  - **Only the browser path,** leaving apps for later: no Digital Asset Links at all, but passkeys in apps are the main reason the Credential Manager exists.
+  - **Asking Google's Digital Asset Links API** (`digitalassetlinks.googleapis.com`) instead of fetching the file: it handles `include` and caching, but tells Google every app and site a user signs in to with PWM.
+  - **Requiring `get_login_creds` only:** stricter, but refuses sites that list their app for app links only, which Google Password Manager accepts.
+  - **Building the app's client data on the platform:** simpler to wire, but it's vault crypto input, which `CLAUDE.md` keeps in the core.
+  - **No fingerprint per passkey use:** one tap like passwords. But a passkey says "user verified" to the site, which should mean something more than an unlocked phone.
+
+  Implementation notes (M6.10):
+  - **The client data, checked against Google's provider sample:** an app's is `{"type","challenge","origin","androidPackageName"}` in that order, with no `crossOrigin`, and the origin's hash in base64url without padding, as Google's own sample provider (`android/identity-samples`, MyVault) writes it. It wasn't compared with a real Google Password Manager response: the emulator has no Google account. The bytes are pinned in `core/test-vectors/passkey_android.json`.
+  - **The browser's placeholder** is `e30` (base64url of `{}`), as the provider guide asks for a placeholder. Google's sample leaves the field out instead; a browser replaces it either way.
+  - **A browser that passes an origin but no hash** gets client data built in the core for that origin, as the extension does.
+  - **The core reads the asset links files** (`read_asset_links`, `asset_links_includes`, with a fuzz target, `asset_links`); `passkey_create_android`, `passkey_candidates_android` and `passkey_get_android` take the texts and refuse an app none of them lists (`passkey_app_not_linked`). The app fetches them (`AssetLinks`, its own transport: HTTPS only, no cookies, cache or redirects, 5 seconds, 256 KB) and keeps them in memory.
+  - **"Just confirmed" is one minute:** unlocking or confirming in PWM's screen confirms a passkey for 60 seconds, so "Unlock PWM" and then a passkey asks once. Locking forgets it.
+  - **Locked, "Create a passkey in PWM" is offered** for a browser, or for an app with a site file. Whether the site's file lists the app, and whether the account already has a passkey there, are checked after unlocking, since the core needs the vault open for the second. A refusal then shows "This app's website doesn't list it…" or "PWM already has a passkey for this account." (two new shared messages).
+  - **Password entries skip logins with no password** (a passkey's login may have none): Android refuses an empty one.
+  - **"Save in PWM" goes to the first vault,** as the iOS extension's passkeys do (D47 notes). For an app, the login is titled with the app's name and linked to it (`android-app://`); for a browser, its website is the origin.
+  - **The device test:** the test app's screen asks the Credential Manager through the platform's API (its process has no AndroidX), with AndroidX's bundle keys. Debug builds read the test's asset links file from the `pwm.test` switch, as D61 §10 says; a release build never reads it. The test makes a passkey, signs in with it (the signature is checked with the platform's P-256), then saves and uses a password, picking PWM in the system's sheet. With it, the Android job's server sees 5 sign-ups, which is its hourly limit from one address; a sixth test that signs up needs the limit raised for tests.
+  - **Run on this machine:** the core's tests (11 passkey crate tests, 6 client tests, the vectors in Rust and Node), every Rust test against a local Postgres, the JVM tests (13 new), the build and licence check (163 libraries), `just check`, and the 6 device tests on an Android 16 emulator. Not run: a real site in Chrome, a real app, or the fuzz target (libFuzzer doesn't build on Windows; CI runs it).

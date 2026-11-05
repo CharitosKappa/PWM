@@ -130,6 +130,14 @@ Autofill (D58), with the same build:
 4. Locked: "Unlock PWM to fill" asks for the fingerprint or the master password, then fills.
 5. A login with a one-time code: on a screen with no code field, the code is on the clipboard after the fill.
 
+Passkeys and the Credential Manager (D61), on an Android 14+ phone with the same build:
+
+1. With PWM chosen for autofill, Settings shows no "Turn on PWM for passkeys". Turn PWM off under "Passwords, passkeys & accounts": the card shows, and its button opens that screen.
+2. Chrome, webauthn.io: register a passkey with PWM (the fingerprint or master password is asked), then sign in with it. Locked, the sheet shows "Unlock PWM", then the passkey.
+3. A real app that uses passkeys and lists itself in its site's `assetlinks.json`: create and sign in. An app its site doesn't list gets no PWM entry for passkeys.
+4. An app that asks the Credential Manager to save a password: "Save in PWM" shows the username and the app; the login is saved, linked to the app, and offered next time. Saving again with the same username updates it.
+5. Sync, then sign in on another phone's PWM or the extension with the passkey made here.
+
 Devices and approving (D59), with the same build:
 
 1. Settings, Devices: every device shows, this one marked. Rename one: another device sees the new name after a sync. Sign out another device: it is asked to sign in again.

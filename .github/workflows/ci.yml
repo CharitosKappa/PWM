@@ -441,7 +441,7 @@ jobs:
             # A large log buffer, so a failure's dump still covers the whole run.
             adb logcat -G 16M
             adb logcat -c
-            ./gradlew --no-configuration-cache :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.server=http://localhost:8080 || (adb logcat -d -v time | grep -E "Autofill|autofill_service|FillActivity|AndroidRuntime|TestRunner" | grep -viE "AiAi|audit|cgroup|ImeTracker|Phenotype|MlBenchmark" | tail -400; exit 1)
+            ./gradlew --no-configuration-cache :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.server=http://localhost:8080 || (adb logcat -d -v time | grep -E "Autofill|autofill_service|FillActivity|CredentialManager|PwmCredential|CredentialActivity|AndroidRuntime|TestRunner" | grep -viE "AiAi|audit|cgroup|ImeTracker|Phenotype|MlBenchmark" | tail -400; exit 1)
       - if: failure()
         run: cat target/pwm-server.log || true
 
@@ -588,6 +588,7 @@ jobs:
           - url_match
           - kit_qr_parse
           - passkey_request
+          - asset_links
           - approval_messages
     steps:
       - uses: actions/checkout@v5

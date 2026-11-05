@@ -5,5 +5,7 @@
     <application>
         <activity android:name="pwm.app.LoginTestActivity" android:exported="true" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <activity android:name="pwm.app.FakeWebActivity" android:exported="true" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <!-- Another app asking the Credential Manager (D61 §10). -->
+        <activity android:name="pwm.app.CredentialTestActivity" android:exported="true" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
     </application>
 </manifest>

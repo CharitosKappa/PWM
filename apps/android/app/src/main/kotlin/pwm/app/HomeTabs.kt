@@ -166,6 +166,7 @@ internal fun SettingsTab(app: AppModel, model: SettingsModel) {
     }
     Page(stringResource(R.string.tab_settings), null, tag = "settingsScreen") {
         AutofillCard()
+        PasskeyCard()
         Heading(stringResource(R.string.account))
         Text(state.email ?: "", style = Tokens.Text.body.compose(), color = color(Tokens.Color.text))
         Text(
@@ -325,6 +326,30 @@ private fun AutofillCard() {
                     )
                 }
             }) { Text(stringResource(R.string.autofill_turn_on)) }
+        }
+    }
+}
+
+/**
+ * "Turn on PWM for passkeys" (D61 §8), Android 14+: the system's preferred
+ * service choice turns on both autofill and the credential provider, so this
+ * shows only when autofill is PWM's and the provider was turned off on its own.
+ */
+@Composable
+private fun PasskeyCard() {
+    if (android.os.Build.VERSION.SDK_INT < 34) return
+    val context = LocalContext.current
+    var shown by remember { mutableStateOf(false) }
+    LifecycleResumeEffect(Unit) {
+        shown = PasskeySettings.autofillOnProviderOff(context)
+        onPauseOrDispose {}
+    }
+    if (!shown) return
+    Surface(color = color(Tokens.Color.surface), shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth().testTag("passkeyCard")) {
+        Column(Modifier.padding(Tokens.Space.s4.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s2.dp)) {
+            Text(stringResource(R.string.passkey_card), style = Tokens.Text.bodyStrong.compose(), color = color(Tokens.Color.text))
+            Text(stringResource(R.string.passkey_card_hint), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))
+            OutlinedButton(onClick = { PasskeySettings.open(context) }) { Text(stringResource(R.string.autofill_turn_on)) }
         }
     }
 }

@@ -618,7 +618,13 @@ Phase 3  Teams           months 16–24 M16–M19
     - **`:app`:** Firebase from the build's settings only (messaging, nothing else), the messaging service, the "New devices" channel, and the Settings switch that asks for the permission.
     - **Tests:** core token checks; server unit tests and three against a fake FCM and token endpoint; migration 0007's test; 5 JVM view-model tests; the server test registers a token; the UI test runs a push of each kind.
   - **Deferred:** the Firebase project and its settings (the founder, D60 §7); phones without Play services (D60 §6); a real phone (`QUALITY.md`).
-- [ ] M6.10 The Credential Manager provider for Android 14+ (D58 §1): passwords and passkeys, with its own decision on the passkey request format for apps (the provider builds the client data with an `android:apk-key-hash` origin), checking an app against the site's Digital Asset Links file, and the browsers allowed to pass a client data hash.
+- [x] M6.10 The Credential Manager provider for Android 14+ (D58 §1): passwords and passkeys, with its own decision on the passkey request format for apps (the provider builds the client data with an `android:apk-key-hash` origin), checking an app against the site's Digital Asset Links file, and the browsers allowed to pass a client data hash.
+  - Done per D61 (implementation notes there):
+    - **Core:** an app's client data with the `android:apk-key-hash` origin and its package; a browser's hash signed as given; the Digital Asset Links reader; `passkey_*_android` calls that refuse an app its site doesn't list, and link a new passkey's login to the app. New vectors (`passkey_android.json`) and a fuzz target.
+    - **`:kit`:** who is asking (D58's browsers, checked again), the asset links fetcher, and the provider's screen model: unlock, confirm each passkey, "Save in PWM".
+    - **`:app`:** `PwmCredentialService`, the entry screen, and "Turn on PWM for passkeys" in Settings.
+    - **Tests:** core tests and vectors; 13 JVM tests; a device test that makes and uses a passkey and a password through the system's sheet.
+  - **Deferred:** the single-tap fingerprint prompt in the system's sheet, Android 15's credential fields in autofill, saving from the autofill service, Android 13 and older (D61 §9); a real site and app (`QUALITY.md`).
 - [x] M6.11 Health, export and import on Android (D59 §1, §5-7): the health report with the breach check, export through the system's "Save to", and import through its file picker with the delete line.
   - Done per D59 (implementation notes there):
     - **`:kit`:** `Session` reads the health report, runs the breach check through its own transport, authorizes and makes exports, and guesses, previews, finishes and cancels imports; `HealthModel`, `ExportModel` and `ImportModel`, and the "Check for leaked passwords" switch.

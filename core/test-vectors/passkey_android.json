@@ -1,0 +1,89 @@
+{
+  "description": "Passkeys through Android's Credential Manager v1 (D61): an app's client data with the android:apk-key-hash origin and its package, and a privileged browser's client data hash with a placeholder clientDataJSON. ES256, fmt none, sign count 0",
+  "format_version": 1,
+  "operation": "passkey_android",
+  "vectors": [
+    {
+      "assertion": {
+        "authenticatorAttachment": "platform",
+        "clientExtensionResults": {},
+        "id": "x8fHx8fHx8fHx8fHx8fHxw",
+        "rawId": "x8fHx8fHx8fHx8fHx8fHxw",
+        "response": {
+          "authenticatorData": "o3mm9u6vuaVeN4wRgDTidR5oL6ufLTCrE9ISVYbOGUcdAAAAAA",
+          "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiYzJsbmJpMXBiaTFqYUdGc2JHVnVaMlV0TURBd01RIiwib3JpZ2luIjoiYW5kcm9pZDphcGsta2V5LWhhc2g6cTZ1cnE2dXJxNnVycTZ1cnE2dXJxNnVycTZ1cnE2dXJxNnVycTZ1cnE2cyIsImFuZHJvaWRQYWNrYWdlTmFtZSI6ImNvbS5leGFtcGxlLmFwcCJ9",
+          "signature": "MEUCIQC5lzFje_gehHmSsVSQI-L-NRDsIvgOgXaiHUmUB3DHPAIgeLClgFqRcPct-i0VlRKWEaY3SrZ4faHlBXS7P2iTruA",
+          "userHandle": "dXNlci1oYW5kbGUtMQ"
+        },
+        "type": "public-key"
+      },
+      "cert_sha256": "abababababababababababababababababababababababababababababababab",
+      "create_request": "{\"challenge\":\"cmVnaXN0ZXItY2hhbGxlbmdlLTAwMDE\",\"pubKeyCredParams\":[{\"alg\":-7,\"type\":\"public-key\"}],\"rp\":{\"id\":\"example.com\",\"name\":\"Example\"},\"user\":{\"displayName\":\"Ada\",\"id\":\"dXNlci1oYW5kbGUtMQ\",\"name\":\"ada@example.com\"}}",
+      "credential_id": "c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7",
+      "get_request": "{\"challenge\":\"c2lnbi1pbi1jaGFsbGVuZ2UtMDAwMQ\",\"rpId\":\"example.com\"}",
+      "key_seed": "4242424242424242424242424242424242424242424242424242424242424242",
+      "name": "app",
+      "package": "com.example.app",
+      "private_key_pkcs8": "308187020100301306072a8648ce3d020106082a8648ce3d030107046d306b02010104204242424242424242424242424242424242424242424242424242424242424242a144034200043ad3861a95621392516bb593ef05583ed2e5866f5cb6260a3017237fd89b90afd0961c7e37075a6791a39c61f56295b02b6d26567b615e60aa41ee1c8e83388d",
+      "registration": {
+        "authenticatorAttachment": "platform",
+        "clientExtensionResults": {},
+        "id": "x8fHx8fHx8fHx8fHx8fHxw",
+        "rawId": "x8fHx8fHx8fHx8fHx8fHxw",
+        "response": {
+          "attestationObject": "o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YViUo3mm9u6vuaVeN4wRgDTidR5oL6ufLTCrE9ISVYbOGUddAAAAAGyePUGKJ08LnVLhdzDEWKYAEMfHx8fHx8fHx8fHx8fHx8elAQIDJiABIVggOtOGGpViE5JRa7WT7wVYPtLlhm9ctiYKMBcjf9ibkK8iWCDQlhx-NwdaZ5GjnGH1YpWwK20mVnthXmCqQe4cjoM4jQ",
+          "authenticatorData": "o3mm9u6vuaVeN4wRgDTidR5oL6ufLTCrE9ISVYbOGUddAAAAAGyePUGKJ08LnVLhdzDEWKYAEMfHx8fHx8fHx8fHx8fHx8elAQIDJiABIVggOtOGGpViE5JRa7WT7wVYPtLlhm9ctiYKMBcjf9ibkK8iWCDQlhx-NwdaZ5GjnGH1YpWwK20mVnthXmCqQe4cjoM4jQ",
+          "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiY21WbmFYTjBaWEl0WTJoaGJHeGxibWRsTFRBd01ERSIsIm9yaWdpbiI6ImFuZHJvaWQ6YXBrLWtleS1oYXNoOnE2dXJxNnVycTZ1cnE2dXJxNnVycTZ1cnE2dXJxNnVycTZ1cnE2dXJxNnMiLCJhbmRyb2lkUGFja2FnZU5hbWUiOiJjb20uZXhhbXBsZS5hcHAifQ",
+          "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEOtOGGpViE5JRa7WT7wVYPtLlhm9ctiYKMBcjf9ibkK_Qlhx-NwdaZ5GjnGH1YpWwK20mVnthXmCqQe4cjoM4jQ",
+          "publicKeyAlgorithm": -7,
+          "transports": [
+            "internal",
+            "hybrid"
+          ]
+        },
+        "type": "public-key"
+      }
+    },
+    {
+      "assertion": {
+        "authenticatorAttachment": "platform",
+        "clientExtensionResults": {},
+        "id": "x8fHx8fHx8fHx8fHx8fHxw",
+        "rawId": "x8fHx8fHx8fHx8fHx8fHxw",
+        "response": {
+          "authenticatorData": "o3mm9u6vuaVeN4wRgDTidR5oL6ufLTCrE9ISVYbOGUcdAAAAAA",
+          "clientDataJSON": "e30",
+          "signature": "MEUCIQCIi8uh0tkIrNksqdV_hk8gtMBx6Y3BqZVqgPNUjbS4kQIgDngm1RlntLI3R0-ue8tWVdnpnY5KxMdpy3IxfWgVrig",
+          "userHandle": "dXNlci1oYW5kbGUtMQ"
+        },
+        "type": "public-key"
+      },
+      "client_data_hash": "03dc300ea6dcb382f65194c9a0dd1fae4228106bb6d8b36c243d521bb17b123a",
+      "create_request": "{\"challenge\":\"cmVnaXN0ZXItY2hhbGxlbmdlLTAwMDE\",\"pubKeyCredParams\":[{\"alg\":-7,\"type\":\"public-key\"}],\"rp\":{\"id\":\"example.com\",\"name\":\"Example\"},\"user\":{\"displayName\":\"Ada\",\"id\":\"dXNlci1oYW5kbGUtMQ\",\"name\":\"ada@example.com\"}}",
+      "credential_id": "c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7",
+      "get_request": "{\"challenge\":\"c2lnbi1pbi1jaGFsbGVuZ2UtMDAwMQ\",\"rpId\":\"example.com\"}",
+      "key_seed": "4242424242424242424242424242424242424242424242424242424242424242",
+      "name": "browser",
+      "origin": "https://login.example.com",
+      "private_key_pkcs8": "308187020100301306072a8648ce3d020106082a8648ce3d030107046d306b02010104204242424242424242424242424242424242424242424242424242424242424242a144034200043ad3861a95621392516bb593ef05583ed2e5866f5cb6260a3017237fd89b90afd0961c7e37075a6791a39c61f56295b02b6d26567b615e60aa41ee1c8e83388d",
+      "registration": {
+        "authenticatorAttachment": "platform",
+        "clientExtensionResults": {},
+        "id": "x8fHx8fHx8fHx8fHx8fHxw",
+        "rawId": "x8fHx8fHx8fHx8fHx8fHxw",
+        "response": {
+          "attestationObject": "o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YViUo3mm9u6vuaVeN4wRgDTidR5oL6ufLTCrE9ISVYbOGUddAAAAAGyePUGKJ08LnVLhdzDEWKYAEMfHx8fHx8fHx8fHx8fHx8elAQIDJiABIVggOtOGGpViE5JRa7WT7wVYPtLlhm9ctiYKMBcjf9ibkK8iWCDQlhx-NwdaZ5GjnGH1YpWwK20mVnthXmCqQe4cjoM4jQ",
+          "authenticatorData": "o3mm9u6vuaVeN4wRgDTidR5oL6ufLTCrE9ISVYbOGUddAAAAAGyePUGKJ08LnVLhdzDEWKYAEMfHx8fHx8fHx8fHx8fHx8elAQIDJiABIVggOtOGGpViE5JRa7WT7wVYPtLlhm9ctiYKMBcjf9ibkK8iWCDQlhx-NwdaZ5GjnGH1YpWwK20mVnthXmCqQe4cjoM4jQ",
+          "clientDataJSON": "e30",
+          "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEOtOGGpViE5JRa7WT7wVYPtLlhm9ctiYKMBcjf9ibkK_Qlhx-NwdaZ5GjnGH1YpWwK20mVnthXmCqQe4cjoM4jQ",
+          "publicKeyAlgorithm": -7,
+          "transports": [
+            "internal",
+            "hybrid"
+          ]
+        },
+        "type": "public-key"
+      }
+    }
+  ]
+}

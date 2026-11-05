@@ -350,7 +350,7 @@ private fun Asking(code: String?, onCancel: () -> Unit) {
 // --- Unlock ---
 
 @Composable
-internal fun Unlock(model: UnlockModel) {
+internal fun Unlock(model: UnlockModel, title: String? = null, showSignOut: Boolean = true) {
     val state by model.state.collectAsState()
     // The finger or face once by itself (D45, D55 §3); a cancel leaves the password.
     LaunchedEffect(model) { model.tryBiometricsOnce() }
@@ -367,7 +367,7 @@ internal fun Unlock(model: UnlockModel) {
             },
         )
     }
-    Page(stringResource(R.string.unlock_title), model.email, tag = "unlockScreen") {
+    Page(title ?: stringResource(R.string.unlock_title), model.email, tag = "unlockScreen") {
         if (state.biometric == BiometricState.On) {
             OutlinedButton(
                 onClick = model::unlockWithBiometrics, enabled = state.canUseBiometrics,
@@ -377,6 +377,6 @@ internal fun Unlock(model: UnlockModel) {
         Field(stringResource(R.string.master_password), state.password.value, model::setPassword, tag = "password", secret = true)
         ErrorLine(state.error)
         Primary(stringResource(if (state.busy) R.string.unlocking else R.string.unlock), enabled = state.canSubmit, tag = "unlock", onClick = model::submit)
-        Secondary(stringResource(R.string.sign_out), tag = "signOut", enabled = !state.busy, onClick = model::signOut)
+        if (showSignOut) Secondary(stringResource(R.string.sign_out), tag = "signOut", enabled = !state.busy, onClick = model::signOut)
     }
 }

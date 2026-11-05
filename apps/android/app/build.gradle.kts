@@ -126,6 +126,8 @@ dependencies {
     // Push over FCM (D60): messaging only; its Play services libraries are
     // the one licence exception in allowed-licenses.json.
     implementation(libs.firebase.messaging)
+    // The Credential Manager provider (D61); not credentials-play-services-auth, which is for callers.
+    implementation(libs.credentials)
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)

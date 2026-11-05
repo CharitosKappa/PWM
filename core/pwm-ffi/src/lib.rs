@@ -286,6 +286,53 @@ pub enum PasskeyCreateCheck {
     Unsupported,
 }
 
+/// Who asks Android's Credential Manager for a passkey (D61 §1). `origin`
+/// is set only for a privileged browser, with its `client_data_hash` when it
+/// built the client data itself. For an app, `asset_links` holds the RP's
+/// Digital Asset Links file and the files it includes, as fetched.
+#[derive(uniffi::Record)]
+pub struct AndroidCaller {
+    pub package: String,
+    pub cert_sha256: Vec<u8>,
+    pub origin: Option<String>,
+    pub client_data_hash: Option<Vec<u8>>,
+    pub asset_links: Vec<String>,
+}
+
+impl From<AndroidCaller> for pwm_client::AndroidPasskeyCaller {
+    fn from(c: AndroidCaller) -> Self {
+        Self {
+            package: c.package,
+            cert_sha256: c.cert_sha256,
+            origin: c.origin,
+            client_data_hash: c.client_data_hash,
+            asset_links: c.asset_links,
+        }
+    }
+}
+
+fn create_check(check: pwm_client::PasskeyCreateCheck) -> PasskeyCreateCheck {
+    match check {
+        pwm_client::PasskeyCreateCheck::Ready { rp_id, user_name } => {
+            PasskeyCreateCheck::Ready { rp_id, user_name }
+        }
+        pwm_client::PasskeyCreateCheck::Excluded => PasskeyCreateCheck::Excluded,
+        pwm_client::PasskeyCreateCheck::Unsupported => PasskeyCreateCheck::Unsupported,
+    }
+}
+
+fn candidates(list: Vec<pwm_client::PasskeyCandidate>) -> Vec<PasskeyCandidate> {
+    list.into_iter()
+        .map(|c| PasskeyCandidate {
+            vault_id: c.vault_id,
+            item_id: c.item_id,
+            credential_id: c.credential_id,
+            user_name: c.user_name,
+            title: c.title,
+        })
+        .collect()
+}
+
 /// A stored passkey a sign-in may use (never its key).
 #[derive(uniffi::Record)]
 pub struct PasskeyCandidate {
@@ -748,19 +795,72 @@ impl PwmClient {
         top_origin: Option<String>,
         request_json: String,
     ) -> Result<PasskeyCreateCheck, PwmError> {
-        Ok(
-            match self.lock_inner().passkey_create_check(
-                &origin,
-                top_origin.as_deref(),
-                &request_json,
-            )? {
-                pwm_client::PasskeyCreateCheck::Ready { rp_id, user_name } => {
-                    PasskeyCreateCheck::Ready { rp_id, user_name }
-                }
-                pwm_client::PasskeyCreateCheck::Excluded => PasskeyCreateCheck::Excluded,
-                pwm_client::PasskeyCreateCheck::Unsupported => PasskeyCreateCheck::Unsupported,
-            },
-        )
+        Ok(create_check(self.lock_inner().passkey_create_check(
+            &origin,
+            top_origin.as_deref(),
+            &request_json,
+        )?))
+    }
+
+    /// Checks a Credential Manager passkey request before asking the user
+    /// (D61): `passkey_app_not_linked` when the site doesn't list the app.
+    pub fn passkey_create_check_android(
+        &self,
+        caller: AndroidCaller,
+        request_json: String,
+    ) -> Result<PasskeyCreateCheck, PwmError> {
+        Ok(create_check(
+            self.lock_inner()
+                .passkey_create_check_android(&caller.into(), &request_json)?,
+        ))
+    }
+
+    /// Creates and stores a passkey for a Credential Manager request (D61);
+    /// returns `RegistrationResponseJSON`. An app's also links the login to it.
+    pub fn passkey_create_android(
+        &self,
+        vault_id: String,
+        caller: AndroidCaller,
+        request_json: String,
+        now_ms: i64,
+    ) -> Result<String, PwmError> {
+        Ok(self.lock_inner().passkey_create_android(
+            &vault_id,
+            &caller.into(),
+            &request_json,
+            now_ms,
+        )?)
+    }
+
+    /// The passkeys a Credential Manager sign-in may use (D61).
+    pub fn passkey_candidates_android(
+        &self,
+        caller: AndroidCaller,
+        request_json: String,
+    ) -> Result<Vec<PasskeyCandidate>, PwmError> {
+        Ok(candidates(self.lock_inner().passkey_candidates_android(
+            &caller.into(),
+            &request_json,
+        )?))
+    }
+
+    /// Signs a Credential Manager sign-in (D61); returns
+    /// `AuthenticationResponseJSON`.
+    pub fn passkey_get_android(
+        &self,
+        caller: AndroidCaller,
+        request_json: String,
+        vault_id: String,
+        item_id: String,
+        credential_id: String,
+    ) -> Result<String, PwmError> {
+        Ok(self.lock_inner().passkey_get_android(
+            &caller.into(),
+            &request_json,
+            &vault_id,
+            &item_id,
+            &credential_id,
+        )?)
     }
 
     /// Creates and stores a passkey; returns `RegistrationResponseJSON`.
@@ -788,18 +888,11 @@ impl PwmClient {
         top_origin: Option<String>,
         request_json: String,
     ) -> Result<Vec<PasskeyCandidate>, PwmError> {
-        Ok(self
-            .lock_inner()
-            .passkey_candidates(&origin, top_origin.as_deref(), &request_json)?
-            .into_iter()
-            .map(|c| PasskeyCandidate {
-                vault_id: c.vault_id,
-                item_id: c.item_id,
-                credential_id: c.credential_id,
-                user_name: c.user_name,
-                title: c.title,
-            })
-            .collect())
+        Ok(candidates(self.lock_inner().passkey_candidates(
+            &origin,
+            top_origin.as_deref(),
+            &request_json,
+        )?))
     }
 
     /// Signs a `get`; returns `AuthenticationResponseJSON`.
@@ -1343,6 +1436,20 @@ pub fn android_app_link(package: String, cert_sha256: String) -> Result<String, 
     pwm_client::app_link(&package, &cert_sha256).map_err(|_| PwmError::Failed {
         code: "invalid_url".to_owned(),
     })
+}
+
+/// The Digital Asset Links file to fetch for an app's Credential Manager
+/// request (D61 §4): `https://<rp id>/.well-known/assetlinks.json`.
+#[uniffi::export]
+pub fn passkey_asset_links_url(request_json: String, create: bool) -> Result<String, PwmError> {
+    Ok(pwm_client::passkey_asset_links_url(&request_json, create)?)
+}
+
+/// The files an asset links file includes (HTTPS, at most 10), for the
+/// platform to fetch one level deep; none when it is malformed.
+#[uniffi::export]
+pub fn asset_links_includes(text: String) -> Vec<String> {
+    pwm_client::asset_links_includes(&text)
 }
 
 /// What to store as a login's one-time code for what the user entered
