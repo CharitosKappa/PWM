@@ -68,11 +68,21 @@ export interface LaunchOptions {
 }
 
 export class Harness {
+  // Written out, not as parameter properties: the runner runs under Node's
+  // type stripping, which can't remove those (erasableSyntaxOnly).
+  readonly context: BrowserContext;
+  readonly worker: Worker;
+  vaultId: string;
+
   private constructor(
-    readonly context: BrowserContext,
-    readonly worker: Worker,
-    public vaultId: string,
-  ) {}
+    context: BrowserContext,
+    worker: Worker,
+    vaultId: string,
+  ) {
+    this.context = context;
+    this.worker = worker;
+    this.vaultId = vaultId;
+  }
 
   /** Launches Chromium with the extension and signs up a fresh account. */
   static async start(options: LaunchOptions = {}): Promise<Harness> {
