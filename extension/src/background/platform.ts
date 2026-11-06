@@ -24,6 +24,8 @@ export type DiskKey =
   | "secretKey"
   | "sealedTokens"
   | "deviceId"
+  /** The email of the account the device id belongs to (D59's notes). */
+  | "deviceAccount"
   | "settings"
   | "rules"
   | "rulesVersion"

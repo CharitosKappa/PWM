@@ -687,7 +687,7 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
     - **The window:** `manage.html` in the desktop's page, opened from Settings, with "Back to the vault" (a new host method, `closeManage`). Exports go to Downloads under a free name; a site link opens in the default browser.
     - **Found and fixed:** a second account signed up on the same computer was refused (`device_conflict`), as on Android before D59's fix: a sign-up now gets a new device id, and a sign-in reuses the stored one only for its own account.
   - **Tests:** the protocol samples for every new reply; one server test sequence (3 sign-ups, under the server's 5 an hour) covering import, health, export, devices, approving a new device between two app instances, a revoked device finding out, and a second account on one computer; the end-to-end check opens the manage page. Run here in the real window against a local server: import a CSV, health with weak and reused passwords, the leak check against Have I Been Pwned, devices, a JSON export to Downloads, back to the vault.
-  - **Deferred:** the extension has the same device-id gap; it gets its own fix.
+  - **The extension's device-id gap** is fixed too: a sign-up gets a new id, and a sign-in reuses the stored one only for its own account (`deviceAccount`).
 - [x] M7.7 Items in a full window (D66 §1, D67): a sidebar layout, an item's detail and editing every type, in the shared screens with new requests.
   - Done per D67 (implementation notes there):
     - **The shared screens:** `VaultWindow` (sidebar, list, item), `ItemDetail` and `ItemEditor` in `@pwm/ui`, over D18 JSON accessors that keep unknown fields; the desktop shows it through a new host flag, `vaultWindow`.
