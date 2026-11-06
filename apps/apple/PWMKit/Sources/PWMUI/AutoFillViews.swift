@@ -27,6 +27,9 @@ public struct AutoFillView: View {
                     }
                 }
         }
+        .tint(Tokens.Color.accent.color)
+        // Buttons are pills (D1), as in the app.
+        .buttonBorderShape(.capsule)
         .task { await model.start() }
     }
 

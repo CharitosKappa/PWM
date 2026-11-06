@@ -10,8 +10,11 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **Licence:** `OFL-1.1` joins the S6 allow-list for **font files only, never code**, like CC-BY for the wordlist (D21). OFL allows bundling the fonts in a paid, closed-source product. Its conditions: ship the licence text with the files, don't sell the fonts on their own, and don't publish a modified font under a reserved name.
     - **How they ship:** the unmodified font files from the upstream releases sit next to a `NOTICE.md` (source, version, SHA-256, licence), as the wordlist does. The OFL text goes into `THIRD_PARTY_NOTICES` and the About screen. They don't come through cargo or npm, so `deny.toml` and `scripts/licenses.mjs` are unchanged.
     - **Tokens:** `font.family.sans` and `font.family.mono` now start with Manrope and Geist Mono, then the system fonts as fallbacks.
+  - **Pill buttons** · done 2026-11-06:
+    - **Shared screens and the inline frame** (the extension popup, the manage page, the desktop app): buttons use `radius.full`. Primary buttons sit on `accent`; a plain button is a secondary action, accent text on `accent-soft`.
+    - **Apple apps:** `.buttonBorderShape(.capsule)` is set at the root and in the AutoFill extension.
+    - **Android:** Material 3 buttons are already pills. `Secondary` is now a `FilledTonalButton` on `accent-soft`.
   - **Not done yet:**
-    - Buttons in the apps use `radius.md` (now 16); making them pills needs a change in each app's button style.
     - The font files are not bundled yet, so every platform still falls back to system fonts. Each app needs the files, its `NOTICE.md` and a registration step: Info.plist `UIAppFonts` on iOS, `res/font` on Android, `@font-face` in the extension and the Tauri UI. The Swift and Kotlin token generators emit only a `monospaced` flag, so they will need the family names too.
 - **D4 — Launch segment**: consumers first (this plan) vs SMB self-hosted first.
 - **D5 — Company jurisdiction and hosting region**: EU (Greece/Switzerland/Germany hosting) is a selling point.
