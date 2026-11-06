@@ -928,7 +928,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
      - **Run details:** date, extension, core and rules versions, browser version.
      - **Per site:** status, duration, the engine's fill targets as field descriptions (D38-cleaned, never values), and the refusal reason if any.
      - **Totals:** the pass rate (pass ÷ (pass + fail)), and the counts per status.
-     - **Where it goes:** uploaded as a CI artifact (90 days). `scripts/compare.mjs old.json new.json` prints what changed and exits non-zero when the pass rate dropped more than 0.5 points, which is the release gate `QUALITY.md` asks for.
+     - **Where it goes:** uploaded as a CI artifact (90 days). `scripts/compare.mjs old.json new.json` prints what changed and exits non-zero when the pass rate dropped more than 0.5 points, which is the release gate `QUALITY.md` asks for. (It became `runner/compare.ts`; since D64 it counts only the sites both runs counted.)
      - **Later:** the release workflow and the public dashboard read it (M10).
   4. **Not in M4.7:**
      - **Tickets from user reports (D38):** they need server access from CI. They go with the release and ops tooling (M10).
@@ -2861,3 +2861,43 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Keep v2 in the top frame, but accept "not visible" unless something big covers the field:** refuse when another element that paints (a background colour or image, an image, video, canvas or frame) covers at least half of the field. This keeps `cover-pointer-none.html` refusing. But telling whether that element is above or below the field needs its stacking order, which the page doesn't expose. A filled box drawn behind a transparent field, which some design systems use, would then be refused too. It also guards only against the matched site's own page.
   - **Keep D35 §4 as it is** and fix only the harness: about 7 of 54 stays the baseline, and the extension refuses to fill Google, Facebook, Microsoft and most of the sites above for real users too.
   - **Drop v2 everywhere:** it would let a parent page hide a cross-site login frame, which is the case D35 §4 added v2 for.
+
+- **D64 — The top-sites release gate: compare the sites both runs could reach** · settled 2026-11-06 · founder (approved as proposed).
+  The release gate (D39, `runner/compare.ts`) fails when the pass rate, pass ÷ (pass + fail), drops more than 0.5 points from the previous report. Two top-sites runs of the same code on 2026-11-06 (CI runs 42132920831 and 42141806371) gave 59.2% and 58.0%, so the gate would have stopped a release with nothing changed. The pass count was 29 both times. The rate moved only because three sites moved between the counted statuses and the others:
+  - asana.com: pass → blocked (a challenge)
+  - trello.com: blocked (a challenge) → fail (no form)
+  - instagram.com: error → pass
+
+  On the 48 sites counted in both runs, the rate was 58.3% both times, and no site went from pass to fail or back. The noise comes from sites that block or fail to load on some nights, not from fills that pass on one night and fail on the next.
+
+  A second issue is scale. QUALITY.md's 0.5 points was written for 1,000 sites, where it is 5 sites. With about 50 counted sites, one site is about 2 points.
+
+  Open:
+  - which sites the gate compares
+  - how much it lets through
+  - what it does when a run reaches too few sites
+
+  Proposal:
+  1. **Compare like with like:** the gate's rate counts only the sites that are pass or fail in both reports. A site that is blocked or errored in either run, or is in only one report (added to or removed from the list), is listed and not counted. On the two runs above, the gate sees 58.3% → 58.3%.
+  2. **The limit stays 0.5 points,** on that rate. Below about 200 common sites, one site that goes from pass to fail is more than 0.5 points, unless another site went the other way. In practice the gate then stops on any net loss, which is what a short, curated list should do: either the extension broke a site, or the site changed and its entry needs a look. At 1,000 sites it is 5 sites, as QUALITY.md meant.
+  3. **Enough overlap:** the gate also fails, with "too few sites to compare", when fewer than 80% of the sites counted in the previous report (and still in the candidate's report) are counted in the candidate. Otherwise a night when the CI address is blocked almost everywhere would pass with whatever is left. On the runs so far, the overlap was 46 of 47 (2026-11-05 to the first 2026-11-06 run) and 48 of 49 (between the two 2026-11-06 runs).
+  4. **No reruns for now:** no site has gone from pass to fail and back between runs of the same code. If consecutive nightly runs start showing that, a rerun of each such site becomes its own decision.
+  5. **What it prints:**
+     - the whole-list rate as today (it is the number the dashboard and the M4 target use)
+     - the gate's rate on the common sites and the overlap
+     - each site that went from pass to fail, then those that went from fail to pass
+     - the sites left out of the count, with their statuses
+  6. **Report format:** unchanged (v1). Only `compare.ts` and its `Comparison` change. The gate reads two reports, so both must be v1, as now.
+  7. **Tests** (`runner.spec.ts`):
+     - a site moving to blocked or error doesn't move the gate's rate
+     - one pass → fail among 48 sites fails the gate; with one fail → pass as well, it passes
+     - added and removed sites are left out
+     - overlap under 80% fails
+     - the 0.4 / 0.6 point cases, rewritten on the common sites
+  8. **Docs:** QUALITY.md's CI table, AUTOFILL.md, the harness README and ROADMAP M4.7's gate line point to D64. Task: M4.12 in `ROADMAP.md`, harness only. The extension and core are unchanged.
+
+  Alternatives:
+  - **Gate on each site that goes from pass to fail, with no offset for gains:** stricter, and it names the broken sites outright. But at 1,000 sites, any one site's redesign would stop every release until its entry is fixed. The proposal lists those sites anyway.
+  - **Rerun any site that changed, before counting it:** no pass → fail flips have been seen to justify it, and each rerun would use up the one retry per site that D39 §2 allows, to stay polite to real sites.
+  - **The better of two runs:** doubles the load on every site, for noise that comparing like with like already removes.
+  - **A wider limit, such as 3 points:** with about 50 sites, one site is still about 2 points, and at 1,000 sites, 3 points would hide 30 broken sites.

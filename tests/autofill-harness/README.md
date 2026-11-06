@@ -35,6 +35,6 @@ just top-sites  # the runner, against real sites (network)
   - **blocked:** a challenge page, an HTTP error, or a bot wall that is only text (`bot_wall`, when no field ever appeared), left out of the pass rate
   - **error:** the page didn't load: `timeout`, or the browser's network error (`net::ERR_HTTP2_PROTOCOL_ERROR`)
 - **The report:** `autofill-report.json` (v1), with fill targets as D38 report fields, never values. A refused fill names the failed check (`field_hidden:covered`, D63). `final_host` says where a page ended up when it left the login URL's host: the entry may be stale.
-- **Release gate:** `node runner/compare.ts previous.json candidate.json` fails when the pass rate drops more than 0.5 points.
+- **Release gate (D64):** `node runner/compare.ts previous.json candidate.json` counts only the sites that pass or fail in both reports, so a site that is blocked one night doesn't move it. It fails when the pass rate on those sites drops more than 0.5 points, or when the candidate counts fewer than 80% of the sites the previous report counted. It lists each site lost and gained, and those left out. Its tests are in `tests/compare.spec.ts`, which needs no browser.
 - **Adding a site:** check its login page, then add `{site, login_url}` and, if you are sure of them, the CSS selectors of the username and password inputs. Only password logins belong here. An entry taken out goes under `removed` with the reason.
 - **Its own tests:** `tests/runner.spec.ts` checks the runner against local pages.

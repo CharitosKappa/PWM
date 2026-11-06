@@ -33,7 +33,7 @@ Autofill reliability is our top promise and the top complaint against every comp
 
 - Fixture sites (static HTML) for every pattern: single page, multi-step, iframe login, shadow DOM, SPA re-render, OTP fields, honeypot fields, invisible overlay (clickjacking attempts that must fail).
 - **Top-1,000 runner**: nightly Playwright run against real login pages (no real credentials; assert field classification and fill targets only). Output: pass/fail per site → JSON → public compatibility dashboard. Per D39: it fills a throwaway login and never submits; bot walls are recorded as blocked, never bypassed; `runner/compare.ts` is the release gate.
-- Every extension PR runs fixture suite; release candidates run top-1,000 suite. Release blocked if pass rate drops > 0.5 pts vs previous release.
+- Every extension PR runs fixture suite; release candidates run top-1,000 suite. Release blocked if pass rate drops > 0.5 pts vs previous release, counted on the sites both runs could reach (D64), or if the candidate reaches fewer than 80% of them.
 
 ## Failure reports
 
