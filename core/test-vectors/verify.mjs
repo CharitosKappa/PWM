@@ -347,6 +347,18 @@ for (const v of load("windows_hello")) {
   check("windows hello open", eq(openEnvelope(key, hex(v.envelope), aad), hex(v.unlock_key)));
 }
 
+for (const v of load("browser_hello")) {
+  const key = hkdf(hex(v.signature), hex(v.challenge), hex(v.info));
+  check("browser hello info", hex(v.info).toString("utf8") === "pwm/browser-unlock/windows-hello/v1");
+  check("browser hello key", eq(key, hex(v.wrapping_key)));
+  const caller = Buffer.from(v.caller, "utf8");
+  const len = Buffer.alloc(2);
+  len.writeUInt16BE(caller.length);
+  const aad = labelled("pwm/browser-unlock/windows-hello", Buffer.from([1]), len, caller, hex(v.account_id), hex(v.device_id));
+  check("browser hello aad", eq(aad, hex(v.aad)));
+  check("browser hello open", eq(openEnvelope(key, hex(v.envelope), aad), hex(v.browser_key)));
+}
+
 for (const v of load("session")) {
   const account = hex(v.account_id);
   const keyset = openKeyset(v);

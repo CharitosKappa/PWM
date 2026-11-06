@@ -580,6 +580,45 @@ fn vectors_approval() {
 }
 
 #[test]
+fn vectors_browser_hello() {
+    for v in load(include_str!("../../test-vectors/browser_hello.json")) {
+        let account: Id = arr(&v["account_id"]);
+        let device: Id = arr(&v["device_id"]);
+        let caller = v["caller"].as_str().unwrap();
+        let challenge: [u8; 32] = arr(&v["challenge"]);
+        let signature = bytes(&v["signature"]);
+        assert_eq!(
+            Aad::browser_hello(1, caller, &account, &device)
+                .unwrap()
+                .as_bytes(),
+            bytes(&v["aad"])
+        );
+        assert_eq!(
+            hkdf_sha256(&signature, &challenge, &bytes(&v["info"])).expose_secret(),
+            &arr::<32>(&v["wrapping_key"])
+        );
+        let sealed = bytes(&v["envelope"]);
+        let open = |b: &[u8]| {
+            Envelope::from_bytes(b).and_then(|env| {
+                pwm_crypto::open_browser_hello(
+                    &env,
+                    &signature,
+                    &Secret::new(challenge),
+                    caller,
+                    &account,
+                    &device,
+                )
+            })
+        };
+        assert_eq!(
+            open(&sealed).unwrap().expose_secret(),
+            &arr::<32>(&v["browser_key"])
+        );
+        assert_tamper_evident(&sealed, |b| open(b).is_ok());
+    }
+}
+
+#[test]
 fn vectors_windows_hello() {
     for v in load(include_str!("../../test-vectors/windows_hello.json")) {
         let account: Id = arr(&v["account_id"]);

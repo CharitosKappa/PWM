@@ -3348,7 +3348,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The host** names it with `biometricName` instead of the `touchId` flag. The extension says "Touch ID" on a Mac. The desktop says "Windows Hello" on Windows, and none on Linux.
   - **Blocking calls:** the WinRT calls wait for their answer on the request's thread, while the backend is locked anyway. A Windows Hello prompt holds other requests until it closes.
   - **Not run anywhere yet:** a real Windows Hello prompt, which needs a person at the computer. This computer reports Windows Hello as set up, and the offer showed. The tests drive the rest through a fake key.
-- **D69 — Browser unlock on Windows and Linux: the helper, Windows Hello from a browser, the manifests, and Linux** · proposed 2026-11-06 · awaiting founder.
+- **D69 — Browser unlock on Windows and Linux: the helper, Windows Hello from a browser, the manifests, and Linux** · settled 2026-11-06 · founder (approved as proposed).
   M7.2 asks for "a native-messaging host for browser unlock on Windows/Linux (D48's protocol, a second binary in the desktop workspace)". D48 §5 settled how it works on a Mac:
   - The extension keeps a blob (the keyset sealed under a random key K) in its own storage.
   - A helper the browser starts keeps K behind Touch ID.
@@ -3427,3 +3427,18 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The popup calls the helper:** it has a window handle, but K would reach a screen.
   - **Linux with K in the Secret Service and no prompt:** no user presence at all.
   - **Machine-wide registration (`HKEY_LOCAL_MACHINE`) by the installer:** needs administrator rights, and would offer the helper to every user of the computer.
+
+  Implementation notes (M7.2):
+  - **Three crates in the desktop workspace now:**
+    - **`pwm-hello`:** D68's Windows Hello key and the DPAPI calls, moved out of the app so the helper uses the same code.
+    - **`pwm-browser-helper`:** the protocol handler, the framing, the enrolment store, the manifests and the registry keys in a library; the binary reads one message, answers and exits.
+    - **`pwm-desktop`:** the Settings switch (`browserUnlock`, `setBrowserUnlock`), in `browser_hosts.rs`.
+  - **The core:** `seal_browser_hello` and `open_browser_hello` in `pwm-crypto`, next to D68's. The AAD `pwm/browser-unlock/windows-hello` carries the version, the caller (`len:u16 || bytes`, at most 1,024), the account and the device. Vectors in `browser_hello.json`, checked in Rust and by `verify.mjs`.
+  - **The enrolment's name:** 32 hex digits from HKDF over the caller, account and device, so the key credential ("PWM browser" and the name) and the file (`<name>.bin`) show none of them. The file holds a version byte, the challenge and the envelope, sealed with DPAPI with the name as entropy.
+  - **The window:** "PWM: confirm with Windows Hello to unlock your browser", in front for each prompt (making the key, the two signatures, each unlock). The Windows Hello call waits on another thread while the window keeps answering.
+  - **Registry keys:** the default value of each key under `HKEY_CURRENT_USER` names the manifest. Turning it off removes only keys that still name our manifests.
+  - **Turning it on** needs Windows Hello set up (`hello_unavailable` otherwise) and the helper next to the app (`browser_helper_missing`).
+  - **`windows-registry`:** Microsoft's registry crate (MIT or Apache-2.0), already in the tree through `tauri-plugin-autostart`, so the registry code has no `unsafe`.
+  - **The extension:** `biometricName` is "Windows Hello" on Windows. The helper's error codes keep Touch ID's names; their texts name Windows Hello and the app for Windows there.
+  - **Not run anywhere yet:** a browser starting the helper and a real Windows Hello prompt, which need a person at the computer. Whether the prompt shows in front (§3) is the first thing that check answers (`QUALITY.md`, desktop step 13).
+  - **Not checked here:** the Linux build, since this computer has no Linux target; CI's `desktop` job builds it.

@@ -143,6 +143,8 @@ export const REQUESTS: Request[] = [
   { kind: "totpSetup", input: "JBSWY3DPEHPK3PXP", title: "Mail" },
   { kind: "biometricOffer" },
   { kind: "dismissBiometricOffer" },
+  { kind: "browserUnlock" },
+  { kind: "setBrowserUnlock", on: true },
 ];
 
 /** The kinds the desktop backend answers; the rest are `unsupported`. */
@@ -202,6 +204,9 @@ export const DESKTOP_KINDS: Request["kind"][] = [
   "unlockTouchId",
   "biometricOffer",
   "dismissBiometricOffer",
+  // The browser helper's registration (M7.2, D69).
+  "browserUnlock",
+  "setBrowserUnlock",
 ];
 
 /** Replies the desktop backend builds itself, with every shape of each. */

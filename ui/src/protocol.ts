@@ -145,7 +145,10 @@ export type Request =
   | { kind: "totpSetup"; input: string; title: string }
   /** Whether to make the one offer after a master password unlock (D45 §3). */
   | { kind: "biometricOffer" }
-  | { kind: "dismissBiometricOffer" };
+  | { kind: "dismissBiometricOffer" }
+  /** The desktop registering its browser helper (D69 §4); Windows only. */
+  | { kind: "browserUnlock" }
+  | { kind: "setBrowserUnlock"; on: boolean };
 
 /**
  * An item's decrypted D18 JSON, as the editor changes it. Fields this
@@ -405,6 +408,8 @@ export interface Replies {
   totpSetup: string;
   biometricOffer: boolean;
   dismissBiometricOffer: null;
+  browserUnlock: boolean;
+  setBrowserUnlock: boolean;
   askApproval: AskView;
   askApprovalPoll: AskView;
   askApprovalCancel: null;
@@ -472,6 +477,8 @@ export const REQUEST_KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "totpSetup",
   "biometricOffer",
   "dismissBiometricOffer",
+  "browserUnlock",
+  "setBrowserUnlock",
   "askApproval",
   "askApprovalPoll",
   "askApprovalCancel",

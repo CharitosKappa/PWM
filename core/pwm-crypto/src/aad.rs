@@ -147,6 +147,29 @@ impl Aad {
         aad
     }
 
+    /// The browser extension's key K, kept by the Windows helper under a key
+    /// derived from a Windows Hello signature (decision D69). Bound to the
+    /// calling extension (its origin, or Firefox's add-on id), the account
+    /// and the device: `caller` is `len:u16 || bytes`, at most 1,024 bytes.
+    pub fn browser_hello(
+        version: u8,
+        caller: &str,
+        account_id: &Id,
+        device_id: &Id,
+    ) -> Result<Self, CryptoError> {
+        let len = u16::try_from(caller.len()).map_err(|_| CryptoError::InvalidMessage)?;
+        if caller.is_empty() || len > 1024 {
+            return Err(CryptoError::InvalidMessage);
+        }
+        let mut aad = Self::labelled("pwm/browser-unlock/windows-hello");
+        aad.0.push(version);
+        aad.0.extend_from_slice(&len.to_be_bytes());
+        aad.0.extend_from_slice(caller.as_bytes());
+        aad.0.extend_from_slice(account_id);
+        aad.0.extend_from_slice(device_id);
+        Ok(aad)
+    }
+
     /// A secret the device keeps on disk (the refresh token), under the
     /// account `sym_key` (decision D34).
     pub fn device_tokens(version: u8, account_id: &Id) -> Self {

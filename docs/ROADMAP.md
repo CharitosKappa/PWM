@@ -672,8 +672,17 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
     - **The extension:** its `chromeHost` passes requests to the background and access to `chrome.permissions`, with nothing awaited before a permission request. Its build copies `screens.css` in as `popup.css`.
   - **Tests:** 4 Vitest tests of `send` and the error messages against a fake host. All 224 extension tests pass, and its `build.test.ts` checks the moved stylesheet's tokens. The Firefox build (not minified), compared with `main`'s, differs only where the screens call the host instead of Chrome. The Playwright specs that open the popup and the manage page (`manage.spec.ts`, `approval.spec.ts`) run in CI.
   - **Deferred to M7.4:** a full-window layout with a sidebar for the desktop app, and a host flag that hides what only a browser can do (filling a page, the save offer, the autofill report), since filling also closes the window.
-- [ ] M7.2 Native-messaging host for browser unlock on Windows/Linux (D48's protocol, a second binary in the desktop workspace).
-- [ ] M7.3 Signed installers (MSIX/EXE, AppImage, .deb, .rpm, Flatpak).
+- [x] M7.2 Native-messaging host for browser unlock on Windows/Linux (D48's protocol, a second binary in the desktop workspace).
+  - Done per D69 (implementation notes there), for Windows:
+    - **`pwm-browser-helper`:** D48's protocol unchanged, the extension's key sealed under a Windows Hello signature's key (`seal_browser_hello`, new vectors), one enrolment per caller, account and device, in DPAPI files. A window of its own in front for each prompt.
+    - **`pwm-hello`:** D68's Windows Hello key and DPAPI, shared by the app and the helper.
+    - **The desktop app:** "Allow browser extensions to unlock with Windows Hello" in Settings writes the manifests and the `HKEY_CURRENT_USER` keys for Chrome (Brave and Opera read its key), Edge and Firefox; off removes them and every enrolment.
+    - **The extension:** "Unlock with Windows Hello" on Windows, with the same requests, and texts naming the app for Windows.
+    - **Tests:** 5 crypto tests and the vectors, 11 for the helper (the protocol, callers, cancel and changed, damaged records, framing, manifests, the DPAPI store), 3 for the registration, a backend test of the switch, and a Vitest test of the wording.
+  - **Not run anywhere yet:** a browser starting the helper and a real Windows Hello prompt (`QUALITY.md`, desktop step 13). If the prompt doesn't come up in front, D69 §3's fallback goes through the running app.
+  - **Linux:** M7.8.
+- [ ] M7.3 Signed installers (MSIX/EXE, AppImage, .deb, .rpm, Flatpak). They install `pwm-browser-helper.exe` next to the app, and remove the browser helper's registry keys on uninstall (D69 §4).
+- [ ] M7.8 Browser unlock on Linux (D69 §5): the helper asks polkit or fprintd, with the desktop's own unlock (D68 §7), after M7.3 installs polkit's action file. Logged as a parity gap until then.
 - [x] M7.4 The Tauri app on Windows and Linux (D3 §1, §3–§5, D66): the project, the backend answering the screens' protocol, storage and HTTP; onboarding, master-password unlock (+ polkit/fprintd later), the vault list, copying, the generator and Settings; the tray and the lock rules, screen-capture exclusion on Windows, `cargo deny` on its dependency tree, the WebKitGTK floor, and a `desktop` CI job.
   - Done per D66 (implementation notes there):
     - **`apps/desktop`:** its own Cargo workspace with `pwm-desktop` (Tauri 2.12), the `@pwm/desktop` page, Tauri's isolation hook, and a placeholder icon until D1.

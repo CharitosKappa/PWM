@@ -475,6 +475,10 @@ export class Background {
         return false;
       case "dismissBiometricOffer":
         return null;
+      // The desktop app registers the browser helper (D69 §4).
+      case "browserUnlock":
+      case "setBrowserUnlock":
+        throw new ServiceError("unsupported");
     }
   }
 

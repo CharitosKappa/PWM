@@ -4,7 +4,7 @@ The desktop app for Windows and Linux (D3, D66): Tauri 2, with the screens
 shared with the browser extension (`@pwm/ui`) and a Rust backend that links
 the core crates directly.
 
-- **`src-tauri/`:** the `pwm-desktop` crate, in a Cargo workspace of its own
+- **`src-tauri/`:** the `pwm-desktop` crate, the app, in a Cargo workspace of its own
   (`Cargo.toml` here, with its own lock file and `deny.toml`).
   - `backend.rs`: answers the screens' requests (`ui/src/protocol.ts`) over
     one `pwm_client::Client`, as the extension's background does. The
@@ -16,6 +16,13 @@ the core crates directly.
     store), no cookies, no cache, no redirects.
   - `app.rs`: the window, the one `request` command, the tray, one copy only,
     the timers, and locking on sleep and session lock (`system/`).
+  - `browser_hosts.rs`: "Allow browser extensions to unlock with Windows
+    Hello" (D69): the browser helper's manifests and registry keys.
+- **`hello/`:** `pwm-hello`, Windows Hello's signing key (D68) and DPAPI,
+  shared by the app and the browser helper.
+- **`browser-helper/`:** `pwm-browser-helper` (D69), the native-messaging
+  host the browser starts for "Unlock with Windows Hello": D48's protocol,
+  the extension's key kept under a Windows Hello signature's key.
 - **`web/`:** `@pwm/desktop`, the page Tauri serves: the shared screens with
   the desktop host, built by esbuild into `web/dist/`. `e2e/smoke.mjs` drives
   the built app through `tauri-driver` (CI, Linux).

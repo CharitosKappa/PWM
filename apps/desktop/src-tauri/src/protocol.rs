@@ -206,6 +206,11 @@ pub enum Request {
     UnlockTouchId,
     BiometricOffer,
     DismissBiometricOffer,
+    // Browser extensions unlocking with Windows Hello (D69 §4).
+    BrowserUnlock,
+    SetBrowserUnlock {
+        on: bool,
+    },
     /// Every other kind: the browser's requests (filling, offers, passkeys,
     /// the report, Touch ID).
     #[serde(other)]

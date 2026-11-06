@@ -208,6 +208,8 @@ pub struct Backend<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> {
     pub(crate) pending_approvals: u32,
     /// Windows Hello's key (D68); none on Linux.
     pub(crate) hello: Box<dyn crate::hello::HelloKey>,
+    /// The browser helper's registration (D69); none on Linux.
+    pub(crate) browser_hosts: Option<crate::browser_hosts::BrowserHosts>,
 }
 
 impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
@@ -245,7 +247,15 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             leaked: None,
             pending_approvals: 0,
             hello: Box::new(crate::hello::NoHello),
+            browser_hosts: None,
         }
+    }
+
+    /// Lets browser extensions unlock with Windows Hello (D69).
+    #[must_use]
+    pub fn with_browser_hosts(mut self, hosts: crate::browser_hosts::BrowserHosts) -> Self {
+        self.browser_hosts = Some(hosts);
+        self
     }
 
     /// Unlocks with Windows Hello where the computer has it (D68).
@@ -458,6 +468,26 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             Request::DismissBiometricOffer => {
                 self.dismiss_hello_offer().await?;
                 null()
+            }
+            Request::BrowserUnlock => Ok(json!(
+                self.browser_hosts
+                    .as_ref()
+                    .is_some_and(crate::browser_hosts::BrowserHosts::is_on)
+            )),
+            Request::SetBrowserUnlock { on } => {
+                let hosts = self
+                    .browser_hosts
+                    .as_ref()
+                    .ok_or_else(|| Failure::code("unsupported"))?;
+                if on {
+                    if !self.hello.supported() {
+                        return Err(Failure::code("hello_unavailable"));
+                    }
+                    hosts.turn_on()?;
+                } else {
+                    hosts.turn_off(self.hello.as_ref());
+                }
+                Ok(json!(hosts.is_on()))
             }
             Request::Unsupported => Err(Failure::code("unsupported")),
         }
