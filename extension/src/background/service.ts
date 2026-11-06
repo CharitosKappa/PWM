@@ -452,6 +452,27 @@ export class Background {
   }
 
   /**
+   * This browser's device id for `email`'s account. The server ties a
+   * device id to one account, so the stored id is reused only for the
+   * account it belongs to; a sign-up (`fresh`), or another account, gets a
+   * new one. As on Android and the desktop (D59's notes).
+   */
+  private async deviceIdFor(email: string, fresh: boolean): Promise<string> {
+    const stored = await this.platform.disk.get("deviceId");
+    const owner = await this.platform.disk.get("deviceAccount");
+    if (
+      !fresh &&
+      stored !== undefined &&
+      owner?.toLowerCase() === email.trim().toLowerCase()
+    )
+      return stored;
+    const id = this.fns.newId();
+    await this.platform.disk.set("deviceId", id);
+    await this.platform.disk.set("deviceAccount", email.trim());
+    return id;
+  }
+
+  /**
    * Runs a server conversation; the core has one at a time, so they queue.
    * Core errors become ServiceErrors with their code.
    */
@@ -516,7 +537,7 @@ export class Background {
     email: string,
     password: string,
   ): Promise<{ secretKey: string }> {
-    const deviceId = await this.deviceId();
+    const deviceId = await this.deviceIdFor(email, true);
     const done = await this.run(() =>
       this.core.startSignup(
         email,
@@ -537,7 +558,7 @@ export class Background {
     password: string,
     secretKey: string,
   ): Promise<void> {
-    const deviceId = await this.deviceId();
+    const deviceId = await this.deviceIdFor(email, false);
     const done = await this.run(() =>
       this.core.startLogin(
         email,
@@ -563,7 +584,7 @@ export class Background {
     const secretKey = await this.platform.disk.get("secretKey");
     if (email === undefined || secretKey === undefined)
       throw new ServiceError("signed_out");
-    const deviceId = await this.deviceId();
+    const deviceId = await this.deviceIdFor(email, false);
     // An empty name sends none: the device keeps its name.
     const done = await this.run(() =>
       this.core.startLogin(

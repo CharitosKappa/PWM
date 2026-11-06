@@ -58,6 +58,21 @@ export function wait(delayMs: number): CoreStep {
 
 /** A core whose server conversations are one request each, answered by `next`. */
 export class FakeCore implements Core {
+  /**
+   * The server's rule (D59's notes): a device id belongs to the first
+   * account that uses it; another account using it is `device_conflict`.
+   * Shared by every core of one set of functions, as the server is.
+   */
+  constructor(readonly deviceOwners = new Map<string, string>()) {}
+
+  private claim(deviceId: string, email: string): void {
+    // The account, not how its email was typed.
+    const account = email.trim().toLowerCase();
+    const owner = this.deviceOwners.get(deviceId);
+    if (owner !== undefined && owner !== account) throw coreError("server");
+    this.deviceOwners.set(deviceId, account);
+  }
+
   unlocked = false;
   account: string | undefined;
   items_ = new Map<string, string[]>();
@@ -97,6 +112,7 @@ export class FakeCore implements Core {
     this.next = () => {
       if (email === "taken@example.com") throw coreError("account_exists");
       if (password !== PASSWORD) throw coreError("weak_password");
+      this.claim(deviceId, email);
       this.account = "acct-1";
       this.unlocked = true;
       this.tokens = ["access-1", "refresh-1"];
@@ -120,6 +136,7 @@ export class FakeCore implements Core {
     this.next = () => {
       if (password !== PASSWORD || secretKey !== SECRET_KEY || email === "")
         throw coreError("invalid_credentials");
+      this.claim(deviceId, email);
       this.account = "acct-1";
       this.unlocked = true;
       this.tokens = ["access-1", "refresh-1"];
@@ -920,8 +937,9 @@ export function fakeFunctions(): CoreFunctions & {
   nextAsk: { kind: string; code?: string; secretKey?: string }[];
 } {
   const cores: FakeCore[] = [];
+  const deviceOwners = new Map<string, string>();
   const make = (): FakeCore => {
-    const core = new FakeCore();
+    const core = new FakeCore(deviceOwners);
     cores.push(core);
     return core;
   };
