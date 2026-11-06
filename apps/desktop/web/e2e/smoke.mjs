@@ -138,7 +138,10 @@ try {
   await click("Delete");
   await waitFor("Moved to the trash.");
   await click("Trash");
+  // The list and then the item load after each click: wait for each.
+  await waitFor("Forum");
   await run(`document.querySelector(".row-button").click();`);
+  await waitFor("Restore");
   await click("Restore");
   await waitFor("Restored.");
 
