@@ -38,8 +38,12 @@ export interface Host {
   readonly browser: boolean;
   /** The inline icon and the save card on pages (D35, D40 §2). */
   readonly inlineUi: boolean;
-  /** Touch ID through the PWM app for Mac (D48 §5); only Macs have it. */
-  readonly touchId: boolean;
+  /**
+   * The platform's biometric unlock, by the name the screens show: "Touch
+   * ID" through the PWM app for Mac (D48 §5), "Windows Hello" on the
+   * desktop (D68), or null where there is none.
+   */
+  readonly biometricName: string | null;
   /** The manage page: health, devices, approvals, import and export (D44). */
   readonly manage: boolean;
   /**

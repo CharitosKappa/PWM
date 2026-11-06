@@ -46,6 +46,10 @@ windows = { version = "0.62", features = [
     "Win32_System_Power",
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_LibraryLoader",
+    "Foundation",
+    "Security_Credentials",
+    "Security_Cryptography",
+    "Storage_Streams",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

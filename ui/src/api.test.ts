@@ -21,7 +21,7 @@ function fakeHost(
     closeManage: null,
     browser: false,
     inlineUi: false,
-    touchId: false,
+    biometricName: null,
     manage: false,
     vaultWindow: false,
     asksServerAccess: false,

@@ -113,7 +113,7 @@ export function Unlock({
   onReport,
 }: {
   email: string;
-  /** Offer Touch ID through the PWM app for Mac (D48 §5). */
+  /** The platform's biometric unlock is on (Touch ID, Windows Hello). */
   touchId?: boolean;
   onDone: () => void;
   onReport?: () => void;
@@ -121,6 +121,8 @@ export function Unlock({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [offer, setOffer] = useState(false);
+  const name = host().biometricName ?? "Touch ID";
 
   const submit = async (event: Event): Promise<void> => {
     event.preventDefault();
@@ -129,6 +131,11 @@ export function Unlock({
     try {
       await send({ kind: "unlock", password });
       setPassword("");
+      // The one offer after a master password unlock (D45 §3).
+      if (await send({ kind: "biometricOffer" }).catch(() => false)) {
+        setOffer(true);
+        return;
+      }
       onDone();
     } catch (err) {
       setError(describe(err));
@@ -150,6 +157,51 @@ export function Unlock({
     }
   };
 
+  // On the desktop the unlock screen tries it once by itself (D45, D68).
+  useEffect(() => {
+    if (touchId && !host().browser) void withTouchId();
+  }, []);
+
+  if (offer) {
+    const answer = async (on: boolean): Promise<void> => {
+      setBusy(true);
+      setError(null);
+      try {
+        if (on) await send({ kind: "setTouchId", on: true });
+        else await send({ kind: "dismissBiometricOffer" });
+        onDone();
+      } catch (err) {
+        setError(describe(err));
+      } finally {
+        setBusy(false);
+      }
+    };
+    return (
+      <main class="stack">
+        <h1>Use {name} next time?</h1>
+        <p>
+          Unlock with {name} instead of typing your master password. It's still
+          asked every 14 days.
+        </p>
+        <div class="slot">
+          {error && <Notice kind="danger">{error}</Notice>}
+        </div>
+        <div class="row">
+          <button
+            class="primary"
+            disabled={busy}
+            onClick={() => void answer(true)}
+          >
+            Turn on
+          </button>
+          <button disabled={busy} onClick={() => void answer(false)}>
+            Not now
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main class="stack">
       <h1>Unlock</h1>
@@ -161,7 +213,7 @@ export function Unlock({
           disabled={busy}
           onClick={() => void withTouchId()}
         >
-          Unlock with Touch ID
+          Unlock with {name}
         </button>
       )}
       <form class="stack" onSubmit={(e) => void submit(e)}>

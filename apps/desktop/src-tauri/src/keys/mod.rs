@@ -28,6 +28,15 @@ pub mod name {
     pub const DEVICE_ACCOUNT: &str = "deviceAccount";
     /// `{access, refresh}` as JSON, when the store is [`secure`](super::KeyStore::secure).
     pub const TOKENS: &str = "tokens";
+    /// Windows Hello unlock (D68): the biometric blob, the unlock key sealed
+    /// under a signature's key, and the challenge (all base64).
+    pub const HELLO_BLOB: &str = "helloBlob";
+    pub const HELLO_SEALED_KEY: &str = "helloSealedKey";
+    pub const HELLO_CHALLENGE: &str = "helloChallenge";
+    /// The one offer after a master password unlock was shown (D45 §3).
+    pub const HELLO_OFFERED: &str = "helloOffered";
+    /// When the master password was last typed (ms), for the 14 days.
+    pub const PASSWORD_AT: &str = "passwordUnlockedAt";
     /// The tokens sealed under `sym_key` (base64), when it is not.
     pub const SEALED_TOKENS: &str = "sealedTokens";
 }

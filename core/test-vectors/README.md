@@ -18,6 +18,7 @@ JSON vectors for every crypto and format operation in `docs/SECURITY.md`. They f
 | `device_name.json` | Device names padded to 64 bytes and sealed under sym_key v1 (D26) |
 | `opaque.json` | OPAQUE registration and login transcript with seeded randomness (D26); Rust checker only, the protocol is covered by the RFC 9807 vectors in `opaque-ke` |
 | `bitwarden_export.json` | Bitwarden's password-protected export (D51 §4), made by `bitwarden_export.mjs` with Node's crypto and read by `pwm-import` |
+| `windows_hello.json` | The biometric unlock key sealed under a key derived from a Windows Hello signature v1 (D68) |
 | `totp.json` | RFC 4226 HOTP, RFC 6238 TOTP and Steam Guard codes from stored URIs (D23); RFC values copied from the RFC appendices |
 
 All byte strings are lowercase hex; revisions are decimal strings (JSON numbers above 2^53 lose precision in JavaScript).

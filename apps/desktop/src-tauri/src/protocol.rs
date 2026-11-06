@@ -198,6 +198,14 @@ pub enum Request {
         input: Secret<String>,
         title: String,
     },
+    // The platform's biometric unlock (D68): Windows Hello on the desktop.
+    TouchId,
+    SetTouchId {
+        on: bool,
+    },
+    UnlockTouchId,
+    BiometricOffer,
+    DismissBiometricOffer,
     /// Every other kind: the browser's requests (filling, offers, passkeys,
     /// the report, Touch ID).
     #[serde(other)]

@@ -426,6 +426,11 @@ export class Background {
       case "newFolder":
       case "totpSetup":
         throw new ServiceError("unsupported");
+      // The popup doesn't offer Touch ID after unlocking (D48 §5).
+      case "biometricOffer":
+        return false;
+      case "dismissBiometricOffer":
+        return null;
     }
   }
 

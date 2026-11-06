@@ -20,68 +20,6 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D32 — Transactional email provider** · open · founder. Needed for M10.7: email verification at sign-up (so registration stops revealing which emails have accounts) and account notices. To choose: provider and region (EU hosting fits D5), and its licence and data-processing terms.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
-- **D68 — Windows Hello unlock: the key, wrapping the unlock key, the PIN, and what D45 carries over** · proposed 2026-11-06 · Claude Code, for the founder.
-  M7.5 says "Windows Hello unlock, under D45's rules, with its key-wrapping decision first". D45 settled biometric unlock for every platform: the core seals the opened keyset under a random 32-byte unlock key (`export_biometric_unlock`, `unlock_biometric`), and the platform's keystore protects that key. On Apple it's a Secure Enclave key that decrypts (D45 §2); on Android a Keystore key that decrypts (D55 §1).
-
-  Windows doesn't offer that. Its documented API for apps, `KeyCredentialManager`, makes a key per user, kept in the TPM, behind Windows Hello. That key can only **sign**, after a Windows Hello prompt. It can't encrypt or decrypt. So the unlock key can't simply be encrypted to it.
-
-  Open:
-  - how a signing-only key protects the unlock key
-  - whether the Windows Hello PIN counts, since the API can't tell it from a face or finger
-  - re-making the blob after a master password unlock
-  - how the screens show it, since today's requests and labels say Touch ID
-  - tests, given that CI's Windows runner has no Windows Hello
-
-  Proposal:
-  1. **The key:** one `KeyCredential` named for the account and this device, made with `RequestCreateAsync` when the user turns Windows Hello on. Windows keeps it in the TPM where there is one, never exportable. The `windows` crate's WinRT calls need no `unsafe` code.
-  2. **Wrapping the unlock key: a signature as the secret.**
-     - **Turning it on:** the backend makes a random 32-byte challenge and asks Windows Hello to sign it, which prompts once. The signature goes to the core, never anywhere else. The core derives a wrapping key from it with HKDF-SHA256, and seals the unlock key under that wrapping key. Both use a new AAD label, `pwm/windows-hello`, bound to the account and the device.
-     - **What's kept,** in the DPAPI key store (D66 §4): the challenge, the sealed unlock key, and the blob. Never the signature, never the wrapping key.
-     - **Unlocking:** Windows Hello signs the same challenge, which prompts. The core derives the same wrapping key, opens the unlock key, and then `unlock_biometric` as on the other platforms. Rust's copies of the signature and keys are `Secret`, dropped at once.
-     - **Why this holds:** RSA signatures with PKCS#1 v1.5 padding, which `KeyCredential` uses, are deterministic. The same key signing the same challenge gives the same signature, and making it needs the TPM key and a Windows Hello gesture. A copied disk has the challenge and the sealed key, but not the signature.
-     - **A check before relying on it:** turning it on signs the challenge twice and compares. If the signatures differ, Windows Hello unlock says it's unavailable on this computer, instead of failing later.
-     - **The crypto rule:** HKDF and the seal are in the core (`pwm-crypto`, with test vectors); the platform only asks Windows for a signature. That is the platform-key role `SECURITY.md` gives Windows Hello and TPM.
-  3. **The Windows Hello PIN counts.**
-     - **Why:** `KeyCredentialManager` accepts whatever Windows Hello gesture the user set up: face, fingerprint or PIN. The app can't ask for biometrics only.
-     - **How it differs from D45 and D55,** which accept only a biometric: Windows Hello's PIN unlocks the TPM key on this device only, with the TPM's own lockout after failed tries. It isn't the account password, and isn't shared with other devices.
-     - **What the screens call it:** "Windows Hello", never "fingerprint" or "face".
-  4. **Re-making the blob,** unlike D45 §4 and D55:
-     - **Not after a master password unlock:** that would need a Windows Hello prompt each time, because the wrapping key comes only from a signature.
-     - **After each Windows Hello unlock instead:** the wrapping key is in hand then, so the blob is made again and stays current.
-     - **If the keyset changes** (rare), the old blob no longer opens. The app asks for the master password, and Windows Hello then needs turning on again. Settings says so.
-  5. **Carried over from D45 unchanged:**
-     - a Settings switch, "Unlock with Windows Hello", and one offer after a master password unlock
-     - turning it on prompts once
-     - the master password every 14 days and after signing in
-     - turning it off or signing out deletes the key credential, the challenge, the sealed key and the blob; locking keeps them
-     - the unlock screen tries Windows Hello once by itself, and a cancel leaves the password field with no error
-     - the lock timeout is unchanged
-     - **When Windows Hello isn't set up** (`IsSupportedAsync` false), the switch says so.
-  6. **The screens:**
-     - **The requests keep their names:** `touchId`, `setTouchId` and `unlockTouchId` become "the platform's biometric unlock". The protocol header says so.
-     - **The host's `touchId` flag becomes `biometricName`:** "Touch ID" in the extension on a Mac, "Windows Hello" on the desktop, and null elsewhere (Linux until polkit/fprintd). The screens build their labels from it.
-     - **The extension's Touch ID** (D48) is unchanged.
-  7. **Tests:**
-     - **Core (tests first):** the seal's round trip; another account's, device's or signature's seal refused; test vectors checked by Rust and the Node verifier.
-     - **The backend:** behind a `HelloKey` trait (create, sign, delete, supported), with a fake that signs deterministically, can be cancelled, can be missing, or can sign differently each time. Tests cover:
-       - turning it on, unlocking, a cancel, and the 14-day rule with the test clock
-       - the blob re-made after a Windows Hello unlock
-       - a keyset change
-       - sign-out
-       - a real round trip through the core against the server
-     - **CI's Windows runner has no Windows Hello:** the switch says it's unavailable, and the protocol samples cover the replies.
-     - **On a real computer** (`QUALITY.md`'s desktop checklist):
-       - turn it on and unlock, with a face, a finger and the PIN
-       - cancel
-       - change the PIN
-       - turn it off
-     - **Parity:** Linux unlock stays the master password (polkit/fprintd later, as the roadmap says). That gap is logged here.
-
-  Alternatives:
-  - **Windows Hello as a yes/no prompt (`UserConsentVerifier`), with the unlock key in DPAPI:** simpler, but the prompt only gates the screen. Malware running as the user could open the DPAPI file without Windows Hello. The signature ties the key to the TPM and the gesture.
-  - **A key from the Microsoft Passport key storage provider through NCrypt, which might decrypt:** closer to D45 and D55, but it isn't the documented route for apps, and which uses it allows isn't documented clearly. `KeyCredentialManager` is.
-  - **Re-making the blob after every master password unlock with one more prompt:** it matches D45 to the letter, but adds a second prompt to every password unlock, for a keyset that almost never changes.
-  - **Biometrics only, refusing the PIN:** the API can't tell them apart, so the only way to refuse the PIN would be to refuse Windows Hello altogether.
 
 ## Settled
 
@@ -3320,3 +3258,75 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Found while running it:** the editor's changes now build on the latest item, so two changes in one tick both count.
   - **The extension's background** answers D67's kinds, and copying by place, `unsupported` until M4.14. The screens describe that code in plain words.
   - **Reused from the popup:** `Generator` and `SyncLine` are now exported from `Vault.tsx` and used in the window.
+- **D68 — Windows Hello unlock: the key, wrapping the unlock key, the PIN, and what D45 carries over** · settled 2026-11-06 · founder (approved as proposed).
+  M7.5 says "Windows Hello unlock, under D45's rules, with its key-wrapping decision first". D45 settled biometric unlock for every platform: the core seals the opened keyset under a random 32-byte unlock key (`export_biometric_unlock`, `unlock_biometric`), and the platform's keystore protects that key. On Apple it's a Secure Enclave key that decrypts (D45 §2); on Android a Keystore key that decrypts (D55 §1).
+
+  Windows doesn't offer that. Its documented API for apps, `KeyCredentialManager`, makes a key per user, kept in the TPM, behind Windows Hello. That key can only **sign**, after a Windows Hello prompt. It can't encrypt or decrypt. So the unlock key can't simply be encrypted to it.
+
+  Open:
+  - how a signing-only key protects the unlock key
+  - whether the Windows Hello PIN counts, since the API can't tell it from a face or finger
+  - re-making the blob after a master password unlock
+  - how the screens show it, since today's requests and labels say Touch ID
+  - tests, given that CI's Windows runner has no Windows Hello
+
+  Proposal:
+  1. **The key:** one `KeyCredential` named for the account and this device, made with `RequestCreateAsync` when the user turns Windows Hello on. Windows keeps it in the TPM where there is one, never exportable. The `windows` crate's WinRT calls need no `unsafe` code.
+  2. **Wrapping the unlock key: a signature as the secret.**
+     - **Turning it on:** the backend makes a random 32-byte challenge and asks Windows Hello to sign it, which prompts once. The signature goes to the core, never anywhere else. The core derives a wrapping key from it with HKDF-SHA256, and seals the unlock key under that wrapping key. Both use a new AAD label, `pwm/windows-hello`, bound to the account and the device.
+     - **What's kept,** in the DPAPI key store (D66 §4): the challenge, the sealed unlock key, and the blob. Never the signature, never the wrapping key.
+     - **Unlocking:** Windows Hello signs the same challenge, which prompts. The core derives the same wrapping key, opens the unlock key, and then `unlock_biometric` as on the other platforms. Rust's copies of the signature and keys are `Secret`, dropped at once.
+     - **Why this holds:** RSA signatures with PKCS#1 v1.5 padding, which `KeyCredential` uses, are deterministic. The same key signing the same challenge gives the same signature, and making it needs the TPM key and a Windows Hello gesture. A copied disk has the challenge and the sealed key, but not the signature.
+     - **A check before relying on it:** turning it on signs the challenge twice and compares. If the signatures differ, Windows Hello unlock says it's unavailable on this computer, instead of failing later.
+     - **The crypto rule:** HKDF and the seal are in the core (`pwm-crypto`, with test vectors); the platform only asks Windows for a signature. That is the platform-key role `SECURITY.md` gives Windows Hello and TPM.
+  3. **The Windows Hello PIN counts.**
+     - **Why:** `KeyCredentialManager` accepts whatever Windows Hello gesture the user set up: face, fingerprint or PIN. The app can't ask for biometrics only.
+     - **How it differs from D45 and D55,** which accept only a biometric: Windows Hello's PIN unlocks the TPM key on this device only, with the TPM's own lockout after failed tries. It isn't the account password, and isn't shared with other devices.
+     - **What the screens call it:** "Windows Hello", never "fingerprint" or "face".
+  4. **Re-making the blob,** unlike D45 §4 and D55:
+     - **Not after a master password unlock:** that would need a Windows Hello prompt each time, because the wrapping key comes only from a signature.
+     - **After each Windows Hello unlock instead:** the wrapping key is in hand then, so the blob is made again and stays current.
+     - **If the keyset changes** (rare), the old blob no longer opens. The app asks for the master password, and Windows Hello then needs turning on again. Settings says so.
+  5. **Carried over from D45 unchanged:**
+     - a Settings switch, "Unlock with Windows Hello", and one offer after a master password unlock
+     - turning it on prompts once
+     - the master password every 14 days and after signing in
+     - turning it off or signing out deletes the key credential, the challenge, the sealed key and the blob; locking keeps them
+     - the unlock screen tries Windows Hello once by itself, and a cancel leaves the password field with no error
+     - the lock timeout is unchanged
+     - **When Windows Hello isn't set up** (`IsSupportedAsync` false), the switch says so.
+  6. **The screens:**
+     - **The requests keep their names:** `touchId`, `setTouchId` and `unlockTouchId` become "the platform's biometric unlock". The protocol header says so.
+     - **The host's `touchId` flag becomes `biometricName`:** "Touch ID" in the extension on a Mac, "Windows Hello" on the desktop, and null elsewhere (Linux until polkit/fprintd). The screens build their labels from it.
+     - **The extension's Touch ID** (D48) is unchanged.
+  7. **Tests:**
+     - **Core (tests first):** the seal's round trip; another account's, device's or signature's seal refused; test vectors checked by Rust and the Node verifier.
+     - **The backend:** behind a `HelloKey` trait (create, sign, delete, supported), with a fake that signs deterministically, can be cancelled, can be missing, or can sign differently each time. Tests cover:
+       - turning it on, unlocking, a cancel, and the 14-day rule with the test clock
+       - the blob re-made after a Windows Hello unlock
+       - a keyset change
+       - sign-out
+       - a real round trip through the core against the server
+     - **CI's Windows runner has no Windows Hello:** the switch says it's unavailable, and the protocol samples cover the replies.
+     - **On a real computer** (`QUALITY.md`'s desktop checklist):
+       - turn it on and unlock, with a face, a finger and the PIN
+       - cancel
+       - change the PIN
+       - turn it off
+     - **Parity:** Linux unlock stays the master password (polkit/fprintd later, as the roadmap says). That gap is logged here.
+
+  Alternatives:
+  - **Windows Hello as a yes/no prompt (`UserConsentVerifier`), with the unlock key in DPAPI:** simpler, but the prompt only gates the screen. Malware running as the user could open the DPAPI file without Windows Hello. The signature ties the key to the TPM and the gesture.
+  - **A key from the Microsoft Passport key storage provider through NCrypt, which might decrypt:** closer to D45 and D55, but it isn't the documented route for apps, and which uses it allows isn't documented clearly. `KeyCredentialManager` is.
+  - **Re-making the blob after every master password unlock with one more prompt:** it matches D45 to the letter, but adds a second prompt to every password unlock, for a keyset that almost never changes.
+  - **Biometrics only, refusing the PIN:** the API can't tell them apart, so the only way to refuse the PIN would be to refuse Windows Hello altogether.
+
+  Implementation notes (M7.5):
+  - **The key credential's name** is "PWM", then the account's id, so each account on the computer has its own. `ReplaceExisting` when turning it on means a new key each time.
+  - **Prompts when turning it on:** Windows may ask up to three times: to make the key, then for the two signatures compared (D68 §2). Unlocking asks once.
+  - **What's kept,** as base64 in the DPAPI key store: `helloBlob`, `helloSealedKey`, `helloChallenge`. Beside them: `passwordUnlockedAt`, for the 14 days, and `helloOffered`, for the one offer.
+  - **Sign-out** deletes the key credential, the three values and the 14-day timestamp. The offer's flag stays with the computer, as D45's "once" does.
+  - **A signature that doesn't open the sealed key,** a key Windows reports gone, or a keyset that changed: each turns it off and answers `hello_changed`. The screen says to enter the master password and turn it on again.
+  - **The host** names it with `biometricName` instead of the `touchId` flag. The extension says "Touch ID" on a Mac. The desktop says "Windows Hello" on Windows, and none on Linux.
+  - **Blocking calls:** the WinRT calls wait for their answer on the request's thread, while the backend is locked anyway. A Windows Hello prompt holds other requests until it closes.
+  - **Not run anywhere yet:** a real Windows Hello prompt, which needs a person at the computer. This computer reports Windows Hello as set up, and the offer showed. The tests drive the rest through a fake key.

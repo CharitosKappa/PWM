@@ -94,6 +94,11 @@ const MESSAGES: Record<string, string> = {
   biometric_cancelled: "Unlock with your master password, or try again.",
   biometric_changed:
     "Touch ID changed. Enter your master password, then turn Touch ID on again.",
+  hello_unavailable:
+    "Windows Hello isn't set up on this computer. Set it up in Windows Settings, under Accounts, then try again.",
+  hello_off: "Turn on Windows Hello in Settings first.",
+  hello_changed:
+    "Windows Hello changed. Enter your master password, then turn Windows Hello on again in Settings.",
   master_password_due:
     "Enter your master password. It's asked every 14 days so you don't forget it.",
 };

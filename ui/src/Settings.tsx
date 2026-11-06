@@ -98,7 +98,9 @@ export function Settings({
 
       {host().browser && <InlineIconSetting />}
       {host().browser && <PasskeysSetting />}
-      {status.state === "unlocked" && host().touchId && <TouchIdSetting />}
+      {status.state === "unlocked" && host().biometricName !== null && (
+        <BiometricSetting name={host().biometricName ?? ""} />
+      )}
 
       <fieldset class="stack" disabled={!signedOut}>
         <legend class="label">Server</legend>
@@ -178,11 +180,12 @@ export function Settings({
 }
 
 /**
- * "Unlock with Touch ID": asks for the native-messaging permission on the
- * click (D44), then enrols with the Mac app's helper, which asks for Touch
- * ID once.
+ * "Unlock with Touch ID" in the extension: asks for the native-messaging
+ * permission on the click (D44), then enrols with the Mac app's helper,
+ * which asks for Touch ID once. "Unlock with Windows Hello" on the desktop
+ * (D68): Windows asks for a face, a finger or the PIN.
  */
-function TouchIdSetting(): JSX.Element {
+function BiometricSetting({ name }: { name: string }): JSX.Element {
   const [on, setOn] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -197,6 +200,7 @@ function TouchIdSetting(): JSX.Element {
     try {
       if (
         next &&
+        host().browser &&
         !(await host().requestAccess({
           permissions: ["nativeMessaging"],
         }))
@@ -222,11 +226,13 @@ function TouchIdSetting(): JSX.Element {
           disabled={busy || on === null}
           onChange={(event) => void change(event.currentTarget.checked)}
         />
-        Unlock with Touch ID
+        Unlock with {name}
       </label>
       <span class="caption muted">
-        Needs the PWM app for Mac, with browser unlock turned on in its
-        Settings. Your master password is still asked every 14 days.
+        {host().browser
+          ? "Needs the PWM app for Mac, with browser unlock turned on in its Settings."
+          : "Windows asks for your face, fingerprint or PIN."}{" "}
+        Your master password is still asked every 14 days.
       </span>
       {error && <Notice kind="danger">{error}</Notice>}
     </div>

@@ -206,6 +206,8 @@ pub struct Backend<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> {
     pub(crate) leaked: Option<std::collections::HashMap<String, u64>>,
     /// New devices asking to sign in, read after each sync (D46 §5).
     pub(crate) pending_approvals: u32,
+    /// Windows Hello's key (D68); none on Linux.
+    pub(crate) hello: Box<dyn crate::hello::HelloKey>,
 }
 
 impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
@@ -242,7 +244,15 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             leak_check,
             leaked: None,
             pending_approvals: 0,
+            hello: Box::new(crate::hello::NoHello),
         }
+    }
+
+    /// Unlocks with Windows Hello where the computer has it (D68).
+    #[must_use]
+    pub fn with_hello(mut self, hello: Box<dyn crate::hello::HelloKey>) -> Self {
+        self.hello = hello;
+        self
     }
 
     pub fn is_unlocked(&self) -> bool {
@@ -435,6 +445,20 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             Request::TotpSetup { input, title } => {
                 Ok(json!(self.totp_setup(input.expose_secret(), &title)?))
             }
+            Request::TouchId => Ok(json!(self.hello_on().await?)),
+            Request::SetTouchId { on } => Ok(json!(self.set_hello(on).await?)),
+            Request::UnlockTouchId => {
+                let tokens = self.stored_tokens().await?;
+                self.unlock_hello(tokens).await?;
+                let _ = self.client.purge_trash(self.clock.now_ms());
+                *after = After::Sync;
+                null()
+            }
+            Request::BiometricOffer => Ok(json!(self.hello_offer().await?)),
+            Request::DismissBiometricOffer => {
+                self.dismiss_hello_offer().await?;
+                null()
+            }
             Request::Unsupported => Err(Failure::code("unsupported")),
         }
     }
@@ -454,7 +478,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
         if !self.client.is_unlocked() {
             return Ok(Status::Locked {
                 email,
-                touch_id: false,
+                touch_id: self.hello_on().await?,
             });
         }
         Ok(Status::Unlocked {
@@ -644,6 +668,9 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
 
     /// After sign-up or sign-in: remember the account and make sure it has a vault.
     async fn signed_in(&mut self, email: &str, secret_key: &Secret<String>) -> Result<()> {
+        // Windows Hello starts off after signing in (D45 §4).
+        self.forget_hello().await?;
+        self.password_typed().await?;
         self.keys.set(name::EMAIL, email).await?;
         self.keys
             .set(name::SECRET_KEY, secret_key.expose_secret())
@@ -680,6 +707,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
         let Step::Done(Outcome::LoggedIn) = self.run(start).await? else {
             return Err(Failure::code("internal"));
         };
+        self.password_typed().await?;
         self.sync_error = None;
         self.sync().await?;
         Ok(())
@@ -718,6 +746,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             )?;
         }
         let _ = self.client.purge_trash(self.clock.now_ms());
+        self.password_typed().await?;
         Ok(())
     }
 
@@ -729,6 +758,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             let start = self.client.start_sign_out(None);
             let _ = tokio::time::timeout(SIGN_OUT_WAIT, self.run(start)).await;
         }
+        self.forget_hello().await?;
         self.client.sign_out()?;
         self.forget_account().await?;
         self.lock();
@@ -744,6 +774,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             name::SECRET_KEY,
             name::TOKENS,
             name::SEALED_TOKENS,
+            name::PASSWORD_AT,
         ] {
             self.keys.remove(key).await?;
         }

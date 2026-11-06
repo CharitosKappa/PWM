@@ -6,7 +6,7 @@
 
 use std::fmt;
 
-use pwm_crypto::{AccountKeyset, Envelope, Secret};
+use pwm_crypto::{AccountKeyset, Envelope, Secret, WINDOWS_HELLO_VERSION};
 use pwm_store::Store;
 
 use crate::client::parse_id;
@@ -48,7 +48,102 @@ impl fmt::Debug for BiometricUnlock {
     }
 }
 
+/// What the desktop keeps for Windows Hello unlock (D68): the biometric
+/// blob, and the unlock key sealed under a Windows Hello signature's key.
+/// The challenge the signature is over is kept beside them; the signature
+/// never is.
+pub struct WindowsHelloUnlock {
+    pub blob: Vec<u8>,
+    /// `v:u8 (= 1) || envelope`.
+    pub sealed_key: Vec<u8>,
+}
+
+impl fmt::Debug for WindowsHelloUnlock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WindowsHelloUnlock")
+            .field("blob_len", &self.blob.len())
+            .finish_non_exhaustive()
+    }
+}
+
+/// A new random challenge for Windows Hello to sign (D68 §2).
+pub fn windows_hello_challenge() -> Result<Secret<[u8; 32]>, ClientError> {
+    pwm_crypto::windows_hello_challenge().map_err(|_| ClientError::Internal)
+}
+
+fn challenge_of(challenge: &[u8]) -> Result<Secret<[u8; 32]>, ClientError> {
+    let bytes: [u8; 32] = challenge
+        .try_into()
+        .map_err(|_| ClientError::BiometricUnlockFailed)?;
+    Ok(Secret::new(bytes))
+}
+
 impl<S: Store> Client<S> {
+    /// Windows Hello unlock (D68): the biometric blob (D45), with its key
+    /// sealed under the key derived from `signature`, Windows Hello's
+    /// signature over `challenge`. Needs the vault unlocked.
+    pub fn export_windows_hello(
+        &self,
+        device_id: &str,
+        challenge: &[u8],
+        signature: &[u8],
+    ) -> Result<WindowsHelloUnlock, ClientError> {
+        let device = parse_id(device_id)?;
+        let account_id = self.account_record()?.account_id;
+        let unlock = self.export_biometric_unlock(device_id)?;
+        let sealed = pwm_crypto::seal_windows_hello(
+            &unlock.key,
+            signature,
+            &challenge_of(challenge)?,
+            &account_id,
+            &device,
+        )
+        .map_err(|_| ClientError::BiometricUnlockFailed)?;
+        let mut sealed_key = vec![WINDOWS_HELLO_VERSION];
+        sealed_key.extend_from_slice(&sealed.to_bytes());
+        Ok(WindowsHelloUnlock {
+            blob: unlock.blob,
+            sealed_key,
+        })
+    }
+
+    /// Unlocks with a new Windows Hello signature over the same challenge,
+    /// then answers a fresh blob and sealed key to keep instead (D68 §4).
+    /// Anything that doesn't open is `biometric_unlock_failed`.
+    pub fn unlock_windows_hello(
+        &mut self,
+        blob: &[u8],
+        sealed_key: &[u8],
+        challenge: &[u8],
+        signature: &[u8],
+        device_id: &str,
+        tokens: Tokens,
+    ) -> Result<WindowsHelloUnlock, ClientError> {
+        let device = parse_id(device_id)?;
+        let account_id = self
+            .store()
+            .account()?
+            .ok_or(ClientError::BiometricUnlockFailed)?
+            .account_id;
+        let challenge = challenge_of(challenge)?;
+        let key = match sealed_key.split_first() {
+            Some((&WINDOWS_HELLO_VERSION, rest)) => Envelope::from_bytes(rest)
+                .and_then(|envelope| {
+                    pwm_crypto::open_windows_hello(
+                        &envelope,
+                        signature,
+                        &challenge,
+                        &account_id,
+                        &device,
+                    )
+                })
+                .map_err(|_| ClientError::BiometricUnlockFailed)?,
+            _ => return Err(ClientError::BiometricUnlockFailed),
+        };
+        self.unlock_biometric(blob, key.expose_secret(), device_id, tokens)?;
+        self.export_windows_hello(device_id, challenge.expose_secret(), signature)
+    }
+
     /// The unlocked keyset for biometric unlock on this device. Make it again
     /// at each master password unlock.
     pub fn export_biometric_unlock(&self, device_id: &str) -> Result<BiometricUnlock, ClientError> {

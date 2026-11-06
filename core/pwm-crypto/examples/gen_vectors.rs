@@ -32,7 +32,7 @@ type Generator = (&'static str, &'static str, fn() -> Vec<Value>);
 
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../test-vectors");
-    let files: [Generator; 17] = [
+    let files: [Generator; 18] = [
         ("aad", "AAD byte layouts (D11, D17)", aad),
         ("aead", "XChaCha20-Poly1305 v1 envelopes (D10)", aead),
         ("hkdf", "HKDF-SHA256, 32-byte output (D13)", hkdf),
@@ -89,6 +89,11 @@ fn main() {
             "browser_unlock",
             "Touch ID unlock for the browser extension through the Mac app v1 (D48)",
             browser_unlock,
+        ),
+        (
+            "windows_hello",
+            "The biometric unlock key under a Windows Hello signature's key v1 (D68)",
+            windows_hello,
         ),
     ];
     for (name, description, generate) in files {
@@ -520,5 +525,31 @@ fn opaque() -> Vec<Value> {
         "credential_request": h(&credential_request), "credential_response": h(&credential_response),
         "server_state_sealed": h(&state), "credential_finalization": h(&credential_finalization),
         "prelogin_email": "a@example.com", "prelogin_fake_id": h(&fake_id), "prelogin_fake_salt": h(&fake_salt),
+    })]
+}
+
+fn windows_hello() -> Vec<Value> {
+    // An RSA-2048 PKCS#1 v1.5 signature stands in as fixed bytes: only its
+    // bytes enter HKDF.
+    let signature: Vec<u8> = (0..=255u8).collect();
+    let challenge = [0x5C; 32];
+    let unlock_key = [0x77; 32];
+    let sealed = pwm_crypto::seal_windows_hello(
+        &Secret::new(unlock_key),
+        &signature,
+        &Secret::new(challenge),
+        &ACCOUNT_A,
+        &DEVICE,
+    )
+    .unwrap();
+    let wrapping_key = pwm_crypto::hkdf_sha256(&signature, &challenge, b"pwm/windows-hello/v1");
+    vec![json!({
+        "account_id": h(&ACCOUNT_A), "device_id": h(&DEVICE),
+        "signature": h(&signature), "challenge": h(&challenge),
+        "info": h(b"pwm/windows-hello/v1"),
+        "wrapping_key": h(wrapping_key.expose_secret()),
+        "unlock_key": h(&unlock_key),
+        "aad": h(Aad::windows_hello(1, &ACCOUNT_A, &DEVICE).as_bytes()),
+        "envelope": h(&sealed.to_bytes()),
     })]
 }

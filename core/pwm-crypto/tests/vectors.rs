@@ -578,3 +578,43 @@ fn vectors_approval() {
         });
     }
 }
+
+#[test]
+fn vectors_windows_hello() {
+    for v in load(include_str!("../../test-vectors/windows_hello.json")) {
+        let account: Id = arr(&v["account_id"]);
+        let device: Id = arr(&v["device_id"]);
+        let challenge: [u8; 32] = arr(&v["challenge"]);
+        let signature = bytes(&v["signature"]);
+        assert_eq!(
+            Aad::windows_hello(1, &account, &device).as_bytes(),
+            bytes(&v["aad"])
+        );
+        assert_eq!(
+            hkdf_sha256(&signature, &challenge, &bytes(&v["info"])).expose_secret(),
+            &arr::<32>(&v["wrapping_key"])
+        );
+        let sealed = bytes(&v["envelope"]);
+        let opened = pwm_crypto::open_windows_hello(
+            &Envelope::from_bytes(&sealed).unwrap(),
+            &signature,
+            &Secret::new(challenge),
+            &account,
+            &device,
+        )
+        .unwrap();
+        assert_eq!(opened.expose_secret(), &arr::<32>(&v["unlock_key"]));
+        assert_tamper_evident(&sealed, |b| {
+            Envelope::from_bytes(b).is_ok_and(|env| {
+                pwm_crypto::open_windows_hello(
+                    &env,
+                    &signature,
+                    &Secret::new(challenge),
+                    &account,
+                    &device,
+                )
+                .is_ok()
+            })
+        });
+    }
+}

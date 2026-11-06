@@ -262,6 +262,12 @@
       "kind": "totpSetup",
       "input": "JBSWY3DPEHPK3PXP",
       "title": "Mail"
+    },
+    {
+      "kind": "biometricOffer"
+    },
+    {
+      "kind": "dismissBiometricOffer"
     }
   ],
   "desktopKinds": [
@@ -311,7 +317,12 @@
     "restoreItem",
     "deleteItem",
     "newFolder",
-    "totpSetup"
+    "totpSetup",
+    "touchId",
+    "setTouchId",
+    "unlockTouchId",
+    "biometricOffer",
+    "dismissBiometricOffer"
   ],
   "replies": {
     "status": [

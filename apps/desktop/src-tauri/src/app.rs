@@ -107,7 +107,7 @@ fn open_backend(dir: &Path) -> Result<Live, Box<dyn std::error::Error>> {
     #[cfg(target_os = "linux")]
     let keys =
         tauri::async_runtime::block_on(crate::keys::linux::LinuxKeys::open(dir.join("keys")));
-    Ok(Backend::new(
+    let backend = Backend::new(
         store,
         transport,
         keys,
@@ -115,7 +115,11 @@ fn open_backend(dir: &Path) -> Result<Live, Box<dyn std::error::Error>> {
         SystemClock::default(),
         Device::this_computer(),
         Some(SettingsFile::new(dir)),
-    ))
+    );
+    // Windows Hello unlock (D68); Linux keeps the master password for now.
+    #[cfg(windows)]
+    let backend = backend.with_hello(Box::new(crate::hello::WindowsHello));
+    Ok(backend)
 }
 
 fn main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
