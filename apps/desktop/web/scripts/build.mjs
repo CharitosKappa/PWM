@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { tokensCss } from "../../../../extension/scripts/tokens.mjs";
+import { copyFonts, tokensCss } from "../../../../extension/scripts/tokens.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const repo = path.join(root, "..", "..", "..");
@@ -44,4 +44,5 @@ const tokens = JSON.parse(
   fs.readFileSync(path.join(repo, "design", "tokens.json"), "utf8"),
 );
 fs.writeFileSync(path.join(dist, "tokens.css"), tokensCss(tokens));
+copyFonts(repo, dist);
 console.log(`build: ${path.relative(process.cwd(), dist)} ready`);
