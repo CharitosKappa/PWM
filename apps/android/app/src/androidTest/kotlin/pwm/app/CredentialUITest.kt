@@ -144,6 +144,11 @@ class CredentialUITest {
             .putExtra(CredentialTestActivity.PASSWORD, secret)
         instrumentation.context.startActivity(intent)
         device.waitForIdle()
+        // Until the new screen shows, the previous one (and its result) can
+        // still be on screen; throughSheet would take that old result as done
+        // and never tap the sheet. A request that answers at once leaves no
+        // "waiting" to see, so this only waits, it never fails.
+        device.wait(Until.hasObject(By.desc("result").text("waiting")), 10_000)
     }
 
     /**

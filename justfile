@@ -18,6 +18,7 @@ check:
     node scripts/tokens-swift.mjs --check
     node scripts/tokens-kotlin.mjs --check
     node scripts/messages.mjs --check
+    node scripts/fonts.mjs --check
 
 # all unit tests (core, server, extension, shared screens)
 test:
@@ -108,6 +109,10 @@ apple:
 tokens:
     node scripts/tokens-swift.mjs
 
+# the app fonts (D1) from design/fonts into the Apple and Android projects; `just check` fails when a copy is stale
+fonts:
+    node scripts/fonts.mjs
+
 # Swift and Kotlin bindings over the native library (D31) into target/bindings
 bindings:
     cargo build --locked -p pwm-ffi
@@ -152,6 +157,7 @@ notices:
     pnpm notices
     cp core/pwm-generator/data/NOTICE.md THIRD_PARTY_NOTICES/data.md
     cp core/pwm-autofill/data/NOTICE.md THIRD_PARTY_NOTICES/data-autofill.md
+    node scripts/fonts.mjs --notices
 
 # refresh the vendored Public Suffix List (D33) before a release; review the diff
 psl:

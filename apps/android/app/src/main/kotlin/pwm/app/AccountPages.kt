@@ -22,7 +22,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import java.text.DateFormat
 import java.util.Date
@@ -121,7 +120,7 @@ internal fun ApprovalsPage(settings: SettingsModel, model: ApprovalsModel) {
                         Text(stringResource(R.string.approve_waiting), style = Tokens.Text.body.compose(), color = color(Tokens.Color.text))
                     } else {
                         Text(stringResource(R.string.approve_compare), style = Tokens.Text.body.compose(), color = color(Tokens.Color.text))
-                        Text(code, style = Tokens.Text.display.compose().copy(fontFamily = FontFamily.Monospace), color = color(Tokens.Color.text), modifier = Modifier.testTag("approveCode"))
+                        Text(code, style = Tokens.Text.display.compose().copy(fontFamily = GeistMono), color = color(Tokens.Color.text), modifier = Modifier.testTag("approveCode"))
                         Primary(stringResource(R.string.codes_match), enabled = !state.busy, tag = "codesMatch", onClick = model::codesMatch)
                     }
                     TextButton(onClick = { state.approving?.let(model::deny) }, enabled = !state.busy) {

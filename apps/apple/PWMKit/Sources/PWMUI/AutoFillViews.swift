@@ -27,6 +27,8 @@ public struct AutoFillView: View {
                     }
                 }
         }
+        // Manrope for any text that sets no style of its own (D1), as in the app.
+        .font(.app(.body))
         .task { await model.start() }
     }
 

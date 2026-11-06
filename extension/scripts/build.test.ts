@@ -10,7 +10,7 @@ import {
   checkManifest,
   remoteUrls,
 } from "./check.mjs";
-import { tokensCss } from "./tokens.mjs";
+import { FONT_FILES, copyFonts, tokensCss } from "./tokens.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const read = (file: string): string =>
@@ -168,5 +168,35 @@ describe("design tokens", () => {
     const colors = (text: string) =>
       [...text.matchAll(/(--color-[\w-]+):/g)].map((m) => m[1]).sort();
     expect(colors(dark)).toEqual(colors(light));
+  });
+
+  it("loads a bundled file for the first font of each family (D1)", () => {
+    const tokens = JSON.parse(
+      fs.readFileSync(path.join(root, "..", "design", "tokens.json"), "utf8"),
+    ) as { font: { family: Record<string, { $value: string[] }> } };
+    const first = Object.values(tokens.font.family).map((f) => f.$value[0]);
+    expect(first.sort()).toEqual(FONT_FILES.map((f) => f.family).sort());
+    for (const f of FONT_FILES) {
+      expect(css).toContain(`font-family: "${f.family}";`);
+      expect(css).toContain(`url("fonts/${f.file}")`);
+    }
+  });
+
+  it("copies the fonts with their licence texts and notice", () => {
+    const dist = fs.mkdtempSync(path.join(root, "node_modules", ".fonts-"));
+    try {
+      copyFonts(path.join(root, ".."), dist);
+      expect(fs.readdirSync(path.join(dist, "fonts")).sort()).toEqual(
+        [
+          "GeistMono.ttf",
+          "Manrope.ttf",
+          "NOTICE.md",
+          "OFL-GeistMono.txt",
+          "OFL-Manrope.txt",
+        ].sort(),
+      );
+    } finally {
+      fs.rmSync(dist, { recursive: true, force: true });
+    }
   });
 });

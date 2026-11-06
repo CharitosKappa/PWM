@@ -27,7 +27,7 @@ import {
   checkManifest,
   remoteUrls,
 } from "./check.mjs";
-import { tokensCss } from "./tokens.mjs";
+import { copyFonts, tokensCss } from "./tokens.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const core = path.join(root, "core");
@@ -138,6 +138,7 @@ async function buildTarget(target, dist) {
     fs.readFileSync(path.join(root, "..", "design", "tokens.json"), "utf8"),
   );
   fs.writeFileSync(path.join(dist, "tokens.css"), tokensCss(tokens));
+  copyFonts(path.join(root, ".."), dist);
 
   const manifest = JSON.parse(
     fs.readFileSync(path.join(root, "manifests", `${target}.json`), "utf8"),
