@@ -19,7 +19,7 @@ fs.mkdirSync(dist, { recursive: true });
 
 await build({
   absWorkingDir: root,
-  entryPoints: { app: "src/main.tsx" },
+  entryPoints: { app: "src/main.tsx", manage: "src/manage.tsx" },
   outdir: dist,
   bundle: true,
   format: "esm",
@@ -32,10 +32,9 @@ await build({
   logLevel: "warning",
 });
 
-fs.copyFileSync(
-  path.join(root, "static", "index.html"),
-  path.join(dist, "index.html"),
-);
+for (const page of ["index.html", "manage.html"]) {
+  fs.copyFileSync(path.join(root, "static", page), path.join(dist, page));
+}
 fs.copyFileSync(
   path.join(repo, "ui", "src", "screens.css"),
   path.join(dist, "screens.css"),

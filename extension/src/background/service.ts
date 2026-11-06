@@ -290,6 +290,8 @@ export class Background {
         await this.touch();
         return this.items(request.query);
       case "copy":
+        // Copying any field by its place belongs to the item screens (D67).
+        if (!("field" in request)) throw new ServiceError("unsupported");
         await this.touch();
         await this.copy(request.vaultId, request.itemId, request.field);
         return null;
@@ -412,6 +414,18 @@ export class Background {
       case "importCancel":
         this.importer.cancel();
         return null;
+      // The desktop's item screens (D67); the extension gets them in M4.14.
+      case "vault":
+      case "item":
+      case "reveal":
+      case "itemForEdit":
+      case "saveItem":
+      case "trashItem":
+      case "restoreItem":
+      case "deleteItem":
+      case "newFolder":
+      case "totpSetup":
+        throw new ServiceError("unsupported");
     }
   }
 

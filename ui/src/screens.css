@@ -336,3 +336,120 @@ body.page main {
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--color-border);
 }
+
+/* The desktop's vault window (D67 §3): sidebar, list, item. */
+.vault-window {
+  display: grid;
+  grid-template-columns: 13rem minmax(16rem, 1fr) minmax(20rem, 1.4fr);
+  height: 100vh;
+}
+
+.vault-window > .pane {
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+.vault-window .sidebar,
+.vault-window .list-pane {
+  border-right: 1px solid var(--color-border);
+}
+
+.vault-window .sidebar {
+  gap: var(--space-1);
+  background: var(--color-surface);
+}
+
+.vault-window button.nav {
+  border: 0;
+  background: none;
+  text-align: left;
+  width: 100%;
+  border-radius: var(--radius-sm);
+}
+
+.vault-window button.nav.current,
+.vault-window .row-button.current {
+  background: var(--color-surface-raised);
+  font-weight: var(--font-semibold);
+}
+
+.vault-window .row-button {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: left;
+  border: 0;
+  background: none;
+  border-radius: var(--radius-md);
+}
+
+.vault-window .narrow-only {
+  display: none;
+}
+
+/* In the list pane's column, search keeps its own height. */
+.vault-window .search {
+  flex: none;
+}
+
+.detail-row {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.detail-row .value {
+  overflow-wrap: anywhere;
+}
+
+.notes {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+textarea {
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  resize: vertical;
+}
+
+.custom-field {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto auto;
+  gap: var(--space-2);
+  align-items: end;
+}
+
+/* One pane at a time below 720 pixels, with Back. */
+@media (max-width: 719px) {
+  .vault-window {
+    grid-template-columns: 1fr;
+  }
+
+  .vault-window > .pane {
+    display: none;
+    border-right: 0;
+  }
+
+  .vault-window[data-narrow="sidebar"] > .sidebar,
+  .vault-window[data-narrow="list"] > .list-pane,
+  .vault-window[data-narrow="item"] > .item-pane {
+    display: flex;
+  }
+
+  .vault-window .narrow-only {
+    display: flex;
+  }
+
+  .custom-field {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,7 +1,8 @@
 // The desktop app end to end (D66 §9), through tauri-driver's WebDriver
 // API with plain fetch: create an account in the real window, save the
 // Secret Key, lock, see a wrong password refused, unlock, copy a
-// generated password, sign out. CI runs it on Linux under Xvfb, with the
+// generated password, make a login and show, trash and restore it, open
+// the manage page, sign out. CI runs it on Linux under Xvfb, with the
 // app's settings pointing at a local server.
 //
 //   node e2e/smoke.mjs <path to the built app>
@@ -89,7 +90,7 @@ try {
   await click("Copy");
   await waitFor("The clipboard clears in 30 seconds.");
   await click("I saved it");
-  const vault = await waitFor("No items yet");
+  const vault = await waitFor("No items here yet");
   assert.ok(vault.includes(email), vault);
 
   await click("Lock");
@@ -101,12 +102,58 @@ try {
   await type("*password", PASSWORD);
   await sleep(300);
   await run(`document.querySelector("button.primary").click();`);
-  await waitFor("No items yet");
+  await waitFor("No items here yet");
   await waitFor("Synced");
 
-  await click("Generate");
+  await click("Generator");
   await waitFor("Passphrase");
   await click("Copy");
+
+  // An item (M7.7, D67): Ctrl+N, a generated password, saved, shown
+  // masked, revealed by Show only, then trashed and restored.
+  await run(
+    `document.dispatchEvent(new KeyboardEvent("keydown", { key: "n", ctrlKey: true, bubbles: true }));`,
+  );
+  await waitFor("One-time code setup");
+  await type("Title", "Forum");
+  await type("Username", "me@example.com");
+  await click("Generate");
+  await sleep(500);
+  await click("Add a website");
+  await type("Website", "https://forum.example.com");
+  const password = await run(
+    `return document.querySelector("input[aria-label=Password]").value;`,
+  );
+  assert.equal(password.length, 20);
+  await run(
+    `document.querySelector("form.item-editor button.primary").click();`,
+  );
+  await waitFor("Saved.");
+  const shown = await waitFor("me@example.com");
+  assert.ok(!shown.includes(password), "the detail shows the password");
+  await run(
+    `[...document.querySelectorAll(".detail-row")].find((r) => r.querySelector(".label").textContent === "Password").querySelector("button").click();`,
+  );
+  await waitFor(password);
+  await click("Delete");
+  await waitFor("Moved to the trash.");
+  await click("Trash");
+  // The list and then the item load after each click: wait for each.
+  await waitFor("Forum");
+  await run(`document.querySelector(".row-button").click();`);
+  await waitFor("Restore");
+  await click("Restore");
+  await waitFor("Restored.");
+
+  // The manage page shares the window (M7.6).
+  await click("Settings");
+  await waitFor("Password health, devices and export");
+  await click("Password health, devices and export");
+  await waitFor("Back to the vault");
+  await click("Devices");
+  await waitFor("This device");
+  await click("← Back to the vault");
+  await waitFor("Generator");
 
   await click("Settings");
   await waitFor("Sign out of this device");

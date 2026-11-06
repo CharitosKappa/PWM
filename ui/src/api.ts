@@ -64,6 +64,13 @@ const MESSAGES: Record<string, string> = {
   export_not_authorized: "Enter your master password to export.",
   export_expired: "Enter your master password again to export.",
   locked: "Unlock first.",
+  unsupported: "This isn't available here yet.",
+  read_only_item: "Update the app to edit this item.",
+  invalid_item: "Check the fields: something here can't be saved.",
+  invalid_totp:
+    "That isn't a one-time code setup. Paste the otpauth:// link or the secret.",
+  unknown_item:
+    "That item is gone. It may have been deleted on another device.",
   import_too_large: "This file is too large to import.",
   import_unreadable:
     "This file can't be read as that format. Check the format, or export again.",

@@ -69,10 +69,13 @@ pub enum Request {
     Items {
         query: String,
     },
+    /// A login's username, password or code (`field`), or any field by
+    /// its JSON Pointer (`path`, D67 §1).
     Copy {
         vault_id: String,
         item_id: String,
-        field: CopyField,
+        field: Option<CopyField>,
+        path: Option<String>,
     },
     CopySecretKey,
     EmergencyKit,
@@ -103,10 +106,223 @@ pub enum Request {
         #[serde(deserialize_with = "secret")]
         password: Secret<String>,
     },
-    /// Every other kind: the browser's requests, and the manage page's
-    /// until M7.6.
+    // The manage page (D44, D46, D51; M7.6).
+    Devices,
+    RenameDevice {
+        device_id: String,
+        name: String,
+    },
+    RevokeDevice {
+        device_id: String,
+    },
+    Health,
+    CheckLeaks,
+    SetLeakCheck {
+        on: bool,
+    },
+    Approvals,
+    AcceptApproval {
+        id: String,
+    },
+    CompleteApproval {
+        id: String,
+    },
+    DenyApproval {
+        id: String,
+    },
+    ExportVault {
+        #[serde(deserialize_with = "secret")]
+        master_password: Secret<String>,
+        format: ExportFormat,
+        /// For `pwmx` only.
+        #[serde(deserialize_with = "secret")]
+        export_password: Secret<String>,
+    },
+    /// The picked file as base64: an export, so a secret.
+    ImportDetect {
+        name: String,
+        #[serde(deserialize_with = "secret")]
+        file: Secret<String>,
+    },
+    ImportPrepare {
+        #[serde(deserialize_with = "secret")]
+        file: Secret<String>,
+        format: String,
+        /// The export's own password, or "".
+        #[serde(deserialize_with = "secret")]
+        password: Secret<String>,
+        /// A KeePass key file as base64, or "".
+        #[serde(deserialize_with = "secret")]
+        key_file: Secret<String>,
+        columns: Option<ImportMapping>,
+    },
+    ImportFinish,
+    ImportCancel,
+    // The item screens (D67; M7.7).
+    Vault,
+    Item {
+        vault_id: String,
+        item_id: String,
+    },
+    Reveal {
+        vault_id: String,
+        item_id: String,
+        path: String,
+    },
+    ItemForEdit {
+        vault_id: String,
+        item_id: String,
+    },
+    /// The item is the editor's D18 JSON; it holds hidden values.
+    SaveItem {
+        vault_id: Option<String>,
+        item: serde_json::Value,
+    },
+    TrashItem {
+        vault_id: String,
+        item_id: String,
+    },
+    RestoreItem {
+        vault_id: String,
+        item_id: String,
+    },
+    DeleteItem {
+        vault_id: String,
+        item_id: String,
+    },
+    NewFolder {
+        title: String,
+    },
+    TotpSetup {
+        #[serde(deserialize_with = "secret")]
+        input: Secret<String>,
+        title: String,
+    },
+    /// Every other kind: the browser's requests (filling, offers, passkeys,
+    /// the report, Touch ID).
     #[serde(other)]
     Unsupported,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ExportFormat {
+    Pwmx,
+    Json,
+    Csv,
+}
+
+impl ExportFormat {
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Pwmx => "pwmx",
+            Self::Json => "json",
+            Self::Csv => "csv",
+        }
+    }
+}
+
+/// Which CSV column holds each field (`ImportMapping`); `None` leaves it out.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ImportMapping {
+    pub title: Option<usize>,
+    pub url: Option<usize>,
+    pub username: Option<usize>,
+    pub password: Option<usize>,
+    pub notes: Option<usize>,
+    pub totp: Option<usize>,
+    pub folder: Option<usize>,
+    pub favorite: Option<usize>,
+    pub tags: Option<usize>,
+}
+
+/// One of the account's devices (`DeviceView`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceView {
+    pub id: String,
+    pub platform: String,
+    pub name: Option<String>,
+    pub created_at: i64,
+    pub last_seen_at: i64,
+    pub revoked_at: Option<i64>,
+    pub current: bool,
+}
+
+/// A login the health report names (`HealthItem`): never its password.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthItem {
+    pub vault_id: String,
+    pub item_id: String,
+    pub title: String,
+    pub username: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeakedItem {
+    #[serde(flatten)]
+    pub item: HealthItem,
+    pub count: u64,
+}
+
+/// The health report (`HealthView`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthView {
+    pub weak: Vec<HealthItem>,
+    pub reused: Vec<Vec<HealthItem>>,
+    /// `None` until the leak check has run in this unlocked session.
+    pub leaked: Option<Vec<LeakedItem>>,
+    pub leak_check: bool,
+}
+
+/// A new device asking to sign in (`ApprovalView`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalView {
+    pub id: String,
+    pub platform: String,
+    pub created_at: i64,
+    pub state: String,
+    pub code: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportColumnsView {
+    pub headers: Vec<String>,
+    pub suggested: ImportMapping,
+    pub rows: usize,
+}
+
+/// What a picked file looks like (`ImportDetected`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportDetected {
+    pub format: Option<String>,
+    pub needs_password: bool,
+    pub columns: Option<ImportColumnsView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeftOut {
+    pub reason: String,
+    pub count: usize,
+}
+
+/// What an import brings in (`ImportPreviewView`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportPreviewView {
+    pub logins: usize,
+    pub notes: usize,
+    pub cards: usize,
+    pub identities: usize,
+    pub folders: usize,
+    pub trashed: usize,
+    pub left_out: Vec<LeftOut>,
 }
 
 /// The app's state (`Status` in `protocol.ts`).
@@ -157,6 +373,73 @@ pub enum AskState {
     Code,
     Approved,
     Ended,
+}
+
+/// One row of the vault's list (`VaultRow`): never a hidden value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultRow {
+    pub vault_id: String,
+    pub item_id: String,
+    pub r#type: String,
+    pub title: String,
+    pub subtitle: String,
+    pub url: String,
+    pub favorite: bool,
+    pub folder_id: Option<String>,
+    pub trashed: bool,
+    pub has_password: bool,
+    pub has_code: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderView {
+    pub vault_id: String,
+    pub item_id: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VaultView {
+    pub items: Vec<VaultRow>,
+    pub folders: Vec<FolderView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TotpNow {
+    pub code: String,
+    pub seconds_left: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasskeyView {
+    pub rp_id: String,
+    pub user_name: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PastPassword {
+    pub saved_at: i64,
+    pub path: String,
+}
+
+/// An item to show (`ItemView`): every hidden value left out (D67 §1).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemView {
+    pub vault_id: String,
+    pub item_id: String,
+    pub item: serde_json::Value,
+    pub hidden: Vec<String>,
+    pub read_only: bool,
+    pub code: Option<TotpNow>,
+    pub passkeys: Vec<PasskeyView>,
+    pub password_history: Vec<PastPassword>,
 }
 
 /// A reply as the screens read it.

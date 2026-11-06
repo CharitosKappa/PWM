@@ -12,7 +12,7 @@ import { SaveOffer } from "./Offer.tsx";
 import { ReportLink } from "./Report.tsx";
 import { Field, Notice } from "./ui.tsx";
 
-type Unlocked = Extract<Status, { state: "unlocked" }>;
+export type Unlocked = Extract<Status, { state: "unlocked" }>;
 
 export function Vault({
   status,
@@ -287,7 +287,7 @@ function SignInAgain({
   );
 }
 
-function SyncLine({
+export function SyncLine({
   status,
   onSync,
 }: {
@@ -415,7 +415,7 @@ function Detail({
   );
 }
 
-function Generator({
+export function Generator({
   onToast,
 }: {
   onToast: (text: string) => void;

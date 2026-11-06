@@ -26,9 +26,13 @@ export const chromeHost: Host = {
   },
   // Only Chromium has the inline icon and the save card (D40 §2). Firefox
   // and Safari ask for server access when signing in (D40 §1, D48 §4).
+  // The manage page is a tab of its own.
+  closeManage: null,
   browser: true,
   inlineUi: PWM_TARGET === "chromium",
   touchId: navigator.userAgent.includes("Mac OS X"),
   manage: true,
+  // The popup keeps its list; items come to the manage page in M4.14.
+  vaultWindow: false,
   asksServerAccess: PWM_TARGET !== "chromium",
 };

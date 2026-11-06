@@ -3162,3 +3162,106 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **The Touch ID setting:** its user-agent test became a host flag.
   - **The protocol samples:** `ui/src/protocol-samples.ts`, typed against `protocol.ts`, written to `protocol-samples.json` (Vitest checks it's current; `PWM_UPDATE_SAMPLES=1` rewrites it), and read by `tests/protocol_samples.rs`.
   - **Not testable here:** the Linux code (this machine is Windows). It compiles first in the `desktop-linux` job.
+
+  Implementation notes (M7.6):
+  - **The manage page shares the window:** `manage.html` sits next to `index.html` in the desktop's page. Settings opens it; "Back to the vault" comes from a new host method, `closeManage`, which the extension leaves null because its manage page is a tab of its own.
+  - **The leak check's switch** is in `settings.json` (`leakCheck`). It's optional within version 1: a file without it reads as on, and a test reads an M7.4 file. The check itself goes to Have I Been Pwned through the same `reqwest` client, with padding and only 5-character prefixes (D22 §4).
+  - **Site links:** the health report's "Change" opens http and https links in the default browser through the `open` crate (MIT). The app still never opens a window of its own.
+  - **The device id, found while testing:** the server ties a device id to one account, so after signing out, a second account signed up on the same computer was refused (`device_conflict`, shown as a server error). As on Android (D59's notes), a sign-up gets a new id, and a sign-in reuses the stored id only for the account it belongs to (kept as `deviceAccount`). The extension keeps its device id the same way and has the same gap.
+  - **The server tests share accounts:** the server allows 5 sign-ups an hour from one address, and CI's end-to-end check needs one. So the server tests are one sequence with 3 sign-ups.
+  - **Wording:** where the manage page named the extension (signing in from the toolbar button, signing out in its settings), the desktop says Settings.
+- **D67 — Items in the desktop's window: what reaches the page, the requests, the layout, editing, and tests** · settled 2026-11-06 · founder (approved as proposed).
+  M7.7 (D66 §1) asks for a full-window layout with a sidebar, an item's detail, and editing every item type, in the shared screens with new requests. That brings the desktop to the Mac app's screens (D43). Two things stand in the way:
+  - **The shared screens never see a secret.** Copying goes through the backend, and the protocol's own header says the screens never receive passwords or one-time codes. Showing and editing an item needs them in the page.
+  - **No such screens exist in TypeScript.** The extension's popup has the list, search and copying, but no item detail or editing.
+
+  Open:
+  - what reaches the page, and when
+  - the new requests
+  - the layout
+  - editing: the item types, fields from newer versions, folders, tags, one-time codes, trash
+  - where the code lives, and what the extension gets
+  - tests
+
+  Proposal:
+  1. **What reaches the page, as D31 allows for revealed fields:**
+     - **The list:** summaries only, never a hidden value. Each row has the type, title, a subtitle (the username, a card's last 4 digits, or a name), the folder, favorite, and whether a password or one-time code exists.
+     - **An item's detail:** its fields with every hidden value left out. That covers a login's password, a card's number and security code, hidden custom fields, the one-time code's secret and the passwords in its history. Each is listed by its place in the item, so the screen shows it masked.
+     - **Show:** clicking Show asks for that one value, which the screen holds until it hides it again, or closes the item.
+     - **The one-time code:** the detail carries the current code and its seconds left, refreshed each period, as on the Mac (D43). Never the secret.
+     - **Edit:** only when the user opens Edit does the page get the whole item (D18 JSON). It's dropped when the editor closes, saved or not.
+     - **Copy:** still through the backend and its 30-second clear (D34). The `copy` request takes any field by its place, not just a login's three.
+     - **Locking:** reloads the window (D66 §6), so nothing revealed outlives the lock.
+     - **The extension's popup keeps its rule:** it never asks for these requests.
+     - **The protocol's header and `SECURITY.md`'s D31 paragraph** say which requests return hidden values: `reveal` and `itemForEdit` only.
+  2. **The requests (M7.7)**, answered by the desktop backend, with samples in `protocol-samples.ts`:
+     - **`vault`:** the summaries and the folders, with trashed items marked.
+     - **`item`:** the detail, as point 1 describes, plus whether it's read-only.
+     - **`reveal`:** one hidden value of one item.
+     - **`itemForEdit`:** the whole item, for the editor.
+     - **`saveItem`:** a new or edited item, as D18 JSON. The core checks it (`save_item`) and keeps the previous version in its history (D19). It answers with the item's id, then syncs in the background.
+     - **`trashItem`, `restoreItem` and `deleteItem`:** to the trash, back out, and forever, which the screen asks about first.
+     - **`newFolder`:** a folder made from the editor's picker.
+     - **`totpSetup`:** a pasted `otpauth://` URI or bare secret, read by the core's parser (D23), answering the URI to save, or why it isn't one.
+  3. **The layout,** in `@pwm/ui` as a new `VaultWindow`, which the desktop shows instead of the popup's `Vault`:
+     - **Three panes:**
+       - **The sidebar:** All items, Favorites, Logins, Cards, Identities, Notes, each folder, and Trash, as D43 lists them. Below them: Generator, Settings, and "Password health, devices and export".
+       - **The list.**
+       - **The item:** its detail or its editor.
+     - **Narrower than 720 pixels:** one pane at a time, with Back.
+     - **Search** over the summaries, by D43 §3's rules (title, username, URL, a card's last 4 digits; trashed items and folders skipped; ordered by title).
+     - **Shortcuts:** Ctrl+N for a new login, Ctrl+F for search, as ⌘N and ⌘F on the Mac (D66 §6).
+     - **No website icons:** fetching them would tell third parties which sites are in the vault (D43).
+  4. **Editing, by D43 §4's rules:**
+     - **In place:** the editor changes the D18 JSON it was given, so fields a newer client wrote are kept. D41 and D52 do the same in Swift and Kotlin. This is the item's decrypted JSON, not vault parsing: the core decrypts, checks every save and keeps the history.
+     - **Read-only items:** those with a newer schema or an unknown type show read-only, with "Update the app to edit this item".
+     - **Fields:**
+       - every D18 field of a login, card, identity and note
+       - custom fields of every kind
+       - tags as text
+       - the folder from a picker, which can make a new folder
+     - **The password field** has Generate, with the generator beside it.
+     - **The one-time code:** pasted as a URI or a secret, through `totpSetup`. The desktop has no camera scanner.
+     - **Passkeys** show read-only, as "Passkey for example.com".
+     - **Password history:** read-only, newest first, each password masked with its own Show.
+     - **Unsaved changes:** leaving the editor with changes asks whether to discard them. No other prompts.
+     - **A sync during an edit:** the save still wins, and the other version goes to the history (D19).
+  5. **Where the code lives:**
+     - **`ui/src/items/`:** the screens and typed accessors for the D18 JSON, in TypeScript.
+     - **`ui/src/vault-window/`:** the layout.
+     - **The desktop backend:** a new `items.rs`.
+     - **The extension:**
+       - **Not in M7.7:** its popup is too small for these screens, and its manage page is the natural home.
+       - **Parity:** iOS, Android and macOS can edit items; the extension can't. That gap is logged here, for a new task, M4.14 "Items in the extension's manage page", which reuses `VaultWindow`.
+       - **Its background** answers the new kinds `unsupported` until then.
+  6. **Tests:**
+     - **Vitest:**
+       - the item accessors, for every type: unknown fields kept, editing a card, custom fields
+       - search and ordering over generated summaries, 5,000 within the time D43 allows
+       - the masking rule: no summary or detail sample holds a value marked hidden
+     - **Rust:**
+       - each new request against a real server (save, edit with history, trash and restore, delete, folders, `totpSetup`)
+       - a test that `vault` and `item` never return a hidden value
+     - **Protocol samples:** for every new request and reply.
+     - **End to end:**
+       - create a login, edit it, Show and Copy its password
+       - trash and restore it
+       - a card with a custom field
+     - **`QUALITY.md`:** the desktop checklist gains these steps.
+
+  Alternatives:
+  - **Send the whole item for the detail too:** simpler, but every hidden value would sit in the page whenever an item is open, not only after Show or Edit.
+  - **Keep editing in Rust, sending the page a form to draw:** it keeps JSON out of TypeScript, but needs a second schema for the forms. Every app already edits D18 JSON in its own language.
+  - **Native item screens in Rust:** that's against D3, which shares the screens.
+  - **Item screens in the extension's popup:** a popup is too small, and closes when it loses focus.
+
+  Implementation notes (M7.7):
+  - **Passkeys never reach the page,** not even in the editor. The detail shows each one's site and user name. The editor's copy has no passkeys, and a save puts the stored ones back, so the page can't add, change or drop one. The core's edit replaces the whole login, which is why the backend does this.
+  - **The history** isn't in the editor's copy either. The core keeps the previous version itself (D19), so the editor never holds old passwords.
+  - **`reveal`** answers only a place the item's hidden places list, never another field. Copy takes any field by its JSON Pointer, so it shares the backend's 30-second clear.
+  - **The one-time code setup** goes through `totpSetup` when the editor saves, so the core checks and normalizes it (D23).
+  - **New items** come without an id. The backend gives one, along with `v` and the times, and puts the item in the first vault.
+  - **The window** opens at 1080 × 720, so the three panes fit. Below 720 pixels it shows one pane at a time, as D67 §3 says.
+  - **Found while running it:** the editor's changes now build on the latest item, so two changes in one tick both count.
+  - **The extension's background** answers D67's kinds, and copying by place, `unsupported` until M4.14. The screens describe that code in plain words.
+  - **Reused from the popup:** `Generator` and `SyncLine` are now exported from `Vault.tsx` and used in the window.

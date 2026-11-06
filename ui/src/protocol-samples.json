@@ -206,6 +206,62 @@
     },
     {
       "kind": "importCancel"
+    },
+    {
+      "kind": "vault"
+    },
+    {
+      "kind": "item",
+      "vaultId": "00000000-0000-4000-8000-000000000001",
+      "itemId": "00000000-0000-4000-8000-000000000002"
+    },
+    {
+      "kind": "reveal",
+      "vaultId": "00000000-0000-4000-8000-000000000001",
+      "itemId": "00000000-0000-4000-8000-000000000002",
+      "path": "/login/password"
+    },
+    {
+      "kind": "itemForEdit",
+      "vaultId": "00000000-0000-4000-8000-000000000001",
+      "itemId": "00000000-0000-4000-8000-000000000002"
+    },
+    {
+      "kind": "saveItem",
+      "vaultId": null,
+      "item": {
+        "type": "note",
+        "title": "Wi-Fi",
+        "notes": "On the router",
+        "favorite": false,
+        "folder_id": null,
+        "tags": [],
+        "custom_fields": []
+      }
+    },
+    {
+      "kind": "trashItem",
+      "vaultId": "00000000-0000-4000-8000-000000000001",
+      "itemId": "00000000-0000-4000-8000-000000000002"
+    },
+    {
+      "kind": "restoreItem",
+      "vaultId": "00000000-0000-4000-8000-000000000001",
+      "itemId": "00000000-0000-4000-8000-000000000002"
+    },
+    {
+      "kind": "deleteItem",
+      "vaultId": "00000000-0000-4000-8000-000000000001",
+      "itemId": "00000000-0000-4000-8000-000000000002"
+    },
+    {
+      "kind": "newFolder",
+      "title": "Work"
+    },
+    {
+      "kind": "totpSetup",
+      "input": "JBSWY3DPEHPK3PXP",
+      "title": "Mail"
     }
   ],
   "desktopKinds": [
@@ -230,7 +286,32 @@
     "askApproval",
     "askApprovalPoll",
     "askApprovalCancel",
-    "signInApproved"
+    "signInApproved",
+    "devices",
+    "renameDevice",
+    "revokeDevice",
+    "health",
+    "checkLeaks",
+    "setLeakCheck",
+    "approvals",
+    "acceptApproval",
+    "completeApproval",
+    "denyApproval",
+    "exportVault",
+    "importDetect",
+    "importPrepare",
+    "importFinish",
+    "importCancel",
+    "vault",
+    "item",
+    "reveal",
+    "itemForEdit",
+    "saveItem",
+    "trashItem",
+    "restoreItem",
+    "deleteItem",
+    "newFolder",
+    "totpSetup"
   ],
   "replies": {
     "status": [
@@ -274,6 +355,227 @@
       {
         "serverUrl": "https://api.pwm.invalid",
         "autoLockMinutes": 15
+      }
+    ],
+    "devices": [
+      [
+        {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "platform": "windows",
+          "name": "Desk",
+          "createdAt": 1762400000000,
+          "lastSeenAt": 1762400100000,
+          "revokedAt": null,
+          "current": true
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000005",
+          "platform": "ios",
+          "name": null,
+          "createdAt": 1762300000000,
+          "lastSeenAt": 1762300000000,
+          "revokedAt": 1762350000000,
+          "current": false
+        }
+      ]
+    ],
+    "health": [
+      {
+        "weak": [
+          {
+            "vaultId": "00000000-0000-4000-8000-000000000001",
+            "itemId": "00000000-0000-4000-8000-000000000002",
+            "title": "Mail",
+            "username": "a@example.com",
+            "url": "https://mail.example.com"
+          }
+        ],
+        "reused": [],
+        "leaked": null,
+        "leakCheck": true
+      },
+      {
+        "weak": [],
+        "reused": [],
+        "leaked": [
+          {
+            "vaultId": "00000000-0000-4000-8000-000000000001",
+            "itemId": "00000000-0000-4000-8000-000000000002",
+            "title": "Mail",
+            "username": "a@example.com",
+            "url": "",
+            "count": 3
+          }
+        ],
+        "leakCheck": false
+      }
+    ],
+    "approvals": [
+      [
+        {
+          "id": "00000000-0000-4000-8000-000000000004",
+          "platform": "linux",
+          "createdAt": 1762400000000,
+          "state": "revealed",
+          "code": "123456"
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000006",
+          "platform": "ios",
+          "createdAt": 1762400000000,
+          "state": "pending",
+          "code": null
+        }
+      ]
+    ],
+    "exportVault": [
+      {
+        "file": "UFdN",
+        "name": "PWM export 2026-11-06.pwmx"
+      }
+    ],
+    "importDetect": [
+      {
+        "format": "bitwarden",
+        "needsPassword": true,
+        "columns": null
+      },
+      {
+        "format": null,
+        "needsPassword": false,
+        "columns": null
+      },
+      {
+        "format": "csv",
+        "needsPassword": false,
+        "columns": {
+          "headers": [
+            "name",
+            "login",
+            "pw"
+          ],
+          "suggested": {
+            "title": 0,
+            "url": null,
+            "username": 1,
+            "password": 2,
+            "notes": null,
+            "totp": null,
+            "folder": null,
+            "favorite": null,
+            "tags": null
+          },
+          "rows": 2
+        }
+      }
+    ],
+    "importPrepare": [
+      {
+        "logins": 2,
+        "notes": 1,
+        "cards": 0,
+        "identities": 0,
+        "folders": 1,
+        "trashed": 0,
+        "leftOut": [
+          {
+            "reason": "attachments",
+            "count": 2
+          }
+        ]
+      }
+    ],
+    "vault": [
+      {
+        "items": [
+          {
+            "vaultId": "00000000-0000-4000-8000-000000000001",
+            "itemId": "00000000-0000-4000-8000-000000000002",
+            "type": "login",
+            "title": "Mail",
+            "subtitle": "a@example.com",
+            "url": "https://mail.example.com",
+            "favorite": true,
+            "folderId": "00000000-0000-4000-8000-000000000007",
+            "trashed": false,
+            "hasPassword": true,
+            "hasCode": true
+          },
+          {
+            "vaultId": "00000000-0000-4000-8000-000000000001",
+            "itemId": "00000000-0000-4000-8000-000000000008",
+            "type": "card",
+            "title": "Visa",
+            "subtitle": "•••• 1234",
+            "url": "",
+            "favorite": false,
+            "folderId": null,
+            "trashed": true,
+            "hasPassword": false,
+            "hasCode": false
+          }
+        ],
+        "folders": [
+          {
+            "vaultId": "00000000-0000-4000-8000-000000000001",
+            "itemId": "00000000-0000-4000-8000-000000000007",
+            "title": "Work"
+          }
+        ]
+      }
+    ],
+    "item": [
+      {
+        "vaultId": "00000000-0000-4000-8000-000000000001",
+        "itemId": "00000000-0000-4000-8000-000000000002",
+        "item": {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "v": 1,
+          "type": "login",
+          "title": "Mail",
+          "login": {
+            "username": "a@example.com",
+            "password": "",
+            "totp": ""
+          }
+        },
+        "hidden": [
+          "/login/password",
+          "/login/totp",
+          "/history/0/login/password"
+        ],
+        "readOnly": false,
+        "code": {
+          "code": "123456",
+          "secondsLeft": 17
+        },
+        "passkeys": [
+          {
+            "rpId": "example.com",
+            "userName": "a",
+            "createdAt": 5
+          }
+        ],
+        "passwordHistory": [
+          {
+            "savedAt": 1762300000000,
+            "path": "/history/0/login/password"
+          }
+        ]
+      },
+      {
+        "vaultId": "00000000-0000-4000-8000-000000000001",
+        "itemId": "00000000-0000-4000-8000-000000000009",
+        "item": {
+          "v": 2,
+          "type": "wifi",
+          "title": "Home"
+        },
+        "hidden": [],
+        "readOnly": true,
+        "code": null,
+        "passkeys": [],
+        "passwordHistory": []
       }
     ],
     "askApproval": [
