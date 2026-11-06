@@ -58,6 +58,21 @@ export function wait(delayMs: number): CoreStep {
 
 /** A core whose server conversations are one request each, answered by `next`. */
 export class FakeCore implements Core {
+  /**
+   * The server's rule (D59's notes): a device id belongs to the first
+   * account that uses it; another account using it is `device_conflict`.
+   * Shared by every core of one set of functions, as the server is.
+   */
+  constructor(readonly deviceOwners = new Map<string, string>()) {}
+
+  private claim(deviceId: string, email: string): void {
+    // The account, not how its email was typed.
+    const account = email.trim().toLowerCase();
+    const owner = this.deviceOwners.get(deviceId);
+    if (owner !== undefined && owner !== account) throw coreError("server");
+    this.deviceOwners.set(deviceId, account);
+  }
+
   unlocked = false;
   account: string | undefined;
   items_ = new Map<string, string[]>();
@@ -97,6 +112,7 @@ export class FakeCore implements Core {
     this.next = () => {
       if (email === "taken@example.com") throw coreError("account_exists");
       if (password !== PASSWORD) throw coreError("weak_password");
+      this.claim(deviceId, email);
       this.account = "acct-1";
       this.unlocked = true;
       this.tokens = ["access-1", "refresh-1"];
@@ -120,6 +136,7 @@ export class FakeCore implements Core {
     this.next = () => {
       if (password !== PASSWORD || secretKey !== SECRET_KEY || email === "")
         throw coreError("invalid_credentials");
+      this.claim(deviceId, email);
       this.account = "acct-1";
       this.unlocked = true;
       this.tokens = ["access-1", "refresh-1"];
@@ -601,6 +618,51 @@ export class FakeCore implements Core {
     });
   }
 
+  item(vaultId: string, itemId: string): string | undefined {
+    if (!this.unlocked) throw coreError("locked");
+    return (this.items_.get(vaultId) ?? []).find(
+      (j) => (JSON.parse(j) as { id: string }).id === itemId,
+    );
+  }
+
+  setTrashed(
+    vaultId: string,
+    itemId: string,
+    trashed: boolean,
+    nowMs: number,
+  ): void {
+    const json = this.item(vaultId, itemId);
+    if (json === undefined) throw coreError("unknown_item");
+    const item = JSON.parse(json) as Record<string, unknown>;
+    item.trashed_at = trashed ? nowMs : null;
+    this.saveItem(vaultId, JSON.stringify(item));
+  }
+
+  deleteItem(vaultId: string, itemId: string): void {
+    if (!this.unlocked) throw coreError("locked");
+    this.items_.set(
+      vaultId,
+      (this.items_.get(vaultId) ?? []).filter(
+        (j) => (JSON.parse(j) as { id: string }).id !== itemId,
+      ),
+    );
+  }
+
+  /** Items trashed more than 30 days before `nowMs` go. */
+  purgeTrash(nowMs: number): number {
+    if (!this.unlocked) throw coreError("locked");
+    let purged = 0;
+    for (const [vaultId, list] of this.items_) {
+      const kept = list.filter((j) => {
+        const at = (JSON.parse(j) as { trashed_at?: number | null }).trashed_at;
+        return typeof at !== "number" || nowMs - at < 30 * 24 * 60 * 60 * 1000;
+      });
+      purged += list.length - kept.length;
+      this.items_.set(vaultId, kept);
+    }
+    return purged;
+  }
+
   saveItem(vaultId: string, json: string): string {
     if (!this.unlocked) throw coreError("locked");
     const item = JSON.parse(json) as { id: string };
@@ -920,8 +982,9 @@ export function fakeFunctions(): CoreFunctions & {
   nextAsk: { kind: string; code?: string; secretKey?: string }[];
 } {
   const cores: FakeCore[] = [];
+  const deviceOwners = new Map<string, string>();
   const make = (): FakeCore => {
-    const core = new FakeCore();
+    const core = new FakeCore(deviceOwners);
     cores.push(core);
     return core;
   };
@@ -962,6 +1025,12 @@ export function fakeFunctions(): CoreFunctions & {
       Array.from({ length: words }, () => "word").join("-"),
     passwordScore: (password) =>
       password === PASSWORD || password === EXPORT_PASSWORD ? 4 : 1,
+    normalizeTotp: (input, title) => {
+      if (input.startsWith("otpauth://")) return input;
+      if (/^[A-Z2-7]{16,}$/.test(input))
+        return `otpauth://totp/${encodeURIComponent(title)}?secret=${input}`;
+      throw coreError("invalid_totp");
+    },
     breachRangeUrl: (prefix) =>
       `https://api.pwnedpasswords.com/range/${prefix}`,
     detectImport: (name, bytes) => {
@@ -1134,6 +1203,13 @@ export class FakePages implements Pages {
 
   setGlobalBadge(text: string) {
     this.globalBadge = text;
+    return Promise.resolve();
+  }
+
+  lockNotices = 0;
+
+  notifyLocked() {
+    this.lockNotices++;
     return Promise.resolve();
   }
 }

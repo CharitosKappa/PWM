@@ -30,6 +30,43 @@ export function isPopupMessage(value: unknown): value is PopupMessage {
   return typeof kind === "string" && REQUEST_KINDS.has(kind);
 }
 
+/**
+ * The kinds only the manage page may send: the item screens (D67). The
+ * popup never asks for a hidden value (D67 §1).
+ */
+export const MANAGE_PAGE_KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
+  "vault",
+  "item",
+  "reveal",
+  "itemForEdit",
+  "saveItem",
+  "trashItem",
+  "restoreItem",
+  "deleteItem",
+  "newFolder",
+  "totpSetup",
+]);
+
+/** Whether the popup (or options page) may send this request. */
+export function popupMay(request: Request): boolean {
+  return (
+    !MANAGE_PAGE_KINDS.has(request.kind) &&
+    !(request.kind === "copy" && "path" in request)
+  );
+}
+
+/** From the background to the extension's own pages: the vault locked. */
+export interface LockedMessage {
+  target: "pages";
+  kind: "locked";
+}
+
+export function isLockedMessage(value: unknown): value is LockedMessage {
+  if (typeof value !== "object" || value === null) return false;
+  const message = value as Partial<LockedMessage>;
+  return message.target === "pages" && message.kind === "locked";
+}
+
 /** Message from the background to the offscreen document. */
 export interface ClipboardMessage {
   target: "offscreen";

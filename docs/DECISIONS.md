@@ -10,9 +10,19 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **Licence:** `OFL-1.1` joins the S6 allow-list for **font files only, never code**, like CC-BY for the wordlist (D21). OFL allows bundling the fonts in a paid, closed-source product. Its conditions: ship the licence text with the files, don't sell the fonts on their own, and don't publish a modified font under a reserved name.
     - **How they ship:** the unmodified font files from the upstream releases sit next to a `NOTICE.md` (source, version, SHA-256, licence), as the wordlist does. The OFL text goes into `THIRD_PARTY_NOTICES` and the About screen. They don't come through cargo or npm, so `deny.toml` and `scripts/licenses.mjs` are unchanged.
     - **Tokens:** `font.family.sans` and `font.family.mono` now start with Manrope and Geist Mono, then the system fonts as fallbacks.
+  - **Pill buttons** · done 2026-11-06:
+    - **Shared screens and the inline frame** (the extension popup, the manage page, the desktop app): buttons use `radius.full`. Primary buttons sit on `accent`; a plain button is a secondary action, accent text on `accent-soft`.
+    - **Apple apps:** `.buttonBorderShape(.capsule)` is set at the root and in the AutoFill extension.
+    - **Android:** Material 3 buttons are already pills. `Secondary` is now a `FilledTonalButton` on `accent-soft`.
+  - **Font files** · bundled 2026-11-06. The files are in `design/fonts/`: the variable fonts from the Google Fonts repository, unmodified and only renamed, with `NOTICE.md` giving the commit, sizes and SHA-256 hashes.
+    - **Extension and desktop app:** the generated `tokens.css` declares both in `@font-face`. The builds copy the fonts, both OFL texts and `NOTICE.md` into `fonts/`.
+    - **Apple:** `PWMDesign` carries them as package resources (`Fonts/`) and registers them for the process (`AppFonts`). Token text styles use them. `Font.secret(_:)` replaces the system monospaced font, and the root sets Manrope as the default.
+    - **Android:** they are in `res/font` (`manrope`, `geist_mono`). The theme uses Manrope for every Material text style and Geist Mono for secrets.
+    - **Copies:** `scripts/fonts.mjs` keeps the Apple and Android copies the same as `design/fonts`, and `just check` fails when they differ.
+    - **Notices:** `just notices` writes `THIRD_PARTY_NOTICES/fonts.md` (the notice and both OFL texts), which the Apple and Android notice screens show.
   - **Not done yet:**
-    - Buttons in the apps use `radius.md` (now 16); making them pills needs a change in each app's button style.
-    - The font files are not bundled yet, so every platform still falls back to system fonts. Each app needs the files, its `NOTICE.md` and a registration step: Info.plist `UIAppFonts` on iOS, `res/font` on Android, `@font-face` in the extension and the Tauri UI. The Swift and Kotlin token generators emit only a `monospaced` flag, so they will need the family names too.
+    - **Font names still hard-coded:** the family names are written in `AppFonts` (Swift), `Theme.kt` and `FONT_FILES` (`extension/scripts/tokens.mjs`) rather than generated from `tokens.json`. The extension's test checks that `tokens.json` and `FONT_FILES` agree.
+    - **System controls:** on Apple, navigation titles and other system controls keep the system font.
 - **D4 — Launch segment**: consumers first (this plan) vs SMB self-hosted first.
 - **D5 — Company jurisdiction and hosting region**: EU (Greece/Switzerland/Germany hosting) is a selling point.
 - **D6 — Entitlements/billing**: RevenueCat vs own entitlement service on Stripe + store receipts.
@@ -2624,7 +2634,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **What a match fills:** while unlocked, an entry carries the login's values and fills at once; one with a one-time code and no code field goes through PWM's fill screen without showing it, so the code is copied after the fill. Locked, the entry opens the fill screen, which unlocks with the app's unlock screen (without the fingerprint offer, D45 §3).
   - **Never into PWM itself:** a request from PWM's own screens gets nothing.
   - **The device test and keyboards:** a keyboard that takes inline suggestions (Gboard on the emulator) shows PWM's entries as chips that UiAutomator can't read. Debug builds read a switch the test sets, `pwm.test`/`dropdownOnly`, to send the dropdown instead; a release build never reads it.
-  - **Found while testing, fixed here:** signing out kept the device id, so a new account signed up on the same phone was refused by the server (`device_conflict`, shown as a server error). Android now gives a sign-up a new device id, and reuses the stored id only for the account it belongs to (kept as `device-account`). The Apple app keeps the device id the same way and has the same gap; it's logged here for M5's next touch.
+  - **Found while testing, fixed here:** signing out kept the device id, so a new account signed up on the same phone was refused by the server (`device_conflict`, shown as a server error). Android now gives a sign-up a new device id, and reuses the stored id only for the account it belongs to (kept as `device-account`). The Apple app keeps the device id the same way and has the same gap; it's logged here for M5's next touch. The desktop (M7.6) and the extension (2026-11-06) follow the same rule, the extension keeping the owner as `deviceAccount` beside `deviceId`.
   - **Run on this machine:** the core tests and clippy, the JVM tests and the server test, the build and licence check (118 libraries), and the 5 device tests on an Android 16 emulator against a local server. Not run: a real phone with Chrome, Firefox and Gboard (the `QUALITY.md` checklist).
 
 - **D59 — Android account and data screens: devices, approving, signing in again, health, export and import** · settled 2026-11-04 · founder (approved as proposed).
@@ -3160,7 +3170,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The manage page shares the window:** `manage.html` sits next to `index.html` in the desktop's page. Settings opens it; "Back to the vault" comes from a new host method, `closeManage`, which the extension leaves null because its manage page is a tab of its own.
   - **The leak check's switch** is in `settings.json` (`leakCheck`). It's optional within version 1: a file without it reads as on, and a test reads an M7.4 file. The check itself goes to Have I Been Pwned through the same `reqwest` client, with padding and only 5-character prefixes (D22 §4).
   - **Site links:** the health report's "Change" opens http and https links in the default browser through the `open` crate (MIT). The app still never opens a window of its own.
-  - **The device id, found while testing:** the server ties a device id to one account, so after signing out, a second account signed up on the same computer was refused (`device_conflict`, shown as a server error). As on Android (D59's notes), a sign-up gets a new id, and a sign-in reuses the stored id only for the account it belongs to (kept as `deviceAccount`). The extension keeps its device id the same way and has the same gap.
+  - **The device id, found while testing:** the server ties a device id to one account, so after signing out, a second account signed up on the same computer was refused (`device_conflict`, shown as a server error). As on Android (D59's notes), a sign-up gets a new id, and a sign-in reuses the stored id only for the account it belongs to (kept as `deviceAccount`). The extension had the same gap; it now follows the same rule.
   - **The server tests share accounts:** the server allows 5 sign-ups an hour from one address, and CI's end-to-end check needs one. So the server tests are one sequence with 3 sign-ups.
   - **Wording:** where the manage page named the extension (signing in from the toolbar button, signing out in its settings), the desktop says Settings.
 - **D67 — Items in the desktop's window: what reaches the page, the requests, the layout, editing, and tests** · settled 2026-11-06 · founder (approved as proposed).
@@ -3258,6 +3268,14 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Found while running it:** the editor's changes now build on the latest item, so two changes in one tick both count.
   - **The extension's background** answers D67's kinds, and copying by place, `unsupported` until M4.14. The screens describe that code in plain words.
   - **Reused from the popup:** `Generator` and `SyncLine` are now exported from `Vault.tsx` and used in the window.
+
+  Implementation notes (M4.14, the extension):
+  - **The rules are the desktop's,** in `extension/src/background/items.ts`: the same hidden places, masking, read-only check and passkey handling as `items.rs`, with tests that mirror its own.
+  - **The manage page** shows `VaultWindow` as its Items tab, at `#items`. "Password health, devices and export" switches to the other tabs in the same page, and Items comes back. The desktop's manage page has no Items tab: its window is the vault. The popup links to it with "Edit items in a tab".
+  - **Settings** aren't in the extension's window: they stay in the popup, so `VaultWindow`'s Settings is shown only where the host has one.
+  - **The popup can't ask:** the background answers D67's kinds, and copying by place, only from `manage.html`, as the browser names the sender. The popup gets `unsupported`.
+  - **Locking:** the background tells the extension's pages, and the manage page reloads, as D67 §1 asks of the desktop's window.
+  - **The trash empties at unlock** (D19) in the extension too, now that it can trash items.
 - **D68 — Windows Hello unlock: the key, wrapping the unlock key, the PIN, and what D45 carries over** · settled 2026-11-06 · founder (approved as proposed).
   M7.5 says "Windows Hello unlock, under D45's rules, with its key-wrapping decision first". D45 settled biometric unlock for every platform: the core seals the opened keyset under a random 32-byte unlock key (`export_biometric_unlock`, `unlock_biometric`), and the platform's keystore protects that key. On Apple it's a Secure Enclave key that decrypts (D45 §2); on Android a Keystore key that decrypts (D55 §1).
 

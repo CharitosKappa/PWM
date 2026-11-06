@@ -407,7 +407,14 @@ Phase 3  Teams           months 16–24 M16–M19
     - **Apple:** its username field itself is transparent, so it isn't the "password not shown yet" case.
     - **Airbnb** (a field transparent by design) and **the sites where no form was found**, per D65.
     - **Parity:** iOS and Android get the keywords through the core. Their own checks before filling are separate code, and whether D65 §1–§3 apply there is still to check (M5, M6).
-- [ ] M4.14 Items in the extension's manage page (D67 §5): the desktop's `VaultWindow` (detail, editing every type, trash) in the manage page, with the background answering D67's requests. Parity with iOS, Android and macOS, which can edit items.
+- [x] M4.14 Items in the extension's manage page (D67 §5): the desktop's `VaultWindow` (detail, editing every type, trash) in the manage page, with the background answering D67's requests. Parity with iOS, Android and macOS, which can edit items.
+  - Done per D67 (notes there):
+    - **The background:** `items.ts` answers D67's requests with the desktop's rules: lists and details without hidden values, `reveal` only for a hidden place, the editor's copy without history or passkeys, the stored passkeys kept on save, new items in the first vault. Copy takes a place. Each change is kept on disk, then synced.
+    - **WASM:** `item`, `setTrashed`, `purgeTrash` and `normalizeTotp`. The trash older than 30 days now empties at unlock in the extension too (D19).
+    - **The manage page:** an Items tab (`manage.html#items`) shows `VaultWindow`; its "Password health, devices and export" switches tabs in place. The popup has "Edit items in a tab". The extension has no Settings in the window: they stay in the popup.
+    - **Only the manage page may ask:** the background refuses D67's kinds, and copying by place, from the popup.
+    - **A lock reloads the manage page,** so nothing revealed outlives it, as the desktop's window does.
+    - **Tests:** 18 Vitest tests (`items.test.ts`: the masking rules, every request, passkeys kept, the purge, the sender rule), the WASM typings, and Playwright tests in `manage.spec.ts` (Show, edit, trash and restore, the popup refused, the lock), on the manage page's one account: the server allows 5 sign-ups an hour per address. The Playwright spec runs in CI: this machine has no Playwright Chromium.
 
 **Done when:** fixture suite 100%; top-1,000 classification ≥ 90% (target 95% by launch); overlay attacks never fill. Since D39, the classification target is measured each night by the top-sites runner on a growing list, and gates the launch in M10, not the end of M4.
 
@@ -693,13 +700,13 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
     - **The window:** `manage.html` in the desktop's page, opened from Settings, with "Back to the vault" (a new host method, `closeManage`). Exports go to Downloads under a free name; a site link opens in the default browser.
     - **Found and fixed:** a second account signed up on the same computer was refused (`device_conflict`), as on Android before D59's fix: a sign-up now gets a new device id, and a sign-in reuses the stored one only for its own account.
   - **Tests:** the protocol samples for every new reply; one server test sequence (3 sign-ups, under the server's 5 an hour) covering import, health, export, devices, approving a new device between two app instances, a revoked device finding out, and a second account on one computer; the end-to-end check opens the manage page. Run here in the real window against a local server: import a CSV, health with weak and reused passwords, the leak check against Have I Been Pwned, devices, a JSON export to Downloads, back to the vault.
-  - **Deferred:** the extension has the same device-id gap; it gets its own fix.
+  - **The extension's device-id gap** is fixed too: a sign-up gets a new id, and a sign-in reuses the stored one only for its own account (`deviceAccount`).
 - [x] M7.7 Items in a full window (D66 §1, D67): a sidebar layout, an item's detail and editing every type, in the shared screens with new requests.
   - Done per D67 (implementation notes there):
     - **The shared screens:** `VaultWindow` (sidebar, list, item), `ItemDetail` and `ItemEditor` in `@pwm/ui`, over D18 JSON accessors that keep unknown fields; the desktop shows it through a new host flag, `vaultWindow`.
     - **The backend** (`items.rs`) answers D67's 10 requests and copying by a field's place. Lists and details never hold a hidden value; Show asks for one; the editor's copy has no history and no passkeys, and a save keeps the stored passkeys.
   - **Tests:** 4 Rust unit tests of the masking rule, the item flow in the server sequence (no new sign-up), the protocol samples, 7 Vitest tests of the model and the masking samples, and the end-to-end check makes, shows, trashes and restores a login. Run here in the real window against a local server, wide and narrow: a login with a generated password, a website, a one-time code and a hidden field; Show and Copy; an edit with its password history; a card in a new folder; trash, restore and delete forever.
-  - **Deferred:** the extension's manage page (M4.14).
+  - **Deferred:** the extension's manage page (M4.14, done since).
 
 ### M8 — Importers (`pwm-import`)
 - [x] M8.1 Bitwarden JSON (incl. encrypted export), 1Password `.1pux`, Keeper JSON, NordPass CSV, Proton Pass ZIP/JSON, Dashlane CSV/JSON, LastPass CSV, generic CSV with column mapper, and our own `.pwmx`/JSON into any account (D51). KeePass is M8.4.

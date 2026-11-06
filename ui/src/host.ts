@@ -24,8 +24,11 @@ export interface Host {
   requestAccess(access: Access): Promise<boolean>;
   /** Gives access back once nothing uses it. */
   releaseAccess(access: Access): Promise<void>;
-  /** Opens the manage page (D44), at a section when one is given. */
-  openManage(section?: "devices"): void;
+  /**
+   * Opens the manage page (D44), at a section when one is given; `items`
+   * is the extension's vault with editing (M4.14).
+   */
+  openManage(section?: "devices" | "items"): void;
   /**
    * Back from the manage page to the vault, where both share one window
    * (the desktop app); null where the manage page has a tab of its own.

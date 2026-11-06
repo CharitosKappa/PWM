@@ -49,6 +49,7 @@ Edge, Brave and Opera get the same Chromium zip as Chrome and have no automated 
 3. Fill a login from the popup and with the shortcut, then copy a password and check that the clipboard clears.
 4. Turn on "Fill and save on sign-in pages": the icon fills, and a new login is offered after signing in.
 5. Turn on passkeys: create one on a WebAuthn test page and sign in with it.
+6. In the popup, Edit items in a tab: make a card with a hidden custom field, Show it, edit it, delete it and restore it from the Trash (M4.14). Lock from the popup: the tab goes back to Unlock.
 
 Firefox: the same steps with `pwm-firefox-<version>.zip` from `about:debugging`. Step 4 offers saves on the toolbar button only, with no icon or card.
 

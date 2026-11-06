@@ -1,6 +1,38 @@
 // CSS custom properties from design/tokens.json (W3C Design Tokens).
 // Light values on :root, dark ones under prefers-color-scheme.
 
+import fs from "node:fs";
+import path from "node:path";
+
+/**
+ * The bundled app fonts (design/fonts, D1): each family's file and the
+ * weights its variable font covers. Pages load them from `fonts/`.
+ */
+export const FONT_FILES = [
+  { family: "Manrope", file: "Manrope.ttf", weights: "200 800" },
+  { family: "Geist Mono", file: "GeistMono.ttf", weights: "100 900" },
+];
+
+/**
+ * Copies the font files with their licence texts and NOTICE.md (OFL: the
+ * licence ships with the fonts) into `dist/fonts`.
+ * @param {string} repo the repository root
+ * @param {string} dist the build's output folder
+ */
+export function copyFonts(repo, dist) {
+  const from = path.join(repo, "design", "fonts");
+  const to = path.join(dist, "fonts");
+  fs.mkdirSync(to, { recursive: true });
+  const names = [
+    ...FONT_FILES.map((f) => f.file),
+    "OFL-Manrope.txt",
+    "OFL-GeistMono.txt",
+    "NOTICE.md",
+  ];
+  for (const name of names)
+    fs.copyFileSync(path.join(from, name), path.join(to, name));
+}
+
 /** @param {unknown} value */
 function px(value) {
   const dim = /** @type {{ value: number, unit: string }} */ (value);
@@ -36,8 +68,18 @@ export function tokensCss(tokens) {
     ),
   ];
   const dark = lines(tokens.color.dark, "color", String).map((l) => `  ${l}`);
+  const faces = FONT_FILES.flatMap((f) => [
+    "@font-face {",
+    `  font-family: "${f.family}";`,
+    `  src: url("fonts/${f.file}") format("truetype");`,
+    `  font-weight: ${f.weights};`,
+    "  font-style: normal;",
+    "  font-display: swap;",
+    "}",
+  ]);
   return [
     "/* Generated from design/tokens.json by scripts/build.mjs. Do not edit. */",
+    ...faces,
     ":root {",
     "  color-scheme: light dark;",
     ...root,

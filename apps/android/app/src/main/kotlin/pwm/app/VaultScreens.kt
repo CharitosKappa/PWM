@@ -62,7 +62,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import java.text.DateFormat
 import java.util.Date
@@ -387,7 +386,7 @@ private fun LoginFields(model: ItemDetailModel, state: ItemDetailModel.State) {
             if (code != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        code.code.value.chunked(3).joinToString(" "), style = Tokens.Text.headline.compose().copy(fontFamily = FontFamily.Monospace),
+                        code.code.value.chunked(3).joinToString(" "), style = Tokens.Text.headline.compose().copy(fontFamily = GeistMono),
                         color = color(Tokens.Color.text), modifier = Modifier.weight(1f).testTag("code"),
                     )
                     Text(stringResource(R.string.code_seconds, code.secondsLeft.toInt()), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))

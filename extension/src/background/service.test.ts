@@ -601,15 +601,56 @@ describe("settings", () => {
     });
   });
 
-  it("signs out: ends the session on the server, forgets the account, keeps the device id", async () => {
+  it("signs out: ends the session on the server, forgets the account, keeps the device id and its account", async () => {
     const { background, platform, core } = await signedUp();
     const ending = core();
     await background.handle({ kind: "signOut" });
     expect(ending.loggedOut).toBe(1);
     expect(platform.requests.at(-1)?.url).toMatch(/\/v1\/auth\/logout$/);
     expect(await background.status()).toEqual({ state: "signedOut" });
-    expect([...platform.disk.values.keys()].sort()).toEqual(["deviceId"]);
+    expect([...platform.disk.values.keys()].sort()).toEqual([
+      "deviceAccount",
+      "deviceId",
+    ]);
     expect(platform.sessionBytes.value).toBeUndefined();
+  });
+
+  it("gives another account its own device id, and an account its own again", async () => {
+    // The server ties a device id to one account (D59's notes).
+    const { background, platform } = await signedUp();
+    const first = platform.disk.values.get("deviceId");
+    await background.handle({ kind: "signOut" });
+    await background.handle({
+      kind: "signUp",
+      email: "grace@example.com",
+      password: PASSWORD,
+    });
+    const second = platform.disk.values.get("deviceId");
+    expect(second).not.toBe(first);
+    expect(platform.disk.values.get("deviceAccount")).toBe("grace@example.com");
+
+    // Signing in again to the account the stored id belongs to reuses it,
+    // whatever the email's case.
+    await background.handle({ kind: "signOut" });
+    await background.handle({
+      kind: "signIn",
+      email: "GRACE@example.com",
+      password: PASSWORD,
+      secretKey: SECRET_KEY,
+    });
+    expect(platform.disk.values.get("deviceId")).toBe(second);
+  });
+
+  it("a sign-up always gets a new device id", async () => {
+    const { background, platform } = await signedUp();
+    const first = platform.disk.values.get("deviceId");
+    await background.handle({ kind: "signOut" });
+    await background.handle({
+      kind: "signUp",
+      email: "ada2@example.com",
+      password: PASSWORD,
+    });
+    expect(platform.disk.values.get("deviceId")).not.toBe(first);
   });
 
   it("signs out offline all the same (D62)", async () => {
@@ -619,7 +660,10 @@ describe("settings", () => {
     await background.handle({ kind: "signOut" });
     expect(ending.loggedOut).toBe(0);
     expect(await background.status()).toEqual({ state: "signedOut" });
-    expect([...platform.disk.values.keys()].sort()).toEqual(["deviceId"]);
+    expect([...platform.disk.values.keys()].sort()).toEqual([
+      "deviceAccount",
+      "deviceId",
+    ]);
   });
 
   it("signs out after 5 seconds when the server doesn't answer (D62)", async () => {

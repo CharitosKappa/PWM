@@ -48,6 +48,10 @@ const CORE_METHODS: (keyof Core)[] = [
   "autofillNextStep",
   "autofillForgetTab",
   "saveItem",
+  "item",
+  "setTrashed",
+  "deleteItem",
+  "purgeTrash",
   "saveOffer",
   "saveLogin",
   "updatePassword",
@@ -94,6 +98,18 @@ describe("the WASM core", () => {
         Date.now(),
       ),
     ).toThrow(locked);
+    expect(() => core.item(fns.newId(), fns.newId())).toThrow(locked);
+    expect(() => {
+      core.setTrashed(fns.newId(), fns.newId(), true, Date.now());
+    }).toThrow(locked);
+    expect(() => core.purgeTrash(Date.now())).toThrow(locked);
+    // The one-time code setup (D23): a bare secret becomes a URI.
+    expect(fns.normalizeTotp("JBSWY3DPEHPK3PXP", "Mail")).toMatch(
+      /^otpauth:\/\/totp\/.*secret=JBSWY3DPEHPK3PXP/,
+    );
+    expect(() => fns.normalizeTotp("https://example.com", "Mail")).toThrow(
+      expect.objectContaining({ code: "invalid_totp" }) as Error,
+    );
     expect(fns.breachRangeUrl("ABCDE")).toBe(
       "https://api.pwnedpasswords.com/range/ABCDE",
     );

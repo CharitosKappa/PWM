@@ -538,7 +538,7 @@ struct FieldRow: View {
                     .textStyle(Tokens.Text.caption)
                     .foregroundStyle(Tokens.Color.textMuted.color)
                 Text(verbatim: captured ? ScreenCapture.hiddenLine : shown ? value : ItemDetailModel.masked(value))
-                    .font(monospaced ? .system(.body, design: .monospaced) : .body)
+                    .font(monospaced ? .secret(.body) : .app(.body))
                     .textSelection(.enabled)
                     .accessibilityIdentifier("value.\(key)")
             }
@@ -583,7 +583,7 @@ struct CodeRow: View {
                         .foregroundStyle(Tokens.Color.textMuted.color)
                 } else if let code = model.code {
                     Text(verbatim: code.value.value)
-                        .font(.system(.title3, design: .monospaced))
+                        .font(.secret(.title3))
                         .accessibilityIdentifier("code")
                 } else {
                     Text(verbatim: " ")

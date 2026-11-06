@@ -242,7 +242,7 @@ struct RevealField: View {
                 if shown {
                     TextField(title, text: $text)
                         .plainInput()
-                        .font(.system(.body, design: .monospaced))
+                        .font(.secret(.body))
                 } else {
                     SecureField(title, text: $text)
                 }
@@ -305,7 +305,7 @@ struct GeneratorView: View {
         Form {
             Section {
                 Text(verbatim: model.hiddenByCapture ? ScreenCapture.hiddenLine : model.value?.value ?? " ")
-                    .font(.system(.title3, design: .monospaced))
+                    .font(.secret(.title3))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
                     .accessibilityIdentifier("generated")
@@ -620,7 +620,7 @@ enum Notices {
         {
             text += html.string
         }
-        for name in ["data", "data-autofill"] {
+        for name in ["data", "data-autofill", "fonts"] {
             if let url = Bundle.main.url(forResource: name, withExtension: "md"),
                let more = try? String(contentsOf: url, encoding: .utf8)
             {

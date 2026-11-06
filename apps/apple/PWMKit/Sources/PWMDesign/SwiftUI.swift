@@ -66,14 +66,64 @@ private struct TokenText: ViewModifier {
     @ScaledMetric private var size: Double
 
     init(_ style: TypeStyle) {
+        AppFonts.register()
         self.style = style
         _size = ScaledMetric(wrappedValue: style.size, relativeTo: style.textStyle)
     }
 
     func body(content: Content) -> some View {
         content
-            .font(.system(size: size, weight: style.fontWeight, design: style.monospaced ? .monospaced : .default))
+            // The size is already scaled, so the font must not scale it again.
+            .font(.custom(style.monospaced ? AppFonts.mono : AppFonts.sans, fixedSize: size).weight(style.fontWeight))
             .lineSpacing(size * (style.lineHeight - 1))
+    }
+}
+
+extension Font.TextStyle {
+    /// The system's size for this style at the default text size.
+    var defaultSize: CGFloat {
+        #if os(macOS)
+        switch self {
+        case .largeTitle: 26
+        case .title: 22
+        case .title2: 17
+        case .title3: 15
+        case .headline, .body: 13
+        case .callout: 12
+        case .subheadline, .footnote: 11
+        case .caption, .caption2: 10
+        @unknown default: 13
+        }
+        #else
+        switch self {
+        case .largeTitle: 34
+        case .title: 28
+        case .title2: 22
+        case .title3: 20
+        case .headline, .body: 17
+        case .callout: 16
+        case .subheadline: 15
+        case .footnote: 13
+        case .caption: 12
+        case .caption2: 11
+        @unknown default: 17
+        }
+        #endif
+    }
+}
+
+extension Font {
+    /// Manrope at a system text style's size, scaled with Dynamic Type.
+    public static func app(_ style: Font.TextStyle) -> Font {
+        AppFonts.register()
+        return .custom(AppFonts.sans, size: style.defaultSize, relativeTo: style)
+    }
+
+    /// Geist Mono at a system text style's size, scaled with Dynamic Type:
+    /// passwords, one-time codes and the Secret Key.
+    public static func secret(_ style: Font.TextStyle) -> Font {
+        AppFonts.register()
+        return .custom(AppFonts.mono, size: style.defaultSize, relativeTo: style)
     }
 }
 

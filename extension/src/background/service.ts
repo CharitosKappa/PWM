@@ -20,6 +20,7 @@ import { Approvals } from "./approvals.ts";
 import { TouchIdUnlock } from "./touchid.ts";
 import { Autofill } from "./fill.ts";
 import { Importer } from "./importer.ts";
+import { Items } from "./items.ts";
 import { Manager } from "./manage.ts";
 import { Passkeys } from "./passkeys.ts";
 import { Reporter } from "./report.ts";
@@ -100,6 +101,8 @@ export class Background {
   /** Devices, the health report and export (D44). */
   readonly manager: Manager;
   readonly importer: Importer;
+  /** The manage page's item screens (M4.14, D67). */
+  readonly itemScreens: Items;
   /** Approving a new device from a signed-in one (D46). */
   readonly approvals: Approvals;
   private readonly touchId: TouchIdUnlock;
@@ -142,6 +145,16 @@ export class Background {
       ended: (step) => this.handleOutcome(step),
       secretKey: () => platform.disk.get("secretKey"),
       touch: () => this.touch(),
+    });
+    this.itemScreens = new Items({
+      core: () => this.core,
+      fns,
+      now: () => platform.now(),
+      copy: (text) => this.writeClipboard(text),
+      saved: async () => {
+        await this.persist();
+        void this.sync();
+      },
     });
     this.importer = new Importer({
       core: () => this.core,
@@ -290,10 +303,15 @@ export class Background {
         await this.touch();
         return this.items(request.query);
       case "copy":
-        // Copying any field by its place belongs to the item screens (D67).
-        if (!("field" in request)) throw new ServiceError("unsupported");
         await this.touch();
-        await this.copy(request.vaultId, request.itemId, request.field);
+        // Any field by its place, from the item screens (D67 §1).
+        if ("path" in request)
+          await this.itemScreens.copyPath(
+            request.vaultId,
+            request.itemId,
+            request.path,
+          );
+        else await this.copy(request.vaultId, request.itemId, request.field);
         return null;
       case "copySecretKey": {
         const secretKey = await this.platform.disk.get("secretKey");
@@ -414,18 +432,44 @@ export class Background {
       case "importCancel":
         this.importer.cancel();
         return null;
-      // The desktop's item screens (D67); the extension gets them in M4.14.
+      // The item screens (D67), on the manage page (M4.14).
       case "vault":
+        await this.touch();
+        return this.itemScreens.vault();
       case "item":
+        await this.touch();
+        return this.itemScreens.item(request.vaultId, request.itemId);
       case "reveal":
+        await this.touch();
+        return this.itemScreens.reveal(
+          request.vaultId,
+          request.itemId,
+          request.path,
+        );
       case "itemForEdit":
+        await this.touch();
+        return this.itemScreens.itemForEdit(request.vaultId, request.itemId);
       case "saveItem":
+        await this.touch();
+        return this.itemScreens.saveItem(request.vaultId, request.item);
       case "trashItem":
       case "restoreItem":
+        await this.touch();
+        await this.itemScreens.setTrashed(
+          request.vaultId,
+          request.itemId,
+          request.kind === "trashItem",
+        );
+        return null;
       case "deleteItem":
+        await this.touch();
+        await this.itemScreens.deleteForever(request.vaultId, request.itemId);
+        return null;
       case "newFolder":
+        await this.touch();
+        return this.itemScreens.newFolder(request.title);
       case "totpSetup":
-        throw new ServiceError("unsupported");
+        return this.itemScreens.totpSetup(request.input, request.title);
       // The popup doesn't offer Touch ID after unlocking (D48 §5).
       case "biometricOffer":
         return false;
@@ -453,6 +497,27 @@ export class Background {
     if (stored) return stored;
     const id = this.fns.newId();
     await this.platform.disk.set("deviceId", id);
+    return id;
+  }
+
+  /**
+   * This browser's device id for `email`'s account. The server ties a
+   * device id to one account, so the stored id is reused only for the
+   * account it belongs to; a sign-up (`fresh`), or another account, gets a
+   * new one. As on Android and the desktop (D59's notes).
+   */
+  private async deviceIdFor(email: string, fresh: boolean): Promise<string> {
+    const stored = await this.platform.disk.get("deviceId");
+    const owner = await this.platform.disk.get("deviceAccount");
+    if (
+      !fresh &&
+      stored !== undefined &&
+      owner?.toLowerCase() === email.trim().toLowerCase()
+    )
+      return stored;
+    const id = this.fns.newId();
+    await this.platform.disk.set("deviceId", id);
+    await this.platform.disk.set("deviceAccount", email.trim());
     return id;
   }
 
@@ -511,6 +576,14 @@ export class Background {
   private async afterUnlock(): Promise<void> {
     await this.platform.session.set(this.core.exportSession());
     await this.touch();
+    // Items in the trash for 30 days go at unlock (D19).
+    let purged = 0;
+    try {
+      purged = this.core.purgeTrash(this.platform.now());
+    } catch {
+      // Purging waits for the next unlock.
+    }
+    if (purged > 0) await this.persist();
   }
 
   /**
@@ -521,7 +594,7 @@ export class Background {
     email: string,
     password: string,
   ): Promise<{ secretKey: string }> {
-    const deviceId = await this.deviceId();
+    const deviceId = await this.deviceIdFor(email, true);
     const done = await this.run(() =>
       this.core.startSignup(
         email,
@@ -542,7 +615,7 @@ export class Background {
     password: string,
     secretKey: string,
   ): Promise<void> {
-    const deviceId = await this.deviceId();
+    const deviceId = await this.deviceIdFor(email, false);
     const done = await this.run(() =>
       this.core.startLogin(
         email,
@@ -568,7 +641,7 @@ export class Background {
     const secretKey = await this.platform.disk.get("secretKey");
     if (email === undefined || secretKey === undefined)
       throw new ServiceError("signed_out");
-    const deviceId = await this.deviceId();
+    const deviceId = await this.deviceIdFor(email, false);
     // An empty name sends none: the device keeps its name.
     const done = await this.run(() =>
       this.core.startLogin(
@@ -653,6 +726,8 @@ export class Background {
     await this.saver.clear();
     await this.platform.session.clear();
     await this.platform.alarms.clear("autolock");
+    // An open manage page reloads, so nothing revealed outlives the lock (D67 §1).
+    await this.platform.pages.notifyLocked();
   }
 
   private async signOut(): Promise<void> {

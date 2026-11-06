@@ -97,7 +97,7 @@ val notices = tasks.register<Copy>("noticeAssets") {
     dependsOn("generateLicenseReport")
     from(layout.buildDirectory.file("reports/dependency-license/android-libraries.txt"))
     from(File(repo, "THIRD_PARTY_NOTICES")) {
-        include("rust.html", "data.md", "data-autofill.md")
+        include("rust.html", "data.md", "data-autofill.md", "fonts.md")
     }
     into(noticeAssets.map { it.dir("notices") })
 }

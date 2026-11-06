@@ -11,7 +11,7 @@ import {
   isInlineRequest,
   isSubmitted,
 } from "../shared/autofill.ts";
-import { isPopupMessage } from "../shared/messages.ts";
+import { isPopupMessage, popupMay } from "../shared/messages.ts";
 import { isPasskeyCall, isPasskeyWindowRequest } from "../shared/passkeys.ts";
 import type { Reply } from "../shared/messages.ts";
 import { chromePlatform } from "./chrome.ts";
@@ -34,15 +34,19 @@ const ready: Promise<Background> = init({
 // here; the release build compiles this out (and its check makes sure).
 if (PWM_TEST) Object.assign(globalThis, { pwmTest: { ready } });
 
-/** Only the extension's own popup (or options) and manage pages may talk to the background. */
-function fromPopup(sender: chrome.runtime.MessageSender): boolean {
-  if (sender.id !== chrome.runtime.id || sender.url === undefined) return false;
+/**
+ * Only the extension's own popup (or options) and manage pages may talk to
+ * the background; which one, as the browser says.
+ */
+function screenPage(
+  sender: chrome.runtime.MessageSender,
+): "popup" | "manage" | undefined {
+  if (sender.id !== chrome.runtime.id || sender.url === undefined) return;
   // The options page is the popup page in a tab, at #settings.
   const page = sender.url.split("#")[0];
-  return (
-    page === chrome.runtime.getURL("popup.html") ||
-    page === chrome.runtime.getURL("manage.html")
-  );
+  if (page === chrome.runtime.getURL("popup.html")) return "popup";
+  if (page === chrome.runtime.getURL("manage.html")) return "manage";
+  return;
 }
 
 /** The passkey confirmation window (D37 §4), an extension page in its own window. */
@@ -90,7 +94,13 @@ function answer(
 
 chrome.runtime.onMessage.addListener(
   (message: unknown, sender, sendResponse: (reply: Reply<unknown>) => void) => {
-    if (isPopupMessage(message) && fromPopup(sender)) {
+    const page = isPopupMessage(message) ? screenPage(sender) : undefined;
+    if (isPopupMessage(message) && page !== undefined) {
+      // The item screens are the manage page's alone (D67 §1).
+      if (page === "popup" && !popupMay(message.request)) {
+        sendResponse({ ok: false, error: "unsupported" });
+        return false;
+      }
       return answer((b) => b.handle(message.request), sendResponse);
     }
     if (isFrameReport(message)) {
