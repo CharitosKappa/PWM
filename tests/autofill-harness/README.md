@@ -27,14 +27,14 @@ just top-sites  # the runner, against real sites (network)
 
 ## The runner
 
-- **What it does:** `runner/run.ts` takes `sites/sites.json`. For each site it saves a throwaway login (`pwm-check-user@example.invalid` / `pwm-check-password`), opens the login page, fills through the extension, and checks which inputs got the values.
+- **What it does:** `runner/run.ts` takes `sites/sites.json`. For each site it saves a throwaway login (`pwm-check-user@example.invalid` / `pwm-check-password`), opens the login page, waits for a field to appear (up to 10 s) and for any fade-in to finish, fills through the extension, and checks which inputs got the values.
 - **What it never does:** submit, click, solve a challenge or use a real account.
 - **Results:**
   - **pass**
   - **fail**
-  - **blocked:** a challenge page or an HTTP error, left out of the pass rate
-  - **error**
-- **The report:** `autofill-report.json` (v1), with fill targets as D38 report fields, never values.
+  - **blocked:** a challenge page, an HTTP error, or a bot wall that is only text (`bot_wall`, when no field ever appeared), left out of the pass rate
+  - **error:** the page didn't load: `timeout`, or the browser's network error (`net::ERR_HTTP2_PROTOCOL_ERROR`)
+- **The report:** `autofill-report.json` (v1), with fill targets as D38 report fields, never values. A refused fill names the failed check (`field_hidden:covered`, D63). `final_host` says where a page ended up when it left the login URL's host: the entry may be stale.
 - **Release gate:** `node runner/compare.ts previous.json candidate.json` fails when the pass rate drops more than 0.5 points.
-- **Adding a site:** check its login page, then add `{site, login_url}` and, if you are sure of them, the CSS selectors of the username and password inputs.
+- **Adding a site:** check its login page, then add `{site, login_url}` and, if you are sure of them, the CSS selectors of the username and password inputs. Only password logins belong here. An entry taken out goes under `removed` with the reason.
 - **Its own tests:** `tests/runner.spec.ts` checks the runner against local pages.

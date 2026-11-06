@@ -44,8 +44,9 @@ function main(): void {
   const result = compare(read(beforeFile), read(afterFile));
   for (const c of result.changed)
     console.log(`${c.site}: ${c.from} -> ${c.to}`);
+  const change = -result.drop;
   console.log(
-    `pass rate ${String(result.before)}% -> ${String(result.after)}% (drop ${String(result.drop)} points, at most ${String(MAX_DROP)})`,
+    `pass rate ${String(result.before)}% -> ${String(result.after)}% (${change >= 0 ? "up" : "down"} ${String(Math.abs(change))} points; the gate allows a drop of at most ${String(MAX_DROP)})`,
   );
   if (!result.ok) process.exit(1);
 }

@@ -4,7 +4,12 @@ import { expect, test } from "@playwright/test";
 import { Harness } from "../lib/extension.ts";
 import { compare } from "../runner/compare.ts";
 import type { Report } from "../runner/run.ts";
-import { CHECK_USER, runSite, summarize } from "../runner/run.ts";
+import {
+  CHECK_USER,
+  navigationError,
+  runSite,
+  summarize,
+} from "../runner/run.ts";
 
 const R = "https://runner.test:8443";
 
@@ -56,10 +61,37 @@ test("runner: fail when nothing or the wrong inputs fill", async () => {
   });
 });
 
+test("runner: waits for a form drawn late", async () => {
+  expect(await runSite(harness, site("runner-late.html"))).toMatchObject({
+    status: "pass",
+  });
+});
+
+test("runner: finds the tab when the page adds a fragment", async () => {
+  const result = await runSite(harness, {
+    site: "runner.test/plain.html#/signin",
+    login_url: `${R}/plain.html#/signin`,
+  });
+  expect(result).toMatchObject({ status: "pass" });
+  expect(result.final_host).toBeUndefined();
+});
+
+test("runner: says where a moved login ended up", async () => {
+  expect(await runSite(harness, site("runner-moves.html"))).toMatchObject({
+    status: "fail",
+    final_host: "elsewhere.test:8443",
+  });
+});
+
 test("runner: blocked by a challenge page or an error status, left alone", async () => {
   expect(await runSite(harness, site("captcha.html"))).toMatchObject({
     status: "blocked",
     reason: "challenge",
+  });
+  // A wall that is only text: no field ever appears, the text says so.
+  expect(await runSite(harness, site("runner-wall.html"))).toMatchObject({
+    status: "blocked",
+    reason: "bot_wall",
   });
   expect(await runSite(harness, site("status-503"))).toMatchObject({
     status: "blocked",
@@ -72,6 +104,15 @@ test("runner: error on a page that does not load in time", async () => {
     status: "error",
     reason: "timeout",
   });
+});
+
+test("runner: says which network error stopped a page", async () => {
+  expect(
+    await runSite(harness, {
+      site: "nowhere.invalid",
+      login_url: "https://nowhere.invalid/login",
+    }),
+  ).toMatchObject({ status: "error", reason: "net::ERR_NAME_NOT_RESOLVED" });
 });
 
 test("runner: never submits", async () => {
@@ -98,6 +139,20 @@ function report(rate: number, statuses: Record<string, string>): Report {
     totals: { pass: 0, fail: 0, blocked: 0, error: 0, pass_rate: rate },
   };
 }
+
+test("runner: a navigation error keeps only its code", () => {
+  const timeout = new Error("page.goto: Timeout 20000ms exceeded.");
+  timeout.name = "TimeoutError";
+  expect(navigationError(timeout)).toBe("timeout");
+  expect(
+    navigationError(
+      new Error("page.goto: net::ERR_HTTP2_PROTOCOL_ERROR at https://x.test/"),
+    ),
+  ).toBe("net::ERR_HTTP2_PROTOCOL_ERROR");
+  expect(navigationError(new Error("Navigation interrupted"))).toBe(
+    "navigation",
+  );
+});
 
 test("runner: totals leave blocked and errored sites out of the pass rate", () => {
   const r = summarize(
