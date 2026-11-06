@@ -173,6 +173,16 @@ async function valueOf(page: Page, selector: string): Promise<string> {
   return field.inputValue({ timeout: 2_000 }).catch(() => "");
 }
 
+/**
+ * Why a page didn't load, as a code: "timeout", or the browser's network
+ * error (`net::ERR_…`), never the rest of the message.
+ */
+export function navigationError(e: unknown): string {
+  if (e instanceof Error && e.name === "TimeoutError") return "timeout";
+  const net = /net::ERR_[A-Z0-9_]+/.exec(String(e));
+  return net ? net[0] : "navigation";
+}
+
 /** Runs one site; never throws. */
 export async function runSite(
   harness: Harness,
@@ -205,8 +215,8 @@ export async function runSite(
         timeout: timeoutMs,
         waitUntil: "domcontentloaded",
       });
-    } catch {
-      return done("error", { reason: "timeout" });
+    } catch (e) {
+      return done("error", { reason: navigationError(e) });
     }
     if (response && response.status() >= 400) {
       return done("blocked", { reason: `http_${String(response.status())}` });
