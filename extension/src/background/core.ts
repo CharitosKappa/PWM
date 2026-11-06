@@ -191,6 +191,19 @@ export interface Core {
   ): string;
   /** Saves an item (D18 JSON with its `id`); returns the id. */
   saveItem(vaultId: string, json: string, nowMs: number): string;
+  /** One item as D18 JSON with its id, or undefined (the manage page, D67). */
+  item(vaultId: string, itemId: string): string | undefined;
+  /** To the trash (`trashed` true) or back out (D19). */
+  setTrashed(
+    vaultId: string,
+    itemId: string,
+    trashed: boolean,
+    nowMs: number,
+  ): void;
+  /** Deletes an item for good. */
+  deleteItem(vaultId: string, itemId: string): void;
+  /** Deletes items in the trash for 30 days, at unlock (D19); how many. */
+  purgeTrash(nowMs: number): number;
   /** Devices (D43 §6): end with `devices` or `device_updated`. */
   startListDevices(): CoreStep;
   startRenameDevice(deviceId: string, name: string): CoreStep;
@@ -234,6 +247,8 @@ export interface CoreFunctions {
   generatePassword(length: number): string;
   generatePassphrase(words: number): string;
   passwordScore(password: string, context: string[]): number;
+  /** A pasted one-time code URI or bare secret as the URI to store (D23), or `invalid_totp`. */
+  normalizeTotp(input: string, title: string): string;
   /** The Emergency Kit PDF (D42); `server` only when self-hosted. */
   emergencyKit(
     email: string,

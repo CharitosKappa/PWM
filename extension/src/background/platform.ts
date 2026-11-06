@@ -98,6 +98,8 @@ export interface Pages {
   setBadge(tabId: number, text: string): Promise<void>;
   /** The toolbar button's badge on every tab ("" clears it). */
   setGlobalBadge(text: string): Promise<void>;
+  /** Tells the extension's own pages the vault locked; the manage page reloads (D67 §1). */
+  notifyLocked(): Promise<void>;
 }
 
 /**

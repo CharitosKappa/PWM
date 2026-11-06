@@ -3,7 +3,8 @@
  * and the item's detail or editor. Narrower than 720 pixels, one pane at a
  * time. Ctrl+N makes a new login and Ctrl+F searches, as ⌘N and ⌘F on the
  * Mac. No website icons: fetching them would tell third parties which
- * sites are in the vault (D43).
+ * sites are in the vault (D43). The desktop shows it as its window; the
+ * extension on its manage page (M4.14).
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { JSX } from "preact";
@@ -21,7 +22,10 @@ import type { ItemType, Section } from "../items/model.ts";
 interface Props {
   status: Unlocked;
   onStatus: (status: Status) => void;
-  onSettings: () => void;
+  /** Where there are settings to open; the extension's are in its popup. */
+  onSettings?: () => void;
+  /** The manage page's sections; the host's own by default. */
+  onManage?: (section?: "devices") => void;
 }
 
 type Selected = { vaultId: string; itemId: string } | null;
@@ -48,7 +52,13 @@ export function VaultWindow({
   status,
   onStatus,
   onSettings,
+  onManage,
 }: Props): JSX.Element {
+  const manage =
+    onManage ??
+    ((section?: "devices") => {
+      host().openManage(section);
+    });
   const [vault, setVault] = useState<VaultView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [section, setSection] = useState<Section>({ kind: "all" });
@@ -174,14 +184,16 @@ export function VaultWindow({
         >
           Generator
         </button>
-        <button class="nav" onClick={onSettings}>
-          Settings
-        </button>
+        {onSettings && (
+          <button class="nav" onClick={onSettings}>
+            Settings
+          </button>
+        )}
         {host().manage && (
           <button
             class="nav"
             onClick={() => {
-              host().openManage();
+              manage();
             }}
           >
             Password health, devices and export
@@ -210,7 +222,7 @@ export function VaultWindow({
             <button
               class="link"
               onClick={() => {
-                host().openManage("devices");
+                manage("devices");
               }}
             >
               Review

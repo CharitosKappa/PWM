@@ -139,6 +139,17 @@ export function Vault({
             onSelect={setSelected}
             onCopy={(item, field) => void copy(item, field)}
           />
+          {query === "" && host().manage && (
+            <button
+              class="link"
+              id="open-items"
+              onClick={() => {
+                host().openManage("items");
+              }}
+            >
+              Edit items in a tab
+            </button>
+          )}
           {query === "" && host().browser && <ReportLink onOpen={onReport} />}
         </>
       )}

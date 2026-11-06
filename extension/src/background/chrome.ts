@@ -18,7 +18,7 @@ import { fromBase64, toBase64 } from "../shared/bytes.ts";
 import type { ContentMessage } from "../shared/autofill.ts";
 import { writeClipboard } from "../shared/clipboard.ts";
 import { NATIVE_HOST, SITE_ACCESS } from "../shared/config.ts";
-import type { ClipboardMessage } from "../shared/messages.ts";
+import type { ClipboardMessage, LockedMessage } from "../shared/messages.ts";
 
 const DB_NAME = "pwm";
 const DB_STORE = "cache";
@@ -322,6 +322,12 @@ export class ChromePages implements Pages {
     if (text !== "") {
       await chrome.action.setBadgeBackgroundColor({ color: "#2457D6" });
     }
+  }
+
+  async notifyLocked(): Promise<void> {
+    const message: LockedMessage = { target: "pages", kind: "locked" };
+    // No page open is no one to tell.
+    await chrome.runtime.sendMessage(message).catch(() => undefined);
   }
 }
 

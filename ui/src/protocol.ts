@@ -5,9 +5,11 @@
  * the host's clipboard. The secrets they get are the Secret Key, once,
  * right after sign-up, the Emergency Kit PDF made from it (D42), an export
  * the user asked for with the master password (D24), each to save, and on
- * the desktop's item screens (D67) exactly two requests' answers: `reveal`
- * (one hidden value, after Show) and `itemForEdit` (the whole item, while
- * the editor is open). Lists and item details never hold a hidden value.
+ * the item screens (D67: the desktop's window, the extension's manage
+ * page) exactly two requests' answers: `reveal` (one hidden value, after
+ * Show) and `itemForEdit` (the whole item, while the editor is open). Lists
+ * and item details never hold a hidden value, and the extension's popup
+ * may not send these requests.
  */
 
 /** A login the current page may get. */
@@ -126,7 +128,7 @@ export type Request =
     }
   | { kind: "importFinish" }
   | { kind: "importCancel" }
-  // The desktop's item screens (D67).
+  // The item screens (D67): the desktop's window, the extension's manage page.
   | { kind: "vault" }
   | { kind: "item"; vaultId: string; itemId: string }
   | { kind: "reveal"; vaultId: string; itemId: string; path: string }
