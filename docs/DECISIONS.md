@@ -3258,3 +3258,11 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Found while running it:** the editor's changes now build on the latest item, so two changes in one tick both count.
   - **The extension's background** answers D67's kinds, and copying by place, `unsupported` until M4.14. The screens describe that code in plain words.
   - **Reused from the popup:** `Generator` and `SyncLine` are now exported from `Vault.tsx` and used in the window.
+
+  Implementation notes (M4.14, the extension):
+  - **The rules are the desktop's,** in `extension/src/background/items.ts`: the same hidden places, masking, read-only check and passkey handling as `items.rs`, with tests that mirror its own.
+  - **The manage page** shows `VaultWindow` as its Items tab, at `#items`. "Password health, devices and export" switches to the other tabs in the same page, and Items comes back. The desktop's manage page has no Items tab: its window is the vault. The popup links to it with "Edit items in a tab".
+  - **Settings** aren't in the extension's window: they stay in the popup, so `VaultWindow`'s Settings is shown only where the host has one.
+  - **The popup can't ask:** the background answers D67's kinds, and copying by place, only from `manage.html`, as the browser names the sender. The popup gets `unsupported`.
+  - **Locking:** the background tells the extension's pages, and the manage page reloads, as D67 §1 asks of the desktop's window.
+  - **The trash empties at unlock** (D19) in the extension too, now that it can trash items.

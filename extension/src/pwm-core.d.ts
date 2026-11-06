@@ -39,6 +39,7 @@ export function generatePassphrase(
   addDigit: boolean,
 ): string;
 export function passwordScore(password: string, context: string[]): number;
+export function normalizeTotp(input: string, title: string): string;
 export function emergencyKit(
   email: string,
   secretKey: string,

@@ -1,6 +1,7 @@
 /**
  * The manage page (D44): password health, devices, import (D51) and export,
- * in a tab of its own. Like the popup it only sends messages to the background; it
+ * in a tab of its own. In the extension, also the vault with editing
+ * (M4.14, D67): the desktop's window, at #items. Like the popup it only sends messages to the background; it
  * receives an export only when the user asks for one with the master
  * password, and drops it once the download starts.
  */
@@ -21,15 +22,17 @@ import type {
 import { fromBase64, toBase64 } from "./bytes.ts";
 import { RequestError, describe, describeCode, send } from "./api.ts";
 import { Unlock } from "./App.tsx";
+import { VaultWindow } from "./vault-window/VaultWindow.tsx";
 import { host } from "./host.ts";
 import { Field, Notice } from "./ui.tsx";
 
 /** The leak check's origin, asked for from a click (D44 §2). */
 const LEAK_CHECK_ORIGIN = "https://api.pwnedpasswords.com/*";
 
-type Tab = "health" | "devices" | "import" | "export";
+type Tab = "items" | "health" | "devices" | "import" | "export";
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: "items", label: "Items" },
   { id: "health", label: "Password health" },
   { id: "devices", label: "Devices" },
   { id: "import", label: "Import" },
@@ -38,11 +41,15 @@ const TABS: { id: Tab; label: string }[] = [
 
 export function Manage(): JSX.Element {
   const [status, setStatus] = useState<Status | null>(null);
+  // The desktop shows the vault in its own window, with Back to it.
+  const tabs = TABS.filter((t) => t.id !== "items" || !host().closeManage);
   const [tab, setTab] = useState<Tab>(
-    (["health", "devices", "import", "export"] as const).find(
-      (t) => `#${t}` === location.hash,
-    ) ?? "health",
+    tabs.find((t) => `#${t.id}` === location.hash)?.id ?? "health",
   );
+  const choose = (next: Tab): void => {
+    setTab(next);
+    history.replaceState(null, "", `#${next}`);
+  };
 
   const refresh = (): void => {
     send({ kind: "status" })
@@ -69,6 +76,18 @@ export function Manage(): JSX.Element {
   if (status.state === "locked")
     return <Unlock email={status.email} onDone={refresh} />;
 
+  if (tab === "items") {
+    return (
+      <VaultWindow
+        status={status}
+        onStatus={setStatus}
+        onManage={(section) => {
+          choose(section ?? "health");
+        }}
+      />
+    );
+  }
+
   return (
     <main class="stack">
       {host().closeManage && (
@@ -84,15 +103,14 @@ export function Manage(): JSX.Element {
       <h1>PWM</h1>
       <p class="muted">{status.email}</p>
       <div class="tabs" role="tablist">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             role="tab"
             id={`tab-${t.id}`}
             aria-selected={tab === t.id}
             onClick={() => {
-              setTab(t.id);
-              history.replaceState(null, "", `#${t.id}`);
+              choose(t.id);
             }}
           >
             {t.label}

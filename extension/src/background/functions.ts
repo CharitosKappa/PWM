@@ -12,6 +12,7 @@ export function coreFunctions(wasm: typeof Wasm): CoreFunctions {
     generatePassphrase: (words) =>
       wasm.generatePassphrase(words, "-", false, true),
     passwordScore: (password, context) => wasm.passwordScore(password, context),
+    normalizeTotp: (input, title) => wasm.normalizeTotp(input, title),
     emergencyKit: (email, secretKey, server, accountId, created, paper) =>
       wasm.emergencyKit(email, secretKey, server, accountId, created, paper),
     breachRangeUrl: (prefix) => wasm.breachRangeUrl(prefix),

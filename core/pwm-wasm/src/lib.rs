@@ -578,6 +578,36 @@ impl WasmClient {
         self.inner.delete_item(vault_id, item_id).map_err(js_error)
     }
 
+    /// One item as JSON with its id, or undefined (the manage page, D67).
+    pub fn item(&self, vault_id: &str, item_id: &str) -> Result<Option<String>, JsValue> {
+        Ok(self
+            .inner
+            .item(vault_id, item_id)
+            .map_err(js_error)?
+            .map(|json| json.expose_secret().clone()))
+    }
+
+    /// Moves an item to the trash (`trashed` true) or back out (D19).
+    #[wasm_bindgen(js_name = setTrashed)]
+    pub fn set_trashed(
+        &mut self,
+        vault_id: &str,
+        item_id: &str,
+        trashed: bool,
+        now_ms: f64,
+    ) -> Result<(), JsValue> {
+        self.inner
+            .set_trashed(vault_id, item_id, trashed, ms(now_ms))
+            .map_err(js_error)
+    }
+
+    /// Deletes items in the trash for 30 days; called at unlock (D19).
+    #[wasm_bindgen(js_name = purgeTrash)]
+    pub fn purge_trash(&mut self, now_ms: f64) -> Result<u32, JsValue> {
+        let purged = self.inner.purge_trash(ms(now_ms)).map_err(js_error)?;
+        Ok(u32::try_from(purged).unwrap_or(u32::MAX))
+    }
+
     /// The logins this page (or the frame holding the fields) may get, best
     /// first, as a JSON array of `{vault_id, item_id, title, username,
     /// matched, decision}` (D33).
@@ -944,6 +974,15 @@ impl Default for WasmClient {
 #[wasm_bindgen(js_name = newId)]
 pub fn new_id() -> Result<String, JsValue> {
     pwm_client::new_id().map_err(js_error)
+}
+
+/// The value to store in a login's `totp` for a pasted URI or bare secret
+/// (D23 §3), or `invalid_totp`.
+#[wasm_bindgen(js_name = normalizeTotp)]
+pub fn normalize_totp(input: &str, title: &str) -> Result<String, JsValue> {
+    pwm_client::normalize_totp(input, title)
+        .map(|uri| uri.expose_secret().clone())
+        .map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = generatePassword)]
