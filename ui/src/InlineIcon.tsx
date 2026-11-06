@@ -6,18 +6,13 @@
  */
 import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
-import { HOSTED_SERVER, SITE_ACCESS } from "../shared/config.ts";
+import { HOSTED_SERVER, SITE_ACCESS } from "./config.ts";
 import { describe, send } from "./api.ts";
+import { host } from "./host.ts";
 import { Notice } from "./ui.tsx";
 
-/**
- * The inline icon and the save card (D40 §2). Without them, as on Firefox,
- * the switch only turns on save offers, shown on the toolbar button.
- */
-const INLINE_UI = PWM_TARGET === "chromium";
-
 export async function enableInlineIcon(): Promise<boolean> {
-  if (!(await chrome.permissions.request({ origins: SITE_ACCESS }))) {
+  if (!(await host().requestAccess({ origins: SITE_ACCESS }))) {
     return false;
   }
   return send({ kind: "setInlineIcon", on: true });
@@ -34,7 +29,7 @@ async function releaseSiteAccess(): Promise<void> {
     send({ kind: "settings" }),
   ]);
   if (!icon && !passkeys && settings.serverUrl === HOSTED_SERVER) {
-    await chrome.permissions.remove({ origins: SITE_ACCESS });
+    await host().releaseAccess({ origins: SITE_ACCESS });
   }
 }
 
@@ -68,8 +63,8 @@ export function PasskeysSetting(): JSX.Element {
     }
     // The permission request must be the first thing the click does.
     setError(null);
-    void chrome.permissions
-      .request({ origins: SITE_ACCESS })
+    void host()
+      .requestAccess({ origins: SITE_ACCESS })
       .then((granted) =>
         granted ? send({ kind: "setPasskeys", on: true }) : false,
       )
@@ -136,13 +131,13 @@ export function InlineIconSetting(): JSX.Element {
           onChange={toggle}
         />
         <span class="label">
-          {INLINE_UI
+          {host().inlineUi
             ? "Fill and save on sign-in pages"
             : "Save logins when you sign in"}
         </span>
       </span>
       <span class="caption muted">
-        {INLINE_UI
+        {host().inlineUi
           ? "Shows the icon in sign-in fields, and offers to save a login after you sign in."
           : "Offers to save a login after you sign in, on the toolbar button."}{" "}
         The browser will ask to let PWM read sites. It reads what you type only
@@ -161,12 +156,12 @@ export function InlineIconOffer({
   return (
     <div class="stack">
       <h2>
-        {INLINE_UI
+        {host().inlineUi
           ? "Fill and save on sign-in pages?"
           : "Save logins when you sign in?"}
       </h2>
       <p>
-        {INLINE_UI
+        {host().inlineUi
           ? "Fill with one click on the icon, and save new logins when you sign in."
           : "PWM offers to save new logins when you sign in."}{" "}
         The browser will ask to let PWM read sites. You can change this in

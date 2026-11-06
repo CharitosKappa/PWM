@@ -1,10 +1,9 @@
-/** The popup's only way to the vault: messages to the background (D34). */
-import type {
-  PopupMessage,
-  Replies,
-  Reply,
-  Request,
-} from "../shared/messages.ts";
+/**
+ * The screens' only way to the vault: requests to the host (D3 §2), which
+ * passes them to the extension's background (D34) or the desktop backend.
+ */
+import { host } from "./host.ts";
+import type { Replies, Reply, Request } from "./protocol.ts";
 
 export class RequestError extends Error {
   constructor(readonly code: string) {
@@ -15,11 +14,9 @@ export class RequestError extends Error {
 export async function send<R extends Request>(
   request: R,
 ): Promise<Replies[R["kind"]]> {
-  const message: PopupMessage = { target: "background", request };
-  const reply = await chrome.runtime.sendMessage<
-    PopupMessage,
-    Reply<Replies[R["kind"]]> | undefined
-  >(message);
+  // The host answers the reply type of this request's kind.
+  const reply = (await host().send(request)) as
+    Reply<Replies[R["kind"]]> | undefined;
   if (reply === undefined) throw new RequestError("internal");
   if (!reply.ok) throw new RequestError(reply.error);
   return reply.value;

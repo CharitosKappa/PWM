@@ -4,9 +4,10 @@
  */
 import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
-import type { Suggestion } from "../shared/autofill.ts";
-import type { CopyField, ItemSummary, Status } from "../shared/messages.ts";
+import type { Suggestion } from "./protocol.ts";
+import type { CopyField, ItemSummary, Status } from "./protocol.ts";
 import { describe, describeCode, send } from "./api.ts";
+import { host } from "./host.ts";
 import { SaveOffer } from "./Offer.tsx";
 import { ReportLink } from "./Report.tsx";
 import { Field, Notice } from "./ui.tsx";
@@ -84,11 +85,9 @@ export function Vault({
           <span>A new device is asking to sign in.</span>
           <button
             class="link"
-            onClick={() =>
-              void chrome.tabs.create({
-                url: chrome.runtime.getURL("manage.html#devices"),
-              })
-            }
+            onClick={() => {
+              host().openManage("devices");
+            }}
           >
             Review
           </button>

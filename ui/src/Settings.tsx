@@ -1,10 +1,11 @@
 /** Server address (hosted or self-hosted) and the auto-lock timer (D34). */
 import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
-import { HOSTED_SERVER } from "../shared/config.ts";
-import { AUTO_LOCK_CHOICES } from "../shared/messages.ts";
-import type { Settings as SettingsValue, Status } from "../shared/messages.ts";
+import { HOSTED_SERVER } from "./config.ts";
+import { AUTO_LOCK_CHOICES } from "./protocol.ts";
+import type { Settings as SettingsValue, Status } from "./protocol.ts";
 import { describe, send } from "./api.ts";
+import { host } from "./host.ts";
 import { InlineIconSetting, PasskeysSetting } from "./InlineIcon.tsx";
 import { Field, Notice } from "./ui.tsx";
 
@@ -47,7 +48,7 @@ export function Settings({
       if (next.serverUrl !== HOSTED_SERVER) {
         // Ask for this one host only, now (D34); the manifest has no broad host access.
         const origin = `${new URL(next.serverUrl).origin}/*`;
-        if (!(await chrome.permissions.request({ origins: [origin] }))) {
+        if (!(await host().requestAccess({ origins: [origin] }))) {
           setMessage({
             kind: "danger",
             text: "The extension needs permission to reach your server.",
@@ -150,11 +151,9 @@ export function Settings({
       {!signedOut && (
         <button
           id="open-manage"
-          onClick={() =>
-            void chrome.tabs.create({
-              url: chrome.runtime.getURL("manage.html"),
-            })
-          }
+          onClick={() => {
+            host().openManage();
+          }}
         >
           Password health, devices and export
         </button>
@@ -199,7 +198,7 @@ function TouchIdSetting(): JSX.Element {
     try {
       if (
         next &&
-        !(await chrome.permissions.request({
+        !(await host().requestAccess({
           permissions: ["nativeMessaging"],
         }))
       ) {

@@ -9,6 +9,7 @@ Most one-star reviews in this market come from broken updates. Release safety is
 | core | Unit tests, property tests (`proptest`) for parsers/formats, crypto test vectors, fuzzing (`cargo fuzz`) on importers and decryptors, migration tests for every format version |
 | server | Integration tests with Postgres in Docker; auth flow; revision conflicts; rate limits |
 | extension | Unit (Vitest), autofill fixture suite (Playwright), top-1,000 nightly |
+| ui (shared screens) | Unit (Vitest) against a fake host; the extension's Playwright specs open its popup and manage pages |
 | iOS / macOS | XCTest + XCUITest for unlock, autofill provider, sync |
 | Android | JUnit + Compose UI tests + autofill service instrumentation tests |
 | desktop | Tauri integration tests, native messaging tests |

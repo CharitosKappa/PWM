@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
-import type { OfferView } from "../shared/autofill.ts";
+import type { OfferView } from "./protocol.ts";
 import { describe, send } from "./api.ts";
 import { Field } from "./ui.tsx";
 

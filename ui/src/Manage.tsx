@@ -17,11 +17,12 @@ import type {
   ImportMapping,
   ImportPreviewView,
   Status,
-} from "../shared/messages.ts";
-import { fromBase64, toBase64 } from "../shared/bytes.ts";
-import { RequestError, describe, describeCode, send } from "../popup/api.ts";
-import { Unlock } from "../popup/App.tsx";
-import { Field, Notice } from "../popup/ui.tsx";
+} from "./protocol.ts";
+import { fromBase64, toBase64 } from "./bytes.ts";
+import { RequestError, describe, describeCode, send } from "./api.ts";
+import { Unlock } from "./App.tsx";
+import { host } from "./host.ts";
+import { Field, Notice } from "./ui.tsx";
 
 /** The leak check's origin, asked for from a click (D44 §2). */
 const LEAK_CHECK_ORIGIN = "https://api.pwnedpasswords.com/*";
@@ -136,7 +137,7 @@ function Health({ onLocked }: { onLocked: () => void }): JSX.Element {
 
   const check = async (): Promise<void> => {
     // The permission prompt needs this click (D44 §2).
-    const granted = await chrome.permissions.request({
+    const granted = await host().requestAccess({
       origins: [LEAK_CHECK_ORIGIN],
     });
     setDenied(!granted);

@@ -1,7 +1,7 @@
 /** The popup: picks the screen from the background's status (D34). */
 import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
-import type { Status } from "../shared/messages.ts";
+import type { Status } from "./protocol.ts";
 import { describe, send } from "./api.ts";
 import { Report, ReportLink } from "./Report.tsx";
 import { Settings } from "./Settings.tsx";

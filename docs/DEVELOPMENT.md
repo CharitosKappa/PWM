@@ -84,6 +84,7 @@ The autofill engine vendors the Public Suffix List (D33). Refresh it before a re
 just extension     # just wasm, then build extension/dist/chromium/ and dist/firefox/ with a zip of each (checks each manifest and that no remote code is bundled)
 pnpm --filter @pwm/extension test        # unit tests with fake chrome APIs (part of just test)
 pnpm --filter @pwm/extension test:wasm   # tests over the real WASM core (part of just wasm)
+pnpm --filter @pwm/ui test               # the shared screens' tests (part of just test)
 ```
 
 The autofill harness (D35) runs the extension's test build in Chromium against fixture pages:

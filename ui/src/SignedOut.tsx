@@ -1,14 +1,11 @@
 /** Sign in, create an account, and the one-time Secret Key screen (D34). */
 import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
-import {
-  ASKS_SERVER_ACCESS,
-  askServerAccess,
-  useServerOrigin,
-} from "./access.ts";
-import { fromBase64 } from "../shared/bytes.ts";
-import type { AskView } from "../shared/messages.ts";
+import { askServerAccess, useServerOrigin } from "./access.ts";
+import { fromBase64 } from "./bytes.ts";
+import type { AskView } from "./protocol.ts";
 import { describe, describeCode, send } from "./api.ts";
+import { host } from "./host.ts";
 import { InlineIconOffer } from "./InlineIcon.tsx";
 import { Field, Notice } from "./ui.tsx";
 
@@ -330,7 +327,7 @@ function SignUp({ onDone }: { onDone: () => void }): JSX.Element {
 
 /** Says why Firefox asks for access when the form is sent (D40 §1). */
 function ServerAccessNote(): JSX.Element | null {
-  if (!ASKS_SERVER_ACCESS) return null;
+  if (!host().asksServerAccess) return null;
   return (
     <p class="caption muted">
       Firefox will ask to let PWM reach its server. It needs that to sign you in
