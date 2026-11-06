@@ -26,7 +26,7 @@ targets:
       - name: Third-party notices
         basedOnDependencyAnalysis: false
         script: |
-          for name in rust.html data.md data-autofill.md; do
+          for name in rust.html data.md data-autofill.md fonts.md; do
             file="$SRCROOT/../../THIRD_PARTY_NOTICES/$name"
             if [ -f "$file" ]; then
               cp "$file" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/"
@@ -87,7 +87,7 @@ targets:
       - name: Third-party notices
         basedOnDependencyAnalysis: false
         script: |
-          for name in rust.html data.md data-autofill.md; do
+          for name in rust.html data.md data-autofill.md fonts.md; do
             file="$SRCROOT/../../THIRD_PARTY_NOTICES/$name"
             if [ -f "$file" ]; then
               cp "$file" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/"

@@ -32,7 +32,8 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(name: "PWMKit", dependencies: ["PWMCore"]),
-        .target(name: "PWMDesign"),
+        // The app fonts (D1) are copies of design/fonts, made by scripts/fonts.mjs.
+        .target(name: "PWMDesign", resources: [.copy("Fonts")]),
         // The screens (D42 §3): view models with no SwiftUI, tested on Linux
         // too, and SwiftUI views the iOS and macOS apps share.
         .target(name: "PWMUI", dependencies: ["PWMKit", "PWMDesign"]),

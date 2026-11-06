@@ -24,6 +24,8 @@ pub mod name {
     pub const EMAIL: &str = "email";
     pub const SECRET_KEY: &str = "secretKey";
     pub const DEVICE_ID: &str = "deviceId";
+    /// The email of the account the device id belongs to.
+    pub const DEVICE_ACCOUNT: &str = "deviceAccount";
     /// `{access, refresh}` as JSON, when the store is [`secure`](super::KeyStore::secure).
     pub const TOKENS: &str = "tokens";
     /// The tokens sealed under `sym_key` (base64), when it is not.

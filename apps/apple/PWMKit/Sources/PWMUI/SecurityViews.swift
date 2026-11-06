@@ -287,7 +287,7 @@ struct ApprovalsView: View {
                     if let code = model.code {
                         Text("Does the new device show this code?")
                         Text(verbatim: code)
-                            .font(.system(.largeTitle, design: .monospaced).weight(.semibold))
+                            .font(.secret(.largeTitle).weight(.semibold))
                             .accessibilityIdentifier("approvalCode")
                         Button("Codes match") { Task { await model.codesMatch() } }
                             .disabled(model.busy)

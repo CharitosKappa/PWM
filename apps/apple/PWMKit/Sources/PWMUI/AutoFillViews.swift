@@ -30,6 +30,8 @@ public struct AutoFillView: View {
         .tint(Tokens.Color.accent.color)
         // Buttons are pills (D1), as in the app.
         .buttonBorderShape(.capsule)
+        // Manrope for any text that sets no style of its own (D1), as in the app.
+        .font(.app(.body))
         .task { await model.start() }
     }
 

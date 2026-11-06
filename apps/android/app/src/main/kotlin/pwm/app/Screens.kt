@@ -47,7 +47,6 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -341,7 +340,7 @@ private fun Asking(code: String?, onCancel: () -> Unit) {
             Text(stringResource(R.string.ask_instructions), style = Tokens.Text.body.compose(), color = color(Tokens.Color.text))
             if (code != null) {
                 Text(stringResource(R.string.ask_check_code), style = Tokens.Text.body.compose(), color = color(Tokens.Color.text))
-                Text(code, style = Tokens.Text.display.compose().copy(fontFamily = FontFamily.Monospace), color = color(Tokens.Color.text), modifier = Modifier.testTag("approvalCode"))
+                Text(code, style = Tokens.Text.display.compose().copy(fontFamily = GeistMono), color = color(Tokens.Color.text), modifier = Modifier.testTag("approvalCode"))
             }
             Text(stringResource(R.string.ask_waiting), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))
             TextButton(onClick = onCancel, modifier = Modifier.testTag("cancelAsking")) { Text(stringResource(R.string.cancel)) }

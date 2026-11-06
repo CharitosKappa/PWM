@@ -34,6 +34,8 @@ sys-locale = "0.3"
 zeroize = "1.9"
 arboard = { version = "3.7", default-features = false }
 thiserror = "2"
+# Opens a site link in the default browser (M7.6).
+open = "5"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [

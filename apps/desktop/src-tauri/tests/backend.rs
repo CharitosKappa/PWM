@@ -232,11 +232,30 @@ async fn signed_up(server: &str, secure: bool) -> (Rig, String, String) {
     (r, email, secret_key)
 }
 
+/// The server allows 5 sign-ups an hour from one address, and CI's
+/// end-to-end check needs one: these steps share 3 accounts, in order.
 #[tokio::test]
-async fn sign_up_lock_unlock_and_the_lock_timeout() {
+async fn against_a_server() {
     let Some(server) = server() else { return };
-    for secure in [true, false] {
-        let (mut r, email, secret_key) = signed_up(&server, secure).await;
+    let (mut a, email, secret_key) = sign_up_lock_and_unlock(&server, true).await;
+    sign_up_lock_and_unlock(&server, false).await;
+    unlock(&mut a).await;
+    import_health_and_export(&mut a).await;
+    unlock(&mut a).await;
+    devices_and_approving_a_new_one(&server, &mut a, &email).await;
+    items(&mut a).await;
+    sign_in_on_another_computer_and_sign_out(&server, &email, &secret_key).await;
+}
+
+async fn unlock(r: &mut Rig) {
+    r.ok(json!({"kind": "unlock", "password": PASSWORD})).await;
+}
+
+/// Signs up (secure: a system key store; otherwise the tokens sealed by
+/// the core), locks and unlocks, and leaves it locked by the timeout.
+async fn sign_up_lock_and_unlock(server: &str, secure: bool) -> (Rig, String, String) {
+    {
+        let (mut r, email, secret_key) = signed_up(server, secure).await;
         let status = r.ok(json!({"kind": "status"})).await;
         assert_eq!(status["state"], "unlocked", "{status}");
         assert_eq!(status["email"], json!(email));
@@ -284,13 +303,11 @@ async fn sign_up_lock_unlock_and_the_lock_timeout() {
         r.clocks.advance(1_000);
         assert!(r.backend.tick().locked);
         assert_eq!(r.ok(json!({"kind": "status"})).await["state"], "locked");
+        (r, email, secret_key)
     }
 }
 
-#[tokio::test]
-async fn sign_in_on_a_second_computer_and_sign_out() {
-    let Some(server) = server() else { return };
-    let (_first, email, secret_key) = signed_up(&server, true).await;
+async fn sign_in_on_another_computer_and_sign_out(server: &str, email: &str, secret_key: &str) {
     let mut second = rig(true);
     second
         .ok(json!({"kind": "setSettings", "settings": {"serverUrl": server, "autoLockMinutes": 15}}))
@@ -329,6 +346,23 @@ async fn sign_in_on_a_second_computer_and_sign_out() {
             .expose_secret(),
         device_id.expose_secret()
     );
+
+    // Another account on this computer gets a device id of its own: the
+    // server ties one to a single account (D59's notes).
+    let other = unique_email();
+    let reply = second
+        .ok(json!({"kind": "signUp", "email": other, "password": PASSWORD}))
+        .await;
+    assert!(reply["secretKey"].is_string());
+    let new_id = second.keys.get(name::DEVICE_ID).await.unwrap().unwrap();
+    assert_ne!(new_id.expose_secret(), device_id.expose_secret());
+    second.ok(json!({"kind": "signOut"})).await;
+    // Signing in to that account again reuses its id.
+    second
+        .ok(json!({"kind": "signIn", "email": other, "password": PASSWORD, "secretKey": reply["secretKey"]}))
+        .await;
+    let again = second.keys.get(name::DEVICE_ID).await.unwrap().unwrap();
+    assert_eq!(again.expose_secret(), new_id.expose_secret());
 }
 
 fn base64_decode(text: &str) -> Vec<u8> {
@@ -336,4 +370,305 @@ fn base64_decode(text: &str) -> Vec<u8> {
     base64::engine::general_purpose::STANDARD
         .decode(text)
         .unwrap()
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+async fn import_health_and_export(r: &mut Rig) {
+    // A CSV with two logins sharing a weak password.
+    let csv = "name,url,username,password\n\
+               Mail,https://mail.example.com,a@example.com,hunter2\n\
+               Bank,https://bank.example.com,b@example.com,hunter2\n";
+    let file = base64_encode(csv.as_bytes());
+    let detected = r
+        .ok(json!({"kind": "importDetect", "name": "export.csv", "file": file}))
+        .await;
+    assert_eq!(detected["format"], "csv", "{detected}");
+    assert_eq!(detected["columns"]["rows"], 2, "{detected}");
+    let columns = detected["columns"]["suggested"].clone();
+    let preview = r
+        .ok(json!({"kind": "importPrepare", "file": file, "format": "csv", "password": "", "keyFile": "", "columns": columns}))
+        .await;
+    assert_eq!(preview["logins"], 2, "{preview}");
+    let (done, after) = r
+        .backend
+        .handle(request(json!({"kind": "importFinish"})))
+        .await;
+    assert_eq!(done.unwrap()["logins"], 2);
+    assert_eq!(after, After::Sync);
+    let items = r.ok(json!({"kind": "items", "query": ""})).await;
+    assert_eq!(items.as_array().unwrap().len(), 2, "{items}");
+
+    // Health: both weak, one reused group; no leak results yet.
+    let health = r.ok(json!({"kind": "health"})).await;
+    assert_eq!(health["weak"].as_array().unwrap().len(), 2, "{health}");
+    assert_eq!(health["reused"].as_array().unwrap().len(), 1, "{health}");
+    assert_eq!(health["reused"][0][0]["title"], "Bank", "{health}");
+    assert_eq!(health["leaked"], Value::Null);
+    assert_eq!(health["leakCheck"], true);
+    // Never a password in the report.
+    assert!(!health.to_string().contains("hunter2"));
+    assert_eq!(
+        r.ok(json!({"kind": "setLeakCheck", "on": false})).await,
+        json!(false)
+    );
+    assert_eq!(
+        r.ask(json!({"kind": "checkLeaks"})).await,
+        Err("leak_check_off".to_owned())
+    );
+
+    // Export: the master password first, a strong export password for .pwmx.
+    assert_eq!(
+        r.ask(json!({"kind": "exportVault", "masterPassword": "not it at all", "format": "json", "exportPassword": ""}))
+            .await,
+        Err("wrong_password".to_owned())
+    );
+    assert_eq!(
+        r.ask(json!({"kind": "exportVault", "masterPassword": PASSWORD, "format": "pwmx", "exportPassword": "short"}))
+            .await,
+        Err("weak_export_password".to_owned())
+    );
+    let export = r
+        .ok(json!({"kind": "exportVault", "masterPassword": PASSWORD, "format": "json", "exportPassword": ""}))
+        .await;
+    let name = export["name"].as_str().unwrap();
+    assert!(
+        name.starts_with("PWM export ") && name.ends_with(".json"),
+        "{name}"
+    );
+    let text = String::from_utf8(base64_decode(export["file"].as_str().unwrap())).unwrap();
+    assert!(text.contains("mail.example.com"));
+
+    // Locking forgets the import and the leak results.
+    r.ok(json!({"kind": "lock"})).await;
+    assert_eq!(
+        r.ask(json!({"kind": "health"})).await,
+        Err("locked".to_owned())
+    );
+}
+
+async fn devices_and_approving_a_new_one(server: &str, first: &mut Rig, email: &str) {
+    // The new computer asks; the signed-in one sees it after a sync.
+    let mut second = rig(true);
+    second
+        .ok(json!({"kind": "setSettings", "settings": {"serverUrl": server, "autoLockMinutes": 15}}))
+        .await;
+    let asked = second
+        .ok(json!({"kind": "askApproval", "email": email}))
+        .await;
+    assert_eq!(asked["state"], "waiting", "{asked}");
+    let status = first.ok(json!({"kind": "sync"})).await;
+    assert_eq!(status["approvals"], 1, "{status}");
+    let list = first.ok(json!({"kind": "approvals"})).await;
+    let id = list[0]["id"].as_str().unwrap().to_owned();
+    assert_eq!(list[0]["platform"], "windows");
+
+    // Accept, compare the codes, complete: the Secret Key arrives.
+    first.ok(json!({"kind": "acceptApproval", "id": id})).await;
+    let polled = second.ok(json!({"kind": "askApprovalPoll"})).await;
+    assert_eq!(polled["state"], "code", "{polled}");
+    let list = first.ok(json!({"kind": "approvals"})).await;
+    assert_eq!(list[0]["code"], polled["code"], "{list}");
+    first
+        .ok(json!({"kind": "completeApproval", "id": id}))
+        .await;
+    let polled = second.ok(json!({"kind": "askApprovalPoll"})).await;
+    assert_eq!(polled["state"], "approved", "{polled}");
+    second
+        .ok(json!({"kind": "signInApproved", "password": PASSWORD}))
+        .await;
+    assert_eq!(
+        second.ok(json!({"kind": "status"})).await["state"],
+        "unlocked"
+    );
+
+    // Devices: rename this one; this one can't be revoked, the other can.
+    let devices = first.ok(json!({"kind": "devices"})).await;
+    assert_eq!(devices.as_array().unwrap().len(), 2, "{devices}");
+    let this = devices
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["current"] == true)
+        .unwrap()["id"]
+        .clone();
+    let other = devices
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["current"] == false)
+        .unwrap()["id"]
+        .clone();
+    let renamed = first
+        .ok(json!({"kind": "renameDevice", "deviceId": this, "name": "  Desk 2  "}))
+        .await;
+    assert!(renamed.to_string().contains("\"Desk 2\""), "{renamed}");
+    assert_eq!(
+        first
+            .ask(json!({"kind": "renameDevice", "deviceId": this, "name": "  "}))
+            .await,
+        Err("invalid_device_name".to_owned())
+    );
+    assert_eq!(
+        first
+            .ask(json!({"kind": "revokeDevice", "deviceId": this}))
+            .await,
+        Err("this_device".to_owned())
+    );
+    let after = first
+        .ok(json!({"kind": "revokeDevice", "deviceId": other}))
+        .await;
+    assert!(
+        after
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["id"] == other && d["revokedAt"].is_number())
+    );
+
+    // The revoked computer finds out at its next sync and keeps nothing.
+    let status = second.ok(json!({"kind": "sync"})).await;
+    assert_eq!(status, json!({"state": "signedOut"}), "{status}");
+    assert!(second.keys.get(name::SECRET_KEY).await.unwrap().is_none());
+}
+
+/// The item screens' requests (D67), on an unlocked account that already
+/// holds the two imported logins.
+async fn items(r: &mut Rig) {
+    let rows = |v: &Value| v["items"].as_array().unwrap().clone();
+    assert_eq!(rows(&r.ok(json!({"kind": "vault"})).await).len(), 2);
+
+    // A login with a one-time code and a hidden custom field.
+    let totp = r
+        .ok(json!({"kind": "totpSetup", "input": "JBSWY3DPEHPK3PXP", "title": "Forum"}))
+        .await;
+    assert!(
+        totp.as_str().unwrap().starts_with("otpauth://totp/"),
+        "{totp}"
+    );
+    assert_eq!(
+        r.ask(json!({"kind": "totpSetup", "input": "https://example.com/?", "title": "Forum"}))
+            .await,
+        Err("invalid_totp".to_owned())
+    );
+    let saved = r
+        .ok(json!({"kind": "saveItem", "vaultId": null, "item": {
+            "type": "login", "title": "Forum", "notes": "", "favorite": false,
+            "folder_id": null, "tags": ["social"],
+            "custom_fields": [{"name": "PIN", "value": "pin-7777", "kind": "hidden"}],
+            "login": {"username": "me", "password": "pw-ONE-xyz",
+                      "urls": [{"url": "https://forum.example.com", "match": "domain"}],
+                      "totp": totp}
+        }}))
+        .await;
+    let (vault_id, item_id) = (saved["vaultId"].clone(), saved["itemId"].clone());
+    let at = |kind: &str| json!({"kind": kind, "vaultId": vault_id, "itemId": item_id});
+
+    // The list and the detail never hold a hidden value.
+    let vault = r.ok(json!({"kind": "vault"})).await;
+    let shown = vault.to_string();
+    assert!(!shown.contains("pw-ONE-xyz") && !shown.contains("pin-7777"));
+    let row = rows(&vault)
+        .into_iter()
+        .find(|i| i["itemId"] == item_id)
+        .unwrap();
+    assert_eq!(
+        (row["hasPassword"].clone(), row["hasCode"].clone()),
+        (json!(true), json!(true))
+    );
+    let detail = r.ok(at("item")).await;
+    let shown = detail.to_string();
+    assert!(
+        !shown.contains("pw-ONE-xyz")
+            && !shown.contains("pin-7777")
+            && !shown.contains("JBSWY3DPEHPK3PXP")
+    );
+    assert_eq!(
+        detail["hidden"],
+        json!(["/login/password", "/login/totp", "/custom_fields/0/value"])
+    );
+    assert_eq!(detail["code"]["code"].as_str().unwrap().len(), 6);
+    assert_eq!(detail["readOnly"], false);
+
+    // Show: one hidden value, and only a hidden one.
+    let mut reveal = at("reveal");
+    reveal["path"] = json!("/login/password");
+    assert_eq!(r.ok(reveal.clone()).await, json!("pw-ONE-xyz"));
+    reveal["path"] = json!("/login/username");
+    assert_eq!(r.ask(reveal).await, Err("invalid_request".to_owned()));
+
+    // Edit: the whole item, without history or passkeys; the old password
+    // goes to the history.
+    let mut edited = r.ok(at("itemForEdit")).await;
+    assert_eq!(edited["login"]["password"], "pw-ONE-xyz");
+    assert!(edited.get("history").is_none() && edited["login"].get("passkeys").is_none());
+    edited["login"]["password"] = json!("pw-TWO-xyz");
+    r.ok(json!({"kind": "saveItem", "vaultId": vault_id, "item": edited}))
+        .await;
+    let detail = r.ok(at("item")).await;
+    let history = detail["passwordHistory"].as_array().unwrap();
+    assert_eq!(history.len(), 1, "{detail}");
+    let mut reveal = at("reveal");
+    reveal["path"] = history[0]["path"].clone();
+    assert_eq!(r.ok(reveal).await, json!("pw-ONE-xyz"));
+
+    // Copy any field by its place.
+    let mut copy = at("copy");
+    copy["path"] = json!("/custom_fields/0/value");
+    r.ok(copy).await;
+    assert_eq!(r.board.text().as_deref(), Some("pin-7777"));
+
+    // A card, a folder, and moving the card into it.
+    let folder = r.ok(json!({"kind": "newFolder", "title": " Work "})).await;
+    let card = r
+        .ok(json!({"kind": "saveItem", "vaultId": null, "item": {
+            "type": "card", "title": "Visa", "notes": "", "favorite": true,
+            "folder_id": folder["itemId"], "tags": [], "custom_fields": [],
+            "card": {"cardholder": "A", "number": "4111 1111 1111 1234", "expiry_month": 12,
+                     "expiry_year": 2030, "security_code": "999", "brand": "visa"}
+        }}))
+        .await;
+    let vault = r.ok(json!({"kind": "vault"})).await;
+    assert_eq!(vault["folders"][0]["title"], "Work", "{vault}");
+    let row = rows(&vault)
+        .into_iter()
+        .find(|i| i["itemId"] == card["itemId"])
+        .unwrap();
+    assert_eq!(row["subtitle"], "•••• 1234");
+    assert_eq!(row["folderId"], folder["itemId"]);
+    assert!(!vault.to_string().contains("4111 1111"));
+    // A card's month must be 1-12: the core refuses the save.
+    assert_eq!(
+        r.ask(json!({"kind": "saveItem", "vaultId": null, "item": {
+            "type": "card", "title": "Bad", "card": {"expiry_month": 13}
+        }}))
+        .await,
+        Err("invalid_item".to_owned())
+    );
+
+    // Trash, restore, delete for good.
+    r.ok(at("trashItem")).await;
+    let trashed = |v: &Value| {
+        rows(v)
+            .into_iter()
+            .find(|i| i["itemId"] == item_id)
+            .map(|i| i["trashed"].clone())
+    };
+    assert_eq!(
+        trashed(&r.ok(json!({"kind": "vault"})).await),
+        Some(json!(true))
+    );
+    r.ok(at("restoreItem")).await;
+    assert_eq!(
+        trashed(&r.ok(json!({"kind": "vault"})).await),
+        Some(json!(false))
+    );
+    r.ok(at("deleteItem")).await;
+    assert_eq!(trashed(&r.ok(json!({"kind": "vault"})).await), None);
+    // Everything reaches the server.
+    let status = r.ok(json!({"kind": "sync"})).await;
+    assert_eq!(status["syncError"], Value::Null, "{status}");
 }

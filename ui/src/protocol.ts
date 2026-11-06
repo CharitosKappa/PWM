@@ -1,11 +1,13 @@
 /**
  * The protocol between the screens and whatever holds the vault: the
  * extension's background service worker (D34), or the desktop app's Rust
- * backend (D3). The screens never receive keys, passwords or one-time
- * codes: copying goes through the host's clipboard. The only secrets they
- * ever get are the Secret Key, once, right after sign-up, the Emergency Kit
- * PDF made from it (D42), and an export the user asked for with the master
- * password (D24), each to save.
+ * backend (D3). The screens never receive keys, and copying goes through
+ * the host's clipboard. The secrets they get are the Secret Key, once,
+ * right after sign-up, the Emergency Kit PDF made from it (D42), an export
+ * the user asked for with the master password (D24), each to save, and on
+ * the desktop's item screens (D67) exactly two requests' answers: `reveal`
+ * (one hidden value, after Show) and `itemForEdit` (the whole item, while
+ * the editor is open). Lists and item details never hold a hidden value.
  */
 
 /** A login the current page may get. */
@@ -57,6 +59,8 @@ export type Request =
   | { kind: "signOut" }
   | { kind: "items"; query: string }
   | { kind: "copy"; vaultId: string; itemId: string; field: CopyField }
+  /** Any field, by its JSON Pointer in the item (D67 §1). */
+  | { kind: "copy"; vaultId: string; itemId: string; path: string }
   | { kind: "copySecretKey" }
   | { kind: "emergencyKit" }
   | { kind: "copyText"; text: string }
@@ -121,7 +125,71 @@ export type Request =
       columns: ImportMapping | null;
     }
   | { kind: "importFinish" }
-  | { kind: "importCancel" };
+  | { kind: "importCancel" }
+  // The desktop's item screens (D67).
+  | { kind: "vault" }
+  | { kind: "item"; vaultId: string; itemId: string }
+  | { kind: "reveal"; vaultId: string; itemId: string; path: string }
+  | { kind: "itemForEdit"; vaultId: string; itemId: string }
+  /** A new item has no `id`; `vaultId` null puts it in the first vault. */
+  | { kind: "saveItem"; vaultId: string | null; item: ItemJson }
+  | { kind: "trashItem"; vaultId: string; itemId: string }
+  | { kind: "restoreItem"; vaultId: string; itemId: string }
+  | { kind: "deleteItem"; vaultId: string; itemId: string }
+  | { kind: "newFolder"; title: string }
+  | { kind: "totpSetup"; input: string; title: string };
+
+/**
+ * An item's decrypted D18 JSON, as the editor changes it. Fields this
+ * version doesn't know are kept as they are (D18).
+ */
+export type ItemJson = Record<string, unknown>;
+
+/** One row of the vault's list (D67 §1): never a hidden value. */
+export interface VaultRow {
+  vaultId: string;
+  itemId: string;
+  /** `login`, `card`, `identity`, `note`, or a newer type. */
+  type: string;
+  title: string;
+  /** The username, a card's last 4 digits, or a name. */
+  subtitle: string;
+  /** A login's first website, for search; "" without one. */
+  url: string;
+  favorite: boolean;
+  folderId: string | null;
+  trashed: boolean;
+  hasPassword: boolean;
+  hasCode: boolean;
+}
+
+export interface FolderView {
+  vaultId: string;
+  itemId: string;
+  title: string;
+}
+
+export interface VaultView {
+  items: VaultRow[];
+  folders: FolderView[];
+}
+
+/** An item to show (D67 §1): every hidden value left out, by its place. */
+export interface ItemView {
+  vaultId: string;
+  itemId: string;
+  /** The D18 JSON with each hidden value as "", without its history. */
+  item: ItemJson;
+  /** JSON Pointers of the values left out, for Show and Copy. */
+  hidden: string[];
+  /** A newer schema or an unknown type: shown, never edited (D18). */
+  readOnly: boolean;
+  /** The one-time code now, never its secret. */
+  code: { code: string; secondsLeft: number } | null;
+  passkeys: { rpId: string; userName: string; createdAt: number }[];
+  /** Previous passwords, newest first, each to Show by its place. */
+  passwordHistory: { savedAt: number; path: string }[];
+}
 
 export type ImportField =
   | "title"
@@ -317,6 +385,16 @@ export interface Replies {
   importPrepare: ImportPreviewView;
   importFinish: ImportPreviewView;
   importCancel: null;
+  vault: VaultView;
+  item: ItemView;
+  reveal: string;
+  itemForEdit: ItemJson;
+  saveItem: { vaultId: string; itemId: string };
+  trashItem: null;
+  restoreItem: null;
+  deleteItem: null;
+  newFolder: { vaultId: string; itemId: string };
+  totpSetup: string;
   askApproval: AskView;
   askApprovalPoll: AskView;
   askApprovalCancel: null;
@@ -372,6 +450,16 @@ export const REQUEST_KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "importPrepare",
   "importFinish",
   "importCancel",
+  "vault",
+  "item",
+  "reveal",
+  "itemForEdit",
+  "saveItem",
+  "trashItem",
+  "restoreItem",
+  "deleteItem",
+  "newFolder",
+  "totpSetup",
   "askApproval",
   "askApprovalPoll",
   "askApprovalCancel",

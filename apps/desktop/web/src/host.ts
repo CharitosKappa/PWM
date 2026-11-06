@@ -1,8 +1,8 @@
 /**
  * The desktop app as the shared screens' host (D3 §2, D66 §3): requests go
  * to the Rust backend through the app's one command. There is no browser
- * here: no pages to fill, no permissions to ask for, and the manage page
- * comes in M7.6.
+ * here: no pages to fill and no permissions to ask for. The manage page
+ * (M7.6) shares the window with the vault.
  */
 import { invoke } from "@tauri-apps/api/core";
 import type { Host } from "@pwm/ui/host.ts";
@@ -12,10 +12,18 @@ export const desktopHost: Host = {
   send: (request) => invoke<Reply<unknown>>("request", { request }),
   requestAccess: () => Promise.resolve(true),
   releaseAccess: () => Promise.resolve(),
-  openManage: () => undefined,
+  openManage: (section) => {
+    location.assign(
+      section === undefined ? "manage.html" : `manage.html#${section}`,
+    );
+  },
+  closeManage: () => {
+    location.assign("index.html");
+  },
   browser: false,
   inlineUi: false,
   asksServerAccess: false,
   touchId: false,
-  manage: false,
+  manage: true,
+  vaultWindow: true,
 };

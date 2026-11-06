@@ -125,6 +125,8 @@ public struct RootView: View {
         .tint(Tokens.Color.accent.color)
         // Buttons are pills (D1); bordered styles read this from the environment.
         .buttonBorderShape(.capsule)
+        // Manrope for any text that sets no style of its own (D1).
+        .font(.app(.body))
     }
 }
 
@@ -398,7 +400,7 @@ struct SignInView: View {
             } else {
                 TextField("Secret Key", text: $model.secretKey)
                     .plainInput()
-                    .font(.system(.body, design: .monospaced))
+                    .font(.secret(.body))
                     .accessibilityIdentifier("secretKey")
             }
             if app.usesOtherServer {
@@ -511,7 +513,7 @@ struct AskingPanel: View {
                     .textStyle(Tokens.Text.caption)
                     .foregroundStyle(Tokens.Color.textMuted.color)
                 Text(verbatim: code)
-                    .font(.system(.largeTitle, design: .monospaced).weight(.semibold))
+                    .font(.secret(.largeTitle).weight(.semibold))
                     .accessibilityIdentifier("approvalCode")
             } else {
                 HStack(spacing: Tokens.Space.s2) {

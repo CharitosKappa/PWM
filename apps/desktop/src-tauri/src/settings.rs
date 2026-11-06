@@ -30,6 +30,13 @@ struct File {
     v: u8,
     server_url: String,
     auto_lock_minutes: u32,
+    /// Added in M7.6, still version 1: a file without it reads as on.
+    #[serde(default = "on")]
+    leak_check: bool,
+}
+
+fn on() -> bool {
+    true
 }
 
 /// Why new settings were refused: the screens' error codes.
@@ -85,10 +92,11 @@ impl SettingsFile {
         }
     }
 
-    /// The stored settings; the defaults when there are none or they don't read.
-    pub fn load(&self) -> Settings {
+    /// The stored settings and the leak check's switch; the defaults when
+    /// there are none or they don't read.
+    pub fn load(&self) -> (Settings, bool) {
         let Ok(bytes) = std::fs::read(&self.path) else {
-            return Settings::default();
+            return (Settings::default(), true);
         };
         match serde_json::from_slice::<File>(&bytes) {
             Ok(file) if file.v == VERSION => {
@@ -96,17 +104,18 @@ impl SettingsFile {
                     server_url: file.server_url,
                     auto_lock_minutes: file.auto_lock_minutes,
                 };
-                check(&stored).unwrap_or_default()
+                (check(&stored).unwrap_or_default(), file.leak_check)
             }
-            _ => Settings::default(),
+            _ => (Settings::default(), true),
         }
     }
 
-    pub fn save(&self, settings: &Settings) -> Result<(), crate::keys::KeyError> {
+    pub fn save(&self, settings: &Settings, leak_check: bool) -> Result<(), crate::keys::KeyError> {
         let file = File {
             v: VERSION,
             server_url: settings.server_url.clone(),
             auto_lock_minutes: settings.auto_lock_minutes,
+            leak_check,
         };
         let bytes = serde_json::to_vec_pretty(&file).map_err(|_| crate::keys::KeyError)?;
         crate::keys::write_file(&self.path, &bytes)
@@ -163,20 +172,27 @@ mod tests {
     fn the_file_is_versioned_and_bad_files_give_the_defaults() {
         let dir = std::env::temp_dir().join(format!("pwm-settings-{}", std::process::id()));
         let file = SettingsFile::new(&dir);
-        assert_eq!(file.load(), Settings::default());
+        assert_eq!(file.load(), (Settings::default(), true));
         let mine = settings("http://localhost:8080", 5);
-        file.save(&mine).unwrap();
-        assert_eq!(file.load(), mine);
+        file.save(&mine, false).unwrap();
+        assert_eq!(file.load(), (mine.clone(), false));
         let text = std::fs::read_to_string(dir.join("settings.json")).unwrap();
         assert!(text.contains("\"v\": 1"));
+        // A file from before the leak check's switch (M7.4) reads as on.
+        std::fs::write(
+            dir.join("settings.json"),
+            r#"{"v":1,"serverUrl":"http://localhost:8080","autoLockMinutes":5}"#,
+        )
+        .unwrap();
+        assert_eq!(file.load(), (mine, true));
         std::fs::write(
             dir.join("settings.json"),
             r#"{"v":2,"serverUrl":"x","autoLockMinutes":5}"#,
         )
         .unwrap();
-        assert_eq!(file.load(), Settings::default());
+        assert_eq!(file.load(), (Settings::default(), true));
         std::fs::write(dir.join("settings.json"), "not json").unwrap();
-        assert_eq!(file.load(), Settings::default());
+        assert_eq!(file.load(), (Settings::default(), true));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -18,10 +18,12 @@ function fakeHost(
     requestAccess: () => Promise.resolve(true),
     releaseAccess: () => Promise.resolve(),
     openManage: () => undefined,
+    closeManage: null,
     browser: false,
     inlineUi: false,
     touchId: false,
     manage: false,
+    vaultWindow: false,
     asksServerAccess: false,
   };
 }
