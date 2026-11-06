@@ -1,5 +1,6 @@
 package pwm.app
 
+import android.content.Context
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -11,6 +12,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.createFontFamilyResolver
 import androidx.compose.ui.unit.sp
 import pwm.kit.design.ThemedColor
 import pwm.kit.design.Tokens
@@ -29,6 +31,19 @@ val Manrope = FontFamily(weights.map { Font(R.font.manrope, it) })
 
 /** Geist Mono, for passwords, one-time codes and the Secret Key. */
 val GeistMono = FontFamily(weights.map { Font(R.font.geist_mono, it) })
+
+/**
+ * Loads every weight of both fonts into Compose's process-wide typeface
+ * cache. Compose otherwise loads a resource font on the main thread the
+ * first time a text uses it, which made the first screen (often the fill
+ * sheet) slower to show. Called once, off the main thread, at start-up.
+ */
+fun preloadFonts(context: Context) {
+    val resolver = createFontFamilyResolver(context)
+    for (family in listOf(Manrope, GeistMono)) {
+        for (weight in weights) runCatching { resolver.resolve(family, weight) }
+    }
+}
 
 fun TypeStyle.compose(): TextStyle = TextStyle(
     fontSize = size.sp,

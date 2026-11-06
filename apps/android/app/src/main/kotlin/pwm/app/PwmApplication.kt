@@ -43,6 +43,8 @@ class PwmApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // The app fonts (D1), loaded before the first screen needs them.
+        Thread({ preloadFonts(this) }, "pwm-fonts").start()
         val keys = KeystoreKeys(this)
         // The Activity on screen, for the fingerprint prompt (D55 §2).
         registerActivityLifecycleCallbacks(
