@@ -166,7 +166,7 @@ fn login_of(item: &Value) -> Login {
 }
 
 /// `YYYY-MM-DD` in this computer's time zone, for the Emergency Kit.
-fn local_date() -> String {
+pub(crate) fn local_date() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
@@ -186,20 +186,26 @@ fn paper() -> pwm_client::Paper {
 }
 
 pub struct Backend<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> {
-    client: Client<SqliteStore>,
-    transport: T,
-    keys: K,
+    pub(crate) client: Client<SqliteStore>,
+    pub(crate) transport: T,
+    pub(crate) keys: K,
     clipboard: C,
-    clock: Q,
+    pub(crate) clock: Q,
     device: Device,
-    settings: Settings,
-    settings_file: Option<SettingsFile>,
+    pub(crate) settings: Settings,
+    pub(crate) settings_file: Option<SettingsFile>,
     synced_at: Option<i64>,
     sync_error: Option<String>,
     asking: Option<Asking>,
     auto_lock: AutoLock,
     clear_clipboard_at: Option<u64>,
     retry_sync_at: Option<u64>,
+    /// The leak check's switch (D22 §5): on unless turned off.
+    pub(crate) leak_check: bool,
+    /// Leak results, by item id, until the vault locks (D44).
+    pub(crate) leaked: Option<std::collections::HashMap<String, u64>>,
+    /// New devices asking to sign in, read after each sync (D46 §5).
+    pub(crate) pending_approvals: u32,
 }
 
 impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
@@ -214,10 +220,10 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
         device: Device,
         settings_file: Option<SettingsFile>,
     ) -> Self {
-        let settings = settings_file
+        let (settings, leak_check) = settings_file
             .as_ref()
             .map(SettingsFile::load)
-            .unwrap_or_default();
+            .unwrap_or((Settings::default(), true));
         Self {
             client: Client::new(store),
             transport,
@@ -233,6 +239,9 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             auto_lock: AutoLock::default(),
             clear_clipboard_at: None,
             retry_sync_at: None,
+            leak_check,
+            leaked: None,
+            pending_approvals: 0,
         }
     }
 
@@ -336,6 +345,52 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
                 self.asking = None;
                 null()
             }
+            Request::Devices => Ok(json!(self.devices().await?)),
+            Request::RenameDevice { device_id, name } => {
+                Ok(json!(self.rename_device(&device_id, &name).await?))
+            }
+            Request::RevokeDevice { device_id } => Ok(json!(self.revoke_device(&device_id).await?)),
+            Request::Health => Ok(json!(self.health()?)),
+            Request::CheckLeaks => Ok(json!(self.check_leaks().await?)),
+            Request::SetLeakCheck { on } => Ok(json!(self.set_leak_check(on)?)),
+            Request::Approvals => Ok(json!(self.approvals().await?)),
+            Request::AcceptApproval { id } => Ok(json!(self.accept_approval(&id).await?)),
+            Request::CompleteApproval { id } => Ok(json!(self.complete_approval(&id).await?)),
+            Request::DenyApproval { id } => Ok(json!(self.deny_approval(&id).await?)),
+            Request::ExportVault {
+                master_password,
+                format,
+                export_password,
+            } => {
+                let (file, name) = self
+                    .export_vault(&master_password, format, &export_password)
+                    .await?;
+                Ok(json!({ "file": file, "name": name }))
+            }
+            Request::ImportDetect { name, file } => Ok(json!(self.import_detect(&name, &file)?)),
+            Request::ImportPrepare {
+                file,
+                format,
+                password,
+                key_file,
+                columns,
+            } => Ok(json!(self.import_prepare(
+                &file,
+                &format,
+                &password,
+                &key_file,
+                columns.as_ref()
+            )?)),
+            Request::ImportFinish => {
+                let done = self.import_finish()?;
+                // Saved here; the server gets it with the next sync.
+                *after = After::Sync;
+                Ok(json!(done))
+            }
+            Request::ImportCancel => {
+                self.import_cancel();
+                null()
+            }
             Request::Unsupported => Err(Failure::code("unsupported")),
         }
     }
@@ -362,8 +417,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             email,
             synced_at: self.synced_at,
             sync_error: self.sync_error.clone(),
-            // Read by the manage page's approvals, which come in M7.6.
-            approvals: 0,
+            approvals: self.pending_approvals,
         })
     }
 
@@ -380,6 +434,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
         self.client.lock();
         self.auto_lock.clear();
         self.retry_sync_at = None;
+        self.leaked = None;
     }
 
     /// Runs the timers; the app calls it about once a second.
@@ -404,7 +459,10 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
     // --- Server conversations ---
 
     /// Runs `first` and every step after it, then keeps any new tokens.
-    async fn run(&mut self, first: std::result::Result<Step, ClientError>) -> Result<Step> {
+    pub(crate) async fn run(
+        &mut self,
+        first: std::result::Result<Step, ClientError>,
+    ) -> Result<Step> {
         let mut step = first?;
         let base = base_url(&self.settings.server_url);
         while let Step::Send(request) = step {
@@ -447,7 +505,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
     }
 
     /// The end of a sync-like run: when it synced, why it didn't.
-    async fn ended(&mut self, step: &Step) -> Result<()> {
+    pub(crate) async fn ended(&mut self, step: &Step) -> Result<()> {
         match step {
             Step::Wait { delay_ms } => {
                 self.sync_error = Some("offline".to_owned());
@@ -476,23 +534,35 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
                 Ok(step) => self.ended(&step).await?,
                 Err(Failure(code)) => self.sync_error = Some(code),
             }
+            if self.client.is_unlocked() && self.sync_error.is_none() {
+                self.refresh_approvals().await;
+            }
         }
         self.status().await
     }
 
     // --- Account ---
 
-    async fn device_id(&mut self) -> Result<String> {
-        if let Some(id) = self.keys.get(name::DEVICE_ID).await? {
+    /// This computer's device id for `email`'s account. The server ties a
+    /// device id to one account, so the stored id is reused only for the
+    /// account it belongs to; a sign-up (`fresh`), or another account,
+    /// gets a new one. As on Android (D59's notes).
+    async fn device_id_for(&mut self, email: &str, fresh: bool) -> Result<String> {
+        let stored = self.keys.get(name::DEVICE_ID).await?;
+        let owner = self.keys.get(name::DEVICE_ACCOUNT).await?;
+        if let (false, Some(id), Some(owner)) = (fresh, stored, owner)
+            && owner.expose_secret().eq_ignore_ascii_case(email.trim())
+        {
             return Ok(id.expose_secret().clone());
         }
         let id = pwm_client::new_id()?;
         self.keys.set(name::DEVICE_ID, &id).await?;
+        self.keys.set(name::DEVICE_ACCOUNT, email.trim()).await?;
         Ok(id)
     }
 
     async fn sign_up(&mut self, email: &str, password: &Secret<String>) -> Result<Secret<String>> {
-        let device_id = self.device_id().await?;
+        let device_id = self.device_id_for(email, true).await?;
         let start = self.client.start_signup(
             email,
             password.expose_secret(),
@@ -513,7 +583,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
         password: &Secret<String>,
         secret_key: &Secret<String>,
     ) -> Result<()> {
-        let device_id = self.device_id().await?;
+        let device_id = self.device_id_for(email, false).await?;
         let start = self.client.start_login(
             email,
             password.expose_secret(),
@@ -553,7 +623,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
         let (Some(email), Some(secret_key)) = (email, secret_key) else {
             return Err(Failure::code("signed_out"));
         };
-        let device_id = self.device_id().await?;
+        let device_id = self.device_id_for(email.expose_secret(), false).await?;
         // An empty name sends none: the device keeps its name.
         let start = self.client.start_login(
             email.expose_secret(),
@@ -620,6 +690,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
         self.lock();
         self.synced_at = None;
         self.sync_error = None;
+        self.pending_approvals = 0;
         Ok(())
     }
 
@@ -662,7 +733,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             return Err(Failure::code("signed_in"));
         }
         if let Some(file) = &self.settings_file {
-            file.save(&next)?;
+            file.save(&next, self.leak_check)?;
         }
         self.settings = next.clone();
         Ok(next)
@@ -671,7 +742,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
     // --- The vault ---
 
     /// Every item that isn't trashed or a folder, as D18 JSON.
-    fn stored_items(&self) -> Result<Vec<(String, Value)>> {
+    pub(crate) fn stored_items(&self) -> Result<Vec<(String, Value)>> {
         let mut out = Vec::new();
         for vault_id in self.client.vault_ids()? {
             for json in self.client.items(&vault_id)? {

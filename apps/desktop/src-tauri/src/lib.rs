@@ -8,6 +8,7 @@ pub mod clipboard;
 pub mod http;
 pub mod keys;
 pub mod lock;
+mod manage;
 pub mod protocol;
 pub mod settings;
 mod system;

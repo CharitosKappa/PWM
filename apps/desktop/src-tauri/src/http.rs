@@ -18,6 +18,14 @@ pub trait Transport: Send + Sync + 'static {
         base: &str,
         request: HttpRequest,
     ) -> impl Future<Output = Result<HttpResponse, NoAnswer>> + Send;
+
+    /// A GET to another service (the leak check's ranges, D22 §4): the
+    /// status and the body as text. No cookies, no redirects, no referrer.
+    fn get(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> impl Future<Output = Result<(u16, String), NoAnswer>> + Send;
 }
 
 /// `reqwest` over rustls with the system's trust store: no cookies, no
@@ -77,6 +85,17 @@ impl Transport for Reqwest {
             .collect();
         let body = response.bytes().await.map_err(|_| NoAnswer)?.to_vec();
         Ok(HttpResponse::new(status, headers, body))
+    }
+
+    async fn get(&self, url: &str, headers: &[(&str, &str)]) -> Result<(u16, String), NoAnswer> {
+        let mut builder = self.client.get(url);
+        for (name, value) in headers {
+            builder = builder.header(*name, *value);
+        }
+        let response = builder.send().await.map_err(|_| NoAnswer)?;
+        let status = response.status().as_u16();
+        let body = response.text().await.map_err(|_| NoAnswer)?;
+        Ok((status, body))
     }
 }
 

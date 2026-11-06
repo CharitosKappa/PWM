@@ -128,7 +128,14 @@ fn main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .content_protected(true)
         .disable_drag_drop_handler()
         .on_navigation(own_page)
-        .on_new_window(|_, _| NewWindowResponse::Deny)
+        // A site link (the health report's "Change", D44 §4) opens in the
+        // default browser; the app never opens a window of its own.
+        .on_new_window(|url, _| {
+            if matches!(url.scheme(), "https" | "http") {
+                let _ = open::that_detached(url.as_str());
+            }
+            NewWindowResponse::Deny
+        })
         // The Emergency Kit (and M7.6's exports) go to the Downloads folder.
         .on_download(move |_, event| {
             if let DownloadEvent::Requested { destination, .. } = event {

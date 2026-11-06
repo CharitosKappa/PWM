@@ -3,7 +3,10 @@
 //! `Unsupported`, and the replies the backend builds read and write back
 //! the same JSON.
 
-use pwm_desktop::protocol::{AskView, ItemSummary, Request, Settings, Status};
+use pwm_desktop::protocol::{
+    ApprovalView, AskView, DeviceView, HealthView, ImportDetected, ImportPreviewView, ItemSummary,
+    Request, Settings, Status,
+};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -59,6 +62,11 @@ fn the_replies_match_the_screens_types() {
     round_trip::<Vec<ItemSummary>>("items");
     round_trip::<Settings>("settings");
     round_trip::<AskView>("askApproval");
+    round_trip::<Vec<DeviceView>>("devices");
+    round_trip::<HealthView>("health");
+    round_trip::<Vec<ApprovalView>>("approvals");
+    round_trip::<ImportDetected>("importDetect");
+    round_trip::<ImportPreviewView>("importPrepare");
 }
 
 #[test]

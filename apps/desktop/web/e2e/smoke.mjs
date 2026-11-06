@@ -1,8 +1,8 @@
 // The desktop app end to end (D66 §9), through tauri-driver's WebDriver
 // API with plain fetch: create an account in the real window, save the
 // Secret Key, lock, see a wrong password refused, unlock, copy a
-// generated password, sign out. CI runs it on Linux under Xvfb, with the
-// app's settings pointing at a local server.
+// generated password, open the manage page, sign out. CI runs it on
+// Linux under Xvfb, with the app's settings pointing at a local server.
 //
 //   node e2e/smoke.mjs <path to the built app>
 //
@@ -107,6 +107,16 @@ try {
   await click("Generate");
   await waitFor("Passphrase");
   await click("Copy");
+
+  // The manage page shares the window (M7.6).
+  await click("Settings");
+  await waitFor("Password health, devices and export");
+  await click("Password health, devices and export");
+  await waitFor("Back to the vault");
+  await click("Devices");
+  await waitFor("This device");
+  await click("← Back to the vault");
+  await waitFor("Generate");
 
   await click("Settings");
   await waitFor("Sign out of this device");

@@ -680,7 +680,13 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
     - **The approvals count** on the vault stays 0 until M7.6 lists them.
     - **Parity:** the global shortcut (with M7.2), Linux unlock with polkit or fprintd (later).
 - [ ] M7.5 Windows Hello unlock, under D45's rules, with its key-wrapping decision first.
-- [ ] M7.6 The manage page on the desktop (D66 §1): health and the leak check, devices, approving a new device, export and import.
+- [x] M7.6 The manage page on the desktop (D66 §1): health and the leak check, devices, approving a new device, export and import.
+  - Done per D66 §1 (implementation notes there):
+    - **The backend** answers the manage page's 15 requests as the extension's `manage.ts`, `approvals.ts` and `importer.ts` do; the vault shows how many new devices are asking, read after each sync.
+    - **The window:** `manage.html` in the desktop's page, opened from Settings, with "Back to the vault" (a new host method, `closeManage`). Exports go to Downloads under a free name; a site link opens in the default browser.
+    - **Found and fixed:** a second account signed up on the same computer was refused (`device_conflict`), as on Android before D59's fix: a sign-up now gets a new device id, and a sign-in reuses the stored one only for its own account.
+  - **Tests:** the protocol samples for every new reply; one server test sequence (3 sign-ups, under the server's 5 an hour) covering import, health, export, devices, approving a new device between two app instances, a revoked device finding out, and a second account on one computer; the end-to-end check opens the manage page. Run here in the real window against a local server: import a CSV, health with weak and reused passwords, the leak check against Have I Been Pwned, devices, a JSON export to Downloads, back to the vault.
+  - **Deferred:** the extension has the same device-id gap; it gets its own fix.
 - [ ] M7.7 Items in a full window (D66 §1): a sidebar layout, an item's detail and editing every type, in the shared screens with new requests.
 
 ### M8 — Importers (`pwm-import`)
