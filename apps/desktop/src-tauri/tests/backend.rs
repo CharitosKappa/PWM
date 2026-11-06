@@ -243,6 +243,7 @@ async fn against_a_server() {
     import_health_and_export(&mut a).await;
     unlock(&mut a).await;
     devices_and_approving_a_new_one(&server, &mut a, &email).await;
+    items(&mut a).await;
     sign_in_on_another_computer_and_sign_out(&server, &email, &secret_key).await;
 }
 
@@ -532,4 +533,142 @@ async fn devices_and_approving_a_new_one(server: &str, first: &mut Rig, email: &
     let status = second.ok(json!({"kind": "sync"})).await;
     assert_eq!(status, json!({"state": "signedOut"}), "{status}");
     assert!(second.keys.get(name::SECRET_KEY).await.unwrap().is_none());
+}
+
+/// The item screens' requests (D67), on an unlocked account that already
+/// holds the two imported logins.
+async fn items(r: &mut Rig) {
+    let rows = |v: &Value| v["items"].as_array().unwrap().clone();
+    assert_eq!(rows(&r.ok(json!({"kind": "vault"})).await).len(), 2);
+
+    // A login with a one-time code and a hidden custom field.
+    let totp = r
+        .ok(json!({"kind": "totpSetup", "input": "JBSWY3DPEHPK3PXP", "title": "Forum"}))
+        .await;
+    assert!(
+        totp.as_str().unwrap().starts_with("otpauth://totp/"),
+        "{totp}"
+    );
+    assert_eq!(
+        r.ask(json!({"kind": "totpSetup", "input": "https://example.com/?", "title": "Forum"}))
+            .await,
+        Err("invalid_totp".to_owned())
+    );
+    let saved = r
+        .ok(json!({"kind": "saveItem", "vaultId": null, "item": {
+            "type": "login", "title": "Forum", "notes": "", "favorite": false,
+            "folder_id": null, "tags": ["social"],
+            "custom_fields": [{"name": "PIN", "value": "pin-7777", "kind": "hidden"}],
+            "login": {"username": "me", "password": "pw-ONE-xyz",
+                      "urls": [{"url": "https://forum.example.com", "match": "domain"}],
+                      "totp": totp}
+        }}))
+        .await;
+    let (vault_id, item_id) = (saved["vaultId"].clone(), saved["itemId"].clone());
+    let at = |kind: &str| json!({"kind": kind, "vaultId": vault_id, "itemId": item_id});
+
+    // The list and the detail never hold a hidden value.
+    let vault = r.ok(json!({"kind": "vault"})).await;
+    let shown = vault.to_string();
+    assert!(!shown.contains("pw-ONE-xyz") && !shown.contains("pin-7777"));
+    let row = rows(&vault)
+        .into_iter()
+        .find(|i| i["itemId"] == item_id)
+        .unwrap();
+    assert_eq!(
+        (row["hasPassword"].clone(), row["hasCode"].clone()),
+        (json!(true), json!(true))
+    );
+    let detail = r.ok(at("item")).await;
+    let shown = detail.to_string();
+    assert!(
+        !shown.contains("pw-ONE-xyz")
+            && !shown.contains("pin-7777")
+            && !shown.contains("JBSWY3DPEHPK3PXP")
+    );
+    assert_eq!(
+        detail["hidden"],
+        json!(["/login/password", "/login/totp", "/custom_fields/0/value"])
+    );
+    assert_eq!(detail["code"]["code"].as_str().unwrap().len(), 6);
+    assert_eq!(detail["readOnly"], false);
+
+    // Show: one hidden value, and only a hidden one.
+    let mut reveal = at("reveal");
+    reveal["path"] = json!("/login/password");
+    assert_eq!(r.ok(reveal.clone()).await, json!("pw-ONE-xyz"));
+    reveal["path"] = json!("/login/username");
+    assert_eq!(r.ask(reveal).await, Err("invalid_request".to_owned()));
+
+    // Edit: the whole item, without history or passkeys; the old password
+    // goes to the history.
+    let mut edited = r.ok(at("itemForEdit")).await;
+    assert_eq!(edited["login"]["password"], "pw-ONE-xyz");
+    assert!(edited.get("history").is_none() && edited["login"].get("passkeys").is_none());
+    edited["login"]["password"] = json!("pw-TWO-xyz");
+    r.ok(json!({"kind": "saveItem", "vaultId": vault_id, "item": edited}))
+        .await;
+    let detail = r.ok(at("item")).await;
+    let history = detail["passwordHistory"].as_array().unwrap();
+    assert_eq!(history.len(), 1, "{detail}");
+    let mut reveal = at("reveal");
+    reveal["path"] = history[0]["path"].clone();
+    assert_eq!(r.ok(reveal).await, json!("pw-ONE-xyz"));
+
+    // Copy any field by its place.
+    let mut copy = at("copy");
+    copy["path"] = json!("/custom_fields/0/value");
+    r.ok(copy).await;
+    assert_eq!(r.board.text().as_deref(), Some("pin-7777"));
+
+    // A card, a folder, and moving the card into it.
+    let folder = r.ok(json!({"kind": "newFolder", "title": " Work "})).await;
+    let card = r
+        .ok(json!({"kind": "saveItem", "vaultId": null, "item": {
+            "type": "card", "title": "Visa", "notes": "", "favorite": true,
+            "folder_id": folder["itemId"], "tags": [], "custom_fields": [],
+            "card": {"cardholder": "A", "number": "4111 1111 1111 1234", "expiry_month": 12,
+                     "expiry_year": 2030, "security_code": "999", "brand": "visa"}
+        }}))
+        .await;
+    let vault = r.ok(json!({"kind": "vault"})).await;
+    assert_eq!(vault["folders"][0]["title"], "Work", "{vault}");
+    let row = rows(&vault)
+        .into_iter()
+        .find(|i| i["itemId"] == card["itemId"])
+        .unwrap();
+    assert_eq!(row["subtitle"], "•••• 1234");
+    assert_eq!(row["folderId"], folder["itemId"]);
+    assert!(!vault.to_string().contains("4111 1111"));
+    // A card's month must be 1-12: the core refuses the save.
+    assert_eq!(
+        r.ask(json!({"kind": "saveItem", "vaultId": null, "item": {
+            "type": "card", "title": "Bad", "card": {"expiry_month": 13}
+        }}))
+        .await,
+        Err("invalid_item".to_owned())
+    );
+
+    // Trash, restore, delete for good.
+    r.ok(at("trashItem")).await;
+    let trashed = |v: &Value| {
+        rows(v)
+            .into_iter()
+            .find(|i| i["itemId"] == item_id)
+            .map(|i| i["trashed"].clone())
+    };
+    assert_eq!(
+        trashed(&r.ok(json!({"kind": "vault"})).await),
+        Some(json!(true))
+    );
+    r.ok(at("restoreItem")).await;
+    assert_eq!(
+        trashed(&r.ok(json!({"kind": "vault"})).await),
+        Some(json!(false))
+    );
+    r.ok(at("deleteItem")).await;
+    assert_eq!(trashed(&r.ok(json!({"kind": "vault"})).await), None);
+    // Everything reaches the server.
+    let status = r.ok(json!({"kind": "sync"})).await;
+    assert_eq!(status["syncError"], Value::Null, "{status}");
 }

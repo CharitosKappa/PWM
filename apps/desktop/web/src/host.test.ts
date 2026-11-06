@@ -25,6 +25,7 @@ test("nothing browser-only shows, the manage page does, and nothing asks for acc
   expect(desktopHost.inlineUi).toBe(false);
   expect(desktopHost.touchId).toBe(false);
   expect(desktopHost.manage).toBe(true);
+  expect(desktopHost.vaultWindow).toBe(true);
   expect(desktopHost.closeManage).not.toBeNull();
   expect(desktopHost.asksServerAccess).toBe(false);
   await expect(

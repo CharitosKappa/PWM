@@ -32,5 +32,7 @@ export const chromeHost: Host = {
   inlineUi: PWM_TARGET === "chromium",
   touchId: navigator.userAgent.includes("Mac OS X"),
   manage: true,
+  // The popup keeps its list; items come to the manage page in M4.14.
+  vaultWindow: false,
   asksServerAccess: PWM_TARGET !== "chromium",
 };

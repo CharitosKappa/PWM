@@ -94,6 +94,53 @@ export const REQUESTS: Request[] = [
   },
   { kind: "importFinish" },
   { kind: "importCancel" },
+  { kind: "vault" },
+  {
+    kind: "item",
+    vaultId: "00000000-0000-4000-8000-000000000001",
+    itemId: "00000000-0000-4000-8000-000000000002",
+  },
+  {
+    kind: "reveal",
+    vaultId: "00000000-0000-4000-8000-000000000001",
+    itemId: "00000000-0000-4000-8000-000000000002",
+    path: "/login/password",
+  },
+  {
+    kind: "itemForEdit",
+    vaultId: "00000000-0000-4000-8000-000000000001",
+    itemId: "00000000-0000-4000-8000-000000000002",
+  },
+  {
+    kind: "saveItem",
+    vaultId: null,
+    item: {
+      type: "note",
+      title: "Wi-Fi",
+      notes: "On the router",
+      favorite: false,
+      folder_id: null,
+      tags: [],
+      custom_fields: [],
+    },
+  },
+  {
+    kind: "trashItem",
+    vaultId: "00000000-0000-4000-8000-000000000001",
+    itemId: "00000000-0000-4000-8000-000000000002",
+  },
+  {
+    kind: "restoreItem",
+    vaultId: "00000000-0000-4000-8000-000000000001",
+    itemId: "00000000-0000-4000-8000-000000000002",
+  },
+  {
+    kind: "deleteItem",
+    vaultId: "00000000-0000-4000-8000-000000000001",
+    itemId: "00000000-0000-4000-8000-000000000002",
+  },
+  { kind: "newFolder", title: "Work" },
+  { kind: "totpSetup", input: "JBSWY3DPEHPK3PXP", title: "Mail" },
 ];
 
 /** The kinds the desktop backend answers; the rest are `unsupported`. */
@@ -136,6 +183,17 @@ export const DESKTOP_KINDS: Request["kind"][] = [
   "importPrepare",
   "importFinish",
   "importCancel",
+  // The item screens (M7.7, D67).
+  "vault",
+  "item",
+  "reveal",
+  "itemForEdit",
+  "saveItem",
+  "trashItem",
+  "restoreItem",
+  "deleteItem",
+  "newFolder",
+  "totpSetup",
 ];
 
 /** Replies the desktop backend builds itself, with every shape of each. */
@@ -278,6 +336,75 @@ export const REPLIES: {
       folders: 1,
       trashed: 0,
       leftOut: [{ reason: "attachments", count: 2 }],
+    },
+  ],
+  vault: [
+    {
+      items: [
+        {
+          vaultId: "00000000-0000-4000-8000-000000000001",
+          itemId: "00000000-0000-4000-8000-000000000002",
+          type: "login",
+          title: "Mail",
+          subtitle: "a@example.com",
+          url: "https://mail.example.com",
+          favorite: true,
+          folderId: "00000000-0000-4000-8000-000000000007",
+          trashed: false,
+          hasPassword: true,
+          hasCode: true,
+        },
+        {
+          vaultId: "00000000-0000-4000-8000-000000000001",
+          itemId: "00000000-0000-4000-8000-000000000008",
+          type: "card",
+          title: "Visa",
+          subtitle: "•••• 1234",
+          url: "",
+          favorite: false,
+          folderId: null,
+          trashed: true,
+          hasPassword: false,
+          hasCode: false,
+        },
+      ],
+      folders: [
+        {
+          vaultId: "00000000-0000-4000-8000-000000000001",
+          itemId: "00000000-0000-4000-8000-000000000007",
+          title: "Work",
+        },
+      ],
+    },
+  ],
+  item: [
+    {
+      vaultId: "00000000-0000-4000-8000-000000000001",
+      itemId: "00000000-0000-4000-8000-000000000002",
+      item: {
+        id: "00000000-0000-4000-8000-000000000002",
+        v: 1,
+        type: "login",
+        title: "Mail",
+        login: { username: "a@example.com", password: "", totp: "" },
+      },
+      hidden: ["/login/password", "/login/totp", "/history/0/login/password"],
+      readOnly: false,
+      code: { code: "123456", secondsLeft: 17 },
+      passkeys: [{ rpId: "example.com", userName: "a", createdAt: 5 }],
+      passwordHistory: [
+        { savedAt: 1_762_300_000_000, path: "/history/0/login/password" },
+      ],
+    },
+    {
+      vaultId: "00000000-0000-4000-8000-000000000001",
+      itemId: "00000000-0000-4000-8000-000000000009",
+      item: { v: 2, type: "wifi", title: "Home" },
+      hidden: [],
+      readOnly: true,
+      code: null,
+      passkeys: [],
+      passwordHistory: [],
     },
   ],
   askApproval: [

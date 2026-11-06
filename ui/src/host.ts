@@ -42,6 +42,11 @@ export interface Host {
   readonly touchId: boolean;
   /** The manage page: health, devices, approvals, import and export (D44). */
   readonly manage: boolean;
+  /**
+   * The vault in a full window with item detail and editing (D67), instead
+   * of the popup's list.
+   */
+  readonly vaultWindow: boolean;
   /** Whether signing in first needs the user's yes to reach the server (D40 §1). */
   readonly asksServerAccess: boolean;
 }

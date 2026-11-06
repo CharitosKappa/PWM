@@ -23,6 +23,7 @@ function fakeHost(
     inlineUi: false,
     touchId: false,
     manage: false,
+    vaultWindow: false,
     asksServerAccess: false,
   };
 }

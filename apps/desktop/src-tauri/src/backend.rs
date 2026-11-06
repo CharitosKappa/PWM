@@ -296,8 +296,13 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
                 vault_id,
                 item_id,
                 field,
+                path,
             } => {
-                self.copy(&vault_id, &item_id, field)?;
+                match (field, path) {
+                    (Some(field), None) => self.copy(&vault_id, &item_id, field)?,
+                    (None, Some(path)) => self.copy_path(&vault_id, &item_id, &path)?,
+                    _ => return Err(Failure::code("invalid_request")),
+                }
                 null()
             }
             Request::CopySecretKey => {
@@ -390,6 +395,45 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             Request::ImportCancel => {
                 self.import_cancel();
                 null()
+            }
+            Request::Vault => Ok(json!(self.vault()?)),
+            Request::Item { vault_id, item_id } => Ok(json!(self.item(&vault_id, &item_id)?)),
+            Request::Reveal {
+                vault_id,
+                item_id,
+                path,
+            } => Ok(json!(self.reveal(&vault_id, &item_id, &path)?)),
+            Request::ItemForEdit { vault_id, item_id } => {
+                Ok(self.item_for_edit(&vault_id, &item_id)?)
+            }
+            Request::SaveItem { vault_id, item } => {
+                let (vault_id, item_id) = self.save_item(vault_id.as_deref(), item)?;
+                // Saved here; the server gets it with the next sync.
+                *after = After::Sync;
+                Ok(json!({ "vaultId": vault_id, "itemId": item_id }))
+            }
+            Request::TrashItem { vault_id, item_id } => {
+                self.set_trashed(&vault_id, &item_id, true)?;
+                *after = After::Sync;
+                null()
+            }
+            Request::RestoreItem { vault_id, item_id } => {
+                self.set_trashed(&vault_id, &item_id, false)?;
+                *after = After::Sync;
+                null()
+            }
+            Request::DeleteItem { vault_id, item_id } => {
+                self.delete_forever(&vault_id, &item_id)?;
+                *after = After::Sync;
+                null()
+            }
+            Request::NewFolder { title } => {
+                let (vault_id, item_id) = self.new_folder(&title)?;
+                *after = After::Sync;
+                Ok(json!({ "vaultId": vault_id, "itemId": item_id }))
+            }
+            Request::TotpSetup { input, title } => {
+                Ok(json!(self.totp_setup(input.expose_secret(), &title)?))
             }
             Request::Unsupported => Err(Failure::code("unsupported")),
         }
@@ -809,7 +853,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
     }
 
     /// Copies, and clears the clipboard 30 seconds later (D34).
-    fn write_clipboard(&mut self, value: &str) -> Result<()> {
+    pub(crate) fn write_clipboard(&mut self, value: &str) -> Result<()> {
         if value.is_empty() {
             return Err(Failure::code("empty"));
         }

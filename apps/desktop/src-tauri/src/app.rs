@@ -122,7 +122,7 @@ fn main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     let downloads = app.path().download_dir().ok();
     WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("PWM")
-        .inner_size(420.0, 680.0)
+        .inner_size(1080.0, 720.0)
         .min_inner_size(360.0, 480.0)
         // Left out of screenshots and screen sharing (D3 §3, as D49 on macOS).
         .content_protected(true)

@@ -6,6 +6,7 @@ mod app;
 pub mod backend;
 pub mod clipboard;
 pub mod http;
+mod items;
 pub mod keys;
 pub mod lock;
 mod manage;

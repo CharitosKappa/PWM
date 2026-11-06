@@ -25,4 +25,5 @@ export const desktopHost: Host = {
   asksServerAccess: false,
   touchId: false,
   manage: true,
+  vaultWindow: true,
 };
