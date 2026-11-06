@@ -13,7 +13,85 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Not done yet:**
     - Buttons in the apps use `radius.md` (now 16); making them pills needs a change in each app's button style.
     - The font files are not bundled yet, so every platform still falls back to system fonts. Each app needs the files, its `NOTICE.md` and a registration step: Info.plist `UIAppFonts` on iOS, `res/font` on Android, `@font-face` in the extension and the Tauri UI. The Swift and Kotlin token generators emit only a `monospaced` flag, so they will need the family names too.
-- **D3 — Windows/Linux UI framework**: Tauri (default in this plan, faster) vs native WinUI 3 + GTK (better platform feel, more work).
+- **D3 — Windows/Linux UI framework** · proposed 2026-11-06 · Claude Code, for the founder.
+  The plan defaults to Tauri ("Tauri (default in this plan, faster) vs native WinUI 3 + GTK (better platform feel, more work)"), and `ARCHITECTURE.md` already places a Tauri app in `apps/desktop`. M7 can't start until this is settled.
+
+  Open:
+  - which framework
+  - how much of the extension's UI it reuses
+  - what it means for licences (S6), security and tests
+  - how M7 splits into tasks
+
+  What the apps need:
+  - **Screens:** the same ones as the Mac app (D42, D43, D48): sign-in, including "Sign in with another device" (D46), unlock, the vault, item editing, the generator, password health, import and export, devices and settings.
+  - **Unlock:** Windows Hello on Windows, under D45's rules; the master password on Linux.
+  - **Browser unlock:** a native-messaging helper (M7.2) with D48's protocol.
+  - **Screen capture:** the window is left out of captures where the system allows it, as on macOS (D49).
+  - **Installers:** signed (M7.3).
+  - **A small team:** every UI toolkit is one more place where each feature is written and tested again.
+
+  Proposal:
+  1. **Tauri 2.** A Rust backend that links the core crates directly, with no FFI or WASM in between, and a web UI in the system's webview: WebView2 on Windows, WebKitGTK on Linux.
+     - **Why:**
+       - One UI for both platforms, in Preact and TypeScript like the extension, so the extension's screens are shared instead of written twice. That is three UI codebases in all (SwiftUI, Compose, Preact) instead of five.
+       - The core's own Rust types, with no binding layer to keep in step.
+       - Small installers: the system's webview, not a bundled Chromium.
+       - Windows Hello, the helper, the tray and the lock rules need native code anyway, and the Rust backend is where they live.
+     - **Licences, checked on crates.io on 2026-11-06:**
+       - `tauri` 2.12, `wry`, the plugins and `tauri-driver`: Apache-2.0 or MIT. `tao`: Apache-2.0.
+       - `webview2-com`, `webkit2gtk`, `gtk`: MIT. `windows`: MIT or Apache-2.0.
+       - `cssparser` and `selectors`, which Tauri uses for its CSP: MPL-2.0, used unmodified.
+       - All are on the S6 list.
+       - **On Linux:** WebKitGTK, GTK and GLib are LGPL C libraries, linked dynamically from the system. S6 denies LGPL only for static linking.
+       - **Before merging:** `cargo deny` and `just audit` run on the app's full dependency tree in M7.4.
+  2. **Shared screens.** The extension's Preact screens (about 2,800 lines in `popup/` and `manage/`) move to a shared package used by the extension and the desktop app.
+     - **The `api` each host supplies:** the extension's is its messages to the background, as now. The desktop app's is Tauri's `invoke`.
+     - **The same design tokens and fonts (D1)** in both.
+     - **Desktop-only screens:** the screens the popup lacks, such as health, devices, and the sidebar layout of a full window, are added to the shared package so the extension's manage page can use them later.
+  3. **The webview's rules:**
+     - **Content:** only the app's own bundled files. No remote URL is ever loaded.
+     - **CSP:** strict: `default-src 'self'`, no `unsafe-eval`, no inline script. Navigation away and new windows are blocked.
+     - **Commands:** Tauri's capability files allow only the app's own commands. The shell, file system and HTTP plugins are not exposed to the UI.
+     - **Who does what:** the Rust backend does the networking, storage and core calls. The UI gets only what a screen shows, as the extension's popup does. Revealed fields cross into JavaScript as short-lived strings (D31).
+     - **Isolation:** Tauri's isolation pattern is on, so every message from the UI is checked before it reaches the backend.
+     - **Screen capture on Windows:** the window is left out of captures (`SetWindowDisplayAffinity` with `WDA_EXCLUDEFROMCAPTURE`, which is Tauri's `content_protected`). Linux has no such API, which is already logged under SECURITY's threat model.
+     - **TLS:** `rustls` with the system's verifier, plus certificate pinning as in `SECURITY.md`.
+     - **Webview updates:**
+       - **Windows:** WebView2 is updated by Windows.
+       - **Linux:** the distribution's WebKitGTK is used. The oldest version we accept is set in M7.4, and CI tests on the oldest supported Ubuntu LTS.
+  4. **What stays native, in the Rust backend:**
+     - **Windows Hello:** through the `windows` crate. How the key is wrapped is decided in its own task, under D45's rules, with every crypto step in the core.
+     - **The window and session:** the tray, a global shortcut, start at login, and locking when the computer sleeps or the session locks.
+     - **Desktop feel:** native menus and title bar, the system's dark mode, and Ctrl+N and Ctrl+F as ⌘N and ⌘F on the Mac.
+     - **The native-messaging helper (M7.2):** a second small binary in the same Rust workspace, speaking D48's protocol.
+  5. **Tests:**
+     - **Rust:** unit tests for the backend's commands.
+     - **Vitest:** for the shared screens, run for both hosts.
+     - **End to end:** through `tauri-driver` (WebDriver, which supports Windows and Linux) against a real server.
+     - **In CI:** a `desktop-build` job, already listed in `QUALITY.md`, on `windows-latest` and `ubuntu-latest`.
+     - **On this machine:** the app builds and runs locally on Windows 11, which ships WebView2.
+  6. **Tasks** (M7.2 and M7.3 stay as they are):
+     - **M7.1 The shared screens package.** The extension's screens move into it, with no change to how the extension behaves. Its current tests show it.
+     - **M7.4 The Tauri app on Windows and Linux:**
+       - the same screens
+       - master-password unlock
+       - the tray and the lock rules
+       - screen-capture exclusion on Windows
+     - **M7.5 Windows Hello unlock,** with its key-wrapping decision first.
+
+  Risks:
+  - **WebKitGTK:** it differs between distributions and is slower than WebView2. That's why there's a version floor and a CI run on the oldest supported LTS.
+  - **The GTK 3 crates:** Tauri's Linux side uses them through WebKitGTK 4.1, and RustSec marks them unmaintained (RUSTSEC-2024-0415), although `gtk` 0.19 came out in 2026-09. If `cargo deny` still flags them in M7.4, they get an ignore with a reason and a recheck date, as `deny.toml` does for others.
+  - **Platform feel:** a webview UI doesn't look fully native. The native menus, title bar and shortcuts above narrow the gap.
+  - **Accessibility:** WebView2 exposes UI Automation and WebKitGTK exposes AT-SPI. Narrator and Orca are checked by hand before the beta (`QUALITY.md`).
+
+  Alternatives:
+  - **Native: WinUI 3 in C# on Windows, GTK 4 with libadwaita in Rust on Linux.** It gives the best platform feel, but adds two new UIs to SwiftUI, Compose and the extension, so each feature lands four times instead of three. C# also needs a third-party UniFFI generator and a .NET toolchain in CI.
+  - **Electron:** it reuses the screens as Tauri does, but ships its own Chromium, whose security updates we would have to follow. Its Node backend would need the core through WASM or N-API instead of directly.
+  - **Flutter:** BSD-licensed, but a new language and UI for only two platforms.
+  - **Compose Multiplatform:** it would reuse Android's Kotlin screens, but ships a JVM, and OpenJDK is GPL-2.0 with the Classpath Exception, which is outside S6.
+  - **Qt or Slint:** their licences (LGPL or commercial; GPL, royalty-free or commercial) are not on the S6 list.
+  - **No desktop app, only the extension:** `PRODUCT.md` promises a native Linux app (P1, missing in Dashlane and NordPass), and Windows Hello unlock needs an app.
 - **D4 — Launch segment**: consumers first (this plan) vs SMB self-hosted first.
 - **D5 — Company jurisdiction and hosting region**: EU (Greece/Switzerland/Germany hosting) is a selling point.
 - **D6 — Entitlements/billing**: RevenueCat vs own entitlement service on Stripe + store receipts.
