@@ -9,6 +9,7 @@ import { Settings } from "./Settings.tsx";
 import { SignedOut } from "./SignedOut.tsx";
 import { Field, Notice } from "./ui.tsx";
 import { Vault } from "./Vault.tsx";
+import { VaultWindow } from "./vault-window/VaultWindow.tsx";
 
 export function App({
   startInSettings,
@@ -80,6 +81,17 @@ export function App({
         />
       );
     case "unlocked":
+      if (host().vaultWindow) {
+        return (
+          <VaultWindow
+            status={status}
+            onStatus={setStatus}
+            onSettings={() => {
+              setSettings(true);
+            }}
+          />
+        );
+      }
       return (
         <Vault
           status={status}

@@ -5,7 +5,7 @@
 
 use pwm_desktop::protocol::{
     ApprovalView, AskView, DeviceView, HealthView, ImportDetected, ImportPreviewView, ItemSummary,
-    Request, Settings, Status,
+    ItemView, Request, Settings, Status, VaultView,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -67,6 +67,8 @@ fn the_replies_match_the_screens_types() {
     round_trip::<Vec<ApprovalView>>("approvals");
     round_trip::<ImportDetected>("importDetect");
     round_trip::<ImportPreviewView>("importPrepare");
+    round_trip::<VaultView>("vault");
+    round_trip::<ItemView>("item");
 }
 
 #[test]
