@@ -58,7 +58,11 @@ export function Manage(): JSX.Element {
     return (
       <main class="stack">
         <h1>PWM</h1>
-        <p>Sign in from the extension's toolbar button first.</p>
+        <p>
+          {host().browser
+            ? "Sign in from the extension's toolbar button first."
+            : "Sign in first."}
+        </p>
       </main>
     );
   }
@@ -67,6 +71,16 @@ export function Manage(): JSX.Element {
 
   return (
     <main class="stack">
+      {host().closeManage && (
+        <button
+          class="link"
+          onClick={() => {
+            host().closeManage?.();
+          }}
+        >
+          ← Back to the vault
+        </button>
+      )}
       <h1>PWM</h1>
       <p class="muted">{status.email}</p>
       <div class="tabs" role="tablist">
@@ -512,7 +526,7 @@ function Devices({ onLocked }: { onLocked: () => void }): JSX.Element {
       </ul>
       <p class="caption muted">
         Only your devices can read their names. To leave this device, use Sign
-        out in the extension's settings.
+        out in {host().browser ? "the extension's settings" : "Settings"}.
       </p>
       {error && <Notice kind="danger">{error}</Notice>}
     </div>

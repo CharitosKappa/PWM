@@ -194,6 +194,8 @@ On Windows 11 and on Ubuntu (GNOME) and Fedora (KDE), for each release candidate
 6. On Windows, close the window: PWM stays in the tray; Open, Lock and Quit work, and "Start at login" starts it after signing in again. On Linux, closing quits.
 7. Start PWM a second time: the first window comes forward.
 8. On Linux without a keyring (a minimal window manager), sign in, quit and unlock: it still works.
+9. Open "Password health, devices and export" from Settings: import a CSV export, check for leaks, rename this computer, export to JSON (it lands in Downloads), approve a new device from another computer, and go back to the vault.
+10. Sign out, then create another account on the same computer: it works.
 
 ## Success metrics
 

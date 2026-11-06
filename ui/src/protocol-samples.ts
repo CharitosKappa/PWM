@@ -96,7 +96,7 @@ export const REQUESTS: Request[] = [
   { kind: "importCancel" },
 ];
 
-/** The kinds the desktop backend answers in M7.4; the rest are `unsupported`. */
+/** The kinds the desktop backend answers; the rest are `unsupported`. */
 export const DESKTOP_KINDS: Request["kind"][] = [
   "status",
   "signUp",
@@ -120,6 +120,22 @@ export const DESKTOP_KINDS: Request["kind"][] = [
   "askApprovalPoll",
   "askApprovalCancel",
   "signInApproved",
+  // The manage page (M7.6).
+  "devices",
+  "renameDevice",
+  "revokeDevice",
+  "health",
+  "checkLeaks",
+  "setLeakCheck",
+  "approvals",
+  "acceptApproval",
+  "completeApproval",
+  "denyApproval",
+  "exportVault",
+  "importDetect",
+  "importPrepare",
+  "importFinish",
+  "importCancel",
 ];
 
 /** Replies the desktop backend builds itself, with every shape of each. */
@@ -158,6 +174,112 @@ export const REPLIES: {
     ],
   ],
   settings: [{ serverUrl: "https://api.pwm.invalid", autoLockMinutes: 15 }],
+  devices: [
+    [
+      {
+        id: "00000000-0000-4000-8000-000000000003",
+        platform: "windows",
+        name: "Desk",
+        createdAt: 1_762_400_000_000,
+        lastSeenAt: 1_762_400_100_000,
+        revokedAt: null,
+        current: true,
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000005",
+        platform: "ios",
+        name: null,
+        createdAt: 1_762_300_000_000,
+        lastSeenAt: 1_762_300_000_000,
+        revokedAt: 1_762_350_000_000,
+        current: false,
+      },
+    ],
+  ],
+  health: [
+    {
+      weak: [
+        {
+          vaultId: "00000000-0000-4000-8000-000000000001",
+          itemId: "00000000-0000-4000-8000-000000000002",
+          title: "Mail",
+          username: "a@example.com",
+          url: "https://mail.example.com",
+        },
+      ],
+      reused: [],
+      leaked: null,
+      leakCheck: true,
+    },
+    {
+      weak: [],
+      reused: [],
+      leaked: [
+        {
+          vaultId: "00000000-0000-4000-8000-000000000001",
+          itemId: "00000000-0000-4000-8000-000000000002",
+          title: "Mail",
+          username: "a@example.com",
+          url: "",
+          count: 3,
+        },
+      ],
+      leakCheck: false,
+    },
+  ],
+  approvals: [
+    [
+      {
+        id: "00000000-0000-4000-8000-000000000004",
+        platform: "linux",
+        createdAt: 1_762_400_000_000,
+        state: "revealed",
+        code: "123456",
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000006",
+        platform: "ios",
+        createdAt: 1_762_400_000_000,
+        state: "pending",
+        code: null,
+      },
+    ],
+  ],
+  exportVault: [{ file: "UFdN", name: "PWM export 2026-11-06.pwmx" }],
+  importDetect: [
+    { format: "bitwarden", needsPassword: true, columns: null },
+    { format: null, needsPassword: false, columns: null },
+    {
+      format: "csv",
+      needsPassword: false,
+      columns: {
+        headers: ["name", "login", "pw"],
+        suggested: {
+          title: 0,
+          url: null,
+          username: 1,
+          password: 2,
+          notes: null,
+          totp: null,
+          folder: null,
+          favorite: null,
+          tags: null,
+        },
+        rows: 2,
+      },
+    },
+  ],
+  importPrepare: [
+    {
+      logins: 2,
+      notes: 1,
+      cards: 0,
+      identities: 0,
+      folders: 1,
+      trashed: 0,
+      leftOut: [{ reason: "attachments", count: 2 }],
+    },
+  ],
   askApproval: [
     { state: "waiting", code: null },
     { state: "code", code: "123456" },

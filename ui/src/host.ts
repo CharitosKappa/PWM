@@ -27,6 +27,11 @@ export interface Host {
   /** Opens the manage page (D44), at a section when one is given. */
   openManage(section?: "devices"): void;
   /**
+   * Back from the manage page to the vault, where both share one window
+   * (the desktop app); null where the manage page has a tab of its own.
+   */
+  readonly closeManage: (() => void) | null;
+  /**
    * A browser: filling pages, save offers, the autofill report, the inline
    * icon and passkeys (D3, D66 §3). The desktop app has none of them.
    */

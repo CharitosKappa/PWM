@@ -3155,3 +3155,11 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **The Touch ID setting:** its user-agent test became a host flag.
   - **The protocol samples:** `ui/src/protocol-samples.ts`, typed against `protocol.ts`, written to `protocol-samples.json` (Vitest checks it's current; `PWM_UPDATE_SAMPLES=1` rewrites it), and read by `tests/protocol_samples.rs`.
   - **Not testable here:** the Linux code (this machine is Windows). It compiles first in the `desktop-linux` job.
+
+  Implementation notes (M7.6):
+  - **The manage page shares the window:** `manage.html` sits next to `index.html` in the desktop's page. Settings opens it; "Back to the vault" comes from a new host method, `closeManage`, which the extension leaves null because its manage page is a tab of its own.
+  - **The leak check's switch** is in `settings.json` (`leakCheck`). It's optional within version 1: a file without it reads as on, and a test reads an M7.4 file. The check itself goes to Have I Been Pwned through the same `reqwest` client, with padding and only 5-character prefixes (D22 §4).
+  - **Site links:** the health report's "Change" opens http and https links in the default browser through the `open` crate (MIT). The app still never opens a window of its own.
+  - **The device id, found while testing:** the server ties a device id to one account, so after signing out, a second account signed up on the same computer was refused (`device_conflict`, shown as a server error). As on Android (D59's notes), a sign-up gets a new id, and a sign-in reuses the stored id only for the account it belongs to (kept as `deviceAccount`). The extension keeps its device id the same way and has the same gap.
+  - **The server tests share accounts:** the server allows 5 sign-ups an hour from one address, and CI's end-to-end check needs one. So the server tests are one sequence with 3 sign-ups.
+  - **Wording:** where the manage page named the extension (signing in from the toolbar button, signing out in its settings), the desktop says Settings.
