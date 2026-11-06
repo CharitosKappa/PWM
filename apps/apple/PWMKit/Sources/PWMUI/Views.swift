@@ -123,6 +123,8 @@ public struct RootView: View {
         .background(Tokens.Color.bg.color)
         .foregroundStyle(Tokens.Color.text.color)
         .tint(Tokens.Color.accent.color)
+        // Buttons are pills (D1); bordered styles read this from the environment.
+        .buttonBorderShape(.capsule)
         // Manrope for any text that sets no style of its own (D1).
         .font(.app(.body))
     }

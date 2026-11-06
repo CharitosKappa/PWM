@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -139,7 +140,8 @@ internal fun Primary(title: String, enabled: Boolean, tag: String, onClick: () -
 
 @Composable
 internal fun Secondary(title: String, tag: String, enabled: Boolean = true, onClick: () -> Unit) {
-    TextButton(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().testTag(tag)) { Text(title) }
+    // A pill like Primary (D1), accent text on accent-soft (the theme's secondaryContainer).
+    FilledTonalButton(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().testTag(tag)) { Text(title) }
 }
 
 // --- Welcome ---

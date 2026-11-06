@@ -119,13 +119,16 @@ fieldset {
   padding: 0;
 }
 
+/* Buttons are pills (D1). A plain button is a secondary action: accent text on
+   accent-soft. The border is transparent so every kind has the same size. */
 button {
   font: inherit;
-  color: var(--color-text);
-  background: var(--color-surface);
-  border: 1px solid var(--color-text-muted);
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-3);
+  font-weight: var(--font-semibold);
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  padding: var(--space-2) var(--space-4);
   cursor: pointer;
 }
 
@@ -166,9 +169,13 @@ button:disabled {
 
 .tabs [role="tab"] {
   flex: 1;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  font-weight: var(--font-regular);
 }
 
 .tabs [aria-selected="true"] {
+  background: var(--color-accent-soft);
   border-color: var(--color-accent);
   color: var(--color-accent);
   font-weight: var(--font-semibold);
@@ -194,8 +201,11 @@ button:disabled {
   align-items: flex-start;
   text-align: left;
   border: 0;
+  color: var(--color-text);
+  font-weight: var(--font-regular);
   background: var(--color-surface);
   border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
 }
 
 .item span {

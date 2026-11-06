@@ -81,7 +81,7 @@ button.item {
   text-align: left;
   padding: var(--space-2);
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--color-surface);
 }
 
@@ -110,12 +110,24 @@ p {
   margin: 0;
 }
 
-button.primary {
-  padding: var(--space-2) var(--space-3);
+/* Buttons are pills (D1): primary on accent, a plain button (such as
+   "Not now") is secondary, accent text on accent-soft. */
+button.primary,
+button:not([class]) {
+  padding: var(--space-2) var(--space-4);
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
+  font-weight: var(--font-semibold);
+}
+
+button.primary {
   background: var(--color-accent);
   color: var(--color-accent-text);
+}
+
+button:not([class]) {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 
 footer {

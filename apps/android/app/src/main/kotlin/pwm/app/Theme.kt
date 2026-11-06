@@ -80,6 +80,9 @@ fun PwmTheme(content: @Composable () -> Unit) {
     val scheme = (if (dark) darkColorScheme() else lightColorScheme()).copy(
         primary = pick(c.accent),
         onPrimary = pick(c.accentText),
+        // Secondary buttons (FilledTonalButton) are accent text on accent-soft (D1).
+        secondaryContainer = pick(c.accentSoft),
+        onSecondaryContainer = pick(c.accent),
         background = pick(c.bg),
         onBackground = pick(c.text),
         surface = pick(c.bg),

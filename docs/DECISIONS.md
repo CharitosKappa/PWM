@@ -10,6 +10,10 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **Licence:** `OFL-1.1` joins the S6 allow-list for **font files only, never code**, like CC-BY for the wordlist (D21). OFL allows bundling the fonts in a paid, closed-source product. Its conditions: ship the licence text with the files, don't sell the fonts on their own, and don't publish a modified font under a reserved name.
     - **How they ship:** the unmodified font files from the upstream releases sit next to a `NOTICE.md` (source, version, SHA-256, licence), as the wordlist does. The OFL text goes into `THIRD_PARTY_NOTICES` and the About screen. They don't come through cargo or npm, so `deny.toml` and `scripts/licenses.mjs` are unchanged.
     - **Tokens:** `font.family.sans` and `font.family.mono` now start with Manrope and Geist Mono, then the system fonts as fallbacks.
+  - **Pill buttons** · done 2026-11-06:
+    - **Shared screens and the inline frame** (the extension popup, the manage page, the desktop app): buttons use `radius.full`. Primary buttons sit on `accent`; a plain button is a secondary action, accent text on `accent-soft`.
+    - **Apple apps:** `.buttonBorderShape(.capsule)` is set at the root and in the AutoFill extension.
+    - **Android:** Material 3 buttons are already pills. `Secondary` is now a `FilledTonalButton` on `accent-soft`.
   - **Font files** · bundled 2026-11-06. The files are in `design/fonts/`: the variable fonts from the Google Fonts repository, unmodified and only renamed, with `NOTICE.md` giving the commit, sizes and SHA-256 hashes.
     - **Extension and desktop app:** the generated `tokens.css` declares both in `@font-face`. The builds copy the fonts, both OFL texts and `NOTICE.md` into `fonts/`.
     - **Apple:** `PWMDesign` carries them as package resources (`Fonts/`) and registers them for the process (`AppFonts`). Token text styles use them. `Font.secret(_:)` replaces the system monospaced font, and the root sets Manrope as the default.
@@ -17,7 +21,6 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **Copies:** `scripts/fonts.mjs` keeps the Apple and Android copies the same as `design/fonts`, and `just check` fails when they differ.
     - **Notices:** `just notices` writes `THIRD_PARTY_NOTICES/fonts.md` (the notice and both OFL texts), which the Apple and Android notice screens show.
   - **Not done yet:**
-    - Buttons in the apps use `radius.md` (now 16); making them pills needs a change in each app's button style.
     - **Font names still hard-coded:** the family names are written in `AppFonts` (Swift), `Theme.kt` and `FONT_FILES` (`extension/scripts/tokens.mjs`) rather than generated from `tokens.json`. The extension's test checks that `tokens.json` and `FONT_FILES` agree.
     - **System controls:** on Apple, navigation titles and other system controls keep the system font.
 - **D4 — Launch segment**: consumers first (this plan) vs SMB self-hosted first.
