@@ -21,9 +21,11 @@ export interface StyleInfo {
 /**
  * What a sample point's topmost element is: the field (or its own label),
  * one of the field's ancestors (the point is where the field doesn't paint,
- * such as outside a rounded corner; D63 §2), or anything else.
+ * such as outside a rounded corner; D63 §2), a small element wholly inside
+ * the field's box such as a show-password button (D65 §3), or anything
+ * else.
  */
-export type Hit = "field" | "ancestor" | "other";
+export type Hit = "field" | "ancestor" | "inside" | "other";
 
 export interface FieldState {
   connected: boolean;
@@ -66,6 +68,38 @@ export type Problem =
   | "not_visible"
   | "frame_unchecked";
 
+/**
+ * Whether `other` lies wholly inside the field's box and covers at most a
+ * quarter of it (D65 §3): how show-password and clear buttons sit.
+ */
+export function insideField(field: Rect, other: Rect): boolean {
+  if (other.width <= 0 || other.height <= 0) return false;
+  const within =
+    other.left >= field.left &&
+    other.top >= field.top &&
+    other.left + other.width <= field.left + field.width &&
+    other.top + other.height <= field.top + field.height;
+  return (
+    within && other.width * other.height <= (field.width * field.height) / 4
+  );
+}
+
+/** An element's accessibility state, for `unreachable`. */
+export interface Reach {
+  ariaHidden: string | null;
+  inert: boolean;
+}
+
+/**
+ * Whether people can't reach a field (D65 §1): it, or an ancestor, is
+ * `aria-hidden="true"` or `inert`. `chain` is the field, then each ancestor.
+ */
+export function unreachable(chain: Reach[]): boolean {
+  return chain.some(
+    (node) => node.inert || node.ariaHidden?.toLowerCase() === "true",
+  );
+}
+
 /** The points sampled for covering: the centre and two inner corners. */
 export function samplePoints(rect: Rect): [number, number][] {
   const inset = Math.min(2, rect.width / 4, rect.height / 4);
@@ -105,7 +139,12 @@ export function fieldProblem(state: FieldState): Problem | null {
     if (Number(style.opacity) !== 1) return "transparent";
     if (style.filter !== "none" && style.filter !== "") return "transparent";
   }
-  if (state.onTop.length === 0 || state.onTop.some((hit) => hit === "other"))
+  // The centre must be the field; a corner may hold a button inside it.
+  if (
+    state.onTop.length === 0 ||
+    state.onTop[0] === "inside" ||
+    state.onTop.some((hit) => hit === "other")
+  )
     return "covered";
   // v2 is for a frame its parent page may hide or cover (D63 §1). In the top
   // frame, anything over the field is the matched site's own page, and the

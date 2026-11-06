@@ -2901,3 +2901,54 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Rerun any site that changed, before counting it:** no pass → fail flips have been seen to justify it, and each rerun would use up the one retry per site that D39 §2 allows, to stay polite to real sites.
   - **The better of two runs:** doubles the load on every site, for noise that comparing like with like already removes.
   - **A wider limit, such as 3 points:** with about 50 sites, one site is still about 2 points, and at 1,000 sites, 3 points would hide 30 broken sites.
+
+- **D65 — Autofill on real sites: decoy fields, a password that isn't shown yet, buttons inside a field, and "email address"** · settled 2026-11-06 · founder (approved as proposed).
+  After D63 and the runner fixes (M4.7), the top-sites run of 2026-11-06 filled 29 of the 50 sites it could compare (58%). M4's target is 90%. The login pages of 11 failing sites were opened in the built-in browser and their fields read (no values typed, nothing submitted). Five causes cover 8 of them:
+  - **A decoy password field, Booking and Notion.** Both ask for the email first. Their page also holds a password field that people can't see or reach, inside `aria-hidden="true"` with `tabindex="-1"`: on Booking under a `span`, on Notion in a wrapper with opacity 0 and no height. It is there for browsers' own password managers. The engine plans to fill it, D35 §4 refuses it (`covered`, `transparent`), and the whole fill is refused, so the visible email field gets nothing.
+  - **A password that isn't shown yet, probably Apple.** Its form (in an `idmsa.apple.com` frame) has both fields, and the fill is refused as `transparent`. That fits a password row kept transparent until the username is sent. It couldn't be confirmed here, since the frame doesn't load on its own.
+  - **A button inside the field, Twitch.** The show-password button sits inside the right end of the password field. One of D35 §4's sample points (2 px inside a corner) lands on it, so the field counts as covered.
+  - **"Email address" read as a street address, DigitalOcean and ok.ru.** The email field's only clue is its placeholder ("Enter your email address", "Phone number or email address"), and the classifier takes the longest keyword it finds. "address" (7 letters, `address-line1`) beats "email" and "phone" (5), so the field isn't the username.
+  - **The runner, not the extension, on Salesforce, Proton and Wells Fargo:**
+    - Salesforce and Proton now ask for the username first, but their entries in `sites.json` still name a password field.
+    - Wells Fargo's username field takes 14 characters, and the check login has 30, so the site cuts it.
+    - Naver's password field (16 characters, against the check password's 18) may be the same. It can't be opened in the built-in browser.
+
+  Left out of this decision:
+  - **Airbnb:** its field is at opacity 0 by design, even when focused, and the site draws what is typed elsewhere. Filling it would mean filling transparent fields, which `opacity.html` refuses on purpose.
+  - **The sites where no form was found:** Amazon, Deezer, EA, Nintendo, Baidu, CNN and Chase. They need their own look.
+  - **Alibaba**, which refused.
+
+  Open:
+  - what makes a field one people can't reach
+  - what a fill does when only some of its fields pass D35 §4
+  - what may sit inside a field's box
+  - how "email address" is read
+
+  Proposal:
+  1. **Fields people can't reach are not offered.** The content script reports a field as not visible when it, or an ancestor (looking through open shadow roots), has `aria-hidden="true"` or `inert`. The engine already ignores fields reported as not visible. They then get no fill, no inline icon (D35 §3) and no save prompt (D36). `tabindex="-1"` alone doesn't count, because some real fields use it.
+  2. **The username alone, when the password can't be filled.** When a fill plans a username and a password, and the password field fails D35 §4 while the username field passes, only the username is filled. The multi-step state records the username step, as on a username-first page (D33). If the username fails, the fill is refused, as now. A field that fails is never filled.
+  3. **Buttons inside a field.** A corner sample point counts as clear when the element on top there lies wholly inside the field's box and covers at most a quarter of it. That is how show-password and clear buttons sit. The centre point must still be the field, its label or one of its ancestors (D63 §2).
+     - **Why this is safe enough:** in the top frame, anything over the field is the matched site's own (D63 §1). In a frame, v2 still has to report the field visible, which it doesn't with anything drawn over it. A layer larger than the field, or reaching outside it, is still `covered` (`overlay.html`).
+  4. **"Email address" is an email.** New keywords: `emailaddress` and `mailaddress` (email), and `phonenumber` and `mobilenumber` (tel). The longest keyword still wins, so "email address" is an email and "phone number or email address" is an email. A field that names both an email and a phone is an email, whichever keyword is longer: the branch's top-sites run showed Zoom's "enter email, zoom mail or phone number" read as a phone once `phonenumber` outgrew `email`. Classes are unchanged, and no stored or sent format changes.
+  5. **The runner:**
+     - A field with a `maxlength` shorter than the check value passes when it holds the value cut to that length.
+     - "A password field to fill" (the username-first rule) leaves out a field the user can't see: one under `aria-hidden` or `inert`, or with an ancestor at opacity 0.
+     - Salesforce's and Proton's entries lose their password selector.
+  6. **Tests:**
+     - **Unit tests:**
+       - `pwm-autofill`: DigitalOcean's and ok.ru's field texts
+       - `checks.test.ts`: a button wholly inside the field passes; a layer over half of it, or reaching outside it, is covered
+       - `fill.test.ts`: a failing password leaves the username filled alone; a failing username refuses
+       - the content script: `aria-hidden` and `inert` fields are not visible
+     - **New fixtures that must fill the username only:** `decoy-password.html` (Booking's pattern) and `password-later.html` (a password row at opacity 0).
+     - **New fixtures that must fill both:** `show-password.html` (a button inside the field's right end).
+     - **New attack fixtures that must refuse:** `cover-half.html` (a layer over the field's right half).
+     - **Unchanged:** every current attack fixture still refuses.
+     - **The top-sites run:** compared with the 2026-11-06 report by the gate (D64). Booking, Notion, Twitch, DigitalOcean, ok.ru, Salesforce, Proton and Wells Fargo should pass, taking it from 29 to about 37 of 50 (74%), plus Apple and Naver if they are what they seem.
+  7. **Task:** M4.13 in `ROADMAP.md`. It covers the extension, `pwm-autofill`'s keywords and the harness. iOS and Android classify through the same core, so they get the keywords. Their own checks before filling are their own code; whether rules 1–3 apply there is a parity note for M5 and M6.
+
+  Alternatives:
+  - **Per-site rules in the signed rules file (D33):** they fix one site at a time, and the next site with the same pattern fails again. They stay for sites like Airbnb.
+  - **Fill whichever planned fields pass, in any combination:** a password filled without its visible username is a strange result for the user. The username-first case is the one real sites show.
+  - **Count `tabindex="-1"` as unreachable:** some sites use it on real fields that they focus from script.
+  - **Let a transparent field fill when nothing covers it (Airbnb):** `opacity.html`'s invisible login form passes that test too.

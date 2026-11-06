@@ -397,6 +397,16 @@ Phase 3  Teams           months 16–24 M16–M19
 - [x] M4.12 The top-sites release gate compares the sites both runs could reach (D64): the pass rate on those may drop at most 0.5 points, and the candidate must count at least 80% of the sites the previous report counted.
   - Done per D64: `runner/compare.ts` counts only the sites that pass or fail in both reports, and lists each site lost, gained and left out. The whole-list rate is still printed, for the dashboard and the M4 target. The report format is unchanged (v1).
   - **Tests:** `tests/compare.spec.ts` (no browser): a site moving to blocked or error, one site lost and one traded, sites added and removed, too little overlap, and 0.4 / 0.6 points on the common sites. Run on the three top-sites reports of 2026-11-05 and 2026-11-06: the two runs of the same code compare at no change (58.3% on 48 sites) instead of a 1.2-point drop.
+- [x] M4.13 Autofill on real sites (D65): decoy fields aren't offered, the username fills alone when the password isn't shown yet, buttons inside a field don't cover it, and "email address" is an email. The runner accepts a value cut to a field's `maxlength`.
+  - Done per D65:
+    - **Engine (`pwm-autofill`):** the keywords `emailaddress`, `mailaddress`, `phonenumber` and `mobilenumber`, so the longest keyword is no longer "address"; a field that names both an email and a phone is an email (Zoom).
+    - **Extension:** fields under `aria-hidden` or `inert` are reported not visible; a fill marks the password optional beside a username, and the content script skips an optional field that fails D35 §4 instead of refusing; a corner sample point may hold a small element wholly inside the field. Only the password may be skipped, and the background records the username step when it is.
+    - **Runner:** a field holding the check value cut to its `maxlength` passes; decoy password fields don't count as a password the page asks for; Salesforce's and Proton's entries lost their stale password selectors.
+  - **Tests:** a core test with DigitalOcean's, ok.ru's and Zoom's fields; Vitest for the checks and the skipped password; fixtures `show-password`, `decoy-password` and `password-later` (fill) and `cover-half` (refuse); runner tests for `maxlength` and decoys; a top-sites run on the branch compared by the gate (D64): 58.3% → 75% on the 48 sites both runs counted (72.5% of the whole list). It gained Twitch, Salesforce, Proton, Booking, DigitalOcean, ok.ru, Notion, Wells Fargo and Alibaba, and lost Zoom, which the email-or-phone rule then fixed.
+  - **Deferred:**
+    - **Apple:** its username field itself is transparent, so it isn't the "password not shown yet" case.
+    - **Airbnb** (a field transparent by design) and **the sites where no form was found**, per D65.
+    - **Parity:** iOS and Android get the keywords through the core. Their own checks before filling are separate code, and whether D65 §1–§3 apply there is still to check (M5, M6).
 
 **Done when:** fixture suite 100%; top-1,000 classification ≥ 90% (target 95% by launch); overlay attacks never fill. Since D39, the classification target is measured each night by the top-sites runner on a growing list, and gates the launch in M10, not the end of M4.
 

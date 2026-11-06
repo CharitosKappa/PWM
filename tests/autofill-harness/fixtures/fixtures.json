@@ -59,6 +59,29 @@
       "values": { "#email": "username", "#password": "password" }
     },
     {
+      "page": "show-password.html",
+      "expect": "fill",
+      "values": { "#email": "username", "#password": "password" }
+    },
+    {
+      "page": "decoy-password.html",
+      "expect": "fill",
+      "values": { "#email": "username" },
+      "empty": ["#decoy", "#inert-decoy"]
+    },
+    {
+      "page": "password-later.html",
+      "expect": "fill",
+      "values": { "#email": "username" },
+      "empty": ["#password"]
+    },
+    {
+      "page": "cover-half.html",
+      "expect": "refuse",
+      "reason": "field_hidden",
+      "empty": ["#email", "#password"]
+    },
+    {
       "page": "offscreen-after.html",
       "wait": 300,
       "expect": "no_form",
@@ -200,6 +223,11 @@
       "page": "runner-moves.html",
       "expect": "flow",
       "test": "runner: says where a moved login ended up"
+    },
+    {
+      "page": "runner-maxlength.html",
+      "expect": "flow",
+      "test": "runner: a field that cuts the value to its maxlength passes"
     }
   ]
 }

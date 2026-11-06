@@ -111,6 +111,11 @@ export interface OfferView {
 export interface FillTarget {
   index: number;
   value: string;
+  /**
+   * Skipped, not refused, when it fails a check (D65 §2): the password
+   * beside a username, on a page that hasn't shown it yet.
+   */
+  optional?: boolean;
 }
 
 /** Background → content script. */
@@ -123,7 +128,9 @@ export type ContentMessage =
   | { target: "content"; kind: "showOffer"; token: string }
   | { target: "content"; kind: "hideOffer" };
 
-export type FillReply = { ok: true } | { ok: false; reason: string };
+/** `skipped`: the optional targets' indexes that failed a check and were left alone. */
+export type FillReply =
+  { ok: true; skipped?: number[] } | { ok: false; reason: string };
 
 /** Inline icon frame → background. */
 export type InlineRequest = {

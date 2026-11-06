@@ -13,8 +13,8 @@ import type {
   FrameReply,
 } from "../shared/autofill.ts";
 import type { Reply } from "../shared/messages.ts";
-import { fieldProblem, samplePoints } from "./checks.ts";
-import type { FieldState, Hit, StyleInfo } from "./checks.ts";
+import { fieldProblem, insideField, samplePoints } from "./checks.ts";
+import type { FieldState, Hit, Rect, StyleInfo } from "./checks.ts";
 import { Capturer, readTyped } from "./capture.ts";
 import { OfferCard } from "./card.ts";
 import { looksVisible } from "./dom.ts";
@@ -97,12 +97,17 @@ function parentOf(node: Element): Element | null {
   return node.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
 }
 
-/** What the topmost element at a sample point is, for the field `el`. */
-function hitOf(top: Element | null, el: HTMLInputElement): Hit {
+/** What the topmost element at a sample point is, for the field `el` at `rect`. */
+function hitOf(top: Element | null, el: HTMLInputElement, rect: Rect): Hit {
   if (top === el || (top instanceof HTMLLabelElement && top.control === el))
     return "field";
   for (let node = parentOf(el); node; node = parentOf(node)) {
     if (node === top) return "ancestor";
+  }
+  if (top) {
+    const r = top.getBoundingClientRect();
+    const box = { left: r.left, top: r.top, width: r.width, height: r.height };
+    if (insideField(rect, box)) return "inside";
   }
   return "other";
 }
@@ -154,7 +159,9 @@ function visibleV2(el: Element): Promise<boolean | undefined> {
 async function measure(el: HTMLInputElement): Promise<FieldState> {
   const r = el.getBoundingClientRect();
   const rect = { left: r.left, top: r.top, width: r.width, height: r.height };
-  const onTop = samplePoints(rect).map(([x, y]) => hitOf(topAt(x, y), el));
+  const onTop = samplePoints(rect).map(([x, y]) =>
+    hitOf(topAt(x, y), el, rect),
+  );
   const topFrame = window === window.top;
   return {
     connected: el.isConnected,
@@ -230,6 +237,8 @@ class Content {
     const targets = fills.map((f) => ({
       el: this.inputs[f.index],
       value: f.value,
+      index: f.index,
+      optional: f.optional === true,
     }));
     if (targets.some((t) => t.el === undefined))
       return { ok: false, reason: "gone" };
@@ -237,8 +246,10 @@ class Content {
     const restoreIcons = this.icons.hideWhile();
     const restoreCard = this.card.hideWhile();
     try {
-      // Check every field first: fill all of them or none.
-      for (const { el } of targets) {
+      // Check every field first: a required one that fails stops the whole
+      // fill; an optional one that fails is left alone (D65 §2).
+      const skipped: number[] = [];
+      for (const { el, index, optional } of targets) {
         if (!el) return { ok: false, reason: "gone" };
         let problem = fieldProblem(await measure(el));
         if (problem === "off_screen" && scroll) {
@@ -246,10 +257,13 @@ class Content {
           await new Promise((r) => requestAnimationFrame(r));
           problem = fieldProblem(await measure(el));
         }
-        if (problem !== null) return { ok: false, reason: problem };
+        if (problem === null) continue;
+        if (!optional) return { ok: false, reason: problem };
+        skipped.push(index);
       }
-      for (const { el, value } of targets) if (el) setValue(el, value);
-      return { ok: true };
+      for (const { el, value, index } of targets)
+        if (el && !skipped.includes(index)) setValue(el, value);
+      return skipped.length > 0 ? { ok: true, skipped } : { ok: true };
     } finally {
       restoreIcons();
       restoreCard();

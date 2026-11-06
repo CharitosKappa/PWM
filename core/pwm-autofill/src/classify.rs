@@ -153,6 +153,9 @@ const KEYWORDS: &[(Class, &[&str])] = &[
         &[
             "email",
             "mail",
+            // Longer than "address", which would win otherwise (D65 §4).
+            "emailaddress",
+            "mailaddress",
             "correo",
             "courriel",
             "emailadresse",
@@ -390,6 +393,8 @@ const KEYWORDS: &[(Class, &[&str])] = &[
             "phone",
             "tel",
             "mobile",
+            "phonenumber",
+            "mobilenumber",
             "telephone",
             "telefon",
             "telefono",
@@ -510,8 +515,24 @@ fn has_any(text: &str, words: &[String]) -> bool {
 }
 
 /// The class whose longest keyword appears in `text` (the first listed on
-/// a tie).
+/// a tie). A field that names both an email and a phone is a login's
+/// "email or phone" field: email wins (D65 §4).
 fn keyword_class(text: &str) -> Option<Class> {
+    let class = longest_keyword_class(text)?;
+    if class == Class::Tel && mentions(text, Class::Email) {
+        return Some(Class::Email);
+    }
+    Some(class)
+}
+
+/// Whether any of `class`'s keywords appears in `text`.
+fn mentions(text: &str, class: Class) -> bool {
+    KEYWORDS_N
+        .iter()
+        .any(|(c, words)| *c == class && has_any(text, words))
+}
+
+fn longest_keyword_class(text: &str) -> Option<Class> {
     let mut best: Option<(usize, Class)> = None;
     for (class, words) in KEYWORDS_N.iter() {
         let len = words

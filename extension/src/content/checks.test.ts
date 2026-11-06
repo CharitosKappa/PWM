@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { fieldProblem, inViewport, samplePoints } from "./checks.ts";
+import {
+  fieldProblem,
+  insideField,
+  inViewport,
+  samplePoints,
+  unreachable,
+} from "./checks.ts";
 import type { FieldState, StyleInfo } from "./checks.ts";
 
 const plain: StyleInfo = {
@@ -81,6 +87,20 @@ describe("fieldProblem", () => {
     ).toBe("covered");
   });
 
+  it("lets a button inside the field sit at a corner (D65 §3)", () => {
+    // A show-password button at the field's right end.
+    expect(
+      fieldProblem(state({ onTop: ["field", "field", "inside"] })),
+    ).toBeNull();
+    // The centre must still be the field.
+    expect(fieldProblem(state({ onTop: ["inside", "field", "field"] }))).toBe(
+      "covered",
+    );
+    expect(fieldProblem(state({ onTop: ["field", "inside", "other"] }))).toBe(
+      "covered",
+    );
+  });
+
   it("needs IntersectionObserver v2 only in a frame (D63 §1)", () => {
     expect(fieldProblem(state({ visibleV2: false, topFrame: false }))).toBe(
       "not_visible",
@@ -99,6 +119,62 @@ describe("fieldProblem", () => {
     expect(fieldProblem(state({ visibleV2: undefined, topFrame: false }))).toBe(
       "frame_unchecked",
     );
+  });
+});
+
+describe("insideField (D65 §3)", () => {
+  const field = { left: 100, top: 100, width: 400, height: 40 };
+
+  it("takes a small element wholly inside the field's box", () => {
+    // Twitch's show-password button: 36 x 36 at the right end.
+    expect(
+      insideField(field, { left: 462, top: 102, width: 36, height: 36 }),
+    ).toBe(true);
+    // Exactly a quarter of the field.
+    expect(
+      insideField(field, { left: 100, top: 100, width: 100, height: 40 }),
+    ).toBe(true);
+  });
+
+  it("refuses anything larger, or reaching outside the field", () => {
+    // Over the right half.
+    expect(
+      insideField(field, { left: 300, top: 100, width: 200, height: 40 }),
+    ).toBe(false);
+    // Small, but past the right edge.
+    expect(
+      insideField(field, { left: 480, top: 102, width: 36, height: 36 }),
+    ).toBe(false);
+    // A layer over the whole page (overlay.html).
+    expect(
+      insideField(field, { left: 0, top: 0, width: 1000, height: 800 }),
+    ).toBe(false);
+    // Nothing drawn.
+    expect(
+      insideField(field, { left: 120, top: 110, width: 0, height: 0 }),
+    ).toBe(false);
+  });
+});
+
+describe("unreachable (D65 §1)", () => {
+  const open = { ariaHidden: null, inert: false };
+
+  it("is false for a plain field and its ancestors", () => {
+    expect(unreachable([open, open, open])).toBe(false);
+    expect(
+      unreachable([open, { ariaHidden: "false", inert: false }, open]),
+    ).toBe(false);
+  });
+
+  it("is true under aria-hidden or inert, at any depth", () => {
+    // Booking's and Notion's decoy password fields.
+    expect(
+      unreachable([open, { ariaHidden: "true", inert: false }, open]),
+    ).toBe(true);
+    expect(unreachable([{ ariaHidden: null, inert: true }])).toBe(true);
+    expect(
+      unreachable([open, open, { ariaHidden: "TRUE", inert: false }]),
+    ).toBe(true);
   });
 });
 

@@ -119,7 +119,7 @@ describe("filling from the popup", () => {
           kind: "fill",
           fills: [
             { index: 0, value: "ada" },
-            { index: 1, value: ITEM_PASSWORD },
+            { index: 1, value: ITEM_PASSWORD, optional: true },
           ],
           scroll: true,
         },
@@ -207,6 +207,44 @@ describe("filling from the popup", () => {
     pages.gone.clear();
     pages.fillReply = { ok: false, reason: "covered" };
     expect(await errorOf(background.handle(fill()))).toBe("field_hidden");
+  });
+
+  it("fills the username alone when the password can't be filled (D65 §2)", async () => {
+    const { background, pages, core } = await setup();
+    // The password row isn't shown yet: the content script skips it.
+    pages.fillReply = { ok: true, skipped: [1] };
+    await background.handle(fill());
+    const message = pages.sent.find((s) => s.message.kind === "fill")?.message;
+    expect(message).toMatchObject({
+      fills: [
+        { index: 0, value: "ada" },
+        { index: 1, value: ITEM_PASSWORD, optional: true },
+      ],
+    });
+    // The password is the next step, as on a username-first page.
+    expect([...core.steps.values()]).toEqual([["item-1", "username"]]);
+  });
+
+  it("records the password step when both were filled", async () => {
+    const { background, core } = await setup();
+    await background.handle(fill());
+    expect([...core.steps.values()]).toEqual([["item-1", "password"]]);
+  });
+
+  it("never lets the content script skip the username (D65 §2)", async () => {
+    const { background, pages } = await setup();
+    pages.fillReply = { ok: true, skipped: [0] };
+    expect(await errorOf(background.handle(fill()))).toBe("field_hidden");
+    // A password with no username in the plan is never optional.
+    pages.frames = [frame({ fields: [field(1, { type: "password" })] })];
+    pages.fillReply = { ok: true };
+    pages.sent = [];
+    await background.handle(fill());
+    expect(pages.sent.find((s) => s.message.kind === "fill")?.message).toEqual(
+      expect.objectContaining({
+        fills: [{ index: 1, value: ITEM_PASSWORD }],
+      }),
+    );
   });
 
   it("keeps which check failed on the error, and only a known one (D63 §3)", async () => {
