@@ -230,13 +230,15 @@ function SignUp({ onDone }: { onDone: () => void }): JSX.Element {
     };
   }, [password, email]);
 
-  if (offer) return <InlineIconOffer onDone={onDone} />;
+  if (offer && host().browser) return <InlineIconOffer onDone={onDone} />;
   if (secretKey !== null)
     return (
       <SecretKey
         secretKey={secretKey}
         onDone={() => {
-          setOffer(true);
+          // The browser offers to fill and save next; elsewhere it's done.
+          if (host().browser) setOffer(true);
+          else onDone();
         }}
       />
     );

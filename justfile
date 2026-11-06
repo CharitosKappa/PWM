@@ -9,6 +9,7 @@ default:
 check:
     cargo fmt --all --check
     cargo fmt --manifest-path core/pwm-crypto/fuzz/Cargo.toml --check
+    cargo fmt --manifest-path apps/desktop/Cargo.toml --all --check
     cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
     pnpm install --frozen-lockfile
     pnpm format:check
@@ -80,6 +81,17 @@ wasm:
 extension: wasm
     pnpm --filter @pwm/extension build
 
+# the desktop app for Windows and Linux (D66): its page, then the app, run
+desktop:
+    pnpm --filter @pwm/desktop build
+    cargo run --manifest-path apps/desktop/Cargo.toml --locked
+
+# the desktop app's checks and tests (D66 §9); the server tests run with PWM_TEST_SERVER set
+desktop-test:
+    pnpm --filter @pwm/desktop build
+    cargo clippy --manifest-path apps/desktop/Cargo.toml --all-targets --locked -- -D warnings
+    cargo test --manifest-path apps/desktop/Cargo.toml --locked
+
 # a rules-signing seed (D34): run on an offline machine; prints the public key for RULES_KEYS
 rules-keygen seed:
     cargo run -q --locked -p pwm-rules-sign -- keygen {{seed}}
@@ -129,6 +141,7 @@ fmt:
 # dependency audit: advisories, bans, sources and licence allow-list (decision S6)
 audit:
     cargo deny --all-features check
+    cargo deny --manifest-path apps/desktop/Cargo.toml check
     pnpm install --frozen-lockfile
     pnpm license-check
     pnpm audit --audit-level high

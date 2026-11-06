@@ -18,7 +18,10 @@ function fakeHost(
     requestAccess: () => Promise.resolve(true),
     releaseAccess: () => Promise.resolve(),
     openManage: () => undefined,
+    browser: false,
     inlineUi: false,
+    touchId: false,
+    manage: false,
     asksServerAccess: false,
   };
 }

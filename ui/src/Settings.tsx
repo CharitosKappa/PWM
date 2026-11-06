@@ -90,13 +90,15 @@ export function Settings({
           ))}
         </select>
         <span class="caption muted">
-          It also locks when your computer locks or the browser closes.
+          {host().browser
+            ? "It also locks when your computer locks or the browser closes."
+            : "It also locks when your computer locks or sleeps."}
         </span>
       </label>
 
-      <InlineIconSetting />
-      <PasskeysSetting />
-      {status.state === "unlocked" && ON_MAC && <TouchIdSetting />}
+      {host().browser && <InlineIconSetting />}
+      {host().browser && <PasskeysSetting />}
+      {status.state === "unlocked" && host().touchId && <TouchIdSetting />}
 
       <fieldset class="stack" disabled={!signedOut}>
         <legend class="label">Server</legend>
@@ -148,7 +150,7 @@ export function Settings({
         {message && <Notice kind={message.kind}>{message.text}</Notice>}
       </div>
 
-      {!signedOut && (
+      {!signedOut && host().manage && (
         <button
           id="open-manage"
           onClick={() => {
@@ -174,9 +176,6 @@ export function Settings({
     </main>
   );
 }
-
-/** Touch ID through the PWM app for Mac (D48 §5); only Macs have it. */
-const ON_MAC = navigator.userAgent.includes("Mac OS X");
 
 /**
  * "Unlock with Touch ID": asks for the native-messaging permission on the

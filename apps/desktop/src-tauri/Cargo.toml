@@ -1,0 +1,56 @@
+[package]
+name = "pwm-desktop"
+description = "The desktop app for Windows and Linux (D3, D66): a Tauri backend answering the shared screens."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = ["isolation"] }
+
+[dependencies]
+pwm-client = { path = "../../../core/pwm-client" }
+pwm-store = { path = "../../../core/pwm-store" }
+
+tauri = { version = "2.12", features = ["tray-icon", "isolation"] }
+tauri-plugin-single-instance = "2.5"
+tauri-plugin-autostart = "2.7"
+
+# HTTP (D66 §5): rustls with the ring provider and the system's trust store.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["sync", "time", "macros", "rt", "rt-multi-thread"] }
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+sys-locale = "0.3"
+zeroize = "1.9"
+arboard = { version = "3.7", default-features = false }
+thiserror = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Security_Cryptography",
+    "Win32_System_Memory",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Power",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_LibraryLoader",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+oo7 = { version = "0.7", default-features = false, features = ["tokio", "native_crypto"] }
+zbus = { version = "6", default-features = false, features = ["tokio", "proxy"] }
+futures-util = { version = "0.3", default-features = false }
+
+[dev-dependencies]
+base64 = "0.22"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
