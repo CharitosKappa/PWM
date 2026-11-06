@@ -5,6 +5,7 @@
 mod app;
 pub mod backend;
 pub mod clipboard;
+pub mod hello;
 pub mod http;
 mod items;
 pub mod keys;
@@ -13,5 +14,6 @@ mod manage;
 pub mod protocol;
 pub mod settings;
 mod system;
+mod unlock_hello;
 
 pub use app::run;

@@ -18,6 +18,7 @@ mod secret;
 mod secret_key;
 mod share;
 mod token;
+mod windows_hello;
 
 pub use aad::{Aad, Id, generate_id};
 pub use account::{
@@ -41,3 +42,6 @@ pub use share::{
     SignatureContext, VaultShare, public_key_from_seed, sign_with_seed, verify_signature,
 };
 pub use token::{TokenKind, generate_token, token_hash};
+pub use windows_hello::{
+    WINDOWS_HELLO_VERSION, open_windows_hello, seal_windows_hello, windows_hello_challenge,
+};

@@ -470,6 +470,11 @@ export class Background {
         return this.itemScreens.newFolder(request.title);
       case "totpSetup":
         return this.itemScreens.totpSetup(request.input, request.title);
+      // The popup doesn't offer Touch ID after unlocking (D48 §5).
+      case "biometricOffer":
+        return false;
+      case "dismissBiometricOffer":
+        return null;
     }
   }
 

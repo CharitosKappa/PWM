@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use pwm_client::Platform;
 use pwm_desktop::backend::{After, Backend, Clock, Device};
 use pwm_desktop::clipboard::{Clipboard, ClipboardError, MemoryClipboard};
+use pwm_desktop::hello::{FakeHello, HelloError, HelloKey};
 use pwm_desktop::http::Reqwest;
 use pwm_desktop::keys::{KeyStore, MemoryKeys, name};
 use pwm_desktop::protocol::Request;
@@ -82,11 +83,31 @@ impl KeyStore for Keys {
 
 type TestBackend = Backend<Reqwest, Keys, Board, Clocks>;
 
+/// Windows Hello as a fake the tests can steer (D68).
+#[derive(Clone, Default)]
+struct Hello(Arc<FakeHello>);
+
+impl HelloKey for Hello {
+    fn supported(&self) -> bool {
+        self.0.supported()
+    }
+    fn create(&self, name: &str) -> Result<(), HelloError> {
+        self.0.create(name)
+    }
+    fn sign(&self, name: &str, data: &[u8]) -> Result<pwm_client::Secret<Vec<u8>>, HelloError> {
+        self.0.sign(name, data)
+    }
+    fn delete(&self, name: &str) {
+        self.0.delete(name);
+    }
+}
+
 struct Rig {
     backend: TestBackend,
     keys: Keys,
     board: Board,
     clocks: Clocks,
+    hello: Hello,
 }
 
 fn rig(secure: bool) -> Rig {
@@ -109,11 +130,14 @@ fn rig(secure: bool) -> Rig {
         },
         None,
     );
+    let hello = Hello::default();
+    let backend = backend.with_hello(Box::new(hello.clone()));
     Rig {
         backend,
         keys,
         board,
         clocks,
+        hello,
     }
 }
 
@@ -244,6 +268,7 @@ async fn against_a_server() {
     unlock(&mut a).await;
     devices_and_approving_a_new_one(&server, &mut a, &email).await;
     items(&mut a).await;
+    windows_hello(&mut a).await;
     sign_in_on_another_computer_and_sign_out(&server, &email, &secret_key).await;
 }
 
@@ -671,4 +696,107 @@ async fn items(r: &mut Rig) {
     // Everything reaches the server.
     let status = r.ok(json!({"kind": "sync"})).await;
     assert_eq!(status["syncError"], Value::Null, "{status}");
+}
+
+/// Windows Hello unlock (D68) under D45's rules, with the fake key.
+async fn windows_hello(r: &mut Rig) {
+    const DAY: u64 = 24 * 60 * 60 * 1000;
+    let state = |r: &Rig| r.hello.0.state.lock().unwrap().prompts;
+    assert_eq!(r.ok(json!({"kind": "touchId"})).await, json!(false));
+    assert_eq!(r.ok(json!({"kind": "biometricOffer"})).await, json!(true));
+
+    // Turning it on: the key, then the challenge signed twice.
+    let before = state(r);
+    assert_eq!(
+        r.ok(json!({"kind": "setTouchId", "on": true})).await,
+        json!(true)
+    );
+    assert_eq!(state(r) - before, 3);
+    assert_eq!(r.ok(json!({"kind": "touchId"})).await, json!(true));
+    assert_eq!(r.ok(json!({"kind": "biometricOffer"})).await, json!(false));
+    for key in [
+        name::HELLO_BLOB,
+        name::HELLO_SEALED_KEY,
+        name::HELLO_CHALLENGE,
+    ] {
+        assert!(r.keys.get(key).await.unwrap().is_some(), "{key}");
+    }
+
+    // Locked, then unlocked with Windows Hello; the blob is made again.
+    r.ok(json!({"kind": "lock"})).await;
+    let status = r.ok(json!({"kind": "status"})).await;
+    assert_eq!(
+        (status["state"].clone(), status["touchId"].clone()),
+        (json!("locked"), json!(true))
+    );
+    let blob = r.keys.get(name::HELLO_BLOB).await.unwrap().unwrap();
+    let (reply, after) = r
+        .backend
+        .handle(request(json!({"kind": "unlockTouchId"})))
+        .await;
+    assert!(reply.is_ok(), "{reply:?}");
+    assert_eq!(after, After::Sync);
+    assert_eq!(r.ok(json!({"kind": "status"})).await["state"], "unlocked");
+    let fresh = r.keys.get(name::HELLO_BLOB).await.unwrap().unwrap();
+    assert_ne!(fresh.expose_secret(), blob.expose_secret());
+
+    // A cancel leaves it locked, and on.
+    r.ok(json!({"kind": "lock"})).await;
+    r.hello.0.state.lock().unwrap().cancel_next = true;
+    assert_eq!(
+        r.ask(json!({"kind": "unlockTouchId"})).await,
+        Err("biometric_cancelled".to_owned())
+    );
+    assert_eq!(r.ok(json!({"kind": "status"})).await["state"], "locked");
+
+    // Every 14 days the master password, which starts the 14 days again.
+    r.clocks.advance(14 * DAY);
+    assert_eq!(
+        r.ask(json!({"kind": "unlockTouchId"})).await,
+        Err("master_password_due".to_owned())
+    );
+    unlock(r).await;
+    r.ok(json!({"kind": "lock"})).await;
+    r.ok(json!({"kind": "unlockTouchId"})).await;
+
+    // A key that changed (a new PIN, a reset): off, and the password next.
+    r.ok(json!({"kind": "lock"})).await;
+    for material in r.hello.0.state.lock().unwrap().keys.values_mut() {
+        *material = material.wrapping_add(7);
+    }
+    assert_eq!(
+        r.ask(json!({"kind": "unlockTouchId"})).await,
+        Err("hello_changed".to_owned())
+    );
+    assert_eq!(r.ok(json!({"kind": "touchId"})).await, json!(false));
+    unlock(r).await;
+
+    // A computer whose signatures differ, or without Windows Hello: it says so.
+    r.hello.0.state.lock().unwrap().nondeterministic = true;
+    assert_eq!(
+        r.ask(json!({"kind": "setTouchId", "on": true})).await,
+        Err("hello_unavailable".to_owned())
+    );
+    r.hello.0.state.lock().unwrap().nondeterministic = false;
+    r.hello.0.state.lock().unwrap().unsupported = true;
+    assert_eq!(
+        r.ask(json!({"kind": "setTouchId", "on": true})).await,
+        Err("hello_unavailable".to_owned())
+    );
+    r.hello.0.state.lock().unwrap().unsupported = false;
+
+    // Off deletes everything kept for it.
+    r.ok(json!({"kind": "setTouchId", "on": true})).await;
+    assert_eq!(
+        r.ok(json!({"kind": "setTouchId", "on": false})).await,
+        json!(false)
+    );
+    for key in [
+        name::HELLO_BLOB,
+        name::HELLO_SEALED_KEY,
+        name::HELLO_CHALLENGE,
+    ] {
+        assert!(r.keys.get(key).await.unwrap().is_none(), "{key}");
+    }
+    assert!(r.hello.0.state.lock().unwrap().keys.is_empty());
 }

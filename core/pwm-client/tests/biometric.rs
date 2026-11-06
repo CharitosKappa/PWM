@@ -135,3 +135,93 @@ fn it_needs_an_unlocked_vault_to_make() {
     client.unlock(PASSWORD, &secret_key, tokens()).unwrap();
     assert!(client.export_biometric_unlock(&new_id().unwrap()).is_ok());
 }
+
+// --- Windows Hello (D68): the unlock key sealed under a signature's key ---
+
+fn signature(byte: u8) -> Vec<u8> {
+    vec![byte; 256]
+}
+
+#[test]
+fn windows_hello_unlocks_with_the_same_signature_and_remakes_the_blob() {
+    let (mut client, _, vault) = unlocked();
+    let device = new_id().unwrap();
+    let challenge = pwm_client::windows_hello_challenge().unwrap();
+    let hello = client
+        .export_windows_hello(&device, challenge.expose_secret(), &signature(1))
+        .unwrap();
+    assert_eq!(hello.blob[0], 1, "the biometric blob, versioned");
+    assert_eq!(hello.sealed_key[0], 1, "the sealed key, versioned");
+    client.lock();
+
+    let again = client
+        .unlock_windows_hello(
+            &hello.blob,
+            &hello.sealed_key,
+            challenge.expose_secret(),
+            &signature(1),
+            &device,
+            tokens(),
+        )
+        .unwrap();
+    assert!(client.is_unlocked());
+    assert_eq!(client.items(&vault).unwrap().len(), 1);
+    // A fresh blob and sealed key, under the same signature, for next time.
+    assert_ne!(again.blob, hello.blob);
+    client.lock();
+    client
+        .unlock_windows_hello(
+            &again.blob,
+            &again.sealed_key,
+            challenge.expose_secret(),
+            &signature(1),
+            &device,
+            tokens(),
+        )
+        .unwrap();
+    assert!(client.is_unlocked());
+}
+
+#[test]
+fn windows_hello_refuses_another_signature_challenge_or_device() {
+    let (mut client, _, _) = unlocked();
+    let device = new_id().unwrap();
+    let challenge = pwm_client::windows_hello_challenge().unwrap();
+    let hello = client
+        .export_windows_hello(&device, challenge.expose_secret(), &signature(1))
+        .unwrap();
+    client.lock();
+    let other = pwm_client::windows_hello_challenge().unwrap();
+    for (sig, ch, dev, sealed) in [
+        (
+            signature(2),
+            challenge.expose_secret(),
+            device.clone(),
+            hello.sealed_key.clone(),
+        ),
+        (
+            signature(1),
+            other.expose_secret(),
+            device.clone(),
+            hello.sealed_key.clone(),
+        ),
+        (
+            signature(1),
+            challenge.expose_secret(),
+            new_id().unwrap(),
+            hello.sealed_key.clone(),
+        ),
+        (
+            signature(1),
+            challenge.expose_secret(),
+            device.clone(),
+            vec![1, 2, 3],
+        ),
+    ] {
+        assert_eq!(
+            code(client.unlock_windows_hello(&hello.blob, &sealed, ch, &sig, &dev, tokens())),
+            "biometric_unlock_failed"
+        );
+        assert!(!client.is_unlocked());
+    }
+}

@@ -60,11 +60,14 @@ Decisions D10–D15. All HKDF calls are HKDF-SHA256 with 32-byte output. All int
 | Device tokens on disk under sym_key (D34) | `pwm/device-tokens` | `version:u8 \|\| account_id` |
 | Unlocked keyset for Face ID / Touch ID on one device (D45) | `pwm/biometric-unlock` | `version:u8 \|\| account_id \|\| device_id` |
 | The browser extension's unlocked keyset for Touch ID through the Mac app (D48) | `pwm/browser-unlock` | `version:u8 \|\| account_id \|\| device_id` (the extension's device id) |
+| The biometric unlock key on Windows, under a key derived from a Windows Hello signature (D68) | `pwm/windows-hello` | `version:u8 || account_id || device_id` |
 | Secret Key sent to a new device that a signed-in one approved (D46) | `pwm/approval` | `version:u8 \|\| approval_id \|\| n_pub:32 \|\| e_pub:32` |
 
 A new kind of envelope gets a new label; labels are never reused.
 
 **Biometric unlock (D45).** The core seals the account keyset plaintext under a fresh random 32-byte key (AAD `pwm/biometric-unlock`, version 1, bound to the account and the device). The app keeps the blob `v:u8 (= 1) || account_id:16 || envelope`, and the key only encrypted to a P-256 key in the Secure Enclave (system ECIES, `eciesEncryptionCofactorVariableIVX963SHA256AESGCM`). That enclave key never leaves the hardware, is usable only after Face ID or Touch ID with the current enrolment (`.biometryCurrentSet`), and is bound to this device (`WhenPasscodeSetThisDeviceOnly`). A new face or finger makes it refuse: the app deletes it, and the master password unlocks. The master password is asked every 14 days, at each sign-in, and whenever biometrics fail; each master password unlock makes the blob again. Turning it off or signing out deletes the enclave key, the wrapped key and the blob. Unlocking this way never runs the KDF, which the AutoFill extension needs (M5.5).
+
+**Windows Hello unlock v1 (D68).** Windows Hello's key can only sign, so D45's unlock key is sealed under `HKDF-SHA256(ikm = signature, salt = challenge, info = "pwm/windows-hello/v1")`, where the challenge is 32 random bytes kept on the computer and the signature is the TPM key's RSA PKCS#1 v1.5 signature over it, made after a Windows Hello gesture (face, fingerprint or PIN) and never stored. Turning it on checks that two signatures match. The sealed key is `v:u8 (= 1) || envelope`.
 
 **Browser unlock v1 (D48).** The extension in Chrome, Edge, Brave, Opera, Firefox or Safari can unlock with Touch ID through the PWM app for Mac.
 - **The blob:** while unlocked, the core seals the keyset under a fresh 32-byte key K (AAD `pwm/browser-unlock`, version 1, bound to the account and the extension's device id). The extension keeps `v:u8 (= 1) || account_id:16 || envelope` on its disk and sends K once to the Mac's helper. K never reaches the browser's disk.

@@ -198,6 +198,7 @@ On Windows 11 and on Ubuntu (GNOME) and Fedora (KDE), for each release candidate
 9. Open "Password health, devices and export" from Settings: import a CSV export, check for leaks, rename this computer, export to JSON (it lands in Downloads), approve a new device from another computer, and go back to the vault.
 10. Sign out, then create another account on the same computer: it works.
 11. In the vault window, make a login, a card, an identity and a note, each with a custom field; Show and Copy their hidden values; edit one and see its password history; move one into a new folder; trash, restore and delete forever. Narrow the window below 720 pixels: one pane at a time, with Back.
+12. On Windows with Windows Hello: turn on "Unlock with Windows Hello" in Settings (up to three prompts), lock, and unlock with a face, a finger and the PIN; cancel the prompt; change the Windows Hello PIN, then unlock: it asks for the master password and is off; turn it off.
 
 ## Success metrics
 

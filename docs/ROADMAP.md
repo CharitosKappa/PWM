@@ -687,7 +687,13 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
     - **Manual checks** (`QUALITY.md`): sleep and session lock, the tray, the clipboard history, captures.
     - **The approvals count** on the vault stays 0 until M7.6 lists them.
     - **Parity:** the global shortcut (with M7.2), Linux unlock with polkit or fprintd (later).
-- [ ] M7.5 Windows Hello unlock, under D45's rules, with its key-wrapping decision first.
+- [x] M7.5 Windows Hello unlock, under D45's rules, with its key-wrapping decision first (D68).
+  - Done per D68 (implementation notes there):
+    - **Core:** `seal_windows_hello` and `open_windows_hello` in `pwm-crypto` (HKDF-SHA256 over the signature, the challenge as salt; AAD `pwm/windows-hello`), and `export_windows_hello` and `unlock_windows_hello` in `pwm-client`, which reuse D45's blob. Vectors: `windows_hello.json`, checked by Rust (with every bit flipped) and by Node.
+    - **Desktop:** `hello.rs` (`KeyCredentialManager`, WinRT, no `unsafe`) and `unlock_hello.rs`: turning it on, the unlock, the 14 days, the blob made again after each Windows Hello unlock, a changed key turning it off, and sign-out deleting it. Answered through the existing `touchId`, `setTouchId` and `unlockTouchId` requests, plus `biometricOffer` and `dismissBiometricOffer` for the one offer.
+    - **Screens:** the host's `biometricName` ("Touch ID", "Windows Hello" or none) names the switch, the unlock button and the offer; the desktop's unlock screen tries it once by itself.
+  - **Tests:** 4 core tests, the vectors, 2 client tests, the Windows Hello step in the server sequence with a fake key (turning it on, unlock, cancel, the 14 days, a changed key, an unsupported computer, signatures that differ, turning it off), and a test of the real support check. Run here: the offer after a password unlock (this computer has Windows Hello), Not now, and the Settings switch.
+  - **Not run anywhere yet:** a real Windows Hello prompt, which needs a person at the computer (`QUALITY.md`'s desktop checklist).
 - [x] M7.6 The manage page on the desktop (D66 §1): health and the leak check, devices, approving a new device, export and import.
   - Done per D66 §1 (implementation notes there):
     - **The backend** answers the manage page's 15 requests as the extension's `manage.ts`, `approvals.ts` and `importer.ts` do; the vault shows how many new devices are asking, read after each sync.

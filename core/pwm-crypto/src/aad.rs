@@ -137,6 +137,16 @@ impl Aad {
         aad
     }
 
+    /// The biometric unlock key on Windows, under a key derived from a
+    /// Windows Hello signature (decision D68).
+    pub fn windows_hello(version: u8, account_id: &Id, device_id: &Id) -> Self {
+        let mut aad = Self::labelled("pwm/windows-hello");
+        aad.0.push(version);
+        aad.0.extend_from_slice(account_id);
+        aad.0.extend_from_slice(device_id);
+        aad
+    }
+
     /// A secret the device keeps on disk (the refresh token), under the
     /// account `sym_key` (decision D34).
     pub fn device_tokens(version: u8, account_id: &Id) -> Self {

@@ -53,7 +53,10 @@ export type Request =
   | { kind: "unlock"; password: string }
   /** After the server refused this browser's session (D50 §5). */
   | { kind: "signInAgain"; password: string }
-  /** Touch ID through the PWM app for Mac (D48 §5). */
+  /**
+   * The platform's biometric unlock: Touch ID through the PWM app for Mac
+   * (D48 §5), Windows Hello on the desktop (D68). The names stay.
+   */
   | { kind: "unlockTouchId" }
   | { kind: "touchId" }
   | { kind: "setTouchId"; on: boolean }
@@ -139,7 +142,10 @@ export type Request =
   | { kind: "restoreItem"; vaultId: string; itemId: string }
   | { kind: "deleteItem"; vaultId: string; itemId: string }
   | { kind: "newFolder"; title: string }
-  | { kind: "totpSetup"; input: string; title: string };
+  | { kind: "totpSetup"; input: string; title: string }
+  /** Whether to make the one offer after a master password unlock (D45 §3). */
+  | { kind: "biometricOffer" }
+  | { kind: "dismissBiometricOffer" };
 
 /**
  * An item's decrypted D18 JSON, as the editor changes it. Fields this
@@ -397,6 +403,8 @@ export interface Replies {
   deleteItem: null;
   newFolder: { vaultId: string; itemId: string };
   totpSetup: string;
+  biometricOffer: boolean;
+  dismissBiometricOffer: null;
   askApproval: AskView;
   askApprovalPoll: AskView;
   askApprovalCancel: null;
@@ -462,6 +470,8 @@ export const REQUEST_KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "deleteItem",
   "newFolder",
   "totpSetup",
+  "biometricOffer",
+  "dismissBiometricOffer",
   "askApproval",
   "askApprovalPoll",
   "askApprovalCancel",

@@ -141,6 +141,8 @@ export const REQUESTS: Request[] = [
   },
   { kind: "newFolder", title: "Work" },
   { kind: "totpSetup", input: "JBSWY3DPEHPK3PXP", title: "Mail" },
+  { kind: "biometricOffer" },
+  { kind: "dismissBiometricOffer" },
 ];
 
 /** The kinds the desktop backend answers; the rest are `unsupported`. */
@@ -194,6 +196,12 @@ export const DESKTOP_KINDS: Request["kind"][] = [
   "deleteItem",
   "newFolder",
   "totpSetup",
+  // Windows Hello (M7.5, D68).
+  "touchId",
+  "setTouchId",
+  "unlockTouchId",
+  "biometricOffer",
+  "dismissBiometricOffer",
 ];
 
 /** Replies the desktop backend builds itself, with every shape of each. */
