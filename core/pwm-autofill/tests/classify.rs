@@ -128,6 +128,18 @@ fn an_email_address_is_not_a_street_address() {
         [Class::Tel]
     );
     assert_eq!(classes(&["type=text;label=Mobile number"]), [Class::Tel]);
+    // A field that takes an email or a phone number is a login's email
+    // field, however long the phone keyword is: Zoom's sign-in field.
+    assert_eq!(
+        classes(&[
+            "type=text;id=email;name=account;autocomplete=off;aria=enter email, zoom mail or phone number;maxlength=128",
+        ]),
+        [Class::Email]
+    );
+    assert_eq!(
+        classes(&["type=text;label=Mobile number or email"]),
+        [Class::Email]
+    );
     // A real address is still one.
     assert_eq!(
         classes(&["type=text;label=Street address"]),
