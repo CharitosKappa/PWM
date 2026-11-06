@@ -152,10 +152,10 @@ describe("design tokens", () => {
     ) as Record<string, unknown>,
   );
 
-  it("defines every variable the popup uses", () => {
+  it("defines every variable the shared screens use", () => {
     const defined = new Set([...css.matchAll(/(--[\w-]+):/g)].map((m) => m[1]));
     const used = new Set(
-      [...read("static/popup.css").matchAll(/var\((--[\w-]+)\)/g)].map(
+      [...read("../ui/src/screens.css").matchAll(/var\((--[\w-]+)\)/g)].map(
         (m) => m[1],
       ),
     );

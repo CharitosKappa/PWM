@@ -125,6 +125,11 @@ async function buildTarget(target, dist) {
     if (ONLY_FOR[file] !== undefined && ONLY_FOR[file] !== target) continue;
     fs.copyFileSync(path.join(root, "static", file), path.join(dist, file));
   }
+  // The shared screens' styles (D3 §2), under the name the pages load.
+  fs.copyFileSync(
+    path.join(root, "..", "ui", "src", "screens.css"),
+    path.join(dist, "popup.css"),
+  );
   fs.copyFileSync(
     path.join(core, "pwm_wasm_bg.wasm"),
     path.join(dist, "pwm_wasm_bg.wasm"),

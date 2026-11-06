@@ -5,8 +5,8 @@
  */
 import { useState } from "preact/hooks";
 import type { JSX } from "preact";
-import { HOSTED_SERVER } from "../shared/config.ts";
-import type { ReportPreview, ReportProblem } from "../shared/messages.ts";
+import { HOSTED_SERVER } from "./config.ts";
+import type { ReportPreview, ReportProblem } from "./protocol.ts";
 import { describe, send } from "./api.ts";
 import { Notice } from "./ui.tsx";
 

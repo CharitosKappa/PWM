@@ -35,6 +35,7 @@ pwm/
     android/                # Kotlin, Jetpack Compose, Autofill Service, Credential Manager
     desktop/                # Tauri app for Windows + Linux (decision D3)
   extension/                # TypeScript MV3: Chrome, Edge, Firefox, Brave, Opera (+ Safari via macOS host)
+  ui/                       # @pwm/ui: the Preact screens shared by the extension and the desktop app (D3)
   tests/
     autofill-harness/       # Playwright + fixture sites + top-1,000 site runner
     e2e/                    # cross-platform end-to-end scenarios
@@ -48,7 +49,7 @@ pwm/
 | iOS | Swift / SwiftUI, AutoFill Credential Provider | App, autofill, passkeys, Face ID |
 | macOS | SwiftUI, Safari Web Extension | Desktop app, Touch ID, biometric bridge for all browsers |
 | Android | Kotlin / Compose, Autofill Service, Credential Manager | App, autofill, passkeys, biometrics |
-| Windows / Linux | Tauri (Rust backend + web UI) — see D3 | Desktop app, Windows Hello, biometric bridge |
+| Windows / Linux | Tauri 2 (Rust backend + Preact UI shared with the extension, D3) | Desktop app, Windows Hello, biometric bridge |
 | Extensions | TypeScript, Manifest V3, core via WASM | Autofill, save prompts, unlock via desktop app (native messaging) |
 | Server | Rust (axum), PostgreSQL, S3-compatible blob store | Encrypted blob sync, sharing, billing hooks, org admin |
 | Local mode (Phase 2) | Encrypted vault file via iCloud Drive / Google Drive / Dropbox / WebDAV / LAN P2P | No-account storage |

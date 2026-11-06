@@ -655,9 +655,19 @@ Phase 3  Teams           months 16–24 M16–M19
   - **Deferred:** dropping the separate push token removal before sign-out (Apple's `forgetPushToken`, Android's D60 §4), now redundant online (D62 §5). The Swift tests were written on Windows and run in CI only.
 
 ### M7 — Windows + Linux desktop
-- [ ] M7.1 Tauri app (pending D3) with same screens; Windows Hello unlock; Linux unlock via password (+ polkit/fprintd later).
-- [ ] M7.2 Native-messaging host for browser unlock on Windows/Linux.
+Tauri 2, with the screens shared with the extension (D3). In order: M7.1, M7.4, M7.5, then M7.2 and M7.3.
+
+- [x] M7.1 The shared screens package (D3 §2): the extension's Preact screens move into it, each host supplying its own `api`, with no change to how the extension behaves.
+  - Done per D3 §2: `ui/` (`@pwm/ui`) holds the popup's and manage page's screens and their styles (`screens.css`).
+    - **`protocol.ts`:** the requests and replies, out of the extension's `messages.ts`, with the three autofill views they use. The extension re-exports them, and keeps its own message wrapping.
+    - **`host.ts`:** what a screen needs from its app: `send`, asking for and giving back access, opening the manage page, and whether the inline UI and the server-access prompt exist. Each app calls `setHost` before the first render. `ui/`'s `tsconfig.json` has no `chrome` types, so a screen can't call Chrome directly.
+    - **The extension:** its `chromeHost` passes requests to the background and access to `chrome.permissions`, with nothing awaited before a permission request. Its build copies `screens.css` in as `popup.css`.
+  - **Tests:** 4 Vitest tests of `send` and the error messages against a fake host. All 224 extension tests pass, and its `build.test.ts` checks the moved stylesheet's tokens. The Firefox build (not minified), compared with `main`'s, differs only where the screens call the host instead of Chrome. The Playwright specs that open the popup and the manage page (`manage.spec.ts`, `approval.spec.ts`) run in CI.
+  - **Deferred to M7.4:** a full-window layout with a sidebar for the desktop app, and a host flag that hides what only a browser can do (filling a page, the save offer, the autofill report), since filling also closes the window.
+- [ ] M7.2 Native-messaging host for browser unlock on Windows/Linux (D48's protocol, a second binary in the desktop workspace).
 - [ ] M7.3 Signed installers (MSIX/EXE, AppImage, .deb, .rpm, Flatpak).
+- [ ] M7.4 The Tauri app on Windows and Linux (D3 §1, §3–§5): the shared screens, master-password unlock (+ polkit/fprintd later), the tray and the lock rules, screen-capture exclusion on Windows, `cargo deny` on its dependency tree, a WebKitGTK floor, and a `desktop-build` job.
+- [ ] M7.5 Windows Hello unlock, under D45's rules, with its key-wrapping decision first.
 
 ### M8 — Importers (`pwm-import`)
 - [x] M8.1 Bitwarden JSON (incl. encrypted export), 1Password `.1pux`, Keeper JSON, NordPass CSV, Proton Pass ZIP/JSON, Dashlane CSV/JSON, LastPass CSV, generic CSV with column mapper, and our own `.pwmx`/JSON into any account (D51). KeePass is M8.4.

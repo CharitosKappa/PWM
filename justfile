@@ -18,7 +18,7 @@ check:
     node scripts/tokens-kotlin.mjs --check
     node scripts/messages.mjs --check
 
-# all unit tests (core, server, extension)
+# all unit tests (core, server, extension, shared screens)
 test:
     cargo test --workspace --all-features --locked
     pnpm install --frozen-lockfile

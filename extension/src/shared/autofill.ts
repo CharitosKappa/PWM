@@ -4,6 +4,14 @@
  * background checks every message and never sends them the vault list.
  */
 
+import type { Suggestion } from "@pwm/ui/protocol.ts";
+
+export type {
+  OfferCandidate,
+  OfferView,
+  Suggestion,
+} from "@pwm/ui/protocol.ts";
+
 /** One input as the engine reads it (D33): attributes and labels, never its value. */
 export interface FieldInfo {
   /** Position in this frame's scan; the content script keeps the element. */
@@ -24,18 +32,6 @@ export interface FieldInfo {
 
 /** At most this many fields per frame are looked at. */
 export const MAX_FIELDS = 200;
-
-/** A login the current page may get. */
-export interface Suggestion {
-  vaultId: string;
-  itemId: string;
-  title: string;
-  username: string;
-  /** The engine's decision (D33): `fill`, `warn_insecure`, `warn_regex`, `confirm`, `refuse_*`. */
-  decision: string;
-  /** The login in progress on this tab (multi-step). */
-  next: boolean;
-}
 
 /** Content script → background: this frame's fields. */
 export interface FrameReport {
@@ -86,26 +82,6 @@ export interface FormGone {
   target: "background";
   from: "content";
   kind: "formGone";
-}
-
-/** A saved login an update could go to. */
-export interface OfferCandidate {
-  vaultId: string;
-  itemId: string;
-  title: string;
-  username: string;
-}
-
-/** A pending save offer, as the popup and the card show it: never the password. */
-export interface OfferView {
-  site: string;
-  action: "save" | "update";
-  username: string;
-  /** The title a new login would get. */
-  title: string;
-  insecure: boolean;
-  candidates: OfferCandidate[];
-  locked: boolean;
 }
 
 export interface FillTarget {
