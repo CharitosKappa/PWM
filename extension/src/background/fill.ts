@@ -7,6 +7,7 @@ import type {
   Watch,
   FieldInfo,
   FillReply,
+  FillTarget,
   FrameReply,
   InlineMenu,
   InlineRequest,
@@ -344,13 +345,20 @@ export class Autofill {
         ? { index: plan.username, value: login.username }
         : null,
       plan.password !== undefined
-        ? { index: plan.password, value: login.password }
+        ? {
+            index: plan.password,
+            value: login.password,
+            // With a username to fill, a password the page hasn't shown
+            // yet is skipped rather than refusing the fill (D65 §2).
+            ...(plan.username !== undefined ? { optional: true } : {}),
+          }
         : null,
       plan.code !== undefined && code !== ""
         ? { index: plan.code, value: code }
         : null,
-    ].filter((f): f is { index: number; value: string } => f !== null);
+    ].filter((f): f is FillTarget => f !== null);
 
+    let step = plan.step;
     if (fills.length > 0) {
       // Only to this document: a frame that navigated meanwhile gets nothing.
       const reply = (await this.platform.pages.send(frame.ref, {
@@ -368,18 +376,25 @@ export class Autofill {
           known ? reply.reason : undefined,
         );
       }
+      const skipped = reply.skipped ?? [];
+      // Only an optional target may be skipped; anything else is refused.
+      const optional = fills.filter((f) => f.optional).map((f) => f.index);
+      if (skipped.some((i) => !optional.includes(i)))
+        throw new ServiceError("field_hidden");
+      if (plan.password !== undefined && skipped.includes(plan.password))
+        step = "username";
     }
     let copiedCode = false;
     if (plan.copyCode && code !== "") {
       await this.host.copy(code);
       copiedCode = true;
     }
-    if (plan.step !== null) {
+    if (step !== null) {
       this.core.autofillRecordStep(
         String(frame.ref.tabId),
         frame.tabUrl,
         itemId,
-        plan.step,
+        step,
         now,
       );
     }

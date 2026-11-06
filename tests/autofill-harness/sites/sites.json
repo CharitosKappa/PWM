@@ -1,6 +1,6 @@
 {
   "description": "Sites for the nightly runner (D39 §2): login URL and, where someone checked the page, CSS selectors of the expected inputs. Grow towards 1,000 over M10, ordered by the Tranco top-sites list (CC BY 4.0, https://tranco-list.eu, attribution in THIRD_PARTY_NOTICES when it is used). Entries are unchecked until a nightly run confirms them.",
-  "checked": "2026-11-02: list drafted from public login URLs; selectors only where the form is well known; to be confirmed by the first nightly runs; 2026-11-06: selectors for facebook.com and microsoft.com, notion.so moved to notion.com, five entries removed (see removed)",
+  "checked": "2026-11-02: list drafted from public login URLs; selectors only where the form is well known; to be confirmed by the first nightly runs; 2026-11-06: selectors for facebook.com and microsoft.com, notion.so moved to notion.com, five entries removed (see removed); salesforce.com and proton.me now ask for the username first, so their password selectors went (D65 §5)",
   "sites": [
     {
       "site": "google.com",
@@ -135,8 +135,7 @@
     {
       "site": "salesforce.com",
       "login_url": "https://login.salesforce.com/",
-      "username": "#username",
-      "password": "#password"
+      "username": "#username"
     },
     {
       "site": "atlassian.com",
@@ -152,8 +151,7 @@
     {
       "site": "proton.me",
       "login_url": "https://account.proton.me/login",
-      "username": "#username",
-      "password": "#password"
+      "username": "#username"
     },
     {
       "site": "dropbox.com",

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>A layer over most of the field</title>
+    <style>
+      body {
+        font: 16px system-ui;
+        margin: 40px;
+      }
+      .field {
+        position: relative;
+        width: 280px;
+        margin: 8px 0;
+      }
+      input {
+        display: block;
+        box-sizing: border-box;
+        width: 280px;
+        height: 36px;
+      }
+      /* Inside the field's box, but over 60% of it: not a button in the
+         field (D65 §3), so the field is covered. */
+      .cover {
+        position: absolute;
+        left: 112px;
+        top: 0;
+        width: 168px;
+        height: 36px;
+        background: white;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>A layer over most of the field</h1>
+    <form action="#" onsubmit="return false;">
+      <label for="email">Email</label>
+      <div class="field">
+        <input id="email" type="email" name="email" autocomplete="username" />
+        <div class="cover"></div>
+      </div>
+      <label for="password">Password</label>
+      <div class="field">
+        <input
+          id="password"
+          type="password"
+          name="password"
+          autocomplete="current-password"
+        />
+        <div class="cover"></div>
+      </div>
+      <button>Sign in</button>
+    </form>
+  </body>
+</html>

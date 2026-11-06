@@ -106,6 +106,36 @@ fn a_login_form() {
 }
 
 #[test]
+fn an_email_address_is_not_a_street_address() {
+    // D65 §4: DigitalOcean's and ok.ru's login fields, as the pages describe them.
+    assert_eq!(
+        classes(&[
+            "type=text;id=email;name=email;autocomplete=none;label=Email*;placeholder=Enter your email address",
+            "type=password;id=password;name=password;autocomplete=none;label=Password*;placeholder=Enter your password",
+        ]),
+        [Class::Email, Class::CurrentPassword]
+    );
+    assert_eq!(
+        classes(&[
+            "type=text;id=field_email;name=st.email;placeholder=Phone number or email address",
+            "type=password;id=field_password;name=st.password;placeholder=Password",
+        ]),
+        [Class::Email, Class::CurrentPassword]
+    );
+    assert_eq!(classes(&["type=text;label=E-mail address"]), [Class::Email]);
+    assert_eq!(
+        classes(&["type=text;placeholder=Phone number"]),
+        [Class::Tel]
+    );
+    assert_eq!(classes(&["type=text;label=Mobile number"]), [Class::Tel]);
+    // A real address is still one.
+    assert_eq!(
+        classes(&["type=text;label=Street address"]),
+        [Class::AddressLine1]
+    );
+}
+
+#[test]
 fn sign_up_and_change_password_forms() {
     assert_eq!(
         classes(&[

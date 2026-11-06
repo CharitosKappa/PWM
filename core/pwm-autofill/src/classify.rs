@@ -153,6 +153,9 @@ const KEYWORDS: &[(Class, &[&str])] = &[
         &[
             "email",
             "mail",
+            // Longer than "address", which would win otherwise (D65 §4).
+            "emailaddress",
+            "mailaddress",
             "correo",
             "courriel",
             "emailadresse",
@@ -390,6 +393,8 @@ const KEYWORDS: &[(Class, &[&str])] = &[
             "phone",
             "tel",
             "mobile",
+            "phonenumber",
+            "mobilenumber",
             "telephone",
             "telefon",
             "telefono",

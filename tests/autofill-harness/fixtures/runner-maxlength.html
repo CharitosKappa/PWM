@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fields that cut long values</title>
+    <style>
+      body {
+        font: 16px system-ui;
+        margin: 40px;
+      }
+      input {
+        display: block;
+        width: 280px;
+        height: 32px;
+        margin: 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Fields that cut long values</h1>
+    <!-- As on Wells Fargo: the page cuts what it's given to the field's
+         maxlength, which is shorter than the runner's check login (D65 §5). -->
+    <form action="#" onsubmit="return false;">
+      <label for="user">Username</label>
+      <input id="user" type="text" name="j_username" maxlength="14" />
+      <label for="pass">Password</label>
+      <input id="pass" type="password" name="j_password" maxlength="16" />
+      <button>Sign on</button>
+    </form>
+    <script>
+      for (const input of document.querySelectorAll("input")) {
+        input.addEventListener("input", () => {
+          input.value = input.value.slice(0, input.maxLength);
+        });
+      }
+    </script>
+  </body>
+</html>

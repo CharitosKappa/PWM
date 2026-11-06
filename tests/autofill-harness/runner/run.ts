@@ -131,29 +131,57 @@ async function looksWalled(page: Page): Promise<boolean> {
   return WALL_TEXT.test(text);
 }
 
-/** Which inputs in a frame hold the check values, and whether it has a visible password input. */
+/**
+ * Whether a field holds the check value: exactly, or cut to the field's
+ * `maxlength` when that is shorter, as some sites cut it (D65 §5).
+ */
+export function holds(
+  value: string,
+  expected: string,
+  maxLength: number,
+): boolean {
+  if (value === expected) return true;
+  return (
+    maxLength > 0 &&
+    maxLength < expected.length &&
+    value === expected.slice(0, maxLength)
+  );
+}
+
+/**
+ * Which inputs in a frame hold the check values, and whether it asks for a
+ * password now: a password input people can see (not under `aria-hidden`
+ * or `inert`, nor in a transparent wrapper; D65 §5).
+ */
 function inspect(frame: Frame) {
   return frame
     .evaluate(
       ({ user, password }) => {
         const inputs = [...document.querySelectorAll("input")];
-        const visible = (el: HTMLInputElement) => {
+        const seen = (el: HTMLInputElement) => {
           const r = el.getBoundingClientRect();
-          return (
-            r.width > 1 &&
-            r.height > 1 &&
-            getComputedStyle(el).visibility === "visible"
-          );
+          if (r.width <= 1 || r.height <= 1) return false;
+          if (getComputedStyle(el).visibility !== "visible") return false;
+          for (let node: Element | null = el; node; node = node.parentElement) {
+            if (node.getAttribute("aria-hidden") === "true") return false;
+            if (node instanceof HTMLElement && node.inert) return false;
+            if (Number(getComputedStyle(node).opacity) === 0) return false;
+          }
+          return true;
         };
+        // As holds(), which can't be passed into the page.
+        const has = (el: HTMLInputElement, expected: string) =>
+          el.value === expected ||
+          (el.maxLength > 0 &&
+            el.maxLength < expected.length &&
+            el.value === expected.slice(0, el.maxLength));
         return {
-          user: inputs.some(
-            (el) => el.type !== "password" && el.value === user,
-          ),
+          user: inputs.some((el) => el.type !== "password" && has(el, user)),
           password: inputs.some(
-            (el) => el.type === "password" && el.value === password,
+            (el) => el.type === "password" && has(el, password),
           ),
           passwordField: inputs.some(
-            (el) => el.type === "password" && visible(el),
+            (el) => el.type === "password" && seen(el),
           ),
         };
       },
@@ -163,14 +191,26 @@ function inspect(frame: Frame) {
 }
 
 /**
- * The value of the first input matching `selector`, or "" when there is
- * none. Never waits for an element to appear: a selector that no longer
- * matches would otherwise hang until the run's timeout.
+ * Whether the first input matching `selector` holds `expected` (see
+ * holds()). Never waits for an element to appear: a selector that no
+ * longer matches would otherwise hang until the run's timeout.
  */
-async function valueOf(page: Page, selector: string): Promise<string> {
+async function holdsAt(
+  page: Page,
+  selector: string,
+  expected: string,
+): Promise<boolean> {
   const field = page.locator(selector).first();
-  if ((await field.count()) === 0) return "";
-  return field.inputValue({ timeout: 2_000 }).catch(() => "");
+  if ((await field.count()) === 0) return false;
+  const value = await field.inputValue({ timeout: 2_000 }).catch(() => "");
+  const max = await field
+    .evaluate(
+      (el) => (el instanceof HTMLInputElement ? el.maxLength : -1),
+      undefined,
+      { timeout: 2_000 },
+    )
+    .catch(() => -1);
+  return holds(value, expected, max);
 }
 
 /**
@@ -254,12 +294,10 @@ export async function runSite(
 
     let ok: boolean;
     if (entry.username !== undefined) {
-      const user = await valueOf(page, entry.username);
-      const password =
-        entry.password === undefined
-          ? CHECK_PASSWORD
-          : await valueOf(page, entry.password);
-      ok = user === CHECK_USER && password === CHECK_PASSWORD;
+      ok =
+        (await holdsAt(page, entry.username, CHECK_USER)) &&
+        (entry.password === undefined ||
+          (await holdsAt(page, entry.password, CHECK_PASSWORD)));
     } else {
       const frames = await Promise.all(page.frames().map(inspect));
       const user = frames.some((f) => f.user);

@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 import { Harness } from "../lib/extension.ts";
 import {
   CHECK_USER,
+  holds,
   navigationError,
   runSite,
   summarize,
@@ -79,6 +80,39 @@ test("runner: says where a moved login ended up", async () => {
     status: "fail",
     final_host: "elsewhere.test:8443",
   });
+});
+
+test("runner: a field that cuts the value to its maxlength passes", async () => {
+  // D65 §5: Wells Fargo takes 14 characters; the check login has 30.
+  expect(
+    (
+      await runSite(
+        harness,
+        site("runner-maxlength.html", { username: "#user", password: "#pass" }),
+      )
+    ).status,
+  ).toBe("pass");
+  expect((await runSite(harness, site("runner-maxlength.html"))).status).toBe(
+    "pass",
+  );
+});
+
+test("runner: a decoy password field isn't one the page asks for", async () => {
+  // D65 §5: Booking's and Notion's pattern; the email alone is the pass.
+  expect((await runSite(harness, site("decoy-password.html"))).status).toBe(
+    "pass",
+  );
+});
+
+test("runner: a value counts when cut to the field's maxlength", () => {
+  expect(holds("abc", "abc", -1)).toBe(true);
+  expect(holds("pwm-check-user", "pwm-check-user@example.invalid", 14)).toBe(
+    true,
+  );
+  expect(holds("pwm-check", "pwm-check-user@example.invalid", 14)).toBe(false);
+  // No maxlength, or one that fits: only the whole value counts.
+  expect(holds("pwm", "pwm-check", -1)).toBe(false);
+  expect(holds("pwm", "pwm-check", 40)).toBe(false);
 });
 
 test("runner: blocked by a challenge page or an error status, left alone", async () => {
