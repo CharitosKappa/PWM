@@ -15,7 +15,7 @@ import { init } from "license-checker-rseidelsohn";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Workspace packages that end up in a product. */
-const SHIPPED = ["extension", "ui"];
+const SHIPPED = ["extension", "ui", "apps/desktop/web"];
 
 const ALLOWED = new Set([
   "MIT",

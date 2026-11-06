@@ -26,8 +26,17 @@ export interface Host {
   releaseAccess(access: Access): Promise<void>;
   /** Opens the manage page (D44), at a section when one is given. */
   openManage(section?: "devices"): void;
+  /**
+   * A browser: filling pages, save offers, the autofill report, the inline
+   * icon and passkeys (D3, D66 §3). The desktop app has none of them.
+   */
+  readonly browser: boolean;
   /** The inline icon and the save card on pages (D35, D40 §2). */
   readonly inlineUi: boolean;
+  /** Touch ID through the PWM app for Mac (D48 §5); only Macs have it. */
+  readonly touchId: boolean;
+  /** The manage page: health, devices, approvals, import and export (D44). */
+  readonly manage: boolean;
   /** Whether signing in first needs the user's yes to reach the server (D40 §1). */
   readonly asksServerAccess: boolean;
 }

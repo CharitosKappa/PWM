@@ -1,4 +1,5 @@
 packages:
   - extension
   - ui
+  - apps/desktop/web
   - tests/*

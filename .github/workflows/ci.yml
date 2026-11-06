@@ -445,6 +445,126 @@ jobs:
       - if: failure()
         run: cat target/pwm-server.log || true
 
+  # Whether the desktop jobs need to run: changes to the app, the shared
+  # screens, the core or the design tokens.
+  desktop-changes:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.diff.outputs.run }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if git diff --name-only "$BASE" HEAD | grep -qE '^(apps/desktop/|ui/|core/|Cargo\.(toml|lock)$|design/|pnpm-lock\.yaml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The desktop app on Linux (D66 §9): Ubuntu 22.04 is the oldest supported
+  # LTS with WebKitGTK's 4.1 API, the floor. Clippy, the tests against a
+  # local server, and the app end to end through tauri-driver under Xvfb.
+  desktop-linux:
+    needs: desktop-changes
+    if: needs.desktop-changes.outputs.run == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pwm
+          POSTGRES_PASSWORD: pwm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pwm"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            apps/desktop -> target
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: WebKitGTK, the tray library, WebKit's WebDriver and Xvfb
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev webkit2gtk-driver xvfb
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @pwm/desktop build
+      - run: cargo clippy --manifest-path apps/desktop/Cargo.toml --all-targets --locked -- -D warnings
+      - run: cargo build --locked -p pwm-server
+      - name: Start the sync server
+        env:
+          PWM_DATABASE_URL: postgres://pwm:pwm@localhost:5432/postgres
+        run: |
+          export PWM_SERVER_SECRETS="$(target/debug/pwm-server keygen)"
+          nohup target/debug/pwm-server > target/pwm-server.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if target/debug/pwm-server healthcheck; then exit 0; fi
+            sleep 1
+          done
+          cat target/pwm-server.log
+          exit 1
+      - name: Tests, the server ones included
+        env:
+          PWM_TEST_SERVER: http://127.0.0.1:8080
+        run: cargo test --manifest-path apps/desktop/Cargo.toml --locked
+      - run: cargo build --manifest-path apps/desktop/Cargo.toml --locked
+      - run: cargo install tauri-driver --locked --version 2.1.0
+      - name: End to end through tauri-driver
+        run: |
+          # The app's settings point at the local server; there is no
+          # Secret Service here, so the keys use the file fallback (D66 §4).
+          mkdir -p ~/.local/share/invalid.pwm.desktop
+          echo '{"v":1,"serverUrl":"http://127.0.0.1:8080","autoLockMinutes":15}' > ~/.local/share/invalid.pwm.desktop/settings.json
+          xvfb-run -a sh -c 'tauri-driver & sleep 2; node apps/desktop/web/e2e/smoke.mjs "$PWD/apps/desktop/target/debug/pwm-desktop"'
+      - if: failure()
+        run: cat target/pwm-server.log || true
+
+  # The desktop app on Windows (D66 §9): clippy, the tests (DPAPI's key
+  # store among them) and a release build. The server and end-to-end tests
+  # run on Linux.
+  desktop-windows:
+    needs: desktop-changes
+    if: needs.desktop-changes.outputs.run == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop -> target
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @pwm/desktop build
+      - run: cargo clippy --manifest-path apps/desktop/Cargo.toml --all-targets --locked -- -D warnings
+      - run: cargo test --manifest-path apps/desktop/Cargo.toml --locked
+      - run: cargo build --manifest-path apps/desktop/Cargo.toml --locked --release
+
   image:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -559,6 +679,7 @@ jobs:
         with:
           tool: cargo-deny
       - run: cargo deny --all-features check
+      - run: cargo deny --manifest-path apps/desktop/Cargo.toml check
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v5
         with:

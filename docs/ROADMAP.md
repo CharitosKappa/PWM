@@ -655,7 +655,7 @@ Phase 3  Teams           months 16–24 M16–M19
   - **Deferred:** dropping the separate push token removal before sign-out (Apple's `forgetPushToken`, Android's D60 §4), now redundant online (D62 §5). The Swift tests were written on Windows and run in CI only.
 
 ### M7 — Windows + Linux desktop
-Tauri 2, with the screens shared with the extension (D3). In order: M7.1, M7.4, M7.5, then M7.2 and M7.3.
+Tauri 2, with the screens shared with the extension (D3), and the backend per D66. In order: M7.1, M7.4, M7.6, M7.7, M7.5, then M7.2 and M7.3.
 
 - [x] M7.1 The shared screens package (D3 §2): the extension's Preact screens move into it, each host supplying its own `api`, with no change to how the extension behaves.
   - Done per D3 §2: `ui/` (`@pwm/ui`) holds the popup's and manage page's screens and their styles (`screens.css`).
@@ -666,8 +666,22 @@ Tauri 2, with the screens shared with the extension (D3). In order: M7.1, M7.4, 
   - **Deferred to M7.4:** a full-window layout with a sidebar for the desktop app, and a host flag that hides what only a browser can do (filling a page, the save offer, the autofill report), since filling also closes the window.
 - [ ] M7.2 Native-messaging host for browser unlock on Windows/Linux (D48's protocol, a second binary in the desktop workspace).
 - [ ] M7.3 Signed installers (MSIX/EXE, AppImage, .deb, .rpm, Flatpak).
-- [ ] M7.4 The Tauri app on Windows and Linux (D3 §1, §3–§5): the shared screens, master-password unlock (+ polkit/fprintd later), the tray and the lock rules, screen-capture exclusion on Windows, `cargo deny` on its dependency tree, a WebKitGTK floor, and a `desktop-build` job.
+- [x] M7.4 The Tauri app on Windows and Linux (D3 §1, §3–§5, D66): the project, the backend answering the screens' protocol, storage and HTTP; onboarding, master-password unlock (+ polkit/fprintd later), the vault list, copying, the generator and Settings; the tray and the lock rules, screen-capture exclusion on Windows, `cargo deny` on its dependency tree, the WebKitGTK floor, and a `desktop` CI job.
+  - Done per D66 (implementation notes there):
+    - **`apps/desktop`:** its own Cargo workspace with `pwm-desktop` (Tauri 2.12), the `@pwm/desktop` page, Tauri's isolation hook, and a placeholder icon until D1.
+    - **The backend:** answers the requests M7.4 covers over one `pwm_client::Client` and SQLite, the rest `unsupported`; three new host flags (`browser`, `touchId`, `manage`) hide what the desktop doesn't have yet.
+    - **Storage:** DPAPI files on Windows, the Secret Service on Linux, files and core-sealed tokens without one.
+    - **The window:** left out of captures on Windows; one copy only; closing keeps it in the tray on Windows and quits on Linux; "Start at login" in the tray menu.
+    - **Locking:** the timeout from the last use or from leaving the window, sleep and the session locking, and a wall-clock check for sleep the event missed.
+  - **Tests:** 12 Rust unit tests (DPAPI among them), 5 backend tests with fakes and a real server (both key-store modes), 3 protocol-sample tests shared with `ui/`, 2 Vitest tests of the host. Run on Windows here against a local server, through the real window: sign-up, the Emergency Kit to Downloads, lock, a wrong password, unlock, sync, the generator and the 30-second clear, the isolation hook dropping a plugin command, sign-out. CI adds Linux, with the end-to-end check through `tauri-driver`.
+  - **Deferred:**
+    - **The Linux code compiles first in CI:** this machine is Windows.
+    - **Manual checks** (`QUALITY.md`): sleep and session lock, the tray, the clipboard history, captures.
+    - **The approvals count** on the vault stays 0 until M7.6 lists them.
+    - **Parity:** the global shortcut (with M7.2), Linux unlock with polkit or fprintd (later).
 - [ ] M7.5 Windows Hello unlock, under D45's rules, with its key-wrapping decision first.
+- [ ] M7.6 The manage page on the desktop (D66 §1): health and the leak check, devices, approving a new device, export and import.
+- [ ] M7.7 Items in a full window (D66 §1): a sidebar layout, an item's detail and editing every type, in the shared screens with new requests.
 
 ### M8 — Importers (`pwm-import`)
 - [x] M8.1 Bitwarden JSON (incl. encrypted export), 1Password `.1pux`, Keeper JSON, NordPass CSV, Proton Pass ZIP/JSON, Dashlane CSV/JSON, LastPass CSV, generic CSV with column mapper, and our own `.pwmx`/JSON into any account (D51). KeePass is M8.4.

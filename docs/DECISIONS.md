@@ -3030,3 +3030,128 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Fill whichever planned fields pass, in any combination:** a password filled without its visible username is a strange result for the user. The username-first case is the one real sites show.
   - **Count `tabindex="-1"` as unreachable:** some sites use it on real fields that they focus from script.
   - **Let a transparent field fill when nothing covers it (Airbnb):** `opacity.html`'s invisible login form passes that test too.
+- **D66 — The desktop app's backend: tasks, project layout, the protocol in Rust, storage, the network, locking and the window, and tests** · settled 2026-11-06 · founder (approved as proposed).
+  D3 picks Tauri 2 and shares the screens (M7.1). The roadmap's M7.4 asks for the shared screens, master-password unlock, the tray and the lock rules, screen-capture exclusion on Windows, `cargo deny`, a WebKitGTK floor and a CI job. In the extension, the background service worker answers the screens' requests (about 3,000 lines of TypeScript over the WASM core). On the desktop, a Rust backend must answer the same requests.
+
+  What this machine has: the Rust toolchain for MSVC, Visual Studio 2019 and WebView2. Tauri's crates and `@tauri-apps/api` are downloaded on first build.
+
+  Open:
+  - how M7.4 is split
+  - the project layout
+  - how the backend answers the screens' protocol, and what it doesn't answer
+  - where the cache and the device's keys live
+  - the HTTP stack, and certificate pinning
+  - locking, the window and the tray
+  - the clipboard
+  - tests, CI and downloads
+
+  Proposal:
+  1. **Split M7.4 like M6.1, one PR each, in this order:**
+     - **M7.4 The app:**
+       - the project, the backend, storage and HTTP
+       - onboarding: create an account, the Emergency Kit, sign in, and asking another device
+       - unlock, lock and sign out
+       - the vault list, copying, the generator and Settings
+       - the tray, the lock rules and screen-capture exclusion
+       - the CI job
+     - **M7.6 (new) The manage page on the desktop:** health and the leak check, devices, approving a new device, export and import. These are the requests the extension's `manage.ts`, `approvals.ts` and `importer.ts` answer.
+     - **M7.7 (new) Items in a full window:**
+       - a sidebar layout
+       - an item's detail, and editing every item type
+       - these go in the shared screens, with new requests, so the extension's manage page can use them later
+       - this brings the desktop to the Mac app's screens (D42, D43)
+     - **Then:** M7.5 (Windows Hello), M7.2 and M7.3, as D3 orders them.
+  2. **Project layout:** `apps/desktop`, with its own Cargo workspace and lock file, depending on the core crates by path.
+     - **`src-tauri/`:** the `pwm-desktop` crate, the app. M7.2's helper will be a second crate in this workspace.
+     - **`web/`:** `@pwm/desktop`, a pnpm package. Its `main.tsx` sets the desktop host and renders `@pwm/ui`'s screens. It is bundled with esbuild, as the extension is, into the files Tauri serves.
+     - **Why a separate workspace:** the root workspace's jobs (`core-test`, the fuzzers, `bindings`) would otherwise compile Tauri and need GTK's headers on Linux. Cargo also allows only one crate linking `sqlite3` per workspace, which already ties `rusqlite` to the server's `sqlx`.
+     - **Builds:** plain `cargo build`, with `tauri-build`. The Tauri CLI comes only with the installers (M7.3). New recipes: `just desktop` (build and run) and `just desktop-test`.
+  3. **The protocol in Rust:**
+     - **One Tauri command, `request`.** It takes a request and answers a reply, the same JSON as `ui/src/protocol.ts`: a `kind` tag, camelCase fields, and `{ok, value}` or `{ok: false, error}`.
+     - **In `protocol.rs`:** serde types for every request and reply. One shared file of sample requests and replies, one per kind, is read by a Vitest test against the TypeScript types and by a Rust test that round-trips it, so the two sides can't drift.
+     - **Behind it:** one `pwm_client::Client` over the SQLite cache, driven by the step loop (D28, D31) over HTTP. A single async mutex keeps calls from overlapping, as Android's dispatcher does.
+     - **What it doesn't answer:** the browser's requests (fill, suggestions, the inline icon, save offers, passkeys, the autofill report, Touch ID). They answer `unsupported`, which the shared messages describe in plain words.
+     - **The host:** a new host flag, `browser`, hides those parts of the screens. A second flag replaces the Settings screen's user-agent test for Touch ID, so Windows Hello can take its place in M7.5.
+  4. **Storage,** in the app's local data folder: `%LOCALAPPDATA%` on Windows, `$XDG_DATA_HOME` on Linux, never the roaming profile, so a device's identity stays on that device.
+     - **The cache:** `pwm-store`'s SQLite file. It holds ciphertext only (D20).
+     - **The device's keys** (Secret Key, device id, access and refresh tokens), behind a `KeyStore` trait with an in-memory fake for tests:
+       - **Windows:** each value is sealed with DPAPI for the current user, with the key's name as its extra entropy, in a file under `keys/`. As with Android's Keystore, the platform's cipher only protects them on disk. No crypto of ours runs outside the core.
+       - **Linux:** the Secret Service (GNOME Keyring, KWallet) through `oo7`, which inside Flatpak uses the Secret portal.
+       - **Linux without a Secret Service** (some minimal desktops): the extension's model (D34). The Secret Key goes in a file only the user can read (it's useless without the master password, D13). The tokens are sealed under `sym_key` by the core (`pwm/device-tokens`), so they work only after unlock. Settings says no keyring was found.
+     - **`unsafe` code:** DPAPI's calls through the `windows` crate are `unsafe`. The crate is `#![deny(unsafe_code)]`, with one module allowed: `keys/windows.rs`.
+     - **Settings** (server, lock timeout, start at login): a JSON file with `"v": 1`. It isn't secret and isn't synced.
+     - **Never written:** the master password, the keyset or any unlocked key. They live only in the backend's memory, in `Secret<T>`.
+  5. **The network:**
+     - **The client:** `reqwest` 0.13, async on Tauri's tokio, with no cookies, no cache, and no redirects to another host.
+     - **TLS:** `rustls` with its `ring` provider, as the server uses it. `ring` serves only as TLS's provider; our code never calls it.
+     - **Trust:** `rustls-platform-verifier`, the system's trust store, so company root certificates work as in a browser. Never `webpki-roots`, whose licence (CDLA-Permissive-2.0) isn't on the S6 list.
+     - **Pinning:** no app pins today. iOS and Android leave TLS to the system, and an extension can't pin. So `SECURITY.md`'s "certificate pinning on mobile/desktop" isn't true anywhere. Proposal: pin the hosted server in every app at once, when D1 gives it a hostname (M10). Until then, `SECURITY.md`'s threat-model row says so. This replaces D3 §3's TLS line.
+     - **When it syncs,** as the extension does: on unlock, when the window comes back, and after each change, retrying after a network error.
+  6. **Locking, the window and the tray:**
+     - **The lock timeout:** the extension's choices (1, 5, 15 or 60 minutes, or 8 hours; 15 by default), from the shared Settings screen.
+       - **When it starts:** when the window loses focus or is hidden. Any use in the window starts it again.
+       - **Why:** as on the Mac (D48), switching to another app counts as leaving.
+     - **Locking at once:**
+       - **On sleep:** `PBT_APMSUSPEND` on Windows; logind's `PrepareForSleep` on Linux.
+       - **When the session locks:** `WTS_SESSION_LOCK` on Windows; logind's `Lock` and `LockedHint` on Linux.
+       - **On switching user and signing out of the computer.**
+     - **What locking does:** the backend drops the unlocked keys (zeroized) and the window shows Unlock.
+     - **Closing the window:**
+       - **Windows:** closing keeps PWM in the tray, whose menu has Open, Lock and Quit. Quitting locks first.
+       - **Linux:** closing quits, because GNOME shows no tray by default. The tray icon appears where the desktop has one.
+     - **One copy only** (`tauri-plugin-single-instance`): a second launch brings the window forward, so two processes never share one cache.
+     - **Start at login:** a setting, off by default (`tauri-plugin-autostart`).
+     - **Screen capture:** the window is left out of captures on Windows (D3 §3).
+     - **Not in M7.4:** a global shortcut. With no autofill on the desktop it has nothing to trigger; it can come with M7.2.
+     - **Devtools:** off in release builds.
+  7. **The clipboard:** copying goes through the backend (`arboard`), never the webview.
+     - **The 30-second clear (D34):** the clipboard is cleared 30 seconds later, whatever it holds then.
+     - **Windows:** the copy is left out of the clipboard history and the cloud clipboard.
+     - **Linux:** the copy is marked with the password-manager hint (`x-kde-passwordManagerHint`), which the clipboard managers that know it skip.
+  8. **Licences, checked on crates.io and npm on 2026-11-06:**
+     - **MIT or Apache-2.0:** `reqwest`, `rustls-platform-verifier`, `arboard`, `tauri-build`, the plugins, and `@tauri-apps/api` (no dependencies of its own).
+     - **`rustls`:** Apache-2.0, ISC or MIT.
+     - **`oo7`:** MIT.
+     - **The check:** `just audit` runs `cargo deny` on the desktop workspace too, with the root `deny.toml`. `scripts/licenses.mjs` adds `@pwm/desktop` to the shipped packages.
+  9. **Tests and CI:**
+     - **Rust:**
+       - each request's handler against the fake key store and a fake HTTP transport
+       - the protocol samples (§3)
+       - the lock timer, with an injected clock
+       - against a real server: sign-up, sign-in on a second client, save, sync, lock and unlock (in CI, with Postgres)
+     - **Vitest:** the desktop host, and the protocol samples against `protocol.ts`.
+     - **End to end with `tauri-driver`:** launch, create an account, lock, unlock and copy, on Linux under Xvfb. On Windows, CI builds and runs the Rust and Vitest tests; `tauri-driver` there needs an Edge driver matching WebView2's version, so it is added only if it's reliable.
+     - **A new `desktop` CI job,** on PRs touching `apps/desktop`, `ui/` or `core/`, on `windows-latest` and `ubuntu-22.04`. Ubuntu 22.04 is the oldest supported LTS with WebKitGTK's 4.1 API, which Tauri 2 needs. That's the floor, written in `DEVELOPMENT.md`.
+     - **This machine:** builds and runs the app on Windows 11.
+     - **Not testable in CI:** sleep and session-lock events, and the tray on a real desktop. Their manual checks go in `QUALITY.md`.
+  10. **Downloads:** the first build fetches Tauri's crates, `reqwest`, `oo7`, `arboard` and their dependencies from crates.io, and `@tauri-apps/api` from npm. CI also gets `tauri-driver` and WebKitGTK's packages. The founder approves that here, once, instead of per command, as in D52 §9.
+
+  Alternatives:
+  - **The app in the root Cargo workspace:** one lock file, but every core job would build Tauri and need GTK, and the SQLite limit binds the app to the server's `sqlx`.
+  - **The `keyring` crate on both platforms:** one API, but its Windows backend is the Credential Manager, whose entries can roam with a domain profile and carry one device's identity to another. DPAPI files in the local folder stay put.
+  - **The extension's model everywhere, with no system key store:** simpler, but weaker than iOS and Android against someone who copies the disk.
+  - **A blocking HTTP client (`ureq`):** smaller, but Tauri's commands are async, and `reqwest` fits its tokio.
+  - **Tauri's HTTP, file system or shell plugins for the UI:** D3 §3 rules them out; the backend does all of that.
+  - **Implementing the protocol in TypeScript over WASM inside the webview, as the extension does:** it would reuse the background's code, but the keys would then live in the webview, where D3 §3 keeps them out, and Windows Hello and DPAPI would still need Rust.
+
+  Implementation notes (M7.4):
+  - **Versions:** Tauri 2.12, `tauri-plugin-single-instance` 2.5, `tauri-plugin-autostart` 2.7, `reqwest` 0.13, `oo7` 0.7 (zbus 6), `arboard` 3.7, `windows` 0.62, and `@tauri-apps/api` 2.12.4.
+  - **Licences, approved by the founder for these crates only,** as exceptions in `apps/desktop/deny.toml`; the S6 allow-list is unchanged:
+    - **`clipboard-win` and `error-code` (BSL-1.0):** arboard's clipboard on Windows. BSL-1.0 is the Boost licence, permissive and OSI-approved, not the Business Source License that `deny.toml`'s "BSL" means.
+    - **`target-lexicon` (Apache-2.0 WITH LLVM-exception):** a build-time dependency of the GTK libraries on Linux; it never ships.
+  - **`apps/desktop/deny.toml`:** the root's policy, checked only for the targets the app ships for (Windows and Linux, x86-64 and Arm). That leaves out `webpki-root-certs` (CDLA-Permissive-2.0), which `rustls-platform-verifier` uses only on wasm32. `just audit` and the `audit` job run it.
+  - **Advisories ignored, with a recheck at M7.3:** proc-macro-error (RUSTSEC-2024-0370, through GTK 3's glib-macros for the tray) and zbus 5's zvariant, zbus_names and zvariant_derive (RUSTSEC-2026-0370 to 0372, through `tauri-plugin-single-instance`), all on Linux and unmaintained, not vulnerable.
+  - **`unsafe` code:** two modules, not one. `keys/windows.rs` (DPAPI) and `system/windows.rs` (a message-only window for session notifications, and a suspend callback). The rest of the crate is `#![deny(unsafe_code)]`.
+  - **The webview:**
+    - **Prototype freezing is off:** Tauri's `freezePrototype` breaks Preact, which assigns `constructor` on its objects.
+    - **One inline style is allowed by its hash:** Tauri's own `<style>` hiding the isolation frame. No other inline style or script is allowed.
+    - **When the hook refuses:** a call it drops never answers. The screens only ever send `request`.
+  - **Locking on the screen:** after the timeout, sleep or a session lock, the window reloads, so the page keeps nothing it showed unlocked.
+  - **Sleep the system's event missed:** a wall-clock jump of more than 15 seconds beyond the time that passed also locks, so a clock change locks too.
+  - **"Start at login"** is a check item in the tray's menu, not a setting in the screens, so the protocol didn't change.
+  - **Downloads** go to the Downloads folder under a free name ("Emergency Kit (2).pdf"), never over a file.
+  - **Shared-screen fixes found by running the app:**
+    - **After the Secret Key:** sign-up went on to the browser's fill-and-save offer, which the desktop hides, and showed the Secret Key again. It now finishes there.
+    - **The Touch ID setting:** its user-agent test became a host flag.
+  - **The protocol samples:** `ui/src/protocol-samples.ts`, typed against `protocol.ts`, written to `protocol-samples.json` (Vitest checks it's current; `PWM_UPDATE_SAMPLES=1` rewrites it), and read by `tests/protocol_samples.rs`.
+  - **Not testable here:** the Linux code (this machine is Windows). It compiles first in the `desktop-linux` job.

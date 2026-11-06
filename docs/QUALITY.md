@@ -12,7 +12,7 @@ Most one-star reviews in this market come from broken updates. Release safety is
 | ui (shared screens) | Unit (Vitest) against a fake host; the extension's Playwright specs open its popup and manage pages |
 | iOS / macOS | XCTest + XCUITest for unlock, autofill provider, sync |
 | Android | JUnit + Compose UI tests + autofill service instrumentation tests |
-| desktop | Tauri integration tests, native messaging tests |
+| desktop | Rust unit tests of the backend with fake key stores, clipboards and clocks; the same against a real server; the protocol samples shared with `@pwm/ui`; Vitest for the desktop host; end to end through `tauri-driver` on Linux (D66 §9). Native messaging tests come with M7.2 |
 | e2e | Create account on device A → item on B → share to C → revoke |
 
 ## CI (GitHub Actions)
@@ -26,7 +26,8 @@ Most one-star reviews in this market come from broken updates. Release safety is
 | `wasm`: both extension builds, `web-ext lint`, Firefox smoke (D40) | PRs touching extension/core | yes |
 | `bindings`: Swift/Kotlin smoke, the Swift package on Linux against a server (D41) | every PR | yes |
 | `apple`: the Swift package on macOS against a server (D41), and the iOS app's UI test in the simulator (D42) | PRs touching `apps/apple`, `core/` or the tokens | yes |
-| `ios-build`, `android-build`, `desktop-build` | PRs touching that app/core | yes |
+| `ios-build`, `android-build` | PRs touching that app/core | yes |
+| `desktop-linux` (Ubuntu 22.04: clippy, tests with a server, end to end) and `desktop-windows` (clippy, tests, release build), D66 §9 | PRs touching `apps/desktop`, `ui/`, `core/` or the tokens | yes |
 | `audit` (cargo audit/deny, npm audit) | every PR + nightly | high severity |
 | `autofill-top-sites` (D39) | nightly + release candidates | release only (`runner/compare.ts`, D64: the sites both runs counted) |
 
@@ -180,6 +181,19 @@ On an iPhone and a Mac, for each release candidate:
 2. Reveal a password and take a screenshot: it is masked again, with the line about the photo library.
 3. Open the app switcher on the vault and on the Secret Key screen: both are covered.
 4. On the Mac, take a screenshot and share the screen while unlocked: the PWM window is left out. Turn off "Hide PWM from screenshots and screen sharing": it shows.
+
+### Desktop checklist (D66)
+
+On Windows 11 and on Ubuntu (GNOME) and Fedora (KDE), for each release candidate:
+
+1. Create an account, save the Emergency Kit (it lands in Downloads, next to any older one), lock, unlock.
+2. Put the computer to sleep, and lock the session (Win+L, or the desktop's lock): the vault is locked on return.
+3. Leave the window for longer than the lock timeout: it is locked.
+4. Copy a password: it is gone from the clipboard 30 seconds later. On Windows it isn't in the clipboard history (Win+V); with KDE's Klipper it isn't kept.
+5. On Windows, take a screenshot and share the screen: the PWM window is left out.
+6. On Windows, close the window: PWM stays in the tray; Open, Lock and Quit work, and "Start at login" starts it after signing in again. On Linux, closing quits.
+7. Start PWM a second time: the first window comes forward.
+8. On Linux without a keyring (a minimal window manager), sign in, quit and unlock: it still works.
 
 ## Success metrics
 

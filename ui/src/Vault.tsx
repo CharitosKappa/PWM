@@ -80,7 +80,7 @@ export function Vault({
 
   return (
     <main class="stack">
-      {status.approvals > 0 && (
+      {status.approvals > 0 && host().manage && (
         <p class="notice info row" role="status" id="approval-notice">
           <span>A new device is asking to sign in.</span>
           <button
@@ -131,15 +131,15 @@ export function Vault({
         />
       ) : (
         <>
-          {query === "" && <SaveOffer onToast={setToast} />}
-          {query === "" && <Suggestions onToast={setToast} />}
+          {query === "" && host().browser && <SaveOffer onToast={setToast} />}
+          {query === "" && host().browser && <Suggestions onToast={setToast} />}
           <ItemList
             items={items}
             query={query}
             onSelect={setSelected}
             onCopy={(item, field) => void copy(item, field)}
           />
-          {query === "" && <ReportLink onOpen={onReport} />}
+          {query === "" && host().browser && <ReportLink onOpen={onReport} />}
         </>
       )}
       {/* Floats over the list, so nothing moves under the cursor. */}

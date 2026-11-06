@@ -33,7 +33,7 @@ pwm/
     apple/                  # PWMKit (the Swift package shared by iOS + macOS), App/ (iOS), Mac/ (macOS, D48),
                             # AutoFill/ (the credential provider for both, D47), and the UI tests
     android/                # Kotlin, Jetpack Compose, Autofill Service, Credential Manager
-    desktop/                # Tauri app for Windows + Linux (decision D3)
+    desktop/                # Tauri 2 app for Windows + Linux (D3, D66): its own Cargo workspace, and the page in web/
   extension/                # TypeScript MV3: Chrome, Edge, Firefox, Brave, Opera (+ Safari via macOS host)
   ui/                       # @pwm/ui: the Preact screens shared by the extension and the desktop app (D3)
   tests/

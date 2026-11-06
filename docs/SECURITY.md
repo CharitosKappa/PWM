@@ -190,7 +190,7 @@ The recipient verifies the signature with the sender's Ed25519 public key before
 | Threat | In scope | Mitigation |
 | --- | --- | --- |
 | Server breach / malicious insider | Yes | Zero-knowledge; Secret Key makes stolen blobs infeasible to brute-force |
-| Network attacker | Yes | TLS 1.3, certificate pinning on mobile/desktop, OPAQUE (no password on wire) |
+| Network attacker | Yes | TLS 1.3 with the system's trust store, OPAQUE (no password on wire). Pinning the hosted server comes in every app at once when D1 gives it a hostname (D66 §5); no app pins yet |
 | Malicious website (phishing, clickjacking) | Yes | Exact-origin matching, user-initiated fill, no DOM-injected clickable UI (see `AUTOFILL.md`) |
 | Malicious extension in same browser | Partial | Minimal permissions, isolated UI, no secrets in DOM longer than needed |
 | Compromised unlocked device / malware | No (document it) | Auto-lock, clipboard clearing (30s), memory zeroize |

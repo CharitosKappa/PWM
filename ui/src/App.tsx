@@ -3,6 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import type { Status } from "./protocol.ts";
 import { describe, send } from "./api.ts";
+import { host } from "./host.ts";
 import { Report, ReportLink } from "./Report.tsx";
 import { Settings } from "./Settings.tsx";
 import { SignedOut } from "./SignedOut.tsx";
@@ -166,7 +167,7 @@ export function Unlock({
           {busy ? "Unlocking…" : "Unlock"}
         </button>
       </form>
-      {onReport && <ReportLink onOpen={onReport} />}
+      {onReport && host().browser && <ReportLink onOpen={onReport} />}
     </main>
   );
 }

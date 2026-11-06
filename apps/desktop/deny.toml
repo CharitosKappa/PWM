@@ -1,0 +1,86 @@
+# cargo-deny for the desktop workspace (D66 §8). The same policy as the
+# root deny.toml (keep the allow-list identical), checked only for the
+# targets the app ships for: dependencies of other targets (such as
+# webpki-root-certs, used by rustls-platform-verifier only on wasm32) are
+# never built into it. `just audit` runs it.
+
+[graph]
+all-features = true
+targets = [
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+]
+
+[advisories]
+# Unmaintained/unsound/yanked crates fail too; ignore a specific advisory only
+# with a comment and an expiry note.
+yanked = "deny"
+ignore = [
+    # crypto-bigint 0.5 (timing leaks; fixed only in 0.7.6) comes in through
+    # elliptic-curve 0.13, which opaque-ke 4.0 always pulls in. Not reachable:
+    # our OPAQUE suite is ristretto255 (curve25519-dalek arithmetic) and uses only
+    # elliptic-curve's hash-based expand_message_xmd; no NIST curve is built.
+    # Remove when opaque-ke ships a stable release on elliptic-curve 0.14.
+    # Rechecked at M4.9 (2026-11-02): the latest is 4.1.0-pre.2, and it and
+    # voprf 0.6.0-pre.1 are still on elliptic-curve 0.13. The crypto-bigint
+    # 0.7 that p256 0.14 brings for passkeys (D37) is 0.7.10, past the fix.
+    # Rechecked at M5.2 (2026-11-02, due at M5.1): unchanged, still
+    # 4.1.0-pre.2 and 0.6.0-pre.1. Recheck at M5.5.
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint not reachable from the ristretto255 OPAQUE suite" },
+    # Linux only, through Tauri (D66 §8): GTK 3's glib-macros (for the tray's
+    # libappindicator) use proc-macro-error, a compile-time macro helper;
+    # tauri-plugin-single-instance uses zbus 5, whose zvariant and
+    # zbus_names lines are no longer maintained now that zbus 6 is out.
+    # Unmaintained, not vulnerable. Recheck at M7.3 (the installers), or
+    # when Tauri moves to GTK 4 and zbus 6.
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: compile-time only, via GTK 3's glib-macros on Linux" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant 5: via tauri-plugin-single-instance's zbus 5 on Linux" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names 4: via tauri-plugin-single-instance's zbus 5 on Linux" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive 5: via tauri-plugin-single-instance's zbus 5 on Linux" },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+[licenses]
+# Closed-source allow-list (decision S6). Anything not listed, including GPL,
+# AGPL, LGPL, SSPL, BSL and unknown licences, is denied.
+# MPL-2.0 is allowed for unmodified upstream files only: never patch an MPL crate.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "MPL-2.0",
+]
+confidence-threshold = 0.93
+# The allow-list is policy, not a record of what is in use.
+unused-allowed-license = "allow"
+# Approved by the founder for these crates only (D66 implementation notes):
+# BSL-1.0 is the Boost licence, permissive and OSI-approved (not the
+# Business Source License the comment above means by "BSL"); arboard uses
+# both crates for the clipboard on Windows. target-lexicon is a build-time
+# dependency of the GTK libraries on Linux and never ships; the LLVM
+# exception only adds permissions to Apache-2.0.
+exceptions = [
+    { crate = "clipboard-win", allow = ["BSL-1.0"] },
+    { crate = "error-code", allow = ["BSL-1.0"] },
+    { crate = "target-lexicon", allow = ["Apache-2.0 WITH LLVM-exception"] },
+]
+
+[licenses.private]
+# Our own crates are unpublished and proprietary (LicenseRef-Proprietary).
+ignore = true

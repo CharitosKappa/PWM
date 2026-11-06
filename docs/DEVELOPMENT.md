@@ -153,6 +153,22 @@ cd apps/android && ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstru
 
 Without the argument, that test is skipped and the others run.
 
+## Desktop (Windows and Linux)
+
+`apps/desktop` (D66) is a Tauri 2 app in a Cargo workspace of its own, with the shared screens built by `@pwm/desktop`.
+
+- **Windows:** the MSVC Rust toolchain (`rustup toolchain install stable-x86_64-pc-windows-msvc`), the Visual Studio Build Tools with the Windows SDK, and WebView2 (part of Windows 11). Where the default toolchain is GNU, add `+stable-x86_64-pc-windows-msvc` to the cargo commands.
+- **Linux:** WebKitGTK's 4.1 API, which sets the floor at Ubuntu 22.04 LTS: `sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev`.
+
+```
+just desktop        # build the page, then build and run the app
+just desktop-test   # the page, clippy and the tests
+```
+
+The tests that talk to a server run with `PWM_TEST_SERVER=http://127.0.0.1:8080` and `just server` running, and are skipped otherwise. The app keeps its cache, keys and settings in its local data folder: `%LOCALAPPDATA%invalid.pwm.desktop` on Windows, `~/.local/share/invalid.pwm.desktop` on Linux (the identifier is a placeholder until D1). To use a local server, open Settings while signed out, choose "Self-hosted" and enter `http://localhost:8080`.
+
+The end-to-end check (`apps/desktop/web/e2e/smoke.mjs`) needs `tauri-driver` and, on Linux, `webkit2gtk-driver`; CI runs it under Xvfb.
+
 ## Fuzzing
 
 Targets live in `core/pwm-crypto/fuzz/fuzz_targets/` (`envelope_decode`, `vault_share_decode`, `keyset_plaintext`, `secret_key_parse`, `password_normalize`, `totp_parse`, `export_read`, `opaque_messages`, `autofill_rules`, `url_match`, `kit_qr_parse`). CI runs each for 60 s on every PR and 10 minutes nightly; crash inputs are uploaded as artifacts.
