@@ -414,7 +414,7 @@ Phase 3  Teams           months 16–24 M16–M19
     - **The manage page:** an Items tab (`manage.html#items`) shows `VaultWindow`; its "Password health, devices and export" switches tabs in place. The popup has "Edit items in a tab". The extension has no Settings in the window: they stay in the popup.
     - **Only the manage page may ask:** the background refuses D67's kinds, and copying by place, from the popup.
     - **A lock reloads the manage page,** so nothing revealed outlives it, as the desktop's window does.
-    - **Tests:** 18 Vitest tests (`items.test.ts`: the masking rules, every request, passkeys kept, the purge, the sender rule), the WASM typings, and a Playwright spec (`items.spec.ts`: Show, edit, trash and restore, the popup refused, the lock). The Playwright spec runs in CI: this machine has no Playwright Chromium.
+    - **Tests:** 18 Vitest tests (`items.test.ts`: the masking rules, every request, passkeys kept, the purge, the sender rule), the WASM typings, and Playwright tests in `manage.spec.ts` (Show, edit, trash and restore, the popup refused, the lock), on the manage page's one account: the server allows 5 sign-ups an hour per address. The Playwright spec runs in CI: this machine has no Playwright Chromium.
 
 **Done when:** fixture suite 100%; top-1,000 classification ≥ 90% (target 95% by launch); overlay attacks never fill. Since D39, the classification target is measured each night by the top-sites runner on a growing list, and gates the launch in M10, not the end of M4.
 
