@@ -928,7 +928,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
      - **Run details:** date, extension, core and rules versions, browser version.
      - **Per site:** status, duration, the engine's fill targets as field descriptions (D38-cleaned, never values), and the refusal reason if any.
      - **Totals:** the pass rate (pass ÷ (pass + fail)), and the counts per status.
-     - **Where it goes:** uploaded as a CI artifact (90 days). `scripts/compare.mjs old.json new.json` prints what changed and exits non-zero when the pass rate dropped more than 0.5 points, which is the release gate `QUALITY.md` asks for.
+     - **Where it goes:** uploaded as a CI artifact (90 days). `scripts/compare.mjs old.json new.json` prints what changed and exits non-zero when the pass rate dropped more than 0.5 points, which is the release gate `QUALITY.md` asks for. (It became `runner/compare.ts`; since D64 it counts only the sites both runs counted.)
      - **Later:** the release workflow and the public dashboard read it (M10).
   4. **Not in M4.7:**
      - **Tickets from user reports (D38):** they need server access from CI. They go with the release and ops tooling (M10).
@@ -2862,7 +2862,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Keep D35 §4 as it is** and fix only the harness: about 7 of 54 stays the baseline, and the extension refuses to fill Google, Facebook, Microsoft and most of the sites above for real users too.
   - **Drop v2 everywhere:** it would let a parent page hide a cross-site login frame, which is the case D35 §4 added v2 for.
 
-- **D64 — The top-sites release gate: compare the sites both runs could reach** · proposed 2026-11-06 · Claude Code.
+- **D64 — The top-sites release gate: compare the sites both runs could reach** · settled 2026-11-06 · founder (approved as proposed).
   The release gate (D39, `runner/compare.ts`) fails when the pass rate, pass ÷ (pass + fail), drops more than 0.5 points from the previous report. Two top-sites runs of the same code on 2026-11-06 (CI runs 42132920831 and 42141806371) gave 59.2% and 58.0%, so the gate would have stopped a release with nothing changed. The pass count was 29 both times. The rate moved only because three sites moved between the counted statuses and the others:
   - asana.com: pass → blocked (a challenge)
   - trello.com: blocked (a challenge) → fail (no form)

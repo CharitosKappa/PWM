@@ -345,11 +345,11 @@ Phase 3  Teams           months 16–24 M16–M19
       - **What it does:** fills a throwaway login on each real login page and checks which inputs got it. It never submits, clicks or gets past a challenge.
       - **Statuses:** pass, fail, blocked (challenge or HTTP error, left out of the pass rate) and error.
       - **The report:** `autofill-report.json` (v1), uploaded for 90 days.
-    - **Release gate:** `runner/compare.ts` fails when the pass rate drops more than 0.5 points.
+    - **Release gate:** `runner/compare.ts` fails when the pass rate drops more than 0.5 points. Since D64 (M4.12), on the sites both runs counted.
     - **The first site list:** 102 sites, 18 with selectors, unchecked until the nightly runs confirm them.
   - **Tests:**
     - **Fixtures:** every entry in `fixtures.json`, and two new icon attack tests.
-    - **Runner** (`runner.spec.ts`): pass with selectors, without them, and on a username-first page; fail; blocked by a challenge or a 503; error on timeout; that it never submits; the totals; the gate at 0.4 and 0.6 points.
+    - **Runner** (`runner.spec.ts`): pass with selectors, without them, and on a username-first page; fail; blocked by a challenge or a 503; error on timeout; that it never submits; the totals. The gate's tests moved to `compare.spec.ts` (M4.12).
     - **Unit:** the split code.
   - **Deferred:**
     - **Tickets from user reports and the public dashboard:** M10.
@@ -394,6 +394,9 @@ Phase 3  Teams           months 16–24 M16–M19
 - [x] M4.11 The checks before filling, for real sites (D63): v2 only in frames, a field's own wrapper doesn't cover it, and the failed check kept on the error and in the top-sites report. Fixtures `icon-in-field`, `rounded-field` and `frame-cover-pointer-none`; `cover-pointer-none` now fills.
   - Done per D63: `fieldProblem` takes what is on top at each sample point (the field, an ancestor, or anything else) and asks for v2 only in a frame, so the top frame no longer waits for it. A refused fill keeps the failed check as the error's detail (only a known check's name), and the top-sites report records it as `field_hidden:<check>`.
   - **Tests:** unit tests for both rules and the detail; the fixture suite in CI with the three new fixtures; a top-sites run on the branch compared with the 2026-11-05 baseline.
+- [x] M4.12 The top-sites release gate compares the sites both runs could reach (D64): the pass rate on those may drop at most 0.5 points, and the candidate must count at least 80% of the sites the previous report counted.
+  - Done per D64: `runner/compare.ts` counts only the sites that pass or fail in both reports, and lists each site lost, gained and left out. The whole-list rate is still printed, for the dashboard and the M4 target. The report format is unchanged (v1).
+  - **Tests:** `tests/compare.spec.ts` (no browser): a site moving to blocked or error, one site lost and one traded, sites added and removed, too little overlap, and 0.4 / 0.6 points on the common sites. Run on the three top-sites reports of 2026-11-05 and 2026-11-06: the two runs of the same code compare at no change (58.3% on 48 sites) instead of a 1.2-point drop.
 
 **Done when:** fixture suite 100%; top-1,000 classification ≥ 90% (target 95% by launch); overlay attacks never fill. Since D39, the classification target is measured each night by the top-sites runner on a growing list, and gates the launch in M10, not the end of M4.
 

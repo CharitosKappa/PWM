@@ -27,7 +27,7 @@ Most one-star reviews in this market come from broken updates. Release safety is
 | `apple`: the Swift package on macOS against a server (D41), and the iOS app's UI test in the simulator (D42) | PRs touching `apps/apple`, `core/` or the tokens | yes |
 | `ios-build`, `android-build`, `desktop-build` | PRs touching that app/core | yes |
 | `audit` (cargo audit/deny, npm audit) | every PR + nightly | high severity |
-| `autofill-top-sites` (D39) | nightly + release candidates | release only (`runner/compare.ts`) |
+| `autofill-top-sites` (D39) | nightly + release candidates | release only (`runner/compare.ts`, D64: the sites both runs counted) |
 
 ## Release process
 

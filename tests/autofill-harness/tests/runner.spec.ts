@@ -1,9 +1,7 @@
 // The top-sites runner against local pages (D39 §5): each status, that it
-// never submits, the report's totals, and the release gate.
+// never submits, and the report's totals. The release gate is in compare.spec.ts.
 import { expect, test } from "@playwright/test";
 import { Harness } from "../lib/extension.ts";
-import { compare } from "../runner/compare.ts";
-import type { Report } from "../runner/run.ts";
 import {
   CHECK_USER,
   navigationError,
@@ -126,20 +124,6 @@ test("runner: never submits", async () => {
   ).toBe(false);
 });
 
-function report(rate: number, statuses: Record<string, string>): Report {
-  return {
-    v: 1,
-    date: "2026-11-02T00:00:00Z",
-    software: {},
-    results: Object.entries(statuses).map(([s, status]) => ({
-      site: s,
-      status: status as "pass",
-      ms: 1,
-    })),
-    totals: { pass: 0, fail: 0, blocked: 0, error: 0, pass_rate: rate },
-  };
-}
-
 test("runner: a navigation error keeps only its code", () => {
   const timeout = new Error("page.goto: Timeout 20000ms exceeded.");
   timeout.name = "TimeoutError";
@@ -173,22 +157,4 @@ test("runner: totals leave blocked and errored sites out of the pass rate", () =
     pass_rate: 66.7,
   });
   expect(r.v).toBe(1);
-});
-
-test("runner: the release gate allows a 0.4 point drop and stops a 0.6 point one", () => {
-  const before = report(95.0, { a: "pass", b: "pass" });
-  expect(compare(before, report(94.6, { a: "pass", b: "fail" }))).toMatchObject(
-    {
-      drop: 0.4,
-      ok: true,
-      changed: [{ site: "b", from: "pass", to: "fail" }],
-    },
-  );
-  expect(compare(before, report(94.4, { a: "pass", b: "pass" }))).toMatchObject(
-    {
-      drop: 0.6,
-      ok: false,
-    },
-  );
-  expect(compare(before, report(96, {})).ok).toBe(true);
 });
