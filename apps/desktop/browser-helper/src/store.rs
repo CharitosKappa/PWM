@@ -23,6 +23,11 @@ impl FileStore {
         Self { dir }
     }
 
+    /// The folder goes once no enrolment is left in it (D70 §5).
+    pub fn remove_if_empty(&self) {
+        let _ = std::fs::remove_dir(&self.dir);
+    }
+
     /// Ids are 32 hex digits (`enrolment`), so always a plain file name.
     fn path(&self, id: &str) -> Option<PathBuf> {
         id.bytes()
@@ -91,6 +96,11 @@ mod tests {
         store.delete(id);
         assert!(store.get(id).is_none());
         assert!(store.get("..\\x").is_none());
-        std::fs::remove_dir_all(&dir).unwrap();
+        // The folder stays while an enrolment is left, then goes.
+        store.remove_if_empty();
+        assert!(dir.exists());
+        store.delete(other);
+        store.remove_if_empty();
+        assert!(!dir.exists());
     }
 }

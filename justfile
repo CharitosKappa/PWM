@@ -87,6 +87,11 @@ desktop:
     pnpm --filter @pwm/desktop build
     cargo run --manifest-path apps/desktop/Cargo.toml --locked -p pwm-desktop
 
+# the desktop installers (D70): the NSIS installer on Windows, the .deb and .rpm on Linux,
+# in apps/desktop/target/release/bundle; extra arguments go to `tauri build`
+desktop-installer *ARGS:
+    node apps/desktop/web/scripts/installer.mjs {{ARGS}}
+
 # the desktop app's checks and tests (D66 §9); the server tests run with PWM_TEST_SERVER set
 desktop-test:
     pnpm --filter @pwm/desktop build

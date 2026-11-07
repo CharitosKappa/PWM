@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "active": true,
+    "publisher": "PWM",
+    "shortDescription": "PWM password manager",
+    "longDescription": "PWM keeps your passwords, passkeys and one-time codes end-to-end encrypted, and syncs them between your devices.",
+    "category": "Utility",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "compression": "zlib",
+        "installerHooks": "installer-hooks.nsh"
+      }
+    },
+    "linux": {
+      "deb": {
+        "section": "utils"
+      },
+      "rpm": {
+        "release": "1"
+      }
+    }
+  }
+}

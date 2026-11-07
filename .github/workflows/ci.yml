@@ -565,6 +565,181 @@ jobs:
       - run: cargo test --manifest-path apps/desktop/Cargo.toml --locked
       - run: cargo build --manifest-path apps/desktop/Cargo.toml --locked --release
 
+  # The Windows installer (D70): built and signed with a throwaway
+  # certificate made on each run, the signatures checked, then installed and
+  # uninstalled silently for this user. Uninstalling undoes the browser
+  # helper's registration (D69 §4), except when another installer replaces
+  # this version in place.
+  desktop-installer-windows:
+    needs: desktop-changes
+    if: needs.desktop-changes.outputs.run == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop -> target
+          key: installer
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: A throwaway code-signing certificate, trusted on this runner only
+        run: |
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=PWM CI throwaway" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(1)
+          Export-Certificate -Cert $cert -FilePath "$env:RUNNER_TEMP\ci.cer" | Out-Null
+          Import-Certificate -FilePath "$env:RUNNER_TEMP\ci.cer" -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          $sign = @{ cmd = $signtool.FullName; args = @("sign", "/fd", "SHA256", "/sha1", $cert.Thumbprint, "%1") }
+          @{ bundle = @{ windows = @{ signCommand = $sign } } } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 "$env:RUNNER_TEMP\sign.json"
+          "PWM_SIGNER=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+      - name: Build and sign the installer
+        run: node apps/desktop/web/scripts/installer.mjs --config "$env:RUNNER_TEMP\sign.json"
+      - name: Install, check, replace in place, uninstall
+        run: |
+          $ErrorActionPreference = "Stop"
+          function Assert-Signed($path) {
+            $sig = Get-AuthenticodeSignature $path
+            if ($sig.Status -ne "Valid" -or $sig.SignerCertificate.Thumbprint -ne $env:PWM_SIGNER) {
+              throw "$path is not signed by the CI certificate: $($sig.Status)"
+            }
+          }
+          $setup = (Get-ChildItem apps/desktop/target/release/bundle/nsis/*-setup.exe)[0].FullName
+          Assert-Signed $setup
+          $dir = "$env:LOCALAPPDATA\PWM"
+
+          # Installed for this user, the helper next to the app, all signed.
+          Start-Process $setup -ArgumentList "/S" -Wait
+          foreach ($name in "pwm-desktop.exe", "pwm-browser-helper.exe", "uninstall.exe") {
+            Assert-Signed (Join-Path $dir $name)
+          }
+
+          # What the Settings switch writes (D69 §4), another program's key
+          # under our name, and an enrolment.
+          $hosts = Join-Path $dir "NativeMessagingHosts"
+          New-Item -ItemType Directory -Force $hosts, (Join-Path $dir "browser-unlock") | Out-Null
+          $chromium = Join-Path $hosts "invalid.pwm.browser.chromium.json"
+          $firefox = Join-Path $hosts "invalid.pwm.browser.firefox.json"
+          Set-Content $chromium "{}"
+          Set-Content $firefox "{}"
+          Set-Content (Join-Path $dir "browser-unlock\0123456789abcdef0123456789abcdef.bin") "x"
+          $keys = @{
+            "HKCU:\Software\Google\Chrome\NativeMessagingHosts\invalid.pwm.browser" = $chromium
+            "HKCU:\Software\Mozilla\NativeMessagingHosts\invalid.pwm.browser" = $firefox
+            "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\invalid.pwm.browser" = "C:\Other\manifest.json"
+          }
+          foreach ($key in $keys.Keys) {
+            New-Item -Force $key | Out-Null
+            Set-ItemProperty $key -Name "(default)" -Value $keys[$key]
+          }
+
+          # Another installer replacing this version runs the uninstaller in
+          # place: browser unlock stays.
+          Start-Process (Join-Path $dir "uninstall.exe") -ArgumentList "/S", "_?=$dir" -Wait
+          if (-not (Test-Path $chromium) -or -not (Test-Path "HKCU:\Software\Google\Chrome\NativeMessagingHosts\invalid.pwm.browser")) {
+            throw "replacing the app in place removed browser unlock"
+          }
+          Start-Process $setup -ArgumentList "/S" -Wait
+
+          # Uninstalling from Windows' Settings runs a copy from the temporary
+          # folder, which goes on after this process exits.
+          Start-Process (Join-Path $dir "uninstall.exe") -ArgumentList "/S" -Wait
+          for ($i = 0; $i -lt 60 -and (Test-Path (Join-Path $dir "uninstall.exe")); $i++) { Start-Sleep 1 }
+          Start-Sleep 2
+
+          foreach ($key in "HKCU:\Software\Google\Chrome\NativeMessagingHosts\invalid.pwm.browser", "HKCU:\Software\Mozilla\NativeMessagingHosts\invalid.pwm.browser") {
+            if (Test-Path $key) { throw "$key is still there" }
+          }
+          $edge = (Get-ItemProperty "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\invalid.pwm.browser")."(default)"
+          if ($edge -ne "C:\Other\manifest.json") { throw "another program's key was touched" }
+          if (Test-Path $dir) {
+            Get-ChildItem -Recurse $dir | Select-Object -ExpandProperty FullName
+            throw "$dir is still there"
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-installer-windows
+          path: apps/desktop/target/release/bundle/nsis/*-setup.exe
+          retention-days: 7
+
+  # The Linux packages (D70): the .deb and .rpm on Ubuntu 22.04 (the
+  # WebKitGTK floor), the .rpm and the checksums signed with a throwaway GPG
+  # key made on each run, the .deb installed and started, and the Flatpak
+  # built from it on the GNOME runtime and started.
+  desktop-installer-linux:
+    needs: desktop-changes
+    if: needs.desktop-changes.outputs.run == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop -> target
+          key: installer
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: WebKitGTK, the tray library, rpm, Flatpak and Xvfb
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev rpm flatpak flatpak-builder xvfb dbus
+      - run: pnpm install --frozen-lockfile
+      - name: Build the .deb and the .rpm
+        run: node apps/desktop/web/scripts/installer.mjs
+      - name: Sign the .rpm and the checksums with a throwaway key, then check them
+        working-directory: apps/desktop/target/release/bundle
+        run: |
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 -p "$GNUPGHOME"
+          gpg --batch --passphrase '' --quick-gen-key "PWM CI throwaway <ci@pwm.invalid>" rsa3072 sign 1d
+          rpmsign --define "_gpg_name ci@pwm.invalid" --define "_gpg_path $GNUPGHOME" --addsign rpm/*.rpm
+          gpg --armor --export ci@pwm.invalid > "$RUNNER_TEMP/ci.asc"
+          rpm --dbpath "$RUNNER_TEMP/rpmdb" --initdb
+          rpmkeys --dbpath "$RUNNER_TEMP/rpmdb" --import "$RUNNER_TEMP/ci.asc"
+          rpmkeys --dbpath "$RUNNER_TEMP/rpmdb" --checksig rpm/*.rpm | tee "$RUNNER_TEMP/checksig.txt"
+          grep -q "signatures OK" "$RUNNER_TEMP/checksig.txt"
+          sha256sum deb/*.deb rpm/*.rpm > SHA256SUMS
+          gpg --batch --armor --detach-sign SHA256SUMS
+          gpg --verify SHA256SUMS.asc SHA256SUMS
+      - name: Install the .deb and start the app
+        run: |
+          deb=$(ls apps/desktop/target/release/bundle/deb/*.deb)
+          dpkg-deb --field "$deb" Package Depends
+          sudo apt-get install -y -qq "./$deb"
+          # Still running after 15 seconds: it started.
+          status=0
+          timeout 15 xvfb-run -a dbus-run-session -- /usr/bin/pwm-desktop || status=$?
+          test "$status" -eq 124
+      - name: Build the Flatpak from the .deb and start it
+        run: |
+          cp apps/desktop/target/release/bundle/deb/*.deb apps/desktop/flatpak/pwm.deb
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak-builder --user --install-deps-from=flathub --force-clean --repo="$RUNNER_TEMP/repo" "$RUNNER_TEMP/flatpak" apps/desktop/flatpak/invalid.pwm.desktop.yml
+          flatpak build-bundle "$RUNNER_TEMP/repo" apps/desktop/target/release/bundle/pwm.flatpak invalid.pwm.desktop
+          flatpak install --user -y --noninteractive apps/desktop/target/release/bundle/pwm.flatpak
+          status=0
+          timeout 20 xvfb-run -a dbus-run-session -- flatpak run invalid.pwm.desktop || status=$?
+          test "$status" -eq 124
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-installer-linux
+          path: |
+            apps/desktop/target/release/bundle/deb/*.deb
+            apps/desktop/target/release/bundle/rpm/*.rpm
+            apps/desktop/target/release/bundle/SHA256SUMS*
+            apps/desktop/target/release/bundle/pwm.flatpak
+          if-no-files-found: ignore
+          retention-days: 7
+
   image:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest

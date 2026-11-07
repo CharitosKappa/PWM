@@ -132,6 +132,8 @@ pub trait Store {
 #[cfg(windows)]
 pub mod store;
 
+pub mod hosts;
+
 #[derive(Deserialize)]
 struct Request {
     v: u8,
@@ -393,3 +395,6 @@ impl<'a> Handler<'a> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod hosts_tests;
