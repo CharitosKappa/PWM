@@ -25,7 +25,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **System controls:** on Apple, navigation titles and other system controls keep the system font.
 - **D4 — Launch segment**: consumers first (this plan) vs SMB self-hosted first.
 - **D5 — Company jurisdiction and hosting region**: EU (Greece/Switzerland/Germany hosting) is a selling point.
-- **D6 — Entitlements/billing**: RevenueCat vs own entitlement service on Stripe + store receipts.
+- **D6 — Entitlements/billing**: RevenueCat vs own entitlement service on Stripe + store receipts. · proposed 2026-11-07 · awaiting founder: the full proposal is at the end of this file.
 - **D7 — Bundled extras**: email aliases (planned Phase 3) yes; VPN no.
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D32 — Transactional email provider** · open · founder. Needed for M10.7: email verification at sign-up (so registration stops revealing which emails have accounts) and account notices. To choose: provider and region (EU hosting fits D5), and its licence and data-processing terms.
@@ -3615,3 +3615,104 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Packaging:** `installer.linux.conf.json` adds the helper (`externalBin`, in `/usr/bin`), the key holder and the action file to both packages, plus `linux/postrm.sh`, which deletes `/var/lib/pwm` on `purge` (`.deb`) or `0` (`.rpm`).
   - **CI:** `desktop-linux` installs the key holder, the action and a `.pkla` rule for the runner, then runs the real `pkexec` through `PolkitKey` and the helper. It checks the folder is root's with mode 700 and that the key holder refuses to run without `pkexec`. `desktop-installer-linux` checks the three files in the packages and that purging deletes `/var/lib/pwm`.
   - **Not run anywhere yet:** polkit's real dialog with a password and a fingerprint, in GNOME and KDE, and a real browser starting the helper (`QUALITY.md`, desktop step 15).
+- **D6 — Entitlements and billing: our own service on Stripe and the stores' server APIs, the server as the one source of the plan, and how each `PRICING.md` commitment holds per store** · proposed 2026-11-07 · awaiting founder.
+  M9.1 asks for an "entitlements service (decision D6); Stripe web checkout; App Store / Play Billing". `PRICING.md` names the choice: RevenueCat or our own service. What's already in place:
+  - **The `subscriptions` table** (migration 0001), provider-neutral: plan, status, provider (`stripe`, `app_store`, `play`), the provider's reference, price and currency, `current_period_end`, `price_locked_until`, `cancel_at_period_end`. One row per account.
+  - **`GET /v1/account`** already answers `plan`: `free` without a live subscription, and a canceled one lasts to the end of the paid period.
+  - **The server already talks to Apple and Google:** HTTP/2 over rustls, ES256 tokens for APNs (D50) and RS256 for Google's OAuth (D60).
+  - **Where each app is sold from:** the iOS app through the App Store, Android through Google Play. The Mac app is Developer ID outside the Mac App Store (D48 §3), so StoreKit isn't available there. Windows, Linux and the browser extensions have no store with payments.
+
+  Open:
+  - RevenueCat or our own service
+  - where each platform buys, and how a plan bought on one shows on the others
+  - how the server learns about a purchase and trusts it
+  - how each commitment in `PRICING.md` holds when a store, not us, runs the subscription
+  - the API, the data kept, dependencies, licences and tests
+
+  Proposal:
+  1. **Our own entitlement service in `pwm-server`, not RevenueCat.**
+     - **Privacy:** RevenueCat's SDK would run in our apps and call its servers, and RevenueCat would hold every paying user's id and purchase history. For a zero-knowledge product that's one more party in the data path, outside the EU (D5), to explain in the privacy policy.
+     - **The commitments are ours either way:** the price hold, the reminders, one-click cancel and the refund window (`PRICING.md`) aren't something RevenueCat enforces. The table, the reminder schedule and the refund rules have to be built here regardless.
+     - **What RevenueCat would save is reading receipts,** and §3 makes that small: we ask each provider's own API over TLS instead of checking signed receipts ourselves.
+     - **No lock-in and no share of revenue,** and no move off it later with every subscriber's history inside.
+  2. **Where each platform buys:**
+     - **iOS: the App Store,** with StoreKit 2. Apple requires in-app purchase for a digital subscription bought inside the app.
+     - **Android: Google Play Billing.**
+     - **The Mac, Windows, Linux and the extensions: Stripe Checkout,** opened in the browser from the app. The Mac app can't use StoreKit outside the Mac App Store (D48 §3).
+     - **A plan is the account's, not the device's:** bought anywhere, it shows everywhere. Where the plan was bought elsewhere, the screen says where to manage it ("Managed in the App Store", "Managed on the web") rather than offering to buy again. The iOS app shows no web prices or links to buy outside the App Store.
+     - **Two subscriptions at once** (say Apple and Stripe, by mistake) are allowed. The account gets the better plan, and the screens point out the second one with where to cancel it.
+  3. **How the server learns about a purchase: every message is a hint, and the truth comes from the provider's API.**
+     - **Linking a purchase to an account without trusting the device:** each account gets a random `billing_token` (a UUID, not the account id). The apps pass it at purchase: Apple's `appAccountToken`, Play's `obfuscatedAccountId`, and Stripe's `client_reference_id`. The server only accepts a purchase whose token is the caller's.
+     - **Right after a purchase,** the app sends the transaction id (Apple) or the purchase token (Play). Stripe's Checkout returns to a page that says to go back to the app.
+     - **The providers' notifications** (App Store Server Notifications V2, Play's real-time notifications through a Pub/Sub push, Stripe's webhooks) only say "look at this subscription".
+     - **The server then reads the subscription from the provider over TLS:** Apple's App Store Server API (with an ES256 token, as for APNs), Play's `purchases.subscriptionsv2` (with D60's RS256 OAuth token and a second service-account scope), and Stripe's API with its secret key. What it stores comes only from those answers.
+     - **So nothing parses or trusts Apple's signed JWS chains:** a forged notification can only make the server ask again. Stripe's webhook signature is still checked (HMAC-SHA256, through `pwm-crypto`), and Play's push URL carries a secret, so strangers can't make the server ask at will. Both are also rate-limited.
+     - **Play purchases are acknowledged** by the server after it stores them, as Google requires within three days.
+     - **A daily pass** re-reads every subscription that isn't expired, which catches a lost notification.
+  4. **The plan the account gets:**
+     - **Premium (or Family, Teams)** while a subscription is `active`, `canceled` with its period not yet over, or `past_due` within the provider's grace period (`grace_until`, new; today `past_due` has no end). After that it's Free.
+     - **Free keeps everything:** nothing is deleted on a downgrade (`PRICING.md` §7). What Free can still do with paid items is M9.3's to decide.
+     - **The clients cache the plan** with the account, so offline the last known plan holds, for at most the paid period it knew about.
+     - **Gates checked on the server** (share links per day, attachment storage) read the same function. Gates only a client can check (TOTP, since the server never sees items) are checked there, as M9.3 says.
+  5. **Each commitment, per provider.** With Stripe we run the subscription, so each holds in full. With the stores it holds as far as the store allows, and the gap is written into `PRICING.md`:
+     - **§1 Price hold (12 months):**
+       - **Stripe:** `price_locked_until` per subscription. A new price applies to a subscription only after that date, and the code refuses to move a locked subscription.
+       - **App Store and Play:** a price change keeps existing subscribers on their price (Apple's "preserve current price", Play's legacy price cohort), moved only after 12 months. That's done in the store's console, so the runbook says it, and the server checks each renewal's price against `price_locked_until`, alerting on a mismatch.
+     - **§2 Notice:** the server schedules a reminder 14 days before every renewal and a notice 60 days before a price change, for every provider, in an outbox table. Sending them needs the email provider (D32, M10.7). Until then they wait in the outbox, and M9.2's tests check the schedule.
+     - **§3 Same intro and renewal price:** no introductory offers, cheaper trials or first-term coupons in Stripe, App Store Connect or the Play Console. The server refuses a Stripe price with a different first term, and the runbook says it for the stores.
+     - **§4 One-click cancel:**
+       - **Stripe:** one button in every app and on the web. It sets `cancel_at_period_end`, and access lasts to the end of the period. Resuming is one button too.
+       - **App Store and Play:** we can't cancel for the user. The button opens the store's own page (`showManageSubscriptions` on iOS, Play's subscription link on Android, and elsewhere instructions with Apple's or Google's web page). That gap is logged.
+     - **§5 Refunds (pro-rata, within 30 days of a renewal charge):**
+       - **Stripe:** one button. Within 30 days of the last charge, the server refunds the unused days and ends the subscription at once. After 30 days it says plainly the window has passed. Proposal: the first charge counts too, not only renewals.
+       - **App Store:** only Apple refunds. The button opens Apple's request sheet (`beginRefundRequest`), and the answer arrives as a notification. If Apple declines, we can't refund. Logged.
+       - **Play:** Google lets the developer refund, but its API refunds only in full. Proposal: refund in full through the API within the 30 days, which is more than pro-rata. Logged as different, in the user's favour.
+     - **§7 Export after a lapse:** nothing here touches export.
+  6. **Deleting the account:** a Stripe subscription is ended with a pro-rata refund. A store subscription can't be ended by us, so the delete screen says so first, with the link to cancel it, as Apple asks apps to do.
+  7. **The API (JSON, under the usual session):**
+     - `GET /v1/account`: `plan` stays, and a new `subscription` object adds where it was bought, until when, whether it's canceling, `price_locked_until`, and the second subscription if there is one.
+     - `GET /v1/billing/token`: the account's `billing_token`, for a store purchase.
+     - `POST /v1/billing/stripe/checkout` `{plan}` → `{url}`; `POST /v1/billing/stripe/cancel`, `/resume` and `/refund`.
+     - `POST /v1/billing/apple/transactions` `{transaction_id}`; `POST /v1/billing/play/purchases` `{product_id, purchase_token}`.
+     - **The providers' webhooks,** with no session: `POST /v1/billing/apple/notifications`, `/play/notifications/<secret>` and `/stripe/webhook`.
+     - **New error codes:** `billing_unavailable` (the provider can't be reached, or billing isn't set up on this server), `purchase_not_yours` (another account's token), `refund_window_passed`, `managed_elsewhere` (cancel or refund on another provider's subscription).
+     - **Self-hosted servers** (M11) run with no billing settings: every account is Premium there, and the billing routes answer `billing_unavailable`.
+  8. **Data kept, migration 0008:**
+     - `subscriptions` keyed by `(provider, provider_ref)`, so an account can hold more than one, with `grace_until` and `last_charge_at` (for the refund window) added. A migration test carries today's rows over unchanged.
+     - `accounts.billing_token` (UUID, unique), filled for existing accounts, and Stripe's customer id per account.
+     - `billing_events`: each notification's provider, id and time, to drop repeats. Not the body.
+     - `billing_outbox`: the reminders and notices of §5, with the account and the date to send.
+     - **Nothing else:** no card data (Stripe's page takes it) and no item data. The email the user types into Stripe's page stays at Stripe, which sends its own receipts to it.
+     - **Never logged:** Play's purchase tokens, Stripe's keys and webhook secret, Apple's private key, Google's service-account key. The settings load them as `Secret`, and `DEPLOYMENT.md` lists them.
+  9. **Plans and prices live in the server's settings,** not in code: each plan's Stripe price id, Apple product id and Play product id. The prices stay with D8.
+  10. **Dependencies and licences:**
+      - **Server: no new crates.** HTTP through the existing hyper and rustls, ES256 with `p256` as for APNs, RS256 with `ring` as D60. Stripe needs only a few calls, written over hyper rather than pulling in a Stripe crate. HMAC-SHA256 comes through `pwm-crypto` (`hmac` is already in the build under `hkdf`), as a new `webhook_signature_valid` with a constant-time compare. The rule in `CLAUDE.md` about `ring` then reads "the server's RS256 tokens to Google (FCM and Play)".
+      - **iOS: StoreKit 2,** part of the system.
+      - **Android: the Play Billing Library** (`com.android.billingclient:billing`, the latest when built). Its Maven files are expected to name the Android SDK licence, as Play services' did. Proposal: add it by name to D60's exception in `allowed-licenses.json` once the licence check confirms it. The first build downloads it, and the founder approves that here.
+      - **Stripe Checkout** is Stripe's hosted page in the browser, so nothing of Stripe's ships in the apps.
+  11. **Taxes:** with Stripe Tax computing VAT on the web, we are the seller and register for the EU's VAT OSS. The stores handle VAT themselves. A merchant of record (Paddle, say) would take VAT off our hands for a higher fee; that's a business choice, listed in the alternatives.
+  12. **Tests:**
+      - **Server, against fake providers:** a small local HTTP server answers as Apple, Google and Stripe do, from hand-written synthetic JSON. Covered:
+        - linking by token, and refusing another account's
+        - repeated and out-of-order notifications, and a forged one changing nothing
+        - the plan rule over every status and the grace period, and two subscriptions at once
+        - the 30-day refund window and the pro-rata amount, cancel and resume
+        - the price hold refusing a move, and reminders scheduled 14 days ahead
+        - deleting the account, and a server without billing settings
+      - **The migration:** 0008 over a database holding 0001's rows.
+      - **The core:** `webhook_signature_valid` against Stripe's documented example.
+      - **Apple apps:** StoreKit Testing with a `.storekit` file in the `apple` CI job: buy, send the transaction, cancel, without App Store Connect.
+      - **Android:** the billing flow behind an interface, tested with a fake. The real Play flow with license testers is manual.
+      - **Manual, in `QUALITY.md`:** Stripe test mode end to end, a sandbox Apple purchase and refund request on a device, and a Play license tester's purchase.
+      - **No real provider in CI:** no keys, and no calls to Apple, Google or Stripe.
+  13. **Order of work:**
+      - **M9.1:** §1 to §4 and §7 to §10, Stripe first, then Apple, then Play.
+      - **M9.2:** the commitments of §5, §6 and the outbox.
+      - **M9.3:** the gates.
+      - **At M10, as for the store accounts:** the founder's Stripe account, the App Store Connect and Play Console products, and Apple's and Google's keys.
+
+  Alternatives:
+  - **RevenueCat:** less code for receipts, and good dashboards. But a third party holds every purchaser's history, its SDK sits in the apps, it takes a share of revenue, and the commitments are still built here (§1).
+  - **Checking the stores' signed receipts ourselves** (Apple's JWS chain to its root, Google's push tokens): no API call per event, but X.509 chain checks and more crypto on the server for little gain, since the API answers anyway.
+  - **Stripe on iOS and Android too** (link-outs where the law allows, as in the US and the EU): a lower fee, but the rules differ by country and keep changing, and the review risk lands on launch. It can come later as its own decision.
+  - **A merchant of record (Paddle, Lemon Squeezy) instead of Stripe on the web:** they handle VAT and invoices, for a higher fee and less control over the cancel and refund screens the commitments rely on.
