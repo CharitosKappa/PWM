@@ -30,7 +30,12 @@ export const chromeHost: Host = {
   closeManage: null,
   browser: true,
   inlineUi: PWM_TARGET === "chromium",
-  biometricName: navigator.userAgent.includes("Mac OS X") ? "Touch ID" : null,
+  // Through the PWM app for Mac (D48 §5) or for Windows (D69).
+  biometricName: navigator.userAgent.includes("Mac OS X")
+    ? "Touch ID"
+    : navigator.userAgent.includes("Windows")
+      ? "Windows Hello"
+      : null,
   manage: true,
   // The popup keeps its list; editing is on the manage page (M4.14).
   vaultWindow: false,

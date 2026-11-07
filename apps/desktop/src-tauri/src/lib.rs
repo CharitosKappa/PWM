@@ -4,6 +4,7 @@
 
 mod app;
 pub mod backend;
+pub mod browser_hosts;
 pub mod clipboard;
 pub mod hello;
 pub mod http;

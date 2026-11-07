@@ -119,7 +119,29 @@ fn open_backend(dir: &Path) -> Result<Live, Box<dyn std::error::Error>> {
     // Windows Hello unlock (D68); Linux keeps the master password for now.
     #[cfg(windows)]
     let backend = backend.with_hello(Box::new(crate::hello::WindowsHello));
+    // Browser extensions unlocking with Windows Hello (D69); Linux waits.
+    #[cfg(windows)]
+    let backend = match browser_hosts() {
+        Some(hosts) => backend.with_browser_hosts(hosts),
+        None => backend,
+    };
     Ok(backend)
+}
+
+/// The helper next to the app, its manifests and enrolments under
+/// `%LOCALAPPDATA%\PWM` (D69 §4).
+#[cfg(windows)]
+fn browser_hosts() -> Option<crate::browser_hosts::BrowserHosts> {
+    let local = std::path::PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join("PWM");
+    let helper = std::env::current_exe()
+        .ok()?
+        .with_file_name("pwm-browser-helper.exe");
+    Some(crate::browser_hosts::BrowserHosts::new(
+        local.join("NativeMessagingHosts"),
+        helper,
+        Box::new(crate::browser_hosts::WindowsRegistry),
+        Box::new(pwm_browser_helper::store::FileStore::new()?),
+    ))
 }
 
 fn main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {

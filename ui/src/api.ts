@@ -91,6 +91,8 @@ const MESSAGES: Record<string, string> = {
     "Touch ID needs the PWM app for Mac, with browser unlock turned on in its Settings.",
   touch_id_off: "Turn on Touch ID in Settings first.",
   touch_id_unavailable: "Touch ID is not set up on this Mac.",
+  browser_helper_missing:
+    "PWM's browser helper is missing next to the app. Install PWM again, then try again.",
   biometric_cancelled: "Unlock with your master password, or try again.",
   biometric_changed:
     "Touch ID changed. Enter your master password, then turn Touch ID on again.",
@@ -104,8 +106,34 @@ const MESSAGES: Record<string, string> = {
 };
 
 /** Plain words for an error code. */
+/**
+ * The browser unlock texts on Windows (D69 §6): the same codes as Touch ID
+ * through the Mac app, naming Windows Hello and the app for Windows.
+ */
+const WINDOWS_HELLO_MESSAGES: Record<string, string> = {
+  helper_missing:
+    "Windows Hello needs the PWM app for Windows, with browser unlock turned on in its Settings.",
+  touch_id_off: "Turn on Windows Hello in Settings first.",
+  touch_id_unavailable:
+    "Windows Hello isn't set up on this computer. Set it up in Windows Settings, under Accounts, then try again.",
+  biometric_changed:
+    "Windows Hello changed. Enter your master password, then turn Windows Hello on again.",
+};
+
+function biometricName(): string | null {
+  try {
+    return host().biometricName;
+  } catch {
+    return null;
+  }
+}
+
 export function describeCode(code: string): string {
-  return MESSAGES[code] ?? "Something went wrong. Try again.";
+  const platform =
+    biometricName() === "Windows Hello"
+      ? WINDOWS_HELLO_MESSAGES[code]
+      : undefined;
+  return platform ?? MESSAGES[code] ?? "Something went wrong. Try again.";
 }
 
 export function describe(error: unknown): string {

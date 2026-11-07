@@ -3843,6 +3843,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pwm-browser-helper"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "pwm-crypto",
+ "pwm-hello",
+ "serde",
+ "serde_json",
+ "windows",
+]
+
+[[package]]
 name = "pwm-client"
 version = "0.0.0"
 dependencies = [
@@ -3896,7 +3908,9 @@ dependencies = [
  "futures-util",
  "oo7",
  "open",
+ "pwm-browser-helper",
  "pwm-client",
+ "pwm-hello",
  "pwm-store",
  "reqwest",
  "rustls",
@@ -3910,6 +3924,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "windows",
+ "windows-registry",
  "zbus 6.2.1",
  "zeroize",
 ]
@@ -3946,6 +3961,14 @@ dependencies = [
  "pwm-vault",
  "thiserror 2.0.21",
  "zeroize",
+]
+
+[[package]]
+name = "pwm-hello"
+version = "0.1.0"
+dependencies = [
+ "pwm-crypto",
+ "windows",
 ]
 
 [[package]]

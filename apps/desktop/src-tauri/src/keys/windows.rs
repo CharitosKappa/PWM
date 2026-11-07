@@ -1,18 +1,11 @@
 //! Windows: each value sealed with DPAPI for the current user (D66 §4), in
 //! `keys/<name>.bin` under the app's local (never roaming) data folder.
 //! DPAPI only protects the values on disk, as Android's Keystore does; no
-//! crypto of ours runs here. This module and `system::windows` are the only
-//! places with `unsafe` code: the Win32 calls themselves.
-#![allow(unsafe_code)]
+//! crypto of ours runs here. The Win32 calls are in `pwm_hello::dpapi`.
 
 use std::path::PathBuf;
 
 use pwm_client::Secret;
-use windows::Win32::Foundation::{HLOCAL, LocalFree};
-use windows::Win32::Security::Cryptography::{
-    CRYPT_INTEGER_BLOB, CRYPTPROTECT_UI_FORBIDDEN, CryptProtectData, CryptUnprotectData,
-};
-use windows::core::PCWSTR;
 
 use super::{KeyError, KeyStore, file_name, write_file};
 
@@ -30,71 +23,12 @@ impl DpapiKeys {
     }
 }
 
-fn blob(bytes: &[u8]) -> Result<CRYPT_INTEGER_BLOB, KeyError> {
-    Ok(CRYPT_INTEGER_BLOB {
-        cbData: u32::try_from(bytes.len()).map_err(|_| KeyError)?,
-        // DPAPI only reads the input.
-        pbData: bytes.as_ptr().cast_mut(),
-    })
-}
-
-/// Copies DPAPI's output out, wipes it and frees it.
-fn take(out: CRYPT_INTEGER_BLOB) -> Vec<u8> {
-    if out.pbData.is_null() {
-        return Vec::new();
-    }
-    let len = out.cbData as usize;
-    // SAFETY: on success DPAPI returns `cbData` bytes at `pbData`, allocated
-    // with LocalAlloc; they are copied, zeroed and freed exactly once here.
-    unsafe {
-        let bytes = std::slice::from_raw_parts(out.pbData, len).to_vec();
-        std::ptr::write_bytes(out.pbData, 0, len);
-        let _ = LocalFree(Some(HLOCAL(out.pbData.cast())));
-        bytes
-    }
-}
-
-/// Seals `data` for this Windows user; `name` is DPAPI's extra entropy, so a
-/// value can't be swapped for another's file.
 fn protect(name: &str, data: &[u8]) -> Result<Vec<u8>, KeyError> {
-    let input = blob(data)?;
-    let entropy = blob(name.as_bytes())?;
-    let mut out = CRYPT_INTEGER_BLOB::default();
-    // SAFETY: the input blobs point at live slices for the call; `out` is
-    // written by DPAPI and handed to `take`.
-    unsafe {
-        CryptProtectData(
-            &input,
-            PCWSTR::null(),
-            Some(&entropy),
-            None,
-            None,
-            CRYPTPROTECT_UI_FORBIDDEN,
-            &mut out,
-        )
-    }
-    .map_err(|_| KeyError)?;
-    Ok(take(out))
+    pwm_hello::dpapi::protect(name, data).map_err(|_| KeyError)
 }
 
 fn unprotect(name: &str, sealed: &[u8]) -> Result<Vec<u8>, KeyError> {
-    let input = blob(sealed)?;
-    let entropy = blob(name.as_bytes())?;
-    let mut out = CRYPT_INTEGER_BLOB::default();
-    // SAFETY: as in `protect`.
-    unsafe {
-        CryptUnprotectData(
-            &input,
-            None,
-            Some(&entropy),
-            None,
-            None,
-            CRYPTPROTECT_UI_FORBIDDEN,
-            &mut out,
-        )
-    }
-    .map_err(|_| KeyError)?;
-    Ok(take(out))
+    pwm_hello::dpapi::unprotect(name, sealed).map_err(|_| KeyError)
 }
 
 impl KeyStore for DpapiKeys {

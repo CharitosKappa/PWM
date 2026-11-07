@@ -85,7 +85,7 @@ extension: wasm
 # the desktop app for Windows and Linux (D66): its page, then the app, run
 desktop:
     pnpm --filter @pwm/desktop build
-    cargo run --manifest-path apps/desktop/Cargo.toml --locked
+    cargo run --manifest-path apps/desktop/Cargo.toml --locked -p pwm-desktop
 
 # the desktop app's checks and tests (D66 §9); the server tests run with PWM_TEST_SERVER set
 desktop-test:

@@ -3348,3 +3348,97 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The host** names it with `biometricName` instead of the `touchId` flag. The extension says "Touch ID" on a Mac. The desktop says "Windows Hello" on Windows, and none on Linux.
   - **Blocking calls:** the WinRT calls wait for their answer on the request's thread, while the backend is locked anyway. A Windows Hello prompt holds other requests until it closes.
   - **Not run anywhere yet:** a real Windows Hello prompt, which needs a person at the computer. This computer reports Windows Hello as set up, and the offer showed. The tests drive the rest through a fake key.
+- **D69 — Browser unlock on Windows and Linux: the helper, Windows Hello from a browser, the manifests, and Linux** · settled 2026-11-06 · founder (approved as proposed).
+  M7.2 asks for "a native-messaging host for browser unlock on Windows/Linux (D48's protocol, a second binary in the desktop workspace)". D48 §5 settled how it works on a Mac:
+  - The extension keeps a blob (the keyset sealed under a random key K) in its own storage.
+  - A helper the browser starts keeps K behind Touch ID.
+  - The protocol: `enroll`, `unlock` and `forget`, with `"v": 1`, the native-messaging framing, and the helper checking the caller's origin.
+  - The app doesn't need to be signed in or running.
+
+  Three things don't carry over:
+  - **Windows Hello keys only sign** (D68). The Secure Enclave wraps K under a biometric; Windows has no such call for apps.
+  - **Chrome gives a window to the host only when a page calls it.** It passes `--parent-window` with the calling window's handle, but 0 when the caller is a service worker, which is where the extension calls the helper. A Windows Hello prompt needs a window to come up in front of.
+  - **Linux has no biometric unlock yet** (D68 §7: polkit or fprintd, later).
+
+  Open:
+  - where the helper lives and how it's built
+  - how K is kept on Windows
+  - which window the Windows Hello prompt belongs to
+  - the manifests: where, and who writes them
+  - Linux
+  - what the extension shows
+  - tests
+
+  Proposal:
+  1. **The helper:** a second crate in the desktop workspace, `pwm-browser-helper`, building `pwm-browser-helper.exe` next to the app.
+     - **Small:** no Tauri and no WebView. It reads one framed message, answers, and exits, as the browser expects.
+     - **D48's protocol unchanged:** `enroll {account_id, device_id, key}`, `unlock {account_id, device_id}`, `forget {account_id, device_id}`, `"v": 1`, and the same replies (`ok`, `key`, `error`). The same errors: `refused`, `invalid`, `unknown`, `cancelled`, `changed`, `unavailable`. So the extension's `TouchIdUnlock` code works unchanged.
+     - **Who may call:** the origin Chrome, Edge, Brave and Opera pass as the first argument, or the extension id Firefox passes, against the same list of our extension ids as the Mac helper (placeholders until M10). Anything else is `refused`.
+     - **Limits:** a message over 64 KiB is `invalid`; the helper never reads more.
+     - **The protocol handler** is plain Rust behind a trait for the key and the store, so it's tested on every OS.
+     - **No new crates:** `serde_json`, `pwm-crypto` and the `windows` crate the app already uses, with two more features (`Win32_System_Registry`, `Win32_Security_Cryptography` for DPAPI).
+  2. **Keeping K on Windows: D68's construction, with its own label.**
+     - **Enrolling:** the helper makes a Windows Hello key credential for this enrolment, named "PWM browser" and a hash of the caller, account and device. It makes a random 32-byte challenge, asks Windows Hello to sign it twice, and compares, as D68 §2 does. The core derives a wrapping key from the signature and seals K under it.
+     - **Its own label:** HKDF info `pwm/browser-unlock/windows-hello/v1` and AAD `pwm/browser-unlock/windows-hello`, so a desktop unlock key and a browser enrolment's key can never stand in for each other. A new pair in `pwm-crypto` with test vectors, next to D68's.
+     - **What's kept:** the challenge and the sealed K, in a file per enrolment under `%LOCALAPPDATA%\PWM\browser-unlock\`, protected with DPAPI for the user. Never the signature, never K or the wrapping key.
+     - **Unlocking:** Windows Hello signs the same challenge (one prompt), the core opens K, and the helper sends K to the extension, which opens its blob. The KDF never runs.
+     - **Nothing is re-made:** K doesn't change while the blob stays, so there's no D68 §4 step here.
+     - **When it can't open:** a key Windows reports gone, or a signature that doesn't open K, deletes the enrolment and answers `changed`. The extension then turns it off and asks for the master password, as D48 does.
+     - **The PIN counts,** as D68 §3 explains; the screens say "Windows Hello".
+     - **Forget** deletes the key credential and the file.
+  3. **The prompt's window.**
+     - **The plan:** the helper opens a small window of its own ("Unlock PWM in your browser"), brings it to the front, and asks for the signature with it in front. The user has just clicked Unlock in the popup, so the browser is in front and hands focus on.
+     - **Checked first:** whether the Windows Hello prompt shows in front this way in Chrome, Edge and Firefox. It's the first step of M7.2: a test build the founder runs on a real computer, since the prompt needs a person.
+     - **If it doesn't:** the helper asks the desktop app to show the prompt, over a named pipe only this user can open, and the app must be running. That would be logged here and in Settings' text ("Keep the PWM app running").
+     - **Not the popup:** the popup could call the helper with its own window handle, but K would then reach a screen, which the protocol forbids: the screens never receive keys.
+  4. **The manifests: written by the desktop app, for this user only.**
+     - **A switch in the desktop's Settings:** "Allow browser extensions to unlock with Windows Hello", as D48's on the Mac. Off by default.
+     - **On:** the app writes two manifests under `%LOCALAPPDATA%\PWM\NativeMessagingHosts\`, one for Chromium browsers (`allowed_origins`) and one for Firefox (`allowed_extensions`), naming the helper by its full path. It registers them under `HKEY_CURRENT_USER\Software\`:
+       - `Google\Chrome\NativeMessagingHosts\<name>` (Chrome, and Brave and Opera, which read Chrome's key; checked on a real computer)
+       - `Microsoft\Edge\NativeMessagingHosts\<name>`
+       - `Mozilla\NativeMessagingHosts\<name>`
+     - **No administrator rights:** `HKEY_CURRENT_USER` only.
+     - **Off:** removes the keys and the manifests, and deletes every enrolment the helper keeps, since no extension can reach it any more.
+     - **The name** stays the extension's `NATIVE_HOST`, a placeholder until the stores give real ids (M10).
+     - **The installers (M7.3)** remove the keys on uninstall.
+  5. **Linux waits for its own biometric unlock.**
+     - **Why:** the helper would have nothing to ask the user for. K in the Secret Service with no prompt is readable by any process of this user, so it would only skip the master password.
+     - **When:** with the desktop's polkit or fprintd unlock (D68 §7), after M7.3, since polkit needs an action file the package installs.
+     - **For M7.2:** the protocol handler builds and is tested on Linux. The binary answers `unavailable`, and the app writes no manifests there.
+     - **Logged as a parity gap**, with a new task, M7.8 "Browser unlock on Linux (polkit or fprintd)", after M7.3.
+  6. **The extension:**
+     - **`biometricName`:** "Windows Hello" on Windows, "Touch ID" on a Mac, none elsewhere.
+     - **The same requests and code:** `touchId`, `setTouchId` and `unlockTouchId`, and `TouchIdUnlock`.
+     - **Its wording** names the app per platform: "Windows Hello needs the PWM app for Windows, with browser unlock turned on in its Settings." The codes `touch_id_off` and `touch_id_unavailable` get texts built from the name.
+     - **D45 and D48's rules stay:** the master password every 14 days and after signing in, no offer after unlocking in the popup, and turning it off or signing out forgets the enrolment.
+  7. **Tests:**
+     - **Rust:**
+       - the handler with a fake key and store: enroll, unlock, forget, a refused caller, cancel, changed, malformed and oversized messages, two enrolments kept apart
+       - the framing
+       - the manifest writer against a temporary folder and a fake registry
+     - **The core:** vectors for the new seal, checked in Rust and in `verify.mjs`.
+     - **Vitest:** the Windows wording and `biometricName`.
+     - **CI:** the `desktop-windows` job builds the helper and runs its tests.
+     - **Manual, in `QUALITY.md`:** on a Windows computer with Windows Hello, in Chrome, Edge and Firefox: turn on the app's switch, turn on unlock in the extension, lock, unlock with Windows Hello, cancel, then turn the switch off.
+
+  Alternatives:
+  - **Always go through the running desktop app:** its window makes the prompt simple, but the app must be running, unlike D48. Kept as the fallback in point 3.
+  - **`UserConsentVerifier` with K under DPAPI:** an easier prompt that can take a window, but it only checks presence. K would sit where any process of this user could read it without a prompt. D68 chose signatures for this reason.
+  - **The popup calls the helper:** it has a window handle, but K would reach a screen.
+  - **Linux with K in the Secret Service and no prompt:** no user presence at all.
+  - **Machine-wide registration (`HKEY_LOCAL_MACHINE`) by the installer:** needs administrator rights, and would offer the helper to every user of the computer.
+
+  Implementation notes (M7.2):
+  - **Three crates in the desktop workspace now:**
+    - **`pwm-hello`:** D68's Windows Hello key and the DPAPI calls, moved out of the app so the helper uses the same code.
+    - **`pwm-browser-helper`:** the protocol handler, the framing, the enrolment store, the manifests and the registry keys in a library; the binary reads one message, answers and exits.
+    - **`pwm-desktop`:** the Settings switch (`browserUnlock`, `setBrowserUnlock`), in `browser_hosts.rs`.
+  - **The core:** `seal_browser_hello` and `open_browser_hello` in `pwm-crypto`, next to D68's. The AAD `pwm/browser-unlock/windows-hello` carries the version, the caller (`len:u16 || bytes`, at most 1,024), the account and the device. Vectors in `browser_hello.json`, checked in Rust and by `verify.mjs`.
+  - **The enrolment's name:** 32 hex digits from HKDF over the caller, account and device, so the key credential ("PWM browser" and the name) and the file (`<name>.bin`) show none of them. The file holds a version byte, the challenge and the envelope, sealed with DPAPI with the name as entropy.
+  - **The window:** "PWM: confirm with Windows Hello to unlock your browser", in front for each prompt (making the key, the two signatures, each unlock). The Windows Hello call waits on another thread while the window keeps answering.
+  - **Registry keys:** the default value of each key under `HKEY_CURRENT_USER` names the manifest. Turning it off removes only keys that still name our manifests.
+  - **Turning it on** needs Windows Hello set up (`hello_unavailable` otherwise) and the helper next to the app (`browser_helper_missing`).
+  - **`windows-registry`:** Microsoft's registry crate (MIT or Apache-2.0), already in the tree through `tauri-plugin-autostart`, so the registry code has no `unsafe`.
+  - **The extension:** `biometricName` is "Windows Hello" on Windows. The helper's error codes keep Touch ID's names; their texts name Windows Hello and the app for Windows there.
+  - **Not run anywhere yet:** a browser starting the helper and a real Windows Hello prompt, which need a person at the computer. Whether the prompt shows in front (§3) is the first thing that check answers (`QUALITY.md`, desktop step 13).
+  - **Not checked here:** the Linux build, since this computer has no Linux target; CI's `desktop` job builds it.

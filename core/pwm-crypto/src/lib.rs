@@ -43,5 +43,6 @@ pub use share::{
 };
 pub use token::{TokenKind, generate_token, token_hash};
 pub use windows_hello::{
-    WINDOWS_HELLO_VERSION, open_windows_hello, seal_windows_hello, windows_hello_challenge,
+    BROWSER_HELLO_VERSION, WINDOWS_HELLO_VERSION, open_browser_hello, open_windows_hello,
+    seal_browser_hello, seal_windows_hello, windows_hello_challenge,
 };

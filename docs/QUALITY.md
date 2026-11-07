@@ -199,6 +199,7 @@ On Windows 11 and on Ubuntu (GNOME) and Fedora (KDE), for each release candidate
 10. Sign out, then create another account on the same computer: it works.
 11. In the vault window, make a login, a card, an identity and a note, each with a custom field; Show and Copy their hidden values; edit one and see its password history; move one into a new folder; trash, restore and delete forever. Narrow the window below 720 pixels: one pane at a time, with Back.
 12. On Windows with Windows Hello: turn on "Unlock with Windows Hello" in Settings (up to three prompts), lock, and unlock with a face, a finger and the PIN; cancel the prompt; change the Windows Hello PIN, then unlock: it asks for the master password and is off; turn it off.
+13. Browser unlock on Windows (D69), in Chrome, Edge and Firefox with the test build of the extension: turn on "Allow browser extensions to unlock with Windows Hello" in the app's Settings; in the extension, turn on "Unlock with Windows Hello" (up to three prompts); lock; unlock with Windows Hello. Each prompt comes up in front, over the browser: if one doesn't, note which browser, since D69 §3 then needs its fallback. Cancel a prompt: the password field stays. Turn the app's switch off: the extension says it needs the app.
 
 ## Success metrics
 

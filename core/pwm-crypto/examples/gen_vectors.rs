@@ -32,7 +32,7 @@ type Generator = (&'static str, &'static str, fn() -> Vec<Value>);
 
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../test-vectors");
-    let files: [Generator; 18] = [
+    let files: [Generator; 19] = [
         ("aad", "AAD byte layouts (D11, D17)", aad),
         ("aead", "XChaCha20-Poly1305 v1 envelopes (D10)", aead),
         ("hkdf", "HKDF-SHA256, 32-byte output (D13)", hkdf),
@@ -94,6 +94,11 @@ fn main() {
             "windows_hello",
             "The biometric unlock key under a Windows Hello signature's key v1 (D68)",
             windows_hello,
+        ),
+        (
+            "browser_hello",
+            "The extension's key under a Windows Hello signature's key, for the Windows helper v1 (D69)",
+            browser_hello,
         ),
     ];
     for (name, description, generate) in files {
@@ -525,6 +530,34 @@ fn opaque() -> Vec<Value> {
         "credential_request": h(&credential_request), "credential_response": h(&credential_response),
         "server_state_sealed": h(&state), "credential_finalization": h(&credential_finalization),
         "prelogin_email": "a@example.com", "prelogin_fake_id": h(&fake_id), "prelogin_fake_salt": h(&fake_salt),
+    })]
+}
+
+fn browser_hello() -> Vec<Value> {
+    // As windows_hello, with the browser helper's own label and the caller.
+    let signature: Vec<u8> = (0..=255u8).rev().collect();
+    let challenge = [0x6D; 32];
+    let browser_key = [0x5A; 32];
+    let caller = "chrome-extension://abcdefghijklmnopabcdefghijklmnop/";
+    let sealed = pwm_crypto::seal_browser_hello(
+        &Secret::new(browser_key),
+        &signature,
+        &Secret::new(challenge),
+        caller,
+        &ACCOUNT_A,
+        &DEVICE,
+    )
+    .unwrap();
+    let info = b"pwm/browser-unlock/windows-hello/v1";
+    let wrapping_key = pwm_crypto::hkdf_sha256(&signature, &challenge, info);
+    vec![json!({
+        "account_id": h(&ACCOUNT_A), "device_id": h(&DEVICE), "caller": caller,
+        "signature": h(&signature), "challenge": h(&challenge),
+        "info": h(info),
+        "wrapping_key": h(wrapping_key.expose_secret()),
+        "browser_key": h(&browser_key),
+        "aad": h(Aad::browser_hello(1, caller, &ACCOUNT_A, &DEVICE).unwrap().as_bytes()),
+        "envelope": h(&sealed.to_bytes()),
     })]
 }
 

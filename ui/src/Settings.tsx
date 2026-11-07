@@ -101,6 +101,9 @@ export function Settings({
       {status.state === "unlocked" && host().biometricName !== null && (
         <BiometricSetting name={host().biometricName ?? ""} />
       )}
+      {status.state === "unlocked" &&
+        !host().browser &&
+        host().biometricName === "Windows Hello" && <BrowserUnlockSetting />}
 
       <fieldset class="stack" disabled={!signedOut}>
         <legend class="label">Server</legend>
@@ -185,10 +188,59 @@ export function Settings({
  * which asks for Touch ID once. "Unlock with Windows Hello" on the desktop
  * (D68): Windows asks for a face, a finger or the PIN.
  */
+/**
+ * The desktop's "Allow browser extensions to unlock with Windows Hello"
+ * (D69 §4): registers PWM's browser helper for this Windows user. Off
+ * removes it and everything it kept.
+ */
+function BrowserUnlockSetting(): JSX.Element {
+  const [on, setOn] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void send({ kind: "browserUnlock" }).then(setOn);
+  }, []);
+
+  const change = async (next: boolean): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      setOn(await send({ kind: "setBrowserUnlock", on: next }));
+    } catch (err) {
+      setError(describe(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div class="stack">
+      <label class="row">
+        <input
+          type="checkbox"
+          id="browser-unlock"
+          checked={on === true}
+          disabled={busy || on === null}
+          onChange={(event) => void change(event.currentTarget.checked)}
+        />
+        Allow browser extensions to unlock with Windows Hello
+      </label>
+      <span class="caption muted">
+        For PWM in Chrome, Edge, Brave, Opera and Firefox. Then turn on "Unlock
+        with Windows Hello" in the extension's Settings.
+      </span>
+      {error && <Notice kind="danger">{error}</Notice>}
+    </div>
+  );
+}
+
 function BiometricSetting({ name }: { name: string }): JSX.Element {
   const [on, setOn] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The extension unlocks through the PWM app for its computer (D48, D69).
+  const app = name === "Windows Hello" ? "Windows" : "Mac";
 
   useEffect(() => {
     void send({ kind: "touchId" }).then(setOn);
@@ -205,7 +257,7 @@ function BiometricSetting({ name }: { name: string }): JSX.Element {
           permissions: ["nativeMessaging"],
         }))
       ) {
-        setError("PWM needs permission to talk to the PWM app for Mac.");
+        setError(`PWM needs permission to talk to the PWM app for ${app}.`);
         return;
       }
       setOn(await send({ kind: "setTouchId", on: next }));
@@ -230,7 +282,7 @@ function BiometricSetting({ name }: { name: string }): JSX.Element {
       </label>
       <span class="caption muted">
         {host().browser
-          ? "Needs the PWM app for Mac, with browser unlock turned on in its Settings."
+          ? `Needs the PWM app for ${app}, with browser unlock turned on in its Settings.`
           : "Windows asks for your face, fingerprint or PIN."}{" "}
         Your master password is still asked every 14 days.
       </span>

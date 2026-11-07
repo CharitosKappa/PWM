@@ -62,3 +62,32 @@ test("an unknown code or a non-request error gets the plain fallback", () => {
   expect(describeCode("no_such_code")).toBe("Something went wrong. Try again.");
   expect(describe(new Error("boom"))).toBe("Something went wrong. Try again.");
 });
+
+group("browser unlock texts", () => {
+  test("name Touch ID and the Mac app, or Windows Hello and the Windows app (D69)", () => {
+    setHost({
+      ...fakeHost(undefined),
+      browser: true,
+      biometricName: "Touch ID",
+    });
+    expect(describeCode("helper_missing")).toContain("PWM app for Mac");
+    expect(describeCode("touch_id_unavailable")).toContain("Touch ID");
+    setHost({
+      ...fakeHost(undefined),
+      browser: true,
+      biometricName: "Windows Hello",
+    });
+    for (const code of [
+      "helper_missing",
+      "touch_id_off",
+      "touch_id_unavailable",
+      "biometric_changed",
+    ]) {
+      expect(describeCode(code)).toContain("Windows Hello");
+      expect(describeCode(code)).not.toContain("Touch ID");
+    }
+    expect(describeCode("helper_missing")).toContain("PWM app for Windows");
+    // Other codes are the same everywhere.
+    expect(describeCode("wrong_password")).toBe("Wrong master password.");
+  });
+});
