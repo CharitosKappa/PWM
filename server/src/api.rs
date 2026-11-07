@@ -88,6 +88,8 @@ pub enum ApiError {
     Forbidden(&'static str),
     /// Billing is not set up here, or its provider can't be reached (D6).
     BillingUnavailable,
+    /// The account's plan doesn't include this (D73 §3).
+    PlanRequired,
     NotFound,
     Internal,
 }
@@ -109,6 +111,7 @@ impl ApiError {
             Self::Conflict(code) => (StatusCode::CONFLICT, code),
             Self::Forbidden(code) => (StatusCode::FORBIDDEN, code),
             Self::BillingUnavailable => (StatusCode::SERVICE_UNAVAILABLE, "billing_unavailable"),
+            Self::PlanRequired => (StatusCode::FORBIDDEN, "plan_required"),
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             Self::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         }

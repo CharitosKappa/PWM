@@ -1,7 +1,7 @@
 //! `POST /v1/vaults` and `GET /v1/vaults` (D27).
 
 use axum::extract::State;
-use axum::http::{HeaderName, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use axum::routing::get;
 use axum::{Json, Router};
 use pwm_crypto::Envelope;
@@ -95,15 +95,18 @@ async fn create(
 }
 
 /// The caller's vaults, and the server epoch in a `pwm-epoch` header (D30)
-/// so clients notice a restore from backup.
+/// so clients notice a restore from backup. Every sync starts here, so the
+/// plan comes along too (D73 §2): `pwm-plan`, and `pwm-plan-until` in Unix ms
+/// when the plan has an end.
 async fn list(
     State(state): State<AppState>,
     auth: Authenticated,
-) -> Result<([(HeaderName, HeaderValue); 1], Json<Vec<VaultEntry>>), ApiError> {
+) -> Result<(HeaderMap, Json<Vec<VaultEntry>>), ApiError> {
     let epoch: Uuid = sqlx::query_scalar("SELECT epoch FROM server_meta")
         .fetch_one(&state.pool)
         .await?;
     let epoch = HeaderValue::from_str(&epoch.to_string()).map_err(|_| ApiError::Internal)?;
+    let plan = crate::billing::summary(&state.pool, &state.billing, auth.account_id).await?;
     let rows = sqlx::query(
         "SELECT v.id, k.role, k.wrap, k.wrapped_key, k.shared_by, v.seq \
          FROM vault_keys k JOIN vaults v ON v.id = k.vault_id \
@@ -123,5 +126,12 @@ async fn list(
             seq: row.get::<i64, _>(5).to_string(),
         })
         .collect();
-    Ok(([(HeaderName::from_static("pwm-epoch"), epoch)], Json(list)))
+    let mut headers = HeaderMap::new();
+    headers.insert(HeaderName::from_static("pwm-epoch"), epoch);
+    let name = HeaderValue::from_str(&plan.plan).map_err(|_| ApiError::Internal)?;
+    headers.insert(HeaderName::from_static("pwm-plan"), name);
+    if let Some(until) = plan.plan_until {
+        headers.insert(HeaderName::from_static("pwm-plan-until"), until.into());
+    }
+    Ok((headers, Json(list)))
 }
