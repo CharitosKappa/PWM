@@ -13,7 +13,7 @@ mod sqlite;
 
 pub use error::StoreError;
 pub use memory::{MemoryStore, SNAPSHOT_VERSION};
-pub use record::{AccountRecord, ItemRecord, SyncState, VaultRecord};
+pub use record::{AccountRecord, ItemRecord, PlanRecord, SyncState, VaultRecord};
 #[cfg(feature = "sqlite")]
 pub use sqlite::{SCHEMA_VERSION, SqliteStore};
 
@@ -54,6 +54,12 @@ pub trait Store {
     fn server_epoch(&self) -> Result<Option<Id>, StoreError>;
 
     fn set_server_epoch(&mut self, epoch: &Id) -> Result<(), StoreError>;
+
+    /// The plan the server last gave (D73 §2); `None` before the first sync
+    /// that brought one.
+    fn plan(&self) -> Result<Option<PlanRecord>, StoreError>;
+
+    fn set_plan(&mut self, plan: &PlanRecord) -> Result<(), StoreError>;
 
     /// Items with local changes not yet uploaded, across all vaults.
     fn pending_items(&self) -> Result<Vec<ItemRecord>, StoreError>;
