@@ -1,4 +1,5 @@
 import AuthenticationServices
+import PWMDesign
 import PWMKit
 import PWMUI
 import SwiftUI
@@ -88,6 +89,7 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         view.addSubview(host.view)
         preferredContentSize = NSSize(width: 420, height: 480)
         #else
+        SystemControls.useAppFonts()
         let host = UIHostingController(rootView: AutoFillView(model: model))
         addChild(host)
         host.view.frame = view.bounds

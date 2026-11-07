@@ -20,13 +20,26 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE = join(ROOT, "design", "fonts");
 
-/** [file in design/fonts, copy] — Android resource names must be lower case. */
-export const COPIES = [
-  ["Manrope.ttf", "apps/apple/PWMKit/Sources/PWMDesign/Fonts/Manrope.ttf"],
-  ["GeistMono.ttf", "apps/apple/PWMKit/Sources/PWMDesign/Fonts/GeistMono.ttf"],
-  ["Manrope.ttf", "apps/android/app/src/main/res/font/manrope.ttf"],
-  ["GeistMono.ttf", "apps/android/app/src/main/res/font/geist_mono.ttf"],
-];
+/** The bundled fonts, from `$extensions["pwm.font"]` in design/tokens.json. */
+const TOKENS = JSON.parse(readFileSync(join(ROOT, "design", "tokens.json"), "utf8"));
+const FONTS = Object.entries(TOKENS.font.family)
+  .filter(([key]) => !key.startsWith("$"))
+  .map(([key, token]) => {
+    const ext = token.$extensions?.["pwm.font"];
+    if (!ext?.file || !ext.licence) throw new Error(`tokens.json: font.family.${key} has no pwm.font file`);
+    return { family: token.$value[0], file: ext.file, licence: ext.licence };
+  });
+
+/** `GeistMono.ttf` → `geist_mono`: Android resource names are lower case.
+ *  scripts/tokens-kotlin.mjs uses the same rule for `R.font`. */
+const androidName = (file) =>
+  file.replace(/\.ttf$/, "").replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+
+/** [file in design/fonts, copy] */
+export const COPIES = FONTS.flatMap((f) => [
+  [f.file, `apps/apple/PWMKit/Sources/PWMDesign/Fonts/${f.file}`],
+  [f.file, `apps/android/app/src/main/res/font/${androidName(f.file)}.ttf`],
+]);
 
 const check = process.argv.includes("--check");
 let stale = 0;
@@ -51,8 +64,7 @@ if (process.argv.includes("--notices")) {
   const read = (name) => readFileSync(join(SOURCE, name), "utf8").trimEnd();
   const text = [
     read("NOTICE.md"),
-    "## Licence text: Manrope\n\n" + read("OFL-Manrope.txt"),
-    "## Licence text: Geist Mono\n\n" + read("OFL-GeistMono.txt"),
+    ...FONTS.map((f) => `## Licence text: ${f.family}\n\n` + read(f.licence)),
   ].join("\n\n") + "\n";
   const out = join(ROOT, "THIRD_PARTY_NOTICES", "fonts.md");
   mkdirSync(dirname(out), { recursive: true });

@@ -1,4 +1,5 @@
 import BackgroundTasks
+import PWMDesign
 import PWMUI
 import SwiftUI
 import UIKit
@@ -52,6 +53,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // Manrope in navigation bars, tab bars and segmented pickers (D1).
+        SystemControls.useAppFonts()
         UNUserNotificationCenter.current().delegate = self
         application.registerForRemoteNotifications()
         return true

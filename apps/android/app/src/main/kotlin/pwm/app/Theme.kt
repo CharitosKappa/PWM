@@ -27,10 +27,10 @@ fun color(token: ThemedColor): Color = Color(if (isSystemInDarkTheme()) token.da
 private val weights = listOf(FontWeight.W400, FontWeight.W500, FontWeight.W600, FontWeight.W700)
 
 /** Manrope, for all text. */
-val Manrope = FontFamily(weights.map { Font(R.font.manrope, it) })
+val Manrope = FontFamily(weights.map { Font(FontResources.sans, it) })
 
 /** Geist Mono, for passwords, one-time codes and the Secret Key. */
-val GeistMono = FontFamily(weights.map { Font(R.font.geist_mono, it) })
+val GeistMono = FontFamily(weights.map { Font(FontResources.mono, it) })
 
 /**
  * Loads every weight of both fonts into Compose's process-wide typeface

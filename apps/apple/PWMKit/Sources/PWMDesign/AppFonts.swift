@@ -10,11 +10,11 @@ import CoreText
 
 public enum AppFonts {
     /// The family names, the first entries of `font.family` in design/tokens.json.
-    public static let sans = "Manrope"
-    public static let mono = "Geist Mono"
+    public static let sans = Tokens.FontFamily.sans
+    public static let mono = Tokens.FontFamily.mono
 
-    /// The bundled font files.
-    public static let files = ["Manrope.ttf", "GeistMono.ttf"]
+    /// The bundled font files, from the same tokens.
+    public static let files = Tokens.FontFamily.files
 
     /// The bundled files' locations; a file that is missing is left out.
     public static var urls: [URL] {
