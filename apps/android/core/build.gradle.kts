@@ -28,6 +28,12 @@ val uniffiKotlin = tasks.register<Exec>("uniffiKotlin") {
     dependsOn(cargoHost)
     workingDir = repo
     val out = generated.get().asFile
+    // The bindings come from the library's metadata, so they are stale
+    // whenever the library changes; Cargo.lock covers a new uniffi. Without
+    // inputs Gradle kept old bindings after a core change (and the build
+    // cache could restore them).
+    inputs.file(File(repo, "target/debug/$hostLibrary")).withPathSensitivity(PathSensitivity.NONE)
+    inputs.file(File(repo, "Cargo.lock")).withPathSensitivity(PathSensitivity.NONE)
     outputs.dir(out)
     commandLine(
         "cargo", "run", "--locked", "-q", "-p", "pwm-ffi-bindgen", "--",
