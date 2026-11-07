@@ -3897,3 +3897,28 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   Alternatives:
   - **Read `GET /v1/billing` on each sync:** one more request per sync. The headers cost nothing.
   - **Gate only in the screens:** each of six platforms would need its own check, and an autofill path could miss it.
+
+  Implementation notes (M9.3):
+  - **The server** (`server/src/billing/mod.rs`, `vaults.rs`):
+    - `plan_until` comes from `ENTITLED_UNTIL`, which follows `ENTITLED` row by row.
+    - **A past-due row without `grace_until`:** Stripe's retries count with no end date, so it gets three days from now (or from its period end, if later), and the next sync moves it on.
+    - **Two subscriptions:** the later end wins.
+    - `GET /v1/vaults` sends `pwm-plan` always, and `pwm-plan-until` when there's an end.
+    - `Limits::of(plan)` is the table, and `ApiError::PlanRequired` answers 403 `plan_required`.
+  - **The core:**
+    - **Storage:** `PlanRecord` in `pwm-store` (`plan()`, `set_plan()`; the name must be 1 to 32 bytes). It's a table of its own in SQLite v3, and a section after the epoch in snapshot v2. `clear()` drops it. Frozen fixtures `store_v3.sql` and `snapshot_v2.hex`.
+    - **What fills it:** the sync engine stores the headers when a sync starts; a server without them leaves the old value. Billing replies (`BillingInfo.plan_until_ms`) store the plan too.
+    - **Sign-in doesn't store it:** the first sync right after does, and until then the plan is unknown, which counts as Premium.
+    - **The API:** `Client::plan_now(now_ms)` and `codes_included(now_ms)`, in the FFI and WASM as `plan_now` / `planNow` and `codes_included` / `codesIncluded`. `current_code` checks only items that have a secret, so items without one still answer `None`.
+  - **The screens:**
+    - **The extensions and the desktop:**
+      - `ItemView.codeNeedsPlan` shows the line and a "One-time code secret" row, using the existing Show and Copy of hidden values.
+      - `VaultView.codesIncluded` drives the editor's caption.
+      - `hasCode` in lists and suggestions now means "a code can be copied now".
+      - The extension's fill skips the code step, and a code-only page answers `no_form`, as for a login without a code.
+    - **Apple and Android:** the item screen shows the line and the secret.
+      - **Android's autofill** fills without the code.
+      - **iOS's AutoFill** already ignored a failed code.
+      - **Not done yet:** the editor's caption, which needs the plan in the editors' models. The item screen says it, so nothing is hidden. It's logged here under the platform-parity rule.
+    - **Settings › Plan** is named in the text rather than linked: the item screens have no route to Settings on every platform.
+  - **Messages:** `plan_required` in `design/messages.json` and the screens' `api.ts`.

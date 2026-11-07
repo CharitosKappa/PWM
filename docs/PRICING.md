@@ -33,6 +33,13 @@ With Stripe we run the subscription, so every commitment holds in full. A plan b
 - **§5 Refunds:** only Apple refunds App Store purchases. The iOS app opens Apple's request sheet, and the other apps point to Apple's Report a Problem page; if Apple declines, we can't refund. Play refunds pro-rata through its API, like Stripe (D72 §1).
 - **Deleting an account** can't end a store subscription; the delete screen says so first, with the link to cancel it (M9.4).
 
+## What Free does with paid items (D73)
+
+A gate never stops exporting, reading, editing or deleting what the account already has (D72 §4).
+
+- **One-time codes:** the login's secret (the `otpauth://` link) can be stored, shown, copied, edited, imported and exported on Free, so it can be moved to another authenticator at any time. The current code needs Premium (or Family, Teams): the item says "One-time codes are part of Premium", and autofill offers no code step, without a message. The plan comes with every sync; a device that hasn't heard yet keeps codes, and after the paid period it knew about it counts as Free until the next sync.
+- **Share links and attachments** (M13, M14): the server's limits are 1 share link a day and no attachment storage on Free, unlimited links and 1 GiB per person on Premium, Family and Teams. A server without billing gives every account Premium's. Their routes answer `plan_required` past the limit.
+
 ## Changing a price (D72 §2)
 
 1. Create the new price at the provider (Stripe price, App Store or Play price change keeping existing subscribers' price).
