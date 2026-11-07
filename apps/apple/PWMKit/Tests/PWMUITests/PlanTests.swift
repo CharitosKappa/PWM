@@ -57,7 +57,7 @@ final class PlanTests: XCTestCase {
         let finished = await store.finished
         XCTAssertEqual(finished, [], "StoreKit offers it again at the next unlock")
         XCTAssertEqual(plan.plan, .free)
-        XCTAssertEqual(plan.error, PlanModel.messages["billing_unavailable"])
+        XCTAssertEqual(plan.error, "Plans can't be changed right now. Try again later.")
     }
 
     func testAnotherAccountsPurchaseIsFinishedAndSaysSo() async throws {
@@ -251,7 +251,7 @@ final class PlanTests: XCTestCase {
         let plan = mac()
         await plan.load()
         await plan.cancel()
-        XCTAssertEqual(plan.error, "This plan is managed where you bought it.")
+        XCTAssertEqual(plan.error, "Change this plan where you bought it.")
     }
 
     // MARK: Servers

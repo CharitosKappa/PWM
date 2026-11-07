@@ -109,9 +109,13 @@ pub enum Outcome {
     /// The session is over on the server (D62); call `sign_out` next.
     LoggedOut,
     /// The account's plan (D6).
-    Billing { billing: BillingInfo },
+    Billing {
+        billing: BillingInfo,
+    },
     /// A Stripe Checkout page to open in the browser (D6).
-    CheckoutUrl { url: String },
+    CheckoutUrl {
+        url: String,
+    },
 }
 
 /// The account's plan (D6 §7). `sells` names the providers that sell plans
@@ -767,7 +771,9 @@ impl PwmClient {
 
     /// Hands a finished App Store purchase to the server; ends with `Billing`.
     pub fn start_apple_purchase(&self, transaction_id: String) -> Result<Step, PwmError> {
-        Ok(step(self.lock_inner().start_apple_purchase(&transaction_id)?))
+        Ok(step(
+            self.lock_inner().start_apple_purchase(&transaction_id)?,
+        ))
     }
 
     /// Hands a finished Play purchase to the server; ends with `Billing`.
