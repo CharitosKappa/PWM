@@ -129,7 +129,8 @@ impl WasmStep {
 
     /// After `billing`: JSON `{plan, subscription, sells, token}`, where
     /// `subscription` is null or `{provider, plan, status, until_ms,
-    /// canceling, price_locked_until_ms, also}` (D6 §7).
+    /// canceling, price_locked_until_ms, refundable_until_ms, also}` (D6 §7,
+    /// D72).
     #[wasm_bindgen(getter)]
     pub fn billing(&self) -> Option<String> {
         self.billing.clone()
@@ -234,7 +235,8 @@ fn step(step: Step) -> WasmStep {
                         serde_json::json!({
                             "provider": s.provider, "plan": s.plan, "status": s.status,
                             "until_ms": s.until_ms, "canceling": s.canceling,
-                            "price_locked_until_ms": s.price_locked_until_ms, "also": s.also,
+                            "price_locked_until_ms": s.price_locked_until_ms,
+                            "refundable_until_ms": s.refundable_until_ms, "also": s.also,
                         })
                     });
                     out.billing = Some(
@@ -352,6 +354,16 @@ impl WasmClient {
     pub fn start_cancel_subscription(&mut self) -> Result<WasmStep, JsValue> {
         self.inner
             .start_cancel_subscription()
+            .map(step)
+            .map_err(js_error)
+    }
+
+    /// Refunds the unused part of the last charge and ends the plan now, for
+    /// a `stripe` or `play` subscription (D72 §1); ends with `billing`.
+    #[wasm_bindgen(js_name = startRefund)]
+    pub fn start_refund(&mut self, provider: &str) -> Result<WasmStep, JsValue> {
+        self.inner
+            .start_refund(provider)
             .map(step)
             .map_err(js_error)
     }

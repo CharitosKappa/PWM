@@ -152,6 +152,19 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
         self.plan_conversation(start).await
     }
 
+    /// Pays back the unused part of the last charge and ends the plan now
+    /// (D72 §1), for the plan's own provider.
+    pub(crate) async fn refund_plan(&mut self) -> Result<PlanView> {
+        let provider = self
+            .plan()
+            .await?
+            .subscription
+            .map(|s| s.provider)
+            .ok_or_else(|| Failure::code("no_subscription"))?;
+        let start = self.client.start_refund(&provider);
+        self.plan_conversation(start).await
+    }
+
     async fn plan_conversation(
         &mut self,
         start: std::result::Result<Step, ClientError>,
@@ -171,6 +184,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
                 until_ms: s.until_ms,
                 canceling: s.canceling,
                 price_locked_until_ms: s.price_locked_until_ms,
+                refundable_until_ms: s.refundable_until_ms,
                 also: s.also,
             }),
             sells: info.sells,

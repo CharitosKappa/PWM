@@ -34,6 +34,7 @@ internal object Messages {
         "already_subscribed" to "You already have a plan.",
         "managed_elsewhere" to "Change this plan where you bought it.",
         "no_subscription" to "There's no plan to change.",
+        "refund_window_passed" to "Refunds are possible for 30 days after a charge, and that time has passed.",
         "approval_ended" to "The request ended. Ask again, or sign in with your Secret Key.",
         "unknown_approval" to "That request ended. Ask the new device to try again.",
         "approval_failed" to "The approval didn't arrive safely. Sign in with your Secret Key.",

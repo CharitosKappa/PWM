@@ -718,6 +718,7 @@ export class FakeCore implements Core {
       until_ms: number;
       canceling: boolean;
       price_locked_until_ms: number | null;
+      refundable_until_ms: number | null;
       also: string[];
     } | null;
     sells: string[];
@@ -756,6 +757,20 @@ export class FakeCore implements Core {
       if (this.billing_.subscription === null)
         throw coreError("no_subscription");
       this.billing_.subscription.canceling = true;
+    });
+  }
+
+  startRefund(provider: string): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    if (provider !== "stripe" && provider !== "play")
+      throw coreError("managed_elsewhere");
+    return this.billingStep(`/v1/billing/${provider}/refund`, () => {
+      const sub = this.billing_.subscription;
+      if (sub === null) throw coreError("no_subscription");
+      if (sub.refundable_until_ms === null)
+        throw coreError("refund_window_passed");
+      this.billing_.plan = "free";
+      this.billing_.subscription = null;
     });
   }
 

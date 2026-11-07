@@ -22,7 +22,9 @@ import pwm.kit.ui.PlanModel
  * The Plan section of Settings (D6 §2-4): the plan and where it's managed.
  * On a free plan, where the server sells through Google Play, one button
  * buys Premium there; nothing else here asks to buy. A Play subscription is
- * canceled on Play's own page, which "Manage subscription" opens.
+ * canceled on Play's own page, which "Manage subscription" opens. Within
+ * 30 days of a charge, "Request a refund" ends a Play or web plan now and
+ * pays back the unused days (D72 §1); only Apple refunds an App Store plan.
  */
 @Composable
 internal fun PlanSection(model: PlanModel) {
@@ -61,6 +63,19 @@ internal fun PlanSection(model: PlanModel) {
             BillingStatus.APP_STORE -> Caption(stringResource(R.string.plan_managed_app_store), tag = "planManagedElsewhere")
             BillingStatus.STRIPE -> Caption(stringResource(R.string.plan_managed_web), tag = "planManagedElsewhere")
         }
+        val refundableUntil = subscription.refundableUntilMs
+        if (refundableUntil != null && state.refundOffered) {
+            val until = DateFormat.getDateInstance(DateFormat.LONG).format(Date(refundableUntil))
+            Secondary(stringResource(R.string.plan_refund), tag = "planRefund", enabled = state.canRefund, onClick = model::refund)
+            Caption(stringResource(R.string.plan_refund_hint, until))
+        }
+        if (state.refundFromApple) Caption(stringResource(R.string.plan_refund_apple), tag = "planRefundApple")
+    }
+    if (state.refunded && subscription == null) {
+        Text(
+            stringResource(R.string.plan_refunded), style = Tokens.Text.body.compose(), color = color(Tokens.Color.text),
+            modifier = Modifier.testTag("planRefunded"),
+        )
     }
     if (state.alsoPaying.isNotEmpty()) {
         val where = state.alsoPaying.map {

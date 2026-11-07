@@ -45,6 +45,11 @@ public protocol StorePurchases: Sendable {
     /// The App Store's own page for the user's subscriptions, where a store
     /// subscription is cancelled (D6 §5).
     func showManageSubscriptions() async throws
+    /// Apple's refund sheet for the latest purchase of `productId` (D72 §1).
+    /// Only Apple refunds an App Store purchase; a granted refund reaches
+    /// the server through Apple's notification. False when the user closed
+    /// the sheet without asking.
+    func requestRefund(productId: String) async throws -> Bool
 }
 
 /// Where this app sells plans (D6 §2): the App Store on iOS, Stripe's
@@ -71,6 +76,8 @@ public final class PlanModel {
     /// Apple's and Google's own pages for subscriptions, opened from the Mac.
     static let appStoreSubscriptions = URL(string: "https://apps.apple.com/account/subscriptions")!
     static let playSubscriptions = URL(string: "https://play.google.com/store/account/subscriptions")!
+    /// Where an App Store refund is asked for, away from StoreKit (D72 §1).
+    static let appleReportAProblem = URL(string: "https://reportaproblem.apple.com")!
 
     public private(set) var status: BillingStatus?
     public private(set) var busy = false
@@ -84,6 +91,11 @@ public final class PlanModel {
     /// Checkout was opened in the browser: read the plan again when the
     /// app comes back.
     public private(set) var checkoutOpened = false
+    /// A refund went through here: the plan ended and the money is on its way.
+    public private(set) var refunded = false
+    /// Apple has a refund request from its sheet; the plan changes only if
+    /// Apple grants it.
+    public private(set) var refundRequested = false
 
     private let account: any Account
     let checkout: Checkout
@@ -149,6 +161,25 @@ public final class PlanModel {
     public var canCancelSecond: Bool {
         guard let subscription, subscription.provider != .stripe else { return false }
         return subscription.also.contains(.stripe)
+    }
+
+    /// A Stripe or Google Play subscription within 30 days of its last
+    /// charge, as the server says (D72 §1): one tap, on any platform.
+    public var canRefund: Bool {
+        guard let subscription, subscription.refundableUntil != nil else { return false }
+        return subscription.provider == .stripe || subscription.provider == .play
+    }
+
+    /// iOS, for an App Store subscription: Apple's refund sheet. Shown
+    /// whatever the server's window: Apple decides.
+    public var canRequestStoreRefund: Bool {
+        store != nil && subscription?.provider == .appStore
+    }
+
+    /// The Mac, for an App Store subscription: Apple's Report a Problem page.
+    public var storeRefundURL: URL? {
+        guard case .web = checkout, subscription?.provider == .appStore else { return nil }
+        return Self.appleReportAProblem
     }
 
     /// Apple's or Google's page for a store subscription, opened in the
@@ -238,6 +269,35 @@ public final class PlanModel {
         await change { try await self.account.resumeSubscription() }
     }
 
+    /// Pays back the unused days and ends the plan now; the account keeps
+    /// all its data on Free (D72 §1).
+    public func refund() async {
+        guard canRefund, !busy, let provider = subscription?.provider else { return }
+        busy = true
+        defer { busy = false }
+        error = nil
+        do {
+            apply(try await account.refund(provider: provider))
+            refunded = true
+        } catch {
+            self.error = Self.message(for: error)
+        }
+    }
+
+    /// iOS: Apple's refund sheet, then the plan again, in case Apple already
+    /// answered.
+    public func requestStoreRefund() async {
+        guard canRequestStoreRefund, let store else { return }
+        error = nil
+        do {
+            if try await store.requestRefund(productId: Self.premiumProductId) { refundRequested = true }
+        } catch {
+            self.error = Self.message(for: error)
+            return
+        }
+        await load()
+    }
+
     /// iOS: the App Store's subscriptions page.
     public func manageInStore() async {
         guard let store else { return }
@@ -273,7 +333,11 @@ public final class PlanModel {
     func apply(_ status: BillingStatus) {
         if let token = status.token { self.token = token }
         self.status = status
-        if status.plan != .free { purchasePending = false }
+        if status.plan != .free {
+            purchasePending = false
+            refunded = false
+        }
+        if status.subscription?.provider != .appStore { refundRequested = false }
     }
 
     // MARK: Transactions
@@ -305,6 +369,8 @@ public final class PlanModel {
         "store_unavailable": "Premium isn't available in the App Store right now.",
         "store_failed": "The App Store couldn't finish. Try again.",
         "purchase_unverified": "The App Store couldn't confirm this purchase.",
+        "refund_no_purchase": "This Apple Account has no purchase to refund. Use Apple's Report a Problem page.",
+        "refund_requested_already": "You've already asked Apple for a refund for this purchase.",
     ]
 
     static func message(for error: any Error) -> String {

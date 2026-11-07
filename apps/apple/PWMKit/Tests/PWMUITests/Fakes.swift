@@ -401,6 +401,20 @@ actor FakeAccount: Account {
         return answer
     }
 
+    /// As the server: Stripe or Play only, within the window; the plan ends
+    /// now.
+    func refund(provider: BillingProvider) throws -> BillingStatus {
+        calls.append("refund \(provider.name)")
+        try checkBilling()
+        guard let s = billingStatus.subscription else { throw PWMError(code: "no_subscription") }
+        guard s.provider == provider, provider == .stripe || provider == .play else {
+            throw PWMError(code: "managed_elsewhere")
+        }
+        guard s.refundableUntil != nil else { throw PWMError(code: "refund_window_passed") }
+        billingStatus = BillingStatus(plan: .free, subscription: nil, sells: billingStatus.sells, token: billingStatus.token)
+        return answer
+    }
+
     private func setCanceling(_ canceling: Bool) throws {
         guard let s = billingStatus.subscription else { throw PWMError(code: "no_subscription") }
         let stripe = s.provider == .stripe ? s : nil
@@ -408,6 +422,7 @@ actor FakeAccount: Account {
         let changed = SubscriptionEntry(
             provider: s.provider, plan: s.plan, status: s.status, until: s.until,
             canceling: stripe == nil ? s.canceling : canceling, priceLockedUntil: s.priceLockedUntil,
+            refundableUntil: s.refundableUntil,
             also: stripe == nil && canceling ? s.also.filter { $0 != .stripe } : s.also
         )
         billingStatus = BillingStatus(plan: billingStatus.plan, subscription: changed, sells: billingStatus.sells, token: billingStatus.token)
@@ -431,13 +446,17 @@ let periodEnd = Date(timeIntervalSince1970: 1_798_761_600)
 
 /// A subscription for tests.
 func subscription(
-    _ provider: BillingProvider, canceling: Bool = false, status: String = "active", also: [BillingProvider] = []
+    _ provider: BillingProvider, canceling: Bool = false, status: String = "active",
+    refundableUntil: Date? = nil, also: [BillingProvider] = []
 ) -> SubscriptionEntry {
     SubscriptionEntry(
         provider: provider, plan: .premium, status: status, until: periodEnd, canceling: canceling,
-        priceLockedUntil: periodEnd, also: also
+        priceLockedUntil: periodEnd, refundableUntil: refundableUntil, also: also
     )
 }
+
+/// The end of a refund window, 30 days after a charge (D72 §1).
+let refundEnd = Date(timeIntervalSince1970: 1_796_083_200)
 
 /// The App Store with no StoreKit: records purchases and finishes, and
 /// hands out `queued` transactions as if they finished while away.
@@ -453,6 +472,10 @@ actor FakeStore: StorePurchases {
     var purchases: [String] = []
     var finished: [String] = []
     var managed = 0
+    /// The product of each time Apple's refund sheet opened.
+    var refundRequests: [String] = []
+    /// What Apple's refund sheet ends with: sent, closed, or a failure code.
+    var refundOutcome: Result<Bool, PWMError> = .success(true)
     nonisolated let queued: [String]
 
     init(queued: [String] = []) {
@@ -461,6 +484,7 @@ actor FakeStore: StorePurchases {
 
     func set(price: String?) { self.price = price }
     func set(outcome: Outcome) { self.outcome = outcome }
+    func set(refundOutcome: Result<Bool, PWMError>) { self.refundOutcome = refundOutcome }
 
     func priceText(of productId: String) -> String? { price }
 
@@ -484,6 +508,11 @@ actor FakeStore: StorePurchases {
 
     func showManageSubscriptions() {
         managed += 1
+    }
+
+    func requestRefund(productId: String) throws -> Bool {
+        refundRequests.append(productId)
+        return try refundOutcome.get()
     }
 
     private nonisolated func transaction(_ id: String) -> StoreTransaction {

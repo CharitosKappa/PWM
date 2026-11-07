@@ -20,8 +20,8 @@ use p256::ecdsa::SigningKey;
 use p256::pkcs8::{EncodePrivateKey, LineEnding};
 use pwm_crypto::ServerSecrets;
 use pwm_server::{
-    AppState, AppleConfig, Billing, BillingConfig, Limits, PlayConfig, StripeConfig, app,
-    system_clock,
+    AppState, AppleConfig, Billing, BillingConfig, Limits, Mailer, OutboxMessage, PlayConfig,
+    StripeConfig, app, system_clock,
 };
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -45,6 +45,12 @@ struct Fake {
     play: HashMap<String, Value>,
     acknowledged: Vec<String>,
     calls: Vec<String>,
+    /// Each refund's form and idempotency key.
+    refunds: Vec<(HashMap<String, String>, Option<String>)>,
+    /// Subscriptions moved to a new price: "sub_1 price_x".
+    moves: Vec<String>,
+    /// Play purchases revoked, with the request body.
+    revoked: Vec<(String, String)>,
 }
 
 type Shared = Arc<Mutex<Fake>>;
@@ -109,12 +115,53 @@ async fn start_fake() -> (Shared, String) {
             .post(
                 |State(f): State<Shared>, Path(id): Path<String>, body: String| async move {
                     let mut f = f.lock().unwrap();
-                    let cancel = form(&body)["cancel_at_period_end"] == "true";
+                    let fields = form(&body);
+                    if let Some(price) = fields.get("items[0][price]") {
+                        // Applies at the next renewal, so the price shown stays.
+                        assert_eq!(fields["items[0][id]"], "si_1");
+                        assert_eq!(fields["proration_behavior"], "none");
+                        f.moves.push(format!("{id} {price}"));
+                        return found(f.stripe.get(&id).cloned());
+                    }
+                    let cancel = fields["cancel_at_period_end"] == "true";
                     let sub = f.stripe.get_mut(&id).map(|s| {
                         s["cancel_at_period_end"] = cancel.into();
                         s.clone()
                     });
                     found(sub)
+                },
+            )
+            .delete(|State(f): State<Shared>, Path(id): Path<String>| async move {
+                let mut f = f.lock().unwrap();
+                f.calls.push(format!("end {id}"));
+                let sub = f.stripe.get_mut(&id).map(|s| {
+                    s["status"] = "canceled".into();
+                    s.clone()
+                });
+                found(sub)
+            }),
+        )
+        .route(
+            "/v1/invoices/{id}",
+            get(|Path(id): Path<String>| async move {
+                assert_eq!(id, "in_1");
+                json!({ "id": "in_1", "payments": { "data": [
+                    { "payment": { "type": "payment_intent", "payment_intent": "pi_1" } }
+                ] } })
+                .to_string()
+            }),
+        )
+        .route(
+            "/v1/refunds",
+            post(
+                |State(f): State<Shared>, headers: axum::http::HeaderMap, body: String| async move {
+                    let key = headers
+                        .get("idempotency-key")
+                        .map(|v| v.to_str().unwrap().to_owned());
+                    let mut f = f.lock().unwrap();
+                    f.calls.push("refund".into());
+                    f.refunds.push((form(&body), key));
+                    json!({ "id": "re_1", "status": "succeeded" }).to_string()
                 },
             ),
         )
@@ -146,6 +193,17 @@ async fn start_fake() -> (Shared, String) {
                     let mut f = f.lock().unwrap();
                     f.calls.push(format!("play {token}"));
                     found(f.play.get(&token).cloned())
+                },
+            )
+            .post(
+                |State(f): State<Shared>, Path((_, rest)): Path<(String, String)>, body: String| async move {
+                    let token = rest.strip_suffix(":revoke").unwrap().to_owned();
+                    let mut f = f.lock().unwrap();
+                    f.revoked.push((token.clone(), body));
+                    if let Some(p) = f.play.get_mut(&token) {
+                        p["subscriptionState"] = "SUBSCRIPTION_STATE_EXPIRED".into();
+                    }
+                    "{}"
                 },
             ),
         )
@@ -223,9 +281,16 @@ struct World {
 }
 
 async fn world() -> Option<World> {
+    world_with(None).await
+}
+
+async fn world_with(mailer: Option<Arc<dyn Mailer>>) -> Option<World> {
     let db = migrated_db().await?;
     let (fake, url) = start_fake().await;
-    let billing = Billing::new(config(&url)).unwrap();
+    let mut billing = Billing::new(config(&url)).unwrap();
+    if let Some(mailer) = mailer {
+        billing = billing.with_mailer(mailer);
+    }
     let state = AppState::new(db.pool.clone(), ServerSecrets::generate().unwrap())
         .with_limits(Limits::unlimited(), system_clock())
         .with_billing(billing.clone());
@@ -248,9 +313,11 @@ fn stripe_subscription(id: &str, token: &str, status: &str) -> Value {
         "id": id, "object": "subscription", "status": status, "livemode": false,
         "cancel_at_period_end": false, "customer": "cus_test1",
         "metadata": { "billing_token": token },
-        "items": { "data": [{ "current_period_end": LATER_SECS,
+        "items": { "data": [{ "id": "si_1", "current_period_end": LATER_SECS,
+            "current_period_start": 1_700_000_000,
             "price": { "id": "price_p", "unit_amount": 2400, "currency": "usd" } }] },
-        "latest_invoice": { "status_transitions": { "paid_at": 1_700_000_000 } },
+        "latest_invoice": { "id": "in_1", "amount_paid": 2400,
+            "status_transitions": { "paid_at": 1_700_000_000 } },
     })
 }
 
@@ -947,5 +1014,456 @@ async fn the_app_api_reads_and_changes_the_plan() {
         run(&w.app, &mut client, step).await.unwrap_err().code(),
         "purchase_not_yours"
     );
+    w.db.drop().await;
+}
+
+// --- The pricing commitments (D72) ---
+
+const DAY: i64 = 24 * 3600;
+
+/// Records each message it is given, and says each was sent.
+#[derive(Default)]
+struct Recorder(Mutex<Vec<OutboxMessage>>);
+
+impl Mailer for Recorder {
+    fn deliver<'a>(
+        &'a self,
+        message: &'a OutboxMessage,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
+        self.0.lock().unwrap().push(message.clone());
+        Box::pin(async { true })
+    }
+}
+
+impl Recorder {
+    fn kinds(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|m| m.kind.clone())
+            .collect()
+    }
+}
+
+/// A Stripe subscription for `token`, paid `paid_days_ago` days ago for a
+/// period from then to `ends_in_days` from now, stored through a webhook.
+async fn paying(w: &World, token: &str, id: &str, paid_days_ago: i64, ends_in_days: i64) {
+    let now = now_secs() as i64;
+    let mut sub = stripe_subscription(id, token, "active");
+    sub["items"]["data"][0]["current_period_start"] = (now - paid_days_ago * DAY).into();
+    sub["items"]["data"][0]["current_period_end"] = (now + ends_in_days * DAY).into();
+    sub["latest_invoice"]["status_transitions"]["paid_at"] = (now - paid_days_ago * DAY).into();
+    w.fake.lock().unwrap().stripe.insert(id.into(), sub);
+    let event = json!({ "id": format!("evt_{id}"),
+        "data": { "object": { "object": "subscription", "id": id } } });
+    assert_eq!(stripe_webhook(&w.app, &event, None).await, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn a_stripe_refund_pays_back_the_unused_days_once_and_ends_the_plan() {
+    let Some(w) = world().await else { return };
+    let alice = register(&w.app, "alice@example.com").await;
+    let token = token_of(&w.app, &alice).await;
+    paying(&w, &token, "sub_r", 5, 360).await;
+    let (_, me) = call(&w.app, "GET", "/v1/account", Some(alice.access()), None).await;
+    let refundable = me["subscription"]["refundable_until"].as_i64().unwrap();
+    let expected = (now_secs() as i64 + 25 * DAY) * 1000;
+    assert!((refundable - expected).abs() < 60_000, "{me}");
+
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        "/v1/billing/stripe/refund",
+        Some(alice.access()),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["plan"], "free");
+    assert_eq!(body["subscription"], json!(null));
+    {
+        let fake = w.fake.lock().unwrap();
+        assert_eq!(fake.refunds.len(), 1);
+        let (refund, key) = &fake.refunds[0];
+        assert_eq!(refund["payment_intent"], "pi_1");
+        // 2400 × 360 / 365, rounded down; a second may pass meanwhile.
+        let amount: i64 = refund["amount"].parse().unwrap();
+        assert!((2366..=2367).contains(&amount), "{amount}");
+        assert_eq!(key.as_deref(), Some("pwm-refund-in_1"));
+        let refunded_at = fake.calls.iter().position(|c| c == "refund").unwrap();
+        let ended_at = fake.calls.iter().position(|c| c == "end sub_r").unwrap();
+        assert!(refunded_at < ended_at, "the refund goes first");
+    }
+    // Nothing left to refund.
+    let (status, _) = call(
+        &w.app,
+        "POST",
+        "/v1/billing/stripe/refund",
+        Some(alice.access()),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(w.fake.lock().unwrap().refunds.len(), 1);
+    w.db.drop().await;
+}
+
+#[tokio::test]
+async fn after_thirty_days_a_refund_is_refused_plainly() {
+    let Some(w) = world().await else { return };
+    let alice = register(&w.app, "alice@example.com").await;
+    let token = token_of(&w.app, &alice).await;
+    paying(&w, &token, "sub_old", 31, 334).await;
+    let (_, me) = call(&w.app, "GET", "/v1/account", Some(alice.access()), None).await;
+    assert_eq!(me["subscription"]["refundable_until"], json!(null));
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        "/v1/billing/stripe/refund",
+        Some(alice.access()),
+        None,
+    )
+    .await;
+    assert_eq!(
+        (status, &body["error"]),
+        (StatusCode::CONFLICT, &json!("refund_window_passed"))
+    );
+    assert!(w.fake.lock().unwrap().refunds.is_empty());
+    let (_, me) = call(&w.app, "GET", "/v1/account", Some(alice.access()), None).await;
+    assert_eq!(me["plan"], "premium");
+    // A Play refund for a Stripe plan is someone else's to make.
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        "/v1/billing/play/refund",
+        Some(alice.access()),
+        None,
+    )
+    .await;
+    assert_eq!(
+        (status, &body["error"]),
+        (StatusCode::CONFLICT, &json!("managed_elsewhere"))
+    );
+    w.db.drop().await;
+}
+
+#[tokio::test]
+async fn a_play_refund_is_pro_rata_through_google() {
+    let Some(w) = world().await else { return };
+    let alice = register(&w.app, "alice@example.com").await;
+    let token = token_of(&w.app, &alice).await;
+    let purchase_token = "play.token-r001";
+    w.fake.lock().unwrap().play.insert(
+        purchase_token.into(),
+        play_purchase("SUBSCRIPTION_STATE_ACTIVE", &token),
+    );
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        "/v1/billing/play/purchases",
+        Some(alice.access()),
+        Some(json!({ "product_id": "premium_yearly", "purchase_token": purchase_token })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // Bought just now: the window is open.
+    assert!(body["subscription"]["refundable_until"].is_i64(), "{body}");
+
+    // Thirty-one days on, it's closed.
+    sqlx::query("UPDATE subscriptions SET last_charge_at = now() - interval '31 days'")
+        .execute(&w.db.pool)
+        .await
+        .unwrap();
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        "/v1/billing/play/refund",
+        Some(alice.access()),
+        None,
+    )
+    .await;
+    assert_eq!(
+        (status, &body["error"]),
+        (StatusCode::CONFLICT, &json!("refund_window_passed"))
+    );
+
+    sqlx::query("UPDATE subscriptions SET last_charge_at = now() - interval '2 days'")
+        .execute(&w.db.pool)
+        .await
+        .unwrap();
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        "/v1/billing/play/refund",
+        Some(alice.access()),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["plan"], "free");
+    let revoked = w.fake.lock().unwrap().revoked.clone();
+    assert_eq!(revoked.len(), 1);
+    assert_eq!(revoked[0].0, purchase_token);
+    let sent: Value = serde_json::from_str(&revoked[0].1).unwrap();
+    assert_eq!(
+        sent,
+        json!({ "revocationContext": { "proratedRefund": {} } })
+    );
+    w.db.drop().await;
+}
+
+#[tokio::test]
+async fn a_price_change_holds_subscribers_and_moves_them_only_after_a_delivered_notice() {
+    let mailer = Arc::new(Recorder::default());
+    let Some(w) = world_with(Some(mailer.clone())).await else {
+        return;
+    };
+    let alice = register(&w.app, "alice@example.com").await;
+    let token = token_of(&w.app, &alice).await;
+    paying(&w, &token, "sub_h", 3, 362).await;
+
+    let held =
+        pwm_server::record_price_change(&w.db.pool, "stripe", "premium", "price_p2", 3000, "usd")
+            .await
+            .unwrap();
+    assert_eq!(held, 1);
+    let (_, me) = call(&w.app, "GET", "/v1/account", Some(alice.access()), None).await;
+    let locked = me["subscription"]["price_locked_until"].as_i64().unwrap();
+    let year = (now_secs() as i64 + 365 * DAY) * 1000;
+    assert!((locked - year).abs() < 2 * DAY * 1000, "{me}");
+    // Bad input is refused before anything is written.
+    for (provider, plan, price, amount, currency) in [
+        ("paypal", "premium", "price_x", 1, "USD"),
+        ("stripe", "gold", "price_x", 1, "USD"),
+        ("stripe", "premium", "price x", 1, "USD"),
+        ("stripe", "premium", "price_x", -1, "USD"),
+        ("stripe", "premium", "price_x", 1, "US"),
+    ] {
+        assert!(
+            pwm_server::record_price_change(&w.db.pool, provider, plan, price, amount, currency)
+                .await
+                .is_err()
+        );
+    }
+
+    // The notice goes now; the reminder waits for 60 days before the hold ends.
+    w.billing.reconcile(&w.db.pool).await.unwrap();
+    assert_eq!(mailer.kinds(), ["price_change"]);
+    {
+        let messages = mailer.0.lock().unwrap();
+        assert_eq!(messages[0].email, "alice@example.com");
+        assert_eq!(
+            (messages[0].price_minor, messages[0].currency.as_str()),
+            (3000, "USD")
+        );
+        assert_eq!(messages[0].about_ms / 1000, locked / 1000);
+    }
+    assert!(w.fake.lock().unwrap().moves.is_empty(), "still held");
+
+    // The hold is over, but the reminder was never delivered: no move.
+    sqlx::query("UPDATE subscriptions SET price_locked_until = now() - interval '1 day'")
+        .execute(&w.db.pool)
+        .await
+        .unwrap();
+    w.billing.reconcile(&w.db.pool).await.unwrap();
+    assert!(
+        w.fake.lock().unwrap().moves.is_empty(),
+        "no delivered notice"
+    );
+
+    // Delivered 59 days ago: still no move. 61 days: it moves.
+    for (days, moves) in [(59, 0), (61, 1)] {
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE billing_outbox SET sent_at = now() - interval '{days} days' \
+             WHERE kind = 'price_change_reminder'"
+        )))
+        .execute(&w.db.pool)
+        .await
+        .unwrap();
+        w.billing.reconcile(&w.db.pool).await.unwrap();
+        assert_eq!(w.fake.lock().unwrap().moves.len(), moves, "{days} days");
+    }
+    assert_eq!(w.fake.lock().unwrap().moves, ["sub_h price_p2"]);
+    w.db.drop().await;
+}
+
+#[tokio::test]
+async fn renewal_reminders_go_once_fourteen_days_before_each_charge() {
+    let mailer = Arc::new(Recorder::default());
+    let Some(w) = world_with(Some(mailer.clone())).await else {
+        return;
+    };
+    let alice = register(&w.app, "alice@example.com").await;
+    let token = token_of(&w.app, &alice).await;
+    paying(&w, &token, "sub_soon", 355, 10).await;
+    paying(&w, &token, "sub_later", 345, 20).await;
+    paying(&w, &token, "sub_ending", 355, 10).await;
+    w.fake.lock().unwrap().stripe.get_mut("sub_ending").unwrap()["cancel_at_period_end"] =
+        true.into();
+
+    for _ in 0..2 {
+        w.billing.reconcile(&w.db.pool).await.unwrap();
+    }
+    let messages = mailer.0.lock().unwrap().clone();
+    assert_eq!(messages.len(), 1, "{messages:?}");
+    let reminder = &messages[0];
+    assert_eq!(reminder.kind, "renewal_reminder");
+    assert_eq!(reminder.provider, "stripe");
+    assert_eq!(
+        (reminder.price_minor, reminder.currency.as_str()),
+        (2400, "USD")
+    );
+    let soon = w.fake.lock().unwrap().stripe["sub_soon"]["items"]["data"][0]["current_period_end"]
+        .as_i64()
+        .unwrap();
+    assert_eq!(reminder.about_ms, soon * 1000);
+    // The later one is scheduled for its own day, not sent yet.
+    let waiting: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM billing_outbox WHERE provider_ref = 'sub_later' AND sent_at IS NULL \
+         AND send_after > now() + interval '5 days'",
+    )
+    .fetch_one(&w.db.pool)
+    .await
+    .unwrap();
+    assert_eq!(waiting, 1);
+    w.db.drop().await;
+}
+
+/// Without an email provider (D32) nothing is sent: the outbox keeps it.
+#[tokio::test]
+async fn without_a_mailer_the_outbox_waits() {
+    let Some(w) = world().await else { return };
+    let alice = register(&w.app, "alice@example.com").await;
+    let token = token_of(&w.app, &alice).await;
+    paying(&w, &token, "sub_w", 355, 10).await;
+    w.billing.reconcile(&w.db.pool).await.unwrap();
+    let unsent: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM billing_outbox WHERE kind = 'renewal_reminder' AND sent_at IS NULL",
+    )
+    .fetch_one(&w.db.pool)
+    .await
+    .unwrap();
+    assert_eq!(unsent, 1);
+    w.db.drop().await;
+}
+
+/// A lapsed account keeps everything and can still read, edit and export
+/// it (PRICING.md §7, D72 §4).
+#[tokio::test]
+async fn a_lapsed_account_keeps_its_data_and_still_exports() {
+    use common::driver::{T0, run};
+    use pwm_client::{Client, ExportFormat, KdfParams, MemoryStore, Outcome, Platform, new_id};
+    use pwm_vault::{Item, ItemId, ItemKind};
+
+    let Some(w) = world().await else { return };
+    let mut client = Client::new(MemoryStore::new());
+    client.set_signup_params(KdfParams::MOBILE_FLOOR).unwrap();
+    let password = "correct horse battery staple 42";
+    let step = client.start_signup(
+        "alice@example.com",
+        password,
+        &new_id().unwrap(),
+        Platform::Linux,
+        "Laptop",
+    );
+    let Outcome::SignedUp { secret_key } = run(&w.app, &mut client, step).await.unwrap() else {
+        panic!("not signed up");
+    };
+    let step = client.start_ensure_vault();
+    let Outcome::VaultCreated { vault_id } = run(&w.app, &mut client, step).await.unwrap() else {
+        panic!("no vault");
+    };
+    let id = ItemId::generate().unwrap();
+    let item = Item::new(ItemKind::Note, "Bank", T0)
+        .to_json_with_id(&id)
+        .unwrap();
+    client
+        .save_item(&vault_id, item.expose_secret(), T0)
+        .unwrap();
+    let step = client.start_sync();
+    run(&w.app, &mut client, step).await.unwrap();
+
+    // The plan lapsed.
+    let account: Uuid = client.account_id().unwrap().unwrap().parse().unwrap();
+    seed_subscription(
+        &w.db.pool,
+        account,
+        "sub_lapsed",
+        "expired",
+        "now() - interval '1 day', NULL",
+    )
+    .await;
+    let step = client.start_billing_status();
+    let Outcome::Billing(info) = run(&w.app, &mut client, step).await.unwrap() else {
+        panic!("no plan");
+    };
+    assert_eq!(info.plan, "free");
+
+    // Still syncs and edits, and nothing was deleted on the server.
+    let edited = Item::new(ItemKind::Note, "Bank (old)", T0 + 1)
+        .to_json_with_id(&id)
+        .unwrap();
+    client
+        .save_item(&vault_id, edited.expose_secret(), T0 + 1)
+        .unwrap();
+    let step = client.start_sync();
+    let Outcome::Synced(report) = run(&w.app, &mut client, step).await.unwrap() else {
+        panic!("not synced");
+    };
+    assert_eq!(report.pushed, 1);
+    let items: i64 = sqlx::query_scalar("SELECT count(*) FROM items")
+        .fetch_one(&w.db.pool)
+        .await
+        .unwrap();
+    assert_eq!(items, 1);
+
+    // And exports.
+    client
+        .authorize_export(password, secret_key.expose_secret(), T0)
+        .unwrap();
+    let file = client.export(ExportFormat::Json, T0 + 2).unwrap();
+    assert!(String::from_utf8_lossy(file.expose_secret()).contains("Bank (old)"));
+    w.db.drop().await;
+}
+
+/// The refund through the app API (D72 §1).
+#[tokio::test]
+async fn the_app_api_refunds_and_ends_the_plan() {
+    use common::driver::run;
+    use pwm_client::{Client, KdfParams, MemoryStore, Outcome, Platform, new_id};
+
+    let Some(w) = world().await else { return };
+    let mut client = Client::new(MemoryStore::new());
+    client.set_signup_params(KdfParams::MOBILE_FLOOR).unwrap();
+    let step = client.start_signup(
+        "alice@example.com",
+        "correct horse battery staple 42",
+        &new_id().unwrap(),
+        Platform::Windows,
+        "Desk",
+    );
+    run(&w.app, &mut client, step).await.unwrap();
+    let step = client.start_billing_status();
+    let Outcome::Billing(info) = run(&w.app, &mut client, step).await.unwrap() else {
+        panic!("no plan");
+    };
+    paying(&w, &info.token.unwrap(), "sub_c", 2, 363).await;
+
+    let step = client.start_billing_status();
+    let Outcome::Billing(info) = run(&w.app, &mut client, step).await.unwrap() else {
+        panic!("no plan");
+    };
+    assert!(info.subscription.unwrap().refundable_until_ms.is_some());
+    assert_eq!(
+        client.start_refund("app_store").unwrap_err().code(),
+        "managed_elsewhere"
+    );
+    let step = client.start_refund("stripe");
+    let Outcome::Billing(info) = run(&w.app, &mut client, step).await.unwrap() else {
+        panic!("not refunded");
+    };
+    assert_eq!(info.plan, "free");
+    assert_eq!(w.fake.lock().unwrap().refunds.len(), 1);
     w.db.drop().await;
 }

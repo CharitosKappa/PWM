@@ -16,6 +16,7 @@ pub(crate) enum BillingCall {
     Checkout,
     Cancel,
     Resume,
+    Refund,
     StorePurchase,
 }
 
@@ -48,6 +49,9 @@ pub struct SubscriptionInfo {
     /// It ends at `until_ms` instead of renewing.
     pub canceling: bool,
     pub price_locked_until_ms: Option<i64>,
+    /// Until when [`Client::start_refund`] works (Stripe and Play, 30 days
+    /// after the last charge, D72 §1); `None` when it doesn't.
+    pub refundable_until_ms: Option<i64>,
     /// Other subscriptions that count too, bought by mistake: where to
     /// cancel them.
     pub also: Vec<String>,
@@ -70,6 +74,8 @@ struct SubscriptionJson {
     until: i64,
     canceling: bool,
     price_locked_until: Option<i64>,
+    #[serde(default)]
+    refundable_until: Option<i64>,
     also: Vec<String>,
 }
 
@@ -94,6 +100,7 @@ fn read_summary(body: &[u8]) -> Result<BillingInfo, ClientError> {
             until_ms: j.until,
             canceling: j.canceling,
             price_locked_until_ms: j.price_locked_until,
+            refundable_until_ms: j.refundable_until,
             also: j.also,
         }),
         sells: s.billing,
@@ -108,6 +115,7 @@ const CODES: &[&str] = &[
     "purchase_pending",
     "already_subscribed",
     "managed_elsewhere",
+    "refund_window_passed",
 ];
 
 fn billing_error(status: u16, body: &[u8]) -> ClientError {
@@ -177,6 +185,19 @@ impl<S: Store> Client<S> {
             "/v1/billing/stripe/resume",
             None,
         )
+    }
+
+    /// Refunds the unused part of the last charge and ends the plan now
+    /// (PRICING.md §5, D72 §1), for a subscription bought with `provider`
+    /// (`stripe` or `play`); ends with `Billing`. After 30 days,
+    /// `refund_window_passed`. Only Apple refunds an App Store purchase.
+    pub fn start_refund(&mut self, provider: &str) -> Result<Step, ClientError> {
+        let path = match provider {
+            "stripe" => "/v1/billing/stripe/refund",
+            "play" => "/v1/billing/play/refund",
+            _ => return Err(ClientError::Billing("managed_elsewhere")),
+        };
+        self.start_billing_call(BillingCall::Refund, Method::Post, path, None)
     }
 
     /// Hands an App Store purchase to the server right after StoreKit

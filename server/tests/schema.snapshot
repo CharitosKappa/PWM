@@ -80,6 +80,29 @@ table billing_events
   index CREATE UNIQUE INDEX billing_events_pkey ON public.billing_events USING btree (provider, event_id)
   index CREATE INDEX billing_events_received_at ON public.billing_events USING btree (received_at)
 
+table billing_outbox
+  column id uuid not null default gen_random_uuid()
+  column account_id uuid not null
+  column kind text not null
+  column provider text not null
+  column provider_ref text not null
+  column about timestamp with time zone not null
+  column price_minor bigint not null
+  column currency text not null
+  column send_after timestamp with time zone not null
+  column sent_at timestamp with time zone null
+  column created_at timestamp with time zone not null default now()
+  constraint billing_outbox_account_id_fkey: FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+  constraint billing_outbox_currency_check: CHECK ((currency ~ '^[A-Z]{3}$'::text))
+  constraint billing_outbox_kind_check: CHECK ((kind = ANY (ARRAY['renewal_reminder'::text, 'price_change'::text, 'price_change_reminder'::text])))
+  constraint billing_outbox_kind_provider_provider_ref_about_key: UNIQUE (kind, provider, provider_ref, about)
+  constraint billing_outbox_pkey: PRIMARY KEY (id)
+  constraint billing_outbox_price_minor_check: CHECK ((price_minor >= 0))
+  constraint billing_outbox_provider_provider_ref_fkey: FOREIGN KEY (provider, provider_ref) REFERENCES subscriptions(provider, provider_ref) ON DELETE CASCADE
+  index CREATE INDEX billing_outbox_due ON public.billing_outbox USING btree (send_after) WHERE (sent_at IS NULL)
+  index CREATE UNIQUE INDEX billing_outbox_kind_provider_provider_ref_about_key ON public.billing_outbox USING btree (kind, provider, provider_ref, about)
+  index CREATE UNIQUE INDEX billing_outbox_pkey ON public.billing_outbox USING btree (id)
+
 table devices
   column id uuid not null
   column account_id uuid not null
@@ -121,6 +144,24 @@ table login_attempts
   constraint login_attempts_pkey: PRIMARY KEY (id)
   index CREATE INDEX login_attempts_expires_at ON public.login_attempts USING btree (expires_at)
   index CREATE UNIQUE INDEX login_attempts_pkey ON public.login_attempts USING btree (id)
+
+table price_changes
+  column id uuid not null default gen_random_uuid()
+  column provider text not null
+  column plan text not null
+  column price_ref text not null
+  column price_minor bigint not null
+  column currency text not null
+  column held_until timestamp with time zone not null
+  column created_at timestamp with time zone not null default now()
+  constraint price_changes_currency_check: CHECK ((currency ~ '^[A-Z]{3}$'::text))
+  constraint price_changes_pkey: PRIMARY KEY (id)
+  constraint price_changes_plan_check: CHECK ((plan = ANY (ARRAY['premium'::text, 'family'::text, 'teams'::text])))
+  constraint price_changes_price_minor_check: CHECK ((price_minor >= 0))
+  constraint price_changes_price_ref_check: CHECK (((price_ref <> ''::text) AND (octet_length(price_ref) <= 200)))
+  constraint price_changes_provider_check: CHECK ((provider = ANY (ARRAY['stripe'::text, 'app_store'::text, 'play'::text])))
+  index CREATE UNIQUE INDEX price_changes_pkey ON public.price_changes USING btree (id)
+  index CREATE INDEX price_changes_plan ON public.price_changes USING btree (provider, plan, created_at)
 
 table push_tokens
   column device_id uuid not null
@@ -205,6 +246,7 @@ table subscriptions
   column grace_until timestamp with time zone null
   column last_charge_at timestamp with time zone null
   column sandbox boolean not null default false
+  column period_start timestamp with time zone null
   constraint subscriptions_account_id_fkey: FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
   constraint subscriptions_currency_check: CHECK ((currency ~ '^[A-Z]{3}$'::text))
   constraint subscriptions_pkey: PRIMARY KEY (provider, provider_ref)

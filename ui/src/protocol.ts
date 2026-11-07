@@ -104,6 +104,7 @@ export type Request =
   | { kind: "checkout"; plan: string }
   | { kind: "cancelPlan" }
   | { kind: "resumePlan" }
+  | { kind: "refundPlan" }
   // Asking a signed-in device (D46), from the popup while signed out.
   | { kind: "askApproval"; email: string }
   | { kind: "askApprovalPoll" }
@@ -281,6 +282,8 @@ export interface PlanView {
     /** It ends at `untilMs` instead of renewing. */
     canceling: boolean;
     priceLockedUntilMs: number | null;
+    /** Until when a refund can be asked for here (Stripe and Play, D72); null when it can't. */
+    refundableUntilMs: number | null;
     /** Other subscriptions that count too, bought by mistake. */
     also: PlanProvider[];
   } | null;
@@ -413,6 +416,7 @@ export interface Replies {
   checkout: string;
   cancelPlan: PlanView;
   resumePlan: PlanView;
+  refundPlan: PlanView;
   devices: DeviceView[];
   renameDevice: DeviceView[];
   revokeDevice: DeviceView[];
@@ -524,4 +528,5 @@ export const REQUEST_KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "checkout",
   "cancelPlan",
   "resumePlan",
+  "refundPlan",
 ]);

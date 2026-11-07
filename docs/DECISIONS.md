@@ -3746,3 +3746,87 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **The product id** is the placeholder `premium_yearly`.
     - **Two more libraries in D60's exception,** approved by the founder on 2026-11-07: Play Billing 9.1.0 brings `com.google.android.gms:play-services-location` 19.0.0 and `play-services-places-placereport` 17.0.0, both under the Android SDK licence (versions 8.0 to 9.0 bring them too). They're allowed by name with `com.android.billingclient:billing`. The app asks for no location permission; its manifest gains only `com.android.vending.BILLING`.
   - **Messages:** the server's billing codes are in `design/messages.json` for both apps. Each app keeps only its store's own codes.
+- **D72 — The pricing commitments in code (M9.2): refunds, price changes and the hold, the reminders' outbox, export after a lapse, and where account deletion goes** · settled 2026-11-07 · founder (approved as proposed).
+  M9.2 asks to "implement every commitment in `PRICING.md` with tests (price lock, reminders, cancel, refunds, export after lapse)". D6 §5 and §8 set the direction, and M9.1 built cancel and resume. What's still open:
+  - **The refund:** the exact rule and amount, and how it's made safe to retry.
+  - **Play:** Play's API can refund pro-rata after all (`purchases.subscriptionsv2.revoke` with `proratedRefund`), which closes one of D6's gaps.
+  - **Price changes:** how one is entered, when it reaches existing subscribers, and how the hold is kept.
+  - **The reminders:** what the outbox holds, and what happens while there's no email provider (D32).
+  - **Account deletion:** D6 §6 has rules for it, but the server has no deletion at all, and Apple requires one in the app (App Review guideline 5.1.1(v)).
+
+  Proposal:
+  1. **Refunds (commitment 5): one button, within 30 days of the last charge, the first one included (D6).**
+     - **Stripe:** `POST /v1/billing/stripe/refund`.
+       - **The amount:** what the last invoice charged, times the unused part of the period: `floor(amount_paid × (period_end − now) / (period_end − period_start))`.
+       - **The calls:** the server reads the invoice's payment (`GET /v1/invoices/{id}?expand[]=payments`), refunds that PaymentIntent (`POST /v1/refunds` with `payment_intent` and `amount`), then ends the subscription at once (`DELETE /v1/subscriptions/{id}`).
+       - **Safe to retry:** the refund carries an idempotency key made from the invoice id, so a retry never refunds twice. It refunds before canceling: a failure in between leaves the user paid back and still subscribed, never canceled without the money.
+     - **Play:** `POST /v1/billing/play/refund` calls `subscriptionsv2 …:revoke` with `proratedRefund`. Google works out the amount, and the purchase then reads as expired.
+       - **The window:** Play doesn't say when it last charged, so the server records `last_charge_at` when it first sees a new expiry time. That's a renewal, and a notification brings it within minutes.
+     - **The App Store:** only Apple refunds.
+       - **iOS:** "Request a refund" opens Apple's sheet (`Transaction.beginRefundRequest`). A granted refund arrives as Apple's notification and ends the plan, which M9.1 already handles.
+       - **Elsewhere:** the screen points to Apple's page for problem reports.
+     - **After the window,** `refund_window_passed`. The summary gains `refundable_until`, so the screens show the button only while it applies.
+     - **A refund ends the plan now:** the account is Free and keeps all its data.
+  2. **Price changes and the hold (commitments 1 and 2): an operator command, applied only after a notice was delivered.**
+     - **Entering one:** `pwm-server price-change <stripe|app_store|play> <plan> <new price id> <new amount> <currency>` records it in a new `price_changes` table.
+       - **New subscribers** pay the new price as soon as the operator changes the setting (`PWM_STRIPE_PRICES`, or the store's console).
+       - **Subscribers already paying** get `price_locked_until` = now + 12 months, unless they already have a later date.
+     - **The notices:** each affected subscription gets a price-change notice at once, and a reminder 60 days before `price_locked_until`. Both go through the outbox (§3).
+     - **Applying it (Stripe):** the daily pass moves a subscription to the new price only when all three hold:
+       - `price_locked_until` has passed,
+       - its 60-day reminder was actually sent,
+       - and that was at least 60 days ago.
+
+       The move takes effect at the next renewal (`proration_behavior=none`). The function that moves a subscription refuses a locked one, and a test holds it to that.
+     - **Until email can be sent (D32), no price change ever applies.** Notices that can't be delivered block the move.
+     - **The stores:** the change is made in the store's console, choosing to keep existing subscribers' price, as `PRICING.md` says. On each read, a renewal at a price other than the stored one before `price_locked_until` logs a warning for the operator, with the provider and a count only.
+  3. **The reminders' outbox (commitment 2).** A new table `billing_outbox`.
+     - **Each row:** an account, a kind (`renewal_reminder`, `price_change`, `price_change_reminder`), the subscription it's about, the dates and amounts the message needs, `send_after` and `sent_at`. No email: it's looked up when sending.
+     - **Renewal reminders:** the daily pass adds one 14 days before every renewal, for every provider, unless the subscription is canceling. A unique key on the subscription and its period end means each charge gets exactly one.
+     - **Sending:** a `Mailer` trait, with none configured until D32. The daily pass logs how many rows are due and unsent. The wording comes with D32.
+  4. **Export after a lapse, and nothing deleted on a downgrade (commitment 7).**
+     - **Export already works without a plan:** it happens on the device, from the device's own copy (D24), and nothing checks a plan.
+     - **M9.2 adds tests that keep it that way:**
+       - an account whose subscription expired syncs, reads, edits and exports through the app API
+       - expiring or refunding a subscription leaves every item and vault in place
+     - **A rule for M9.3:** plan gates never stop exporting, reading, editing or deleting existing items.
+  5. **Account deletion becomes its own task, M9.4, not part of M9.2.** It's a feature of its own: proving the master password again (an OPAQUE login made only for it), deleting on the server, wiping each device, and screens on every platform, with export offered first.
+     - **D6 §6's rules go with it:** a Stripe subscription ends with a pro-rata refund, whatever the 30 days. A store subscription can't be ended by us, so the screen warns first, with the link to cancel it.
+     - **Its own decision,** proposed when M9.4 starts. It must land before launch, since Apple requires it.
+  6. **The app API and the screens:**
+     - **The app API:** `pwm-client` gains `start_refund` (Stripe or Play, by the subscription's provider), ending with `Billing`. The summary gains `refundable_until`.
+     - **The screens:** "Request a refund" in the Plan section while it applies: one click for Stripe and Play, Apple's sheet on iOS, Apple's page elsewhere for an App Store plan. The result says the plan ended and the refund is on its way.
+     - **New error codes:** `refund_window_passed`, and `managed_elsewhere` when the subscription's store isn't this one.
+  7. **No new dependencies.** Migration 0009 adds `price_changes`, `billing_outbox` and `subscriptions.period_start`, which the refund amount needs.
+  8. **Tests:**
+     - **Server, against the fake providers:**
+       - the refund's amount, window and idempotency key, and refund before cancel
+       - Play's revoke with `proratedRefund`
+       - the price-change command, the hold set and kept, no move without a delivered notice, a move 60 days after one, and a locked subscription refused
+       - reminders scheduled once per charge, for every provider, and none for a canceling subscription
+       - a store renewal at another price logged
+       - data kept after expiry and refund
+     - **The migration:** 0009.
+     - **The app API:** a lapsed account exports, end to end.
+     - **The screens:** the refund button and its window on each platform, with fakes.
+
+  Alternatives:
+  - **Refund in full instead of pro-rata:** simpler and kinder, but it's not what `PRICING.md` says, and it invites buying a year and refunding it in month eleven.
+  - **Let the stores' and Stripe's own reminder emails count:** Apple only reminds for some subscriptions and Stripe's emails aren't ours to word. The commitment is ours.
+  - **Account deletion inside M9.2:** one PR fewer, but it doubles M9.2 and mixes a security-sensitive feature into billing.
+
+  Implementation notes (M9.2):
+  - **Refunds** (`server/src/billing/routes.rs`):
+    - **Stripe:** reads the last invoice (expanded on the subscription) for when it was paid, what it paid and the period, then its PaymentIntent (`GET /v1/invoices/{id}?expand[]=payments`). It refunds with the idempotency key `pwm-refund-<invoice>`, then `DELETE`s the subscription. A test checks the refund comes before the end.
+    - **Play:** revokes with `proratedRefund`. Its window comes from `last_charge_at`, which the server sets when a purchase is first stored or a new expiry shows.
+    - **Where the button shows:** the summary's `refundable_until` is set only for Stripe and Play, so the screens show the button only then.
+  - **A plan may list more than one price** (`premium=price_new,premium=price_old`): the first is sold, and the others still read as the plan. A price change would otherwise make held subscriptions unreadable. `PRICING.md` gains "Changing a price".
+  - **The outbox and the mailer** (`server/src/billing/commitments.rs`):
+    - **`Mailer`** is a trait with no implementation until D32. A message carries the account's email, read at send time, so the outbox itself holds none.
+    - **A reminder that no longer applies** (canceled, or a new period) isn't sent, and unsent messages about a past date are dropped.
+    - **The daily pass** schedules, delivers and then moves, in that order.
+  - **Moving a held price:** `may_move` requires the hold over and the reminder delivered 60 days before. The move uses `proration_behavior=none` from the next renewal.
+  - **The apps:**
+    - **The desktop and the extensions** show Request a refund, with the date it's possible until. An App Store plan points to Apple's Report a Problem page.
+    - **iOS** opens Apple's refund sheet. **Android** refunds Play and Stripe plans.
+    - **The message** `refund_window_passed` is in `design/messages.json`.
