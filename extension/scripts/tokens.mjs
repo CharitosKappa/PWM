@@ -5,28 +5,45 @@ import fs from "node:fs";
 import path from "node:path";
 
 /**
- * The bundled app fonts (design/fonts, D1): each family's file and the
- * weights its variable font covers. Pages load them from `fonts/`.
+ * @typedef {{ family: string, file: string, weights: string, licence: string }} FontFile
  */
-export const FONT_FILES = [
-  { family: "Manrope", file: "Manrope.ttf", weights: "200 800" },
-  { family: "Geist Mono", file: "GeistMono.ttf", weights: "100 900" },
-];
+
+/**
+ * The bundled app fonts (design/fonts, D1), from tokens.json: each family's
+ * first name, its file, the weights its variable font covers and its licence
+ * text (`$extensions["pwm.font"]`). Pages load them from `fonts/`.
+ * @param {Record<string, any>} tokens the parsed tokens.json
+ * @returns {FontFile[]}
+ */
+export function fontFiles(tokens) {
+  return Object.entries(tokens.font.family)
+    .filter(([key]) => !key.startsWith("$"))
+    .map(([key, token]) => {
+      const ext = token.$extensions?.["pwm.font"];
+      if (!ext?.file || !ext.weights || !ext.licence)
+        throw new Error(`tokens.json: font.family.${key} has no pwm.font file`);
+      return {
+        family: String(token.$value[0]),
+        file: String(ext.file),
+        weights: String(ext.weights),
+        licence: String(ext.licence),
+      };
+    });
+}
 
 /**
  * Copies the font files with their licence texts and NOTICE.md (OFL: the
  * licence ships with the fonts) into `dist/fonts`.
  * @param {string} repo the repository root
  * @param {string} dist the build's output folder
+ * @param {Record<string, any>} tokens the parsed tokens.json
  */
-export function copyFonts(repo, dist) {
+export function copyFonts(repo, dist, tokens) {
   const from = path.join(repo, "design", "fonts");
   const to = path.join(dist, "fonts");
   fs.mkdirSync(to, { recursive: true });
   const names = [
-    ...FONT_FILES.map((f) => f.file),
-    "OFL-Manrope.txt",
-    "OFL-GeistMono.txt",
+    ...fontFiles(tokens).flatMap((f) => [f.file, f.licence]),
     "NOTICE.md",
   ];
   for (const name of names)
@@ -68,7 +85,7 @@ export function tokensCss(tokens) {
     ),
   ];
   const dark = lines(tokens.color.dark, "color", String).map((l) => `  ${l}`);
-  const faces = FONT_FILES.flatMap((f) => [
+  const faces = fontFiles(tokens).flatMap((f) => [
     "@font-face {",
     `  font-family: "${f.family}";`,
     `  src: url("fonts/${f.file}") format("truetype");`,

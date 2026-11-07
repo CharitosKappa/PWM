@@ -10,6 +10,32 @@ import process from 'node:process';
 
 const SOURCE = 'design/tokens.json';
 const OUT = 'apps/android/kit/src/main/kotlin/pwm/kit/design/Tokens.kt';
+const FONTS_OUT = 'apps/android/app/src/main/kotlin/pwm/app/FontResources.kt';
+
+/** `GeistMono.ttf` → `geist_mono`, the rule scripts/fonts.mjs names res/font copies by. */
+const androidName = (file) => file.replace(/\.ttf$/, '').replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+
+function fontList(tokens) {
+  return entries(tokens.font.family).map(([key, token]) => {
+    const file = token.$extensions?.['pwm.font']?.file;
+    if (!file) throw new Error(`tokens.json: font.family.${key} has no pwm.font file`);
+    return { key, family: token.$value[0], file };
+  });
+}
+
+/** The app's res/font ids, which `:kit` can't see. */
+export function fontResourcesKotlin(tokens) {
+  return [
+    '// Generated from design/tokens.json by scripts/tokens-kotlin.mjs. Do not edit.',
+    'package pwm.app',
+    '',
+    '/** The bundled fonts in res/font (D1), copied there by scripts/fonts.mjs. */',
+    'internal object FontResources {',
+    ...fontList(tokens).map((f) => `    val ${name(f.key)} = R.font.${androidName(f.file)}`),
+    '}',
+    '',
+  ].join('\n');
+}
 
 /** `surface-raised` → `surfaceRaised`; `0` → `s0`. */
 function name(key, prefix = '') {
@@ -72,6 +98,11 @@ export function tokensKotlin(tokens) {
     ...colors,
     '    }',
     '',
+    '    /** The bundled fonts (D1): each family\'s first name. */',
+    '    object FontFamily {',
+    ...fontList(tokens).map((f) => `        const val ${name(f.key)} = ${JSON.stringify(f.family)}`),
+    '    }',
+    '',
     '    /** Sizes are the web sizes in sp; Android scales them with the font size setting. */',
     '    object Text {',
     ...types,
@@ -91,15 +122,19 @@ export function tokensKotlin(tokens) {
   ].join('\n');
 }
 
-const kotlin = tokensKotlin(JSON.parse(fs.readFileSync(SOURCE, 'utf8')));
-if (process.argv.includes('--check')) {
-  const current = fs.existsSync(OUT) ? fs.readFileSync(OUT, 'utf8') : '';
-  if (current !== kotlin) {
-    console.error(`${OUT} is stale: run \`node scripts/tokens-kotlin.mjs\``);
-    process.exit(1);
+const tokens = JSON.parse(fs.readFileSync(SOURCE, 'utf8'));
+let stale = false;
+for (const [out, text] of [[OUT, tokensKotlin(tokens)], [FONTS_OUT, fontResourcesKotlin(tokens)]]) {
+  if (process.argv.includes('--check')) {
+    const current = fs.existsSync(out) ? fs.readFileSync(out, 'utf8') : '';
+    if (current !== text) {
+      console.error(`${out} is stale: run \`node scripts/tokens-kotlin.mjs\``);
+      stale = true;
+    }
+  } else {
+    fs.mkdirSync(out.slice(0, out.lastIndexOf('/')), { recursive: true });
+    fs.writeFileSync(out, text);
+    console.log(`wrote ${out}`);
   }
-} else {
-  fs.mkdirSync(OUT.slice(0, OUT.lastIndexOf('/')), { recursive: true });
-  fs.writeFileSync(OUT, kotlin);
-  console.log(`wrote ${OUT}`);
 }
+if (stale) process.exit(1);

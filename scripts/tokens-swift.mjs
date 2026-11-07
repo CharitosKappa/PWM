@@ -56,6 +56,11 @@ export function tokensSwift(tokens) {
   });
   const dims = (group, prefix) =>
     entries(group).map(([key, token]) => `        public static let ${name(key, prefix)}: Double = ${px(token.$value)}`);
+  const fonts = entries(tokens.font.family).map(([key, token]) => {
+    const file = token.$extensions?.['pwm.font']?.file;
+    if (!file) throw new Error(`tokens.json: font.family.${key} has no pwm.font file`);
+    return { key, family: token.$value[0], file };
+  });
   return [
     '// Generated from design/tokens.json by scripts/tokens-swift.mjs. Do not edit.',
     '',
@@ -65,6 +70,12 @@ export function tokensSwift(tokens) {
     '',
     '    public enum Color {',
     ...colors,
+    '    }',
+    '',
+    '    /// The bundled fonts (D1): each family\'s first name, and the font files.',
+    '    public enum FontFamily {',
+    ...fonts.map((f) => `        public static let ${name(f.key)} = ${JSON.stringify(f.family)}`),
+    `        public static let files = [${fonts.map((f) => JSON.stringify(f.file)).join(', ')}]`,
     '    }',
     '',
     '    /// Sizes are the web sizes in points; SwiftUI scales them with Dynamic Type.',
