@@ -1,0 +1,18 @@
+[package]
+name = "pwm-keyholder"
+description = "Unlock on Linux (D71): run as root through pkexec, keeps a secret per name that only root reads, and answers a challenge after polkit's dialog."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "pwm-keyholder"
+path = "src/main.rs"
+
+[dependencies]
+pwm-crypto = { path = "../../../core/pwm-crypto" }

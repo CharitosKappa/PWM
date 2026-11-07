@@ -245,3 +245,24 @@ fn the_framing_round_trips_and_refuses_large_messages() {
     large.extend(vec![b' '; 16]);
     assert!(read_message(large.as_slice()).is_err());
 }
+
+/// Through the real `pkexec` and an installed key holder, with a polkit
+/// rule that allows this user without a dialog: CI's `desktop-linux` job
+/// (`PWM_TEST_PKEXEC=1`). An enrolment, then an unlock that gives K back.
+#[test]
+fn the_real_key_holder_enrols_and_unlocks() {
+    if std::env::var_os("PWM_TEST_PKEXEC").is_none() {
+        return;
+    }
+    let key_holder = pwm_hello::polkit::PolkitKey::system();
+    let store = Memory::default();
+    let handler = Handler::new(callers(), &key_holder, &store);
+    assert_eq!(
+        reply(&handler.handle(&request("enroll"), Some(FIREFOX))),
+        json!({"v": 1, "ok": true})
+    );
+    assert_eq!(
+        reply(&handler.handle(&request("unlock"), Some(FIREFOX))),
+        json!({"v": 1, "ok": true, "key": key()})
+    );
+}

@@ -693,7 +693,13 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
     - **MSIX** (the Store, with its own decision) and **AppImage** (the LGPL sources it would owe): gaps, D70 §1-2.
     - **Automatic updates:** M10.1.
     - **On real computers:** `QUALITY.md`, desktop step 14.
-- [ ] M7.8 Browser unlock on Linux (D69 §5): the helper asks polkit or fprintd, with the desktop's own unlock (D68 §7), after M7.3 installs polkit's action file. Logged as a parity gap until then.
+- [x] M7.8 Browser unlock on Linux (D69 §5): the helper asks polkit or fprintd, with the desktop's own unlock (D68 §7), after M7.3 installs polkit's action file. Logged as a parity gap until then.
+  - Done per D71 (implementation notes there):
+    - **`pwm-keyholder`:** run as root through `pkexec` behind polkit's dialog, it keeps a secret per name that only root reads and answers challenges with it. The `.deb` and `.rpm` install it with the polkit action.
+    - **The desktop's "Unlock with Linux login"** and **browser unlock on Linux** reuse D68's and D69's code through `PolkitKey`, with Linux's own labels (new vectors). The switch writes the manifests for Chrome, Chromium, Edge, Brave, Vivaldi and Firefox.
+    - **Tests:** 5 core tests and the vectors, a `pwm-client` test, 6 for the key holder, 4 for `PolkitKey` against the key holder's code, 4 for the Linux manifests, wording tests in `ui` and the extension. CI runs the real `pkexec`, and the packages' contents and purge.
+  - **Gaps (D71 §4):** the Flatpak, Snap and Flatpak browsers, and computers without a polkit agent keep the master password. Opera's folder is still to check. A TPM-sealed variant would need its own decision.
+  - **Not run anywhere yet:** polkit's real dialog and a real browser (`QUALITY.md`, desktop step 15).
 - [x] M7.4 The Tauri app on Windows and Linux (D3 §1, §3–§5, D66): the project, the backend answering the screens' protocol, storage and HTTP; onboarding, master-password unlock (+ polkit/fprintd later), the vault list, copying, the generator and Settings; the tray and the lock rules, screen-capture exclusion on Windows, `cargo deny` on its dependency tree, the WebKitGTK floor, and a `desktop` CI job.
   - Done per D66 (implementation notes there):
     - **`apps/desktop`:** its own Cargo workspace with `pwm-desktop` (Tauri 2.12), the `@pwm/desktop` page, Tauri's isolation hook, and a placeholder icon until D1.

@@ -3968,6 +3968,7 @@ name = "pwm-hello"
 version = "0.1.0"
 dependencies = [
  "pwm-crypto",
+ "pwm-keyholder",
  "windows",
 ]
 
@@ -3994,6 +3995,13 @@ dependencies = [
  "url",
  "zeroize",
  "zip",
+]
+
+[[package]]
+name = "pwm-keyholder"
+version = "0.1.0"
+dependencies = [
+ "pwm-crypto",
 ]
 
 [[package]]

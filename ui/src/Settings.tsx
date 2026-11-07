@@ -103,7 +103,9 @@ export function Settings({
       )}
       {status.state === "unlocked" &&
         !host().browser &&
-        host().biometricName === "Windows Hello" && <BrowserUnlockSetting />}
+        host().biometricName !== null && (
+          <BrowserUnlockSetting name={host().biometricName ?? ""} />
+        )}
 
       <fieldset class="stack" disabled={!signedOut}>
         <legend class="label">Server</legend>
@@ -186,14 +188,15 @@ export function Settings({
  * "Unlock with Touch ID" in the extension: asks for the native-messaging
  * permission on the click (D44), then enrols with the Mac app's helper,
  * which asks for Touch ID once. "Unlock with Windows Hello" on the desktop
- * (D68): Windows asks for a face, a finger or the PIN.
+ * (D68): Windows asks for a face, a finger or the PIN. "Unlock with Linux
+ * login" (D71): polkit asks for the login password or a fingerprint.
  */
 /**
  * The desktop's "Allow browser extensions to unlock with Windows Hello"
- * (D69 §4): registers PWM's browser helper for this Windows user. Off
- * removes it and everything it kept.
+ * (D69 §4) or "with Linux login" (D71 §4): registers PWM's browser helper
+ * for this user. Off removes it and everything it kept.
  */
-function BrowserUnlockSetting(): JSX.Element {
+function BrowserUnlockSetting({ name }: { name: string }): JSX.Element {
   const [on, setOn] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -224,11 +227,13 @@ function BrowserUnlockSetting(): JSX.Element {
           disabled={busy || on === null}
           onChange={(event) => void change(event.currentTarget.checked)}
         />
-        Allow browser extensions to unlock with Windows Hello
+        Allow browser extensions to unlock with {name}
       </label>
       <span class="caption muted">
-        For PWM in Chrome, Edge, Brave, Opera and Firefox. Then turn on "Unlock
-        with Windows Hello" in the extension's Settings.
+        {name === "Linux login"
+          ? "For PWM in Chrome, Chromium, Edge, Brave, Vivaldi and Firefox, installed as packages (not Snap or Flatpak)."
+          : "For PWM in Chrome, Edge, Brave, Opera and Firefox."}{" "}
+        Then turn on "Unlock with {name}" in the extension's Settings.
       </span>
       {error && <Notice kind="danger">{error}</Notice>}
     </div>
@@ -239,8 +244,13 @@ function BiometricSetting({ name }: { name: string }): JSX.Element {
   const [on, setOn] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // The extension unlocks through the PWM app for its computer (D48, D69).
-  const app = name === "Windows Hello" ? "Windows" : "Mac";
+  // The extension unlocks through the PWM app for its computer (D48, D69, D71).
+  const app =
+    name === "Windows Hello"
+      ? "Windows"
+      : name === "Linux login"
+        ? "Linux"
+        : "Mac";
 
   useEffect(() => {
     void send({ kind: "touchId" }).then(setOn);
@@ -283,7 +293,9 @@ function BiometricSetting({ name }: { name: string }): JSX.Element {
       <span class="caption muted">
         {host().browser
           ? `Needs the PWM app for ${app}, with browser unlock turned on in its Settings.`
-          : "Windows asks for your face, fingerprint or PIN."}{" "}
+          : name === "Linux login"
+            ? "Your computer asks for your login password, or your fingerprint where it's set up."
+            : "Windows asks for your face, fingerprint or PIN."}{" "}
         Your master password is still asked every 14 days.
       </span>
       {error && <Notice kind="danger">{error}</Notice>}

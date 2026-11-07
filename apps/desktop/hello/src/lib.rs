@@ -4,14 +4,19 @@
 //! PIN. The signature goes straight to the core, which derives the key that
 //! seals what's kept; nothing here keeps it. Also DPAPI (`dpapi`), which
 //! protects values on disk for the current Windows user.
+//!
+//! On Linux, `polkit::PolkitKey` stands in for Windows Hello's key: the
+//! root key holder behind polkit's dialog (D71).
 #![deny(unsafe_code)]
 
 use std::sync::Mutex;
 
-pub use pwm_crypto::Secret;
+pub use pwm_crypto::{Secret, Signer};
 
 #[cfg(windows)]
 pub mod dpapi;
+
+pub mod polkit;
 
 /// Why Windows Hello didn't sign.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,9 +49,13 @@ pub trait HelloKey: Send + Sync + 'static {
     fn sign(&self, name: &str, data: &[u8]) -> Result<Secret<Vec<u8>>, HelloError>;
     /// Deletes the key; nothing if there is none.
     fn delete(&self, name: &str);
+    /// Whose answer this is, for the core's labels (D68, D71).
+    fn signer(&self) -> Signer {
+        Signer::WindowsHello
+    }
 }
 
-/// No Windows Hello: Linux, until polkit or fprintd (D68 §7).
+/// No platform key: the Flatpak, and Linux without the key holder (D71 §4).
 pub struct NoHello;
 
 impl HelloKey for NoHello {

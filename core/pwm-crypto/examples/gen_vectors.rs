@@ -13,9 +13,9 @@ use std::path::{Path, PathBuf};
 
 use pwm_crypto::{
     Aad, AccountKeyset, ApprovalKeys, Id, KdfParams, OpaqueLogin, OpaqueRegistration, Secret,
-    SecretKey, ServerSecrets, SignatureContext, SymmetricKey, approval_commitment, create_account,
-    derive_account_keys, derive_password_key, hkdf_sha256, normalize_password, opaque_record, open,
-    open_export, seal,
+    SecretKey, ServerSecrets, SignatureContext, Signer, SymmetricKey, approval_commitment,
+    create_account, derive_account_keys, derive_password_key, hkdf_sha256, normalize_password,
+    opaque_record, open, open_export, seal,
 };
 use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::SeedableRng;
@@ -32,7 +32,7 @@ type Generator = (&'static str, &'static str, fn() -> Vec<Value>);
 
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../test-vectors");
-    let files: [Generator; 19] = [
+    let files: [Generator; 20] = [
         ("aad", "AAD byte layouts (D11, D17)", aad),
         ("aead", "XChaCha20-Poly1305 v1 envelopes (D10)", aead),
         ("hkdf", "HKDF-SHA256, 32-byte output (D13)", hkdf),
@@ -99,6 +99,11 @@ fn main() {
             "browser_hello",
             "The extension's key under a Windows Hello signature's key, for the Windows helper v1 (D69)",
             browser_hello,
+        ),
+        (
+            "linux_polkit",
+            "The Linux key holder's answer, and the desktop's and the browser helper's keys under it v1 (D71)",
+            linux_polkit,
         ),
     ];
     for (name, description, generate) in files {
@@ -558,6 +563,58 @@ fn browser_hello() -> Vec<Value> {
         "browser_key": h(&browser_key),
         "aad": h(Aad::browser_hello(1, caller, &ACCOUNT_A, &DEVICE).unwrap().as_bytes()),
         "envelope": h(&sealed.to_bytes()),
+    })]
+}
+
+fn linux_polkit() -> Vec<Value> {
+    // The key holder's secret S answers the challenge; the desktop's unlock
+    // key and the extension's key are sealed under that answer, as on
+    // Windows, with Linux's labels.
+    let secret = [0x53; 32];
+    let challenge = [0x4C; 32];
+    let response_info = b"pwm/linux-polkit/response/v1";
+    let response = pwm_crypto::linux_polkit_response(&Secret::new(secret), &challenge);
+    let answer = *response.expose_secret();
+    let unlock_key = [0x77; 32];
+    let unlock = pwm_crypto::seal_signed_unlock(
+        Signer::LinuxPolkit,
+        &Secret::new(unlock_key),
+        &answer,
+        &Secret::new(challenge),
+        &ACCOUNT_A,
+        &DEVICE,
+    )
+    .unwrap();
+    let info = b"pwm/linux-polkit/v1";
+    let wrapping_key = pwm_crypto::hkdf_sha256(&answer, &challenge, info);
+    let browser_key = [0x5A; 32];
+    let caller = "pwm@pwm.invalid";
+    let browser = pwm_crypto::seal_signed_browser(
+        Signer::LinuxPolkit,
+        &Secret::new(browser_key),
+        &answer,
+        &Secret::new(challenge),
+        caller,
+        &ACCOUNT_A,
+        &DEVICE,
+    )
+    .unwrap();
+    let browser_info = b"pwm/browser-unlock/linux-polkit/v1";
+    let browser_wrapping_key = pwm_crypto::hkdf_sha256(&answer, &challenge, browser_info);
+    vec![json!({
+        "account_id": h(&ACCOUNT_A), "device_id": h(&DEVICE),
+        "secret": h(&secret), "challenge": h(&challenge),
+        "response_info": h(response_info), "response": h(&answer),
+        "info": h(info), "wrapping_key": h(wrapping_key.expose_secret()),
+        "unlock_key": h(&unlock_key),
+        "aad": h(Aad::signed_unlock(Signer::LinuxPolkit, 1, &ACCOUNT_A, &DEVICE).as_bytes()),
+        "envelope": h(&unlock.to_bytes()),
+        "caller": caller,
+        "browser_info": h(browser_info),
+        "browser_wrapping_key": h(browser_wrapping_key.expose_secret()),
+        "browser_key": h(&browser_key),
+        "browser_aad": h(Aad::signed_browser(Signer::LinuxPolkit, 1, caller, &ACCOUNT_A, &DEVICE).unwrap().as_bytes()),
+        "browser_envelope": h(&browser.to_bytes()),
     })]
 }
 
