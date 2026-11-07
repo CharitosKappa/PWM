@@ -744,7 +744,7 @@ jobs:
           dpkg-deb --field "$deb" Package Depends
           # The browser helper, the key holder and polkit's action (D71 §6).
           dpkg-deb -c "$deb" | tee "$RUNNER_TEMP/deb.txt"
-          for file in ./usr/bin/pwm-browser-helper ./usr/libexec/pwm/pwm-keyholder ./usr/share/polkit-1/actions/invalid.pwm.unlock.policy; do
+          for file in usr/bin/pwm-browser-helper usr/libexec/pwm/pwm-keyholder usr/share/polkit-1/actions/invalid.pwm.unlock.policy; do
             grep -q " $file$" "$RUNNER_TEMP/deb.txt"
           done
           rpm -qlp apps/desktop/target/release/bundle/rpm/*.rpm | grep -qx /usr/libexec/pwm/pwm-keyholder
