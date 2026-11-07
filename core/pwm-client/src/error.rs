@@ -99,6 +99,11 @@ pub enum ClientError {
     /// A passkey request was refused (D37); the code says why.
     #[error("passkey: {0}")]
     Passkey(pwm_passkey::PasskeyError),
+    /// A billing call was refused (D6 §7); the code says why:
+    /// `billing_unavailable`, `purchase_not_yours`, `purchase_pending`,
+    /// `already_subscribed`, `managed_elsewhere` or `no_subscription`.
+    #[error("billing: {0}")]
+    Billing(&'static str),
     /// The Emergency Kit or a scanned kit code was refused (D42); the code says why.
     #[error("emergency kit: {0}")]
     Kit(pwm_kit::KitError),
@@ -115,7 +120,7 @@ impl ClientError {
             Self::InvalidUrl => "invalid_url",
             Self::InvalidRules => "invalid_rules",
             Self::UnknownVault => "unknown_vault",
-            Self::Import(code) => code,
+            Self::Import(code) | Self::Billing(code) => code,
             Self::InvalidPushToken => "invalid_push_token",
             Self::UnknownItem => "unknown_item",
             Self::ItemDeleted => "item_deleted",

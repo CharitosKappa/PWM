@@ -867,3 +867,85 @@ async fn the_return_pages_say_to_go_back_to_the_app() {
     }
     w.db.drop().await;
 }
+
+/// The app API (`pwm-client`) end to end: the plan, Checkout, cancel and
+/// resume, and a store purchase another account made (D6 §7).
+#[tokio::test]
+async fn the_app_api_reads_and_changes_the_plan() {
+    use common::driver::run;
+    use pwm_client::{Client, KdfParams, MemoryStore, Outcome, Platform, new_id};
+
+    let Some(w) = world().await else { return };
+    let mut client = Client::new(MemoryStore::new());
+    client.set_signup_params(KdfParams::MOBILE_FLOOR).unwrap();
+    let step = client.start_signup(
+        "alice@example.com",
+        "correct horse battery staple 42",
+        &new_id().unwrap(),
+        Platform::Macos,
+        "Mac",
+    );
+    assert!(matches!(
+        run(&w.app, &mut client, step).await.unwrap(),
+        Outcome::SignedUp { .. }
+    ));
+
+    let step = client.start_billing_status();
+    let Outcome::Billing(info) = run(&w.app, &mut client, step).await.unwrap() else {
+        panic!("no plan");
+    };
+    assert_eq!(info.plan, "free");
+    assert_eq!(info.sells, ["stripe", "app_store", "play"]);
+    assert!(info.subscription.is_none());
+    let token = info.token.unwrap();
+
+    let step = client.start_checkout("premium");
+    let Outcome::CheckoutUrl(url) = run(&w.app, &mut client, step).await.unwrap() else {
+        panic!("no checkout");
+    };
+    assert_eq!(url, "https://checkout.stripe.test/c/1");
+    let step = client.start_cancel_subscription();
+    assert_eq!(
+        run(&w.app, &mut client, step).await.unwrap_err().code(),
+        "no_subscription"
+    );
+
+    w.fake.lock().unwrap().stripe.insert(
+        "sub_c".into(),
+        stripe_subscription("sub_c", &token, "active"),
+    );
+    let event =
+        json!({ "id": "evt_c", "data": { "object": { "object": "subscription", "id": "sub_c" } } });
+    assert_eq!(stripe_webhook(&w.app, &event, None).await, StatusCode::OK);
+    let step = client.start_cancel_subscription();
+    let Outcome::Billing(info) = run(&w.app, &mut client, step).await.unwrap() else {
+        panic!("not canceled");
+    };
+    let subscription = info.subscription.unwrap();
+    assert_eq!(subscription.provider, "stripe");
+    assert!(subscription.canceling);
+    assert_eq!(subscription.until_ms, LATER_SECS * 1000);
+    assert_eq!(info.token, None);
+    let step = client.start_resume_subscription();
+    let Outcome::Billing(info) = run(&w.app, &mut client, step).await.unwrap() else {
+        panic!("not resumed");
+    };
+    assert!(!info.subscription.unwrap().canceling);
+    let step = client.start_checkout("premium");
+    assert_eq!(
+        run(&w.app, &mut client, step).await.unwrap_err().code(),
+        "already_subscribed"
+    );
+
+    // Someone else's App Store purchase isn't taken.
+    w.fake.lock().unwrap().apple.insert(
+        (false, "3000000001".into()),
+        apple_statuses(1, &Uuid::new_v4().to_string(), 1),
+    );
+    let step = client.start_apple_purchase("3000000001");
+    assert_eq!(
+        run(&w.app, &mut client, step).await.unwrap_err().code(),
+        "purchase_not_yours"
+    );
+    w.db.drop().await;
+}
