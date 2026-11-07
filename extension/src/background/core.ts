@@ -217,6 +217,8 @@ export interface Core {
   startCheckout(plan: string): CoreStep;
   startCancelSubscription(): CoreStep;
   startResumeSubscription(): CoreStep;
+  /** `stripe` or `play` (D72 §1). */
+  startRefund(provider: string): CoreStep;
   /** Devices (D43 §6): end with `devices` or `device_updated`. */
   startListDevices(): CoreStep;
   startRenameDevice(deviceId: string, name: string): CoreStep;

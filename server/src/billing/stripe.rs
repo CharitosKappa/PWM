@@ -101,6 +101,18 @@ async fn call(
     path: &str,
     body: Option<String>,
 ) -> Result<Value, BillingError> {
+    call_once(config, http, method, path, body, None).await
+}
+
+/// [`call`] with an idempotency key, so a retry is applied once.
+async fn call_once(
+    config: &StripeConfig,
+    http: &Http,
+    method: hyper::Method,
+    path: &str,
+    body: Option<String>,
+    idempotency_key: Option<&str>,
+) -> Result<Value, BillingError> {
     let mut request = hyper::Request::builder()
         .method(method)
         .uri(format!("{}{path}", config.url))
@@ -111,6 +123,9 @@ async fn call(
         .header("stripe-version", STRIPE_VERSION);
     if body.is_some() {
         request = request.header("content-type", "application/x-www-form-urlencoded");
+    }
+    if let Some(key) = idempotency_key {
+        request = request.header("idempotency-key", key);
     }
     let request = request
         .body(Full::new(Bytes::from(body.unwrap_or_default())))
@@ -216,6 +231,135 @@ pub(crate) async fn set_canceling(
     .map(|_| ())
 }
 
+/// The unused part of what the last charge paid, in minor units, rounded
+/// down (D72 §1). Times are Unix seconds.
+pub(crate) fn refund_amount(paid: i64, start: i64, end: i64, now: i64) -> i64 {
+    if paid <= 0 || end <= start || now >= end {
+        return 0;
+    }
+    let unused = i128::from(end - now.max(start));
+    let length = i128::from(end - start);
+    i64::try_from(i128::from(paid) * unused / length).unwrap_or(0)
+}
+
+/// What a refund needs from Stripe: the last invoice, when it was paid and
+/// what it paid, and the period it paid for (Unix seconds).
+pub(crate) struct LastCharge {
+    pub invoice: String,
+    pub paid_at: i64,
+    pub amount_paid: i64,
+    pub period_start: i64,
+    pub period_end: i64,
+}
+
+pub(crate) async fn last_charge(
+    config: &StripeConfig,
+    http: &Http,
+    id: &str,
+) -> Result<LastCharge, BillingError> {
+    if !plain_id(id, "sub_") {
+        return Err(BillingError::NotFound);
+    }
+    let path = format!("/v1/subscriptions/{id}?expand%5B%5D=latest_invoice");
+    let s = call(config, http, hyper::Method::GET, &path, None).await?;
+    let invoice = &s["latest_invoice"];
+    let item = &s["items"]["data"][0];
+    let read = || {
+        Some(LastCharge {
+            invoice: invoice["id"]
+                .as_str()
+                .filter(|i| plain_id(i, "in_"))?
+                .to_owned(),
+            paid_at: invoice["status_transitions"]["paid_at"].as_i64()?,
+            amount_paid: invoice["amount_paid"].as_i64()?,
+            period_start: item["current_period_start"].as_i64()?,
+            period_end: item["current_period_end"].as_i64()?,
+        })
+    };
+    read().ok_or(BillingError::NotFound)
+}
+
+/// Refunds `amount` of the invoice's payment, once whatever the retries:
+/// the idempotency key is the invoice's.
+pub(crate) async fn refund(
+    config: &StripeConfig,
+    http: &Http,
+    invoice: &str,
+    amount: i64,
+) -> Result<(), BillingError> {
+    if !plain_id(invoice, "in_") {
+        return Err(BillingError::NotFound);
+    }
+    let path = format!("/v1/invoices/{invoice}?expand%5B%5D=payments");
+    let invoice_json = call(config, http, hyper::Method::GET, &path, None).await?;
+    let intent = invoice_json["payments"]["data"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find_map(|p| p["payment"]["payment_intent"].as_str())
+        .filter(|pi| plain_id(pi, "pi_"))
+        .ok_or(BillingError::NotFound)?
+        .to_owned();
+    let body = form(&[("payment_intent", &intent), ("amount", &amount.to_string())]);
+    call_once(
+        config,
+        http,
+        hyper::Method::POST,
+        "/v1/refunds",
+        Some(body),
+        Some(&format!("pwm-refund-{invoice}")),
+    )
+    .await
+    .map(|_| ())
+}
+
+/// Ends a subscription now, without another invoice.
+pub(crate) async fn end_now(
+    config: &StripeConfig,
+    http: &Http,
+    id: &str,
+) -> Result<(), BillingError> {
+    if !plain_id(id, "sub_") {
+        return Err(BillingError::NotFound);
+    }
+    call(
+        config,
+        http,
+        hyper::Method::DELETE,
+        &format!("/v1/subscriptions/{id}"),
+        None,
+    )
+    .await
+    .map(|_| ())
+}
+
+/// Moves a subscription to `price` from its next renewal (D72 §2).
+pub(crate) async fn move_price(
+    config: &StripeConfig,
+    http: &Http,
+    id: &str,
+    price: &str,
+) -> Result<(), BillingError> {
+    if !plain_id(id, "sub_") {
+        return Err(BillingError::NotFound);
+    }
+    let path = format!("/v1/subscriptions/{id}");
+    let s = call(config, http, hyper::Method::GET, &path, None).await?;
+    let item = s["items"]["data"][0]["id"]
+        .as_str()
+        .filter(|i| plain_id(i, "si_"))
+        .ok_or(BillingError::NotFound)?
+        .to_owned();
+    let body = form(&[
+        ("items[0][id]", &item),
+        ("items[0][price]", price),
+        ("proration_behavior", "none"),
+    ]);
+    call(config, http, hyper::Method::POST, &path, Some(body))
+        .await
+        .map(|_| ())
+}
+
 /// The subscription as Stripe has it now.
 pub(crate) async fn fetch(
     config: &StripeConfig,
@@ -265,6 +409,9 @@ pub(crate) fn snapshot(config: &StripeConfig, s: &Value) -> Option<Snapshot> {
         status,
         price_minor: item["price"]["unit_amount"].as_i64().unwrap_or(0).max(0),
         currency: currency(item["price"]["currency"].as_str().unwrap_or("usd"))?,
+        period_start_ms: item["current_period_start"]
+            .as_i64()
+            .and_then(|t| t.checked_mul(1000)),
         period_end_ms: period_end.checked_mul(1000)?,
         canceling: s["cancel_at_period_end"].as_bool().unwrap_or(false),
         grace_until_ms: None,

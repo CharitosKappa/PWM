@@ -40,7 +40,27 @@ const TEXT_COLUMNS: &[(&str, &str)] = &[
         "a billing provider's notification id (D6 §8)",
     ),
     ("billing_events.provider", "enum, CHECK constraint (D6)"),
+    (
+        "billing_outbox.currency",
+        "ISO 4217 code, CHECK constraint (D72)",
+    ),
+    ("billing_outbox.kind", "enum, CHECK constraint (D72)"),
+    ("billing_outbox.provider", "a subscription's provider (D72)"),
+    (
+        "billing_outbox.provider_ref",
+        "the billing provider's subscription id (D72)",
+    ),
     ("devices.platform", "enum, CHECK constraint"),
+    (
+        "price_changes.currency",
+        "ISO 4217 code, CHECK constraint (D72)",
+    ),
+    ("price_changes.plan", "enum, CHECK constraint (D72)"),
+    (
+        "price_changes.price_ref",
+        "the billing provider's price or product id (D72)",
+    ),
+    ("price_changes.provider", "enum, CHECK constraint (D72)"),
     ("push_tokens.app", "enum, CHECK constraint (D50)"),
     ("push_tokens.environment", "enum, CHECK constraint (D50)"),
     ("subscriptions.currency", "ISO 4217 code, CHECK constraint"),
@@ -679,6 +699,55 @@ async fn subscriptions_survive_0008_and_accounts_get_billing_tokens() {
             .and_then(|e| e.code())
             .as_deref(),
         Some("23505")
+    );
+    db.drop().await;
+}
+
+/// Subscriptions written under 0008 survive 0009; the outbox follows its
+/// subscription and checks its kind (D72).
+#[tokio::test]
+async fn subscriptions_survive_0009_and_the_outbox_follows_them() {
+    let Some(db) = test_db().await else { return };
+    MIGRATOR.run_to(8, &db.pool).await.unwrap();
+    exec(&db.pool, seed()).await.unwrap();
+    migrate(&db.pool).await.unwrap();
+    let start: Option<i64> =
+        sqlx::query_scalar("SELECT (extract(epoch FROM period_start))::bigint FROM subscriptions")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+    assert_eq!(start, None);
+    let outbox = |kind: &str| {
+        format!(
+            "INSERT INTO billing_outbox (account_id, kind, provider, provider_ref, about, price_minor, currency, send_after)              VALUES ('{A}', '{kind}', 'stripe', 'sub_123', '2100-01-01T00:00:00Z', 2400, 'USD', now())"
+        )
+    };
+    exec(&db.pool, outbox("renewal_reminder")).await.unwrap();
+    assert!(
+        exec(&db.pool, outbox("renewal_reminder")).await.is_err(),
+        "one per charge"
+    );
+    assert!(exec(&db.pool, outbox("newsletter")).await.is_err());
+    assert!(
+        exec(
+            &db.pool,
+            outbox("price_change").replace("sub_123", "sub_unknown")
+        )
+        .await
+        .is_err(),
+        "only for a subscription that exists"
+    );
+    exec(&db.pool, "DELETE FROM subscriptions".to_owned())
+        .await
+        .unwrap();
+    assert_eq!(count(&db.pool, "billing_outbox").await, 0);
+    assert!(
+        exec(
+            &db.pool,
+            "INSERT INTO price_changes (provider, plan, price_ref, price_minor, currency, held_until)              VALUES ('stripe', 'gold', 'p', 1, 'USD', now())".to_owned()
+        )
+        .await
+        .is_err()
     );
     db.drop().await;
 }

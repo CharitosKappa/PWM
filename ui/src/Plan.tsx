@@ -68,6 +68,8 @@ export function PlanSetting(): JSX.Element {
     }
   };
 
+  const [refunded, setRefunded] = useState(false);
+
   const checkout = (): Promise<void> =>
     act(async () => {
       const url = await send({ kind: "checkout", plan: "premium" });
@@ -134,6 +136,41 @@ export function PlanSetting(): JSX.Element {
             Cancel plan
           </button>
         ))}
+
+      {sub !== null &&
+        sub.refundableUntilMs !== null &&
+        (sub.provider === "stripe" || sub.provider === "play") && (
+          <>
+            <button
+              id="refund-plan"
+              disabled={busy}
+              onClick={() =>
+                void act(async () => {
+                  setPlan(await send({ kind: "refundPlan" }));
+                  setRefunded(true);
+                })
+              }
+            >
+              Request a refund
+            </button>
+            <span class="caption muted">
+              Ends your plan now and pays back the days you haven't used. Until{" "}
+              {day(sub.refundableUntilMs)}.
+            </span>
+          </>
+        )}
+
+      {sub?.provider === "app_store" && (
+        // Plain text: the extensions ship no remote URLs (D40).
+        <span class="caption muted">
+          To ask for a refund, use Apple's Report a Problem page at
+          reportaproblem.apple.com.
+        </span>
+      )}
+
+      {refunded && sub === null && (
+        <Notice kind="info">Your plan ended. The refund is on its way.</Notice>
+      )}
 
       {sub !== null && sub.also.length > 0 && (
         <Notice kind="info">

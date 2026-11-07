@@ -539,6 +539,10 @@ class Session(
         billing(core { client.startPlayPurchase(productId, purchaseToken.value) })
     }
 
+    override suspend fun refund(provider: String): BillingStatus = on {
+        billing(core { client.startRefund(provider) })
+    }
+
     /** Offline or a 503 (the server can't reach the provider) both mean try again later. */
     private suspend fun billing(first: Step): BillingStatus {
         val outcome = runOnline(first, waited = "billing_unavailable")

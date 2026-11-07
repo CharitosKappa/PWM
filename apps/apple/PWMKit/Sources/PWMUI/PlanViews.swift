@@ -56,6 +56,10 @@ struct PlanSection: View {
             }
             if let subscription = model.subscription {
                 SubscriptionRows(model: model, subscription: subscription, openURL: open)
+            } else if model.refunded {
+                Text("Your plan ended. The refund is on its way.")
+                    .textStyle(Tokens.Text.caption)
+                    .accessibilityIdentifier("planRefunded")
             }
             if model.plan == .free {
                 buyRows
@@ -170,6 +174,7 @@ private struct SubscriptionRows: View {
         if subscription.provider == .appStore || subscription.provider == .play {
             storeManagement(subscription.provider)
         }
+        refundRows
 
         ForEach(Array(subscription.also.enumerated()), id: \.offset) { _, second in
             Text(verbatim: second.secondText)
@@ -181,6 +186,38 @@ private struct SubscriptionRows: View {
             } else if second == .appStore || second == .play {
                 storeManagement(second)
             }
+        }
+    }
+
+    /// While one applies (D72 §1): one tap for Stripe and Google Play,
+    /// Apple's sheet on iOS and Apple's page on the Mac for the App Store.
+    @ViewBuilder
+    private var refundRows: some View {
+        if model.canRefund, let refundableUntil = subscription.refundableUntil {
+            Button("Request a refund") { Task { await model.refund() } }
+                .disabled(model.busy)
+                .accessibilityIdentifier("requestRefund")
+            Text("Ends your plan now and pays back the days you haven't used. Until \(refundableUntil.formatted(date: .abbreviated, time: .omitted)).")
+                .textStyle(Tokens.Text.caption)
+                .foregroundStyle(Tokens.Color.textMuted.color)
+        } else if model.canRequestStoreRefund {
+            Button("Request a refund") { Task { await model.requestStoreRefund() } }
+                .accessibilityIdentifier("requestRefund")
+            Group {
+                if model.refundRequested {
+                    Text("Apple has your request. If Apple refunds it, your plan ends and updates here.")
+                } else {
+                    Text("Apple decides on refunds for App Store purchases.")
+                }
+            }
+            .textStyle(Tokens.Text.caption)
+            .foregroundStyle(Tokens.Color.textMuted.color)
+        } else if let url = model.storeRefundURL {
+            Text("To ask for a refund, use Apple's Report a Problem page.")
+                .textStyle(Tokens.Text.caption)
+                .foregroundStyle(Tokens.Color.textMuted.color)
+            Button("Open Report a Problem") { openURL(url) }
+                .accessibilityIdentifier("requestRefund")
         }
     }
 

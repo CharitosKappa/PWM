@@ -22,7 +22,8 @@ mod vaults;
 
 pub use api::AppState;
 pub use billing::{
-    AppleConfig, Billing, BillingConfig, PLAY_SCOPE, PlayConfig, STRIPE_VERSION, StripeConfig,
+    AppleConfig, Billing, BillingConfig, Mailer, OutboxMessage, PLAY_SCOPE, PlayConfig,
+    STRIPE_VERSION, StripeConfig, record_price_change,
 };
 pub use config::{Config, DEFAULT_LISTEN, generate_server_secrets};
 pub use db::{MIGRATOR, connect, healthcheck, mark_restored, migrate};

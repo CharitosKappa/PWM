@@ -142,6 +142,9 @@
       "kind": "resumePlan"
     },
     {
+      "kind": "refundPlan"
+    },
+    {
       "kind": "devices"
     },
     {
@@ -317,6 +320,7 @@
     "checkout",
     "cancelPlan",
     "resumePlan",
+    "refundPlan",
     "devices",
     "renameDevice",
     "revokeDevice",
@@ -418,12 +422,30 @@
           "untilMs": 1793000000000,
           "canceling": true,
           "priceLockedUntilMs": null,
+          "refundableUntilMs": 1765000000000,
           "also": [
             "app_store"
           ]
         },
         "sells": [
           "stripe"
+        ]
+      },
+      {
+        "plan": "premium",
+        "subscription": {
+          "provider": "play",
+          "plan": "premium",
+          "status": "active",
+          "untilMs": 1793000000000,
+          "canceling": false,
+          "priceLockedUntilMs": 1800000000000,
+          "refundableUntilMs": null,
+          "also": []
+        },
+        "sells": [
+          "stripe",
+          "play"
         ]
       }
     ],

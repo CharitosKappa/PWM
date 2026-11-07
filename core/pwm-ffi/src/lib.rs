@@ -142,6 +142,8 @@ pub struct Subscription {
     pub until_ms: i64,
     pub canceling: bool,
     pub price_locked_until_ms: Option<i64>,
+    /// Until when `start_refund` works; `None` when it doesn't (D72 §1).
+    pub refundable_until_ms: Option<i64>,
     pub also: Vec<String>,
 }
 
@@ -284,6 +286,7 @@ fn step(step: pwm_client::Step) -> Step {
                             until_ms: s.until_ms,
                             canceling: s.canceling,
                             price_locked_until_ms: s.price_locked_until_ms,
+                            refundable_until_ms: s.refundable_until_ms,
                             also: s.also,
                         }),
                         sells: b.sells,
@@ -767,6 +770,12 @@ impl PwmClient {
     /// Lets a canceling Stripe subscription renew again; ends with `Billing`.
     pub fn start_resume_subscription(&self) -> Result<Step, PwmError> {
         Ok(step(self.lock_inner().start_resume_subscription()?))
+    }
+
+    /// Refunds the unused part of the last charge and ends the plan now,
+    /// for a `stripe` or `play` subscription (D72 §1); ends with `Billing`.
+    pub fn start_refund(&self, provider: String) -> Result<Step, PwmError> {
+        Ok(step(self.lock_inner().start_refund(&provider)?))
     }
 
     /// Hands a finished App Store purchase to the server; ends with `Billing`.

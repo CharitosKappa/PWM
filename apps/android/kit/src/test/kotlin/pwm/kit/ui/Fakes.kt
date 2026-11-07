@@ -346,6 +346,9 @@ class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = 
     /** What the server was handed: "product purchaseToken". */
     val playPurchases = mutableListOf<String>()
     var playPurchaseError: PwmError? = null
+    /** Refunds asked for, by provider. */
+    val refunds = mutableListOf<String>()
+    var refundError: PwmError? = null
 
     override suspend fun billingStatus(): pwm.kit.BillingStatus {
         billingCalls += 1
@@ -358,9 +361,22 @@ class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = 
         playPurchases += "$productId ${purchaseToken.value}"
         billing = billing.copy(
             plan = "premium",
-            subscription = pwm.kit.BillingStatus.Subscription("play", "premium", "active", 2_000_000_000_000, false, null, emptyList()),
+            // Just charged: refundable for 30 days (D72 §1).
+            subscription = pwm.kit.BillingStatus.Subscription("play", "premium", "active", 2_000_000_000_000, false, null, REFUNDABLE_UNTIL, emptyList()),
         )
         // The server's answer to a purchase has no token.
+        return billing.copy(token = null)
+    }
+
+    /** As the core and server answer: Stripe or Play only, inside the window; then Free. */
+    override suspend fun refund(provider: String): pwm.kit.BillingStatus {
+        refundError?.let { throw it }
+        if (provider != "stripe" && provider != "play") throw PwmError("managed_elsewhere")
+        val subscription = billing.subscription ?: throw PwmError("no_subscription")
+        if (subscription.provider != provider) throw PwmError("managed_elsewhere")
+        if (subscription.refundableUntilMs == null) throw PwmError("refund_window_passed")
+        refunds += provider
+        billing = billing.copy(plan = pwm.kit.BillingStatus.FREE, subscription = null)
         return billing.copy(token = null)
     }
 
@@ -437,6 +453,7 @@ class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = 
         const val KEY = "A1-FAKE00-SECRET-KEY000-000000-AAA"
         const val VAULT = "vault-1"
         const val BILLING_TOKEN = "6f1c2a5e-0000-4000-8000-00000000b111"
+        const val REFUNDABLE_UNTIL = 1_900_000_000_000L
     }
 }
 

@@ -8,6 +8,7 @@
 //! purchase token or subscription body.
 
 mod apple;
+mod commitments;
 mod http;
 mod play;
 mod routes;
@@ -22,6 +23,7 @@ use tokio::time::Instant;
 use uuid::Uuid;
 
 pub use apple::AppleConfig;
+pub use commitments::{Mailer, OutboxMessage, record_price_change};
 pub use play::{PLAY_SCOPE, PlayConfig};
 pub(crate) use routes::routes;
 pub use stripe::{STRIPE_VERSION, StripeConfig};
@@ -36,6 +38,9 @@ use http::Http;
 pub(crate) const ENTITLED: &str = "((s.status = 'active' AND s.current_period_end > now() - interval '3 days') \
      OR (s.status = 'canceled' AND s.current_period_end > now()) \
      OR (s.status = 'past_due' AND (s.grace_until IS NULL OR s.grace_until > now())))";
+
+/// How long after a charge a refund can be asked for (PRICING.md §5).
+pub(crate) const REFUND_WINDOW: &str = "interval '30 days'";
 
 /// The better plan first when an account holds two.
 const RANK: &str = "CASE s.plan WHEN 'teams' THEN 3 WHEN 'family' THEN 2 ELSE 1 END";
@@ -108,6 +113,8 @@ pub(crate) struct Snapshot {
     pub status: Status,
     pub price_minor: i64,
     pub currency: String,
+    /// The start of the paid period, for the refund's amount (D72 §1).
+    pub period_start_ms: Option<i64>,
     pub period_end_ms: i64,
     pub canceling: bool,
     pub grace_until_ms: Option<i64>,
@@ -132,7 +139,9 @@ pub(crate) enum BillingError {
 }
 
 /// Plans and their product or price ids at one provider, from a setting
-/// like `premium=price_123,family=price_456` (§9).
+/// like `premium=price_123,family=price_456` (§9). A plan may name more than
+/// one: the first is what new subscribers buy, and the others are older
+/// prices still paid by subscribers a price change holds (D72 §2).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Products(Vec<(&'static str, String)>);
 
@@ -153,7 +162,7 @@ impl Products {
                 && id
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b));
-            if !plain || pairs.iter().any(|(p, i)| *p == plan || i == id) {
+            if !plain || pairs.iter().any(|(_, i)| i == id) {
                 return None;
             }
             pairs.push((plan, id.to_owned()));
@@ -209,6 +218,8 @@ struct Inner {
 #[derive(Clone, Default)]
 pub struct Billing {
     inner: Option<Arc<Inner>>,
+    /// Sends the outbox (D72 §3); none until D32 picks a provider.
+    mailer: Option<Arc<dyn Mailer>>,
 }
 
 impl Billing {
@@ -224,6 +235,7 @@ impl Billing {
             "billing needs the system's root certificates",
         ))?;
         Ok(Self {
+            mailer: None,
             inner: Some(Arc::new(Inner {
                 stripe: config.stripe,
                 apple: config.apple,
@@ -232,6 +244,11 @@ impl Billing {
                 hints: Mutex::new((Instant::now(), 0)),
             })),
         })
+    }
+
+    pub fn with_mailer(mut self, mailer: Arc<dyn Mailer>) -> Self {
+        self.mailer = Some(mailer);
+        self
     }
 
     /// The providers that sell plans here, for the apps to offer.
@@ -352,6 +369,18 @@ impl Billing {
             .execute(pool)
             .await?;
         tracing::info!("billing: daily pass read {read} subscriptions, {failed} failed");
+        // The commitments (D72): reminders, the outbox, held prices.
+        let scheduled = commitments::schedule_reminders(pool).await?;
+        let (sent, waiting) = commitments::deliver_due(pool, self.mailer.as_ref()).await?;
+        let moved = commitments::apply_price_moves(self, pool).await?;
+        if self.mailer.is_none() && waiting > 0 {
+            tracing::warn!(
+                "billing: {waiting} reminders and notices are due, and no email provider is set (D32)"
+            );
+        }
+        tracing::info!(
+            "billing: {scheduled} reminders scheduled, {sent} sent, {waiting} not sent, {moved} prices moved"
+        );
         Ok(())
     }
 
@@ -416,17 +445,28 @@ async fn store(
     let Some(account) = account else {
         return Ok(None);
     };
+    if s.provider != Provider::Stripe {
+        commitments::warn_on_held_price(pool, s).await;
+    }
     let mut tx = pool.begin().await.map_err(db)?;
+    // A provider that doesn't say when it charged (Play) is taken to have
+    // charged when a new period first shows (D72 §1).
     sqlx::query(
         "INSERT INTO subscriptions (account_id, plan, status, provider, provider_ref, price_minor, \
-            currency, current_period_end, cancel_at_period_end, grace_until, last_charge_at, sandbox) \
+            currency, current_period_end, cancel_at_period_end, grace_until, last_charge_at, sandbox, \
+            period_start) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, to_timestamp($8::float8 / 1000), $9, \
-            to_timestamp($10::float8 / 1000), to_timestamp($11::float8 / 1000), $12) \
+            to_timestamp($10::float8 / 1000), coalesce(to_timestamp($11::float8 / 1000), now()), $12, \
+            to_timestamp($13::float8 / 1000)) \
          ON CONFLICT (provider, provider_ref) DO UPDATE SET \
             plan = EXCLUDED.plan, status = EXCLUDED.status, price_minor = EXCLUDED.price_minor, \
             currency = EXCLUDED.currency, current_period_end = EXCLUDED.current_period_end, \
             cancel_at_period_end = EXCLUDED.cancel_at_period_end, grace_until = EXCLUDED.grace_until, \
-            last_charge_at = coalesce(EXCLUDED.last_charge_at, subscriptions.last_charge_at), \
+            last_charge_at = CASE \
+                WHEN $11::float8 IS NOT NULL THEN EXCLUDED.last_charge_at \
+                WHEN subscriptions.current_period_end <> EXCLUDED.current_period_end THEN now() \
+                ELSE subscriptions.last_charge_at END, \
+            period_start = coalesce(EXCLUDED.period_start, subscriptions.period_start), \
             sandbox = EXCLUDED.sandbox, updated_at = now()",
     )
     .bind(account)
@@ -441,6 +481,7 @@ async fn store(
     .bind(s.grace_until_ms)
     .bind(s.last_charge_ms)
     .bind(s.sandbox)
+    .bind(s.period_start_ms)
     .execute(&mut *tx)
     .await
     .map_err(db)?;
@@ -496,6 +537,9 @@ pub(crate) struct SubscriptionJson {
     /// It ends at `until` instead of renewing.
     pub canceling: bool,
     pub price_locked_until: Option<i64>,
+    /// Until when a refund can be asked for here (Stripe and Play, 30 days
+    /// after the last charge, D72 §1); null when it can't.
+    pub refundable_until: Option<i64>,
     /// The providers of other subscriptions that count too, bought by
     /// mistake: the app says where to cancel them.
     pub also: Vec<String>,
@@ -518,7 +562,10 @@ pub(crate) async fn summary(
         "SELECT s.plan, s.status, s.provider, \
                 (extract(epoch FROM s.current_period_end) * 1000)::bigint, \
                 s.cancel_at_period_end, \
-                (extract(epoch FROM s.price_locked_until) * 1000)::bigint \
+                (extract(epoch FROM s.price_locked_until) * 1000)::bigint, \
+                CASE WHEN s.provider IN ('stripe', 'play') \
+                       AND s.last_charge_at > now() - {REFUND_WINDOW} \
+                     THEN (extract(epoch FROM s.last_charge_at + {REFUND_WINDOW}) * 1000)::bigint END \
          FROM subscriptions s WHERE s.account_id = $1 AND {ENTITLED} \
          ORDER BY {RANK} DESC, s.current_period_end DESC"
     )))
@@ -543,8 +590,28 @@ pub(crate) async fn summary(
             until: first.get(3),
             canceling: first.get(4),
             price_locked_until: first.get(5),
+            refundable_until: first.get(6),
             also: rows.map(|r| r.get(2)).collect(),
         }),
         billing: sells,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_plan_may_name_older_prices_after_its_current_one() {
+        let products = Products::parse("premium=price_new, premium=price_old,family=f").unwrap();
+        assert_eq!(products.id_for("premium"), Some("price_new"));
+        assert_eq!(products.plan_for("price_old"), Some("premium"));
+        assert_eq!(products.plan_for("f"), Some("family"));
+        assert!(
+            Products::parse("premium=p,family=p").is_none(),
+            "one id, one plan"
+        );
+        assert!(Products::parse("gold=p").is_none());
+        assert!(Products::parse("").is_none());
+    }
 }

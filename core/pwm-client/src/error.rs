@@ -101,7 +101,8 @@ pub enum ClientError {
     Passkey(pwm_passkey::PasskeyError),
     /// A billing call was refused (D6 §7); the code says why:
     /// `billing_unavailable`, `purchase_not_yours`, `purchase_pending`,
-    /// `already_subscribed`, `managed_elsewhere` or `no_subscription`.
+    /// `already_subscribed`, `managed_elsewhere`, `refund_window_passed` or
+    /// `no_subscription`.
     #[error("billing: {0}")]
     Billing(&'static str),
     /// The Emergency Kit or a scanned kit code was refused (D42); the code says why.

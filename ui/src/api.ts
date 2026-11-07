@@ -60,6 +60,8 @@ const MESSAGES: Record<string, string> = {
   this_device: "To leave this device, use Sign out in Settings.",
   billing_unavailable: "Plans aren't available right now. Try again later.",
   already_subscribed: "You already have a plan.",
+  refund_window_passed:
+    "Refunds are possible for 30 days after a charge, and that time has passed.",
   managed_elsewhere: "Change this plan where you bought it.",
   no_subscription: "There's no plan to change.",
   purchase_not_yours: "This purchase belongs to another account.",

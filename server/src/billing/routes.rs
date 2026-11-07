@@ -34,6 +34,8 @@ pub(crate) fn routes() -> ApiRouter {
         .route("/v1/billing/stripe/checkout", post(stripe_checkout))
         .route("/v1/billing/stripe/cancel", post(stripe_cancel))
         .route("/v1/billing/stripe/resume", post(stripe_resume))
+        .route("/v1/billing/stripe/refund", post(stripe_refund))
+        .route("/v1/billing/play/refund", post(play_refund))
         .route("/v1/billing/apple/transactions", post(apple_transaction))
         .route("/v1/billing/play/purchases", post(play_purchase))
         .route("/billing/done", get(done))
@@ -185,6 +187,101 @@ async fn set_canceling(
         .refresh(
             &state.pool,
             Provider::Stripe,
+            &reference,
+            None,
+            Some(auth.account_id),
+        )
+        .await?;
+    answer(&state, auth.account_id).await
+}
+
+/// The account's subscription at `provider` that counts now, if any, with
+/// whether its last charge is within the refund window.
+async fn refundable(
+    state: &AppState,
+    account: Uuid,
+    provider: Provider,
+) -> Result<(String, bool), ApiError> {
+    let row = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SELECT s.provider_ref, coalesce(s.last_charge_at > now() - {}, false) \
+         FROM subscriptions s \
+         WHERE s.account_id = $1 AND s.provider = $2 AND {} \
+         ORDER BY s.current_period_end DESC LIMIT 1",
+        super::REFUND_WINDOW,
+        super::ENTITLED
+    )))
+    .bind(account)
+    .bind(provider.as_str())
+    .fetch_optional(&state.pool)
+    .await?;
+    match row {
+        Some(row) => Ok((row.get(0), row.get(1))),
+        None => {
+            let current = summary(&state.pool, &state.billing, account).await?;
+            Err(if current.subscription.is_some() {
+                ApiError::Conflict("managed_elsewhere")
+            } else {
+                ApiError::NotFound
+            })
+        }
+    }
+}
+
+/// One click (PRICING.md §5, D72 §1): within 30 days of the last charge,
+/// the unused part of it comes back and the plan ends now. The refund goes
+/// first, once whatever the retries; then the subscription ends.
+async fn stripe_refund(
+    State(state): State<AppState>,
+    auth: Authenticated,
+) -> Result<axum::Json<Summary>, ApiError> {
+    let inner = state.billing.inner()?;
+    let config = inner.stripe.as_ref().ok_or(ApiError::BillingUnavailable)?;
+    let (reference, _) = refundable(&state, auth.account_id, Provider::Stripe).await?;
+    let charge = stripe::last_charge(config, &inner.http, &reference).await?;
+    let now = i64::try_from(stripe::now()).unwrap_or(i64::MAX);
+    if now - charge.paid_at > 30 * 24 * 3600 {
+        return Err(ApiError::Conflict("refund_window_passed"));
+    }
+    let amount = stripe::refund_amount(
+        charge.amount_paid,
+        charge.period_start,
+        charge.period_end,
+        now,
+    );
+    if amount > 0 {
+        stripe::refund(config, &inner.http, &charge.invoice, amount).await?;
+    }
+    stripe::end_now(config, &inner.http, &reference).await?;
+    state
+        .billing
+        .refresh(
+            &state.pool,
+            Provider::Stripe,
+            &reference,
+            None,
+            Some(auth.account_id),
+        )
+        .await?;
+    answer(&state, auth.account_id).await
+}
+
+/// As for Stripe, with Google working out the pro-rata amount.
+async fn play_refund(
+    State(state): State<AppState>,
+    auth: Authenticated,
+) -> Result<axum::Json<Summary>, ApiError> {
+    let inner = state.billing.inner()?;
+    let config = inner.play.as_ref().ok_or(ApiError::BillingUnavailable)?;
+    let (reference, in_window) = refundable(&state, auth.account_id, Provider::Play).await?;
+    if !in_window {
+        return Err(ApiError::Conflict("refund_window_passed"));
+    }
+    play::revoke_prorated(config, &inner.http, &reference).await?;
+    state
+        .billing
+        .refresh(
+            &state.pool,
+            Provider::Play,
             &reference,
             None,
             Some(auth.account_id),

@@ -72,6 +72,9 @@ public protocol Account: AnyObject, Sendable {
     func checkoutURL(for plan: Plan) async throws -> URL
     func cancelSubscription() async throws -> BillingStatus
     func resumeSubscription() async throws -> BillingStatus
+    /// Pays back the unused days of a Stripe or Google Play subscription and
+    /// ends the plan now (D72 §1).
+    func refund(provider: BillingProvider) async throws -> BillingStatus
     /// Right after StoreKit finished a purchase, before finishing it.
     func applePurchase(transactionId: String) async throws -> BillingStatus
 }

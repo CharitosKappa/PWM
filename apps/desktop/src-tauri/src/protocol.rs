@@ -113,6 +113,7 @@ pub enum Request {
     },
     CancelPlan,
     ResumePlan,
+    RefundPlan,
     // The manage page (D44, D46, D51; M7.6).
     Devices,
     RenameDevice {
@@ -276,6 +277,7 @@ pub struct PlanSubscription {
     pub until_ms: i64,
     pub canceling: bool,
     pub price_locked_until_ms: Option<i64>,
+    pub refundable_until_ms: Option<i64>,
     pub also: Vec<String>,
 }
 

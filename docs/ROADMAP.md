@@ -768,8 +768,15 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
     - **To M9.2:** refunds, account deletion, the reminders' outbox and the price-hold checks.
     - **Not tested yet:** the StoreKit Testing test (it needs a host app), and real purchases in Stripe's test mode, the App Store sandbox and with a Play license tester (`QUALITY.md`, billing checklist).
     - **Product ids** are placeholders until D1 and D8.
-- [ ] M9.2 Implement every commitment in `PRICING.md` with tests (price lock, reminders, cancel, refunds, export after lapse).
+- [x] M9.2 Implement every commitment in `PRICING.md` with tests (price lock, reminders, cancel, refunds, export after lapse).
+  - Done per D72 (implementation notes there):
+    - **Refunds:** one button within 30 days of the last charge, pro-rata. Stripe refunds the invoice's payment once, then ends the subscription; Play revokes with `proratedRefund`; Apple's own sheet on iOS.
+    - **Price changes:** `pwm-server price-change` holds existing subscribers for 12 months; a Stripe subscription moves only after its 60-day reminder was delivered.
+    - **Reminders:** an outbox with one reminder 14 days before each charge (migration 0009). Cancel and resume came with M9.1. A lapsed account keeps, edits and exports everything.
+  - **Tests:** 9 more server tests against the fake providers (17 in all) plus the 0009 migration test, the hold rule and the price list in unit tests, the refund through the app API, the extension's background, the desktop's samples, and the Apple and Android Plan tests.
+  - **Deferred:** sending the outbox needs the email provider (D32, M10.7); until then no price change applies. Account deletion is M9.4.
 - [ ] M9.3 Plan gates in core (TOTP, attachments, share links) checked client-side and server-side.
+- [ ] M9.4 Account deletion in every app (D72 §5): the master password proven again, everything deleted on the server, each device wiped, export offered first, and D6 §6's subscription rules. Needs its own decision first; Apple requires it before launch.
 
 ### M10 — Launch readiness
 - [ ] M10.1 Release pipeline: beta channels, staged rollout, auto-halt metrics, rollback (`QUALITY.md`).
