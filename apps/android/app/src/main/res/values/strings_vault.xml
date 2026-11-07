@@ -38,6 +38,8 @@
     <string name="one_time_code">One-time code</string>
     <string name="code_seconds">%1$d s</string>
     <string name="code_unsupported">This code type isn\'t supported yet.</string>
+    <string name="code_needs_plan">One-time codes are part of Premium. See Settings › Plan.</string>
+    <string name="one_time_code_secret">One-time code secret</string>
     <string name="websites">Websites</string>
     <string name="passkey_for">Passkey for %1$s</string>
     <string name="password_history">Password history</string>

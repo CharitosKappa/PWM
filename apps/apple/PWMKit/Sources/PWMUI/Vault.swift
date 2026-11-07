@@ -258,6 +258,9 @@ public final class ItemDetailModel: CaptureListener {
     public private(set) var code: Code?
     /// The login's code is a type this version can't make (HOTP, say).
     public private(set) var codeUnsupported = false
+    /// The plan doesn't include one-time codes (D73 §1); the secret stays
+    /// readable.
+    public private(set) var codeNeedsPlan = false
     /// The field copied last, for its "Copied" label.
     public private(set) var copied: String?
     /// After a screenshot masked what was shown (D49 §3).
@@ -328,6 +331,11 @@ public final class ItemDetailModel: CaptureListener {
                 Code(value: $0.code, secondsLeft: $0.secondsLeft)
             }
             codeUnsupported = code == nil
+            codeNeedsPlan = false
+        } catch let failure as PWMError where failure.code == "plan_required" {
+            code = nil
+            codeUnsupported = false
+            codeNeedsPlan = true
         } catch {
             code = nil
             codeUnsupported = true

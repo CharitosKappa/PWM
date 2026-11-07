@@ -205,8 +205,14 @@ class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = 
         return 0
     }
 
-    override suspend fun currentCode(itemId: String, vaultId: String): CurrentCode? =
-        if (items[itemId]?.totp.isNullOrEmpty()) null else CurrentCode(Redacted("123456"), 20)
+    /** The plan doesn't include one-time codes (D73 §1). */
+    var codeNeedsPlan = false
+
+    override suspend fun currentCode(itemId: String, vaultId: String): CurrentCode? = when {
+        items[itemId]?.totp.isNullOrEmpty() -> null
+        codeNeedsPlan -> throw PwmError("plan_required")
+        else -> CurrentCode(Redacted("123456"), 20)
+    }
 
     // Autofill: logins whose title starts with the app's package or the web host match.
     override suspend fun item(itemId: String, vaultId: String): Item? = items[itemId]
