@@ -1426,3 +1426,44 @@ async fn a_lapsed_account_keeps_its_data_and_still_exports() {
     assert!(String::from_utf8_lossy(file.expose_secret()).contains("Bank (old)"));
     w.db.drop().await;
 }
+
+/// The refund through the app API (D72 §1).
+#[tokio::test]
+async fn the_app_api_refunds_and_ends_the_plan() {
+    use common::driver::run;
+    use pwm_client::{Client, KdfParams, MemoryStore, Outcome, Platform, new_id};
+
+    let Some(w) = world().await else { return };
+    let mut client = Client::new(MemoryStore::new());
+    client.set_signup_params(KdfParams::MOBILE_FLOOR).unwrap();
+    let step = client.start_signup(
+        "alice@example.com",
+        "correct horse battery staple 42",
+        &new_id().unwrap(),
+        Platform::Windows,
+        "Desk",
+    );
+    run(&w.app, &mut client, step).await.unwrap();
+    let step = client.start_billing_status();
+    let Outcome::Billing(info) = run(&w.app, &mut client, step).await.unwrap() else {
+        panic!("no plan");
+    };
+    paying(&w, &info.token.unwrap(), "sub_c", 2, 363).await;
+
+    let step = client.start_billing_status();
+    let Outcome::Billing(info) = run(&w.app, &mut client, step).await.unwrap() else {
+        panic!("no plan");
+    };
+    assert!(info.subscription.unwrap().refundable_until_ms.is_some());
+    assert_eq!(
+        client.start_refund("app_store").unwrap_err().code(),
+        "managed_elsewhere"
+    );
+    let step = client.start_refund("stripe");
+    let Outcome::Billing(info) = run(&w.app, &mut client, step).await.unwrap() else {
+        panic!("not refunded");
+    };
+    assert_eq!(info.plan, "free");
+    assert_eq!(w.fake.lock().unwrap().refunds.len(), 1);
+    w.db.drop().await;
+}
