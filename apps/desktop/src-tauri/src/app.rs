@@ -342,8 +342,11 @@ pub fn run() {
                 }
                 _ => {}
             });
-            // Where the desktop has no tray (GNOME), the app still works.
-            let _ = tray(&handle);
+            // Where the desktop has no tray (GNOME), the app still works. On
+            // Linux the tray library is loaded when the tray is made, and a
+            // missing one panics (the Flatpak's runtime has none, D70): then
+            // there is no tray either.
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tray(&handle)));
             timers(handle.clone());
             system_events(handle);
             Ok(())
