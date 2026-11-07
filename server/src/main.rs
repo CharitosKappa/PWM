@@ -14,6 +14,11 @@
 //!   `/healthz` (the container health check).
 //! - `reports export [--since YYYY-MM-DD]` writes the autofill failure
 //!   reports (D38) to stdout as JSON lines, for triage.
+//! - `price-change <stripe|app_store|play> <plan> <price id> <amount> <currency>`
+//!   records a price change (D72 §2): subscribers paying another price keep
+//!   it for 12 months and are told now and 60 days before it ends. Change
+//!   the price setting (`PWM_STRIPE_PRICES`, or the store's console, keeping
+//!   existing subscribers' price) for new subscribers.
 #![forbid(unsafe_code)]
 
 use std::io::{IsTerminal, Write};
@@ -34,10 +39,11 @@ async fn main() -> ExitCode {
         Some("keygen") => return keygen(args.get(1).map(String::as_str), args.get(2)),
         Some("healthcheck") => return healthcheck(),
         Some("reports") => return reports(&args[1..]).await,
+        Some("price-change") => return price_change(&args[1..]).await,
         Some("mark-restored") | None => {}
         Some(_) => {
             eprintln!(
-                "usage: pwm-server [keygen [--env <file>] | mark-restored | healthcheck | reports export [--since YYYY-MM-DD]]"
+                "usage: pwm-server [keygen [--env <file>] | mark-restored | healthcheck | reports export [--since YYYY-MM-DD] | price-change <provider> <plan> <price id> <amount> <currency>]"
             );
             return ExitCode::FAILURE;
         }
@@ -155,6 +161,41 @@ async fn reports(args: &[String]) -> ExitCode {
                     return ExitCode::FAILURE;
                 }
             }
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn price_change(args: &[String]) -> ExitCode {
+    let [provider, plan, price, amount, currency] = args else {
+        eprintln!(
+            "usage: pwm-server price-change <stripe|app_store|play> <premium|family|teams> <price id> <amount in minor units> <currency>"
+        );
+        return ExitCode::FAILURE;
+    };
+    let Ok(amount) = amount.parse::<i64>() else {
+        eprintln!("the amount is in minor units, like 2400");
+        return ExitCode::FAILURE;
+    };
+    let result = async {
+        let config = Config::from_env()?;
+        let pool = connect(config.database_url.expose_secret())?;
+        migrate(&pool).await?;
+        let held =
+            pwm_server::record_price_change(&pool, provider, plan, price, amount, currency).await?;
+        pool.close().await;
+        Ok::<_, ServerError>(held)
+    }
+    .await;
+    match result {
+        Ok(held) => {
+            println!(
+                "recorded: {held} subscriptions keep their price for 12 months and will be told (D72)"
+            );
             ExitCode::SUCCESS
         }
         Err(err) => {

@@ -312,6 +312,7 @@ pub(crate) fn statuses(
         status,
         price_minor: price,
         currency: currency_code,
+        period_start_ms: transaction["purchaseDate"].as_i64(),
         period_end_ms: expires,
         canceling: renewal["autoRenewStatus"].as_i64() == Some(0),
         grace_until_ms: grace,

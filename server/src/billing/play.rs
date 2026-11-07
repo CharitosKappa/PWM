@@ -307,6 +307,7 @@ pub(crate) fn snapshot(
         status,
         price_minor,
         currency: currency_code,
+        period_start_ms: None,
         period_end_ms: expiry,
         canceling,
         grace_until_ms: grace,
@@ -342,6 +343,37 @@ pub(crate) async fn acknowledge(config: &PlayConfig, http: &Http, token: &str, p
         Ok((200 | 204, _)) => {}
         Ok((status, _)) => tracing::warn!("billing: Play's acknowledge answered {status}"),
         Err(_) => tracing::warn!("billing: Play's acknowledge failed"),
+    }
+}
+
+/// Refunds the unused part of a purchase and ends it (D72 §1): Google
+/// works out the pro-rata amount.
+pub(crate) async fn revoke_prorated(
+    config: &PlayConfig,
+    http: &Http,
+    token: &str,
+) -> Result<(), BillingError> {
+    if !plain_token(token) {
+        return Err(BillingError::NotFound);
+    }
+    let access = config.access_token(http).await?;
+    let request = hyper::Request::post(format!(
+        "{}/androidpublisher/v3/applications/{}/purchases/subscriptionsv2/tokens/{token}:revoke",
+        config.url, config.package
+    ))
+    .header("authorization", format!("Bearer {access}"))
+    .header("content-type", "application/json")
+    .body(Full::new(Bytes::from_static(
+        br#"{"revocationContext":{"proratedRefund":{}}}"#,
+    )))
+    .map_err(|_| BillingError::Unavailable)?;
+    match http.send(request).await? {
+        (200 | 204, _) => Ok(()),
+        (400 | 404 | 410, _) => Err(BillingError::NotFound),
+        (status, _) => {
+            tracing::warn!("billing: Play's revoke answered {status}");
+            Err(BillingError::Unavailable)
+        }
     }
 }
 
