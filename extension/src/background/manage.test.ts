@@ -290,6 +290,7 @@ describe("plan", () => {
         until_ms: 1_793_000_000_000,
         canceling: false,
         price_locked_until_ms: null,
+        refundable_until_ms: null,
         also: ["app_store"],
       },
       sells: ["stripe"],
@@ -303,6 +304,7 @@ describe("plan", () => {
       untilMs: 1_793_000_000_000,
       canceling: true,
       priceLockedUntilMs: null,
+      refundableUntilMs: null,
       also: ["app_store"],
     });
     const resumed = await background.handle({ kind: "resumePlan" });
@@ -320,6 +322,38 @@ describe("plan", () => {
     expect(
       await errorOf(background.handle({ kind: "checkout", plan: "premium" })),
     ).toBe("internal");
+  });
+
+  it("refunds within the window, and says when it has passed", async () => {
+    const { background, core } = await signedUp();
+    const sub = {
+      provider: "stripe",
+      plan: "premium",
+      status: "active",
+      until_ms: 1_793_000_000_000,
+      canceling: false,
+      price_locked_until_ms: null,
+      refundable_until_ms: null as number | null,
+      also: [],
+    };
+    core().billing_ = {
+      plan: "premium",
+      subscription: sub,
+      sells: ["stripe"],
+      token: null,
+    };
+    expect(await errorOf(background.handle({ kind: "refundPlan" }))).toBe(
+      "refund_window_passed",
+    );
+    sub.refundable_until_ms = 1_765_000_000_000;
+    expect(await background.handle({ kind: "refundPlan" })).toEqual({
+      plan: "free",
+      subscription: null,
+      sells: ["stripe"],
+    });
+    expect(await errorOf(background.handle({ kind: "refundPlan" }))).toBe(
+      "no_subscription",
+    );
   });
 
   it("needs an unlocked vault", async () => {

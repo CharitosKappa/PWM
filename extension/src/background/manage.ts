@@ -54,6 +54,7 @@ interface BillingJson {
     until_ms: number;
     canceling: boolean;
     price_locked_until_ms: number | null;
+    refundable_until_ms: number | null;
     also: PlanProvider[];
   } | null;
   sells: PlanProvider[];
@@ -75,6 +76,7 @@ function planView(step: CoreStep): PlanView {
             untilMs: s.until_ms,
             canceling: s.canceling,
             priceLockedUntilMs: s.price_locked_until_ms,
+            refundableUntilMs: s.refundable_until_ms,
             also: s.also,
           },
     sells: b.sells,
@@ -121,6 +123,21 @@ export class Manager {
     return planView(
       await this.conversation(
         () => this.deps.core().startCancelSubscription(),
+        "billing",
+      ),
+    );
+  }
+
+  /**
+   * Pays back the unused part of the last charge and ends the plan now
+   * (D72 §1), for the plan's own provider.
+   */
+  async refundPlan(): Promise<PlanView> {
+    const provider = (await this.plan()).subscription?.provider;
+    if (provider === undefined) throw new ServiceError("no_subscription");
+    return planView(
+      await this.conversation(
+        () => this.deps.core().startRefund(provider),
         "billing",
       ),
     );

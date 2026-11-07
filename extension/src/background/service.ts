@@ -385,6 +385,8 @@ export class Background {
         return this.manager.cancelPlan();
       case "resumePlan":
         return this.manager.resumePlan();
+      case "refundPlan":
+        return this.manager.refundPlan();
       case "devices":
         return this.manager.devices();
       case "renameDevice":
