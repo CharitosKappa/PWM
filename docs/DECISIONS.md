@@ -3742,4 +3742,5 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The Android app:** a Plan section in Settings (`kit/ui/Plan.kt`, `app/PlanSection.kt`).
     - **Buying** goes through Play Billing 9.1.0 (`app/PlayStoreBilling.kt`) with `setObfuscatedAccountId(billingToken)`. The server acknowledges purchases; the app never does. Purchases that finish later reach the server through the listener and `queryPurchasesAsync` at each unlock. A pending payment says so. Manage subscription opens Play's page.
     - **The product id** is the placeholder `premium_yearly`.
+    - **Two more libraries in D60's exception,** approved by the founder on 2026-11-07: Play Billing 9.1.0 brings `com.google.android.gms:play-services-location` 19.0.0 and `play-services-places-placereport` 17.0.0, both under the Android SDK licence (versions 8.0 to 9.0 bring them too). They're allowed by name with `com.android.billingclient:billing`. The app asks for no location permission; its manifest gains only `com.android.vending.BILLING`.
   - **Messages:** the server's billing codes are in `design/messages.json` for both apps. Each app keeps only its store's own codes.

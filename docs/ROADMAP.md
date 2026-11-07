@@ -761,7 +761,13 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
   - **Deferred:** KDBX 3.1 files from a real KeePass app (made once by the founder, see the fixtures README); until then 3.1 is read by the crate but not tested here.
 
 ### M9 — Plans and billing
-- [ ] M9.1 Entitlements service (decision D6); Stripe web checkout; App Store / Play Billing.
+- [x] M9.1 Entitlements service (decision D6); Stripe web checkout; App Store / Play Billing.
+  - Done per D6 (implementation notes there). The server reads each subscription from Stripe, the App Store Server API or the Play Developer API, linked by the account's billing token, and reads them all again daily (migration 0008). The apps show the plan in Settings: Stripe Checkout on the desktop, the Mac and the extensions, StoreKit 2 on iOS, Play Billing on Android. A server without billing makes every account Premium.
+  - **Tests:** 8 server tests against fake providers plus the migration test and 14 unit tests, an end-to-end app API test, HMAC vectors, the extension's background, the desktop's samples and server test, 17 Apple screen tests and 7 Android ones.
+  - **Deferred:**
+    - **To M9.2:** refunds, account deletion, the reminders' outbox and the price-hold checks.
+    - **Not tested yet:** the StoreKit Testing test (it needs a host app), and real purchases in Stripe's test mode, the App Store sandbox and with a Play license tester (`QUALITY.md`, billing checklist).
+    - **Product ids** are placeholders until D1 and D8.
 - [ ] M9.2 Implement every commitment in `PRICING.md` with tests (price lock, reminders, cancel, refunds, export after lapse).
 - [ ] M9.3 Plan gates in core (TOTP, attachments, share links) checked client-side and server-side.
 
