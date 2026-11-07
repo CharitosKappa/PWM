@@ -132,16 +132,10 @@ fn open_backend(dir: &Path) -> Result<Live, Box<dyn std::error::Error>> {
 /// `%LOCALAPPDATA%\PWM` (D69 §4).
 #[cfg(windows)]
 fn browser_hosts() -> Option<crate::browser_hosts::BrowserHosts> {
-    let local = std::path::PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join("PWM");
     let helper = std::env::current_exe()
         .ok()?
         .with_file_name("pwm-browser-helper.exe");
-    Some(crate::browser_hosts::BrowserHosts::new(
-        local.join("NativeMessagingHosts"),
-        helper,
-        Box::new(crate::browser_hosts::WindowsRegistry),
-        Box::new(pwm_browser_helper::store::FileStore::new()?),
-    ))
+    crate::browser_hosts::BrowserHosts::for_this_user(helper)
 }
 
 fn main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {

@@ -3442,7 +3442,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The extension:** `biometricName` is "Windows Hello" on Windows. The helper's error codes keep Touch ID's names; their texts name Windows Hello and the app for Windows there.
   - **Not run anywhere yet:** a browser starting the helper and a real Windows Hello prompt, which need a person at the computer. Whether the prompt shows in front (§3) is the first thing that check answers (`QUALITY.md`, desktop step 13).
   - **Not checked here:** the Linux build, since this computer has no Linux target; CI's `desktop` job builds it.
-- **D70 — Desktop installers for Windows and Linux: the formats, signing, the browser helper, uninstalling, and tests** · proposed 2026-11-07 · awaiting founder.
+- **D70 — Desktop installers for Windows and Linux: the formats, signing, the browser helper, uninstalling, and tests** · settled 2026-11-07 · founder (approved as proposed).
   M7.3 asks for "signed installers (MSIX/EXE, AppImage, .deb, .rpm, Flatpak)". D69 §4 adds two duties: install `pwm-browser-helper.exe` next to the app, and remove the browser helper's registry keys on uninstall. D66 kept the Tauri CLI out until now ("it comes only with the installers").
 
   Open:
@@ -3513,3 +3513,13 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **AppImage now:** it bundles LGPL libraries, and each release then owes their sources.
   - **Signing only at release, nothing before:** the first real signing would also be the first test of the signing path.
   - **Deleting the keys in the uninstaller's own NSIS script:** a second copy of D69's rules in another language, and NSIS can't delete Windows Hello keys.
+
+  Implementation notes (M7.3):
+  - **`just desktop-installer`** (`apps/desktop/web/scripts/installer.mjs`): builds the page, then on Windows the helper in release, copied in as `src-tauri/binaries/pwm-browser-helper-<target triple>.exe`, then `tauri build` with `installer.conf.json` (and `installer.windows.conf.json` on Windows). Extra arguments go to `tauri build`, such as `--config sign.json`.
+  - **The settings stay out of `tauri.conf.json`:** `tauri-build` checks `externalBin` on every `cargo build`, so only the installer build passes them.
+  - **The install folder is `%LOCALAPPDATA%\PWM`,** Tauri's per-user default, not `%LOCALAPPDATA%\Programs\PWM` as §1 said. The template has no setting for it. That's also where D69 keeps the manifests and enrolments. The uninstaller removes only the files it installed, then the folder if it's empty, and `--uninstall` has emptied its subfolders by then.
+  - **Replacing a version keeps browser unlock:** Tauri's updater passes `/UPDATE`, and an installer of another version runs the old uninstaller in place, from the install folder. The hook (`installer-hooks.nsh`) runs `--uninstall` only when neither is the case. Uninstalling from Windows' Settings runs a copy from the temporary folder.
+  - **The cleanup moved:** `BrowserHosts` is now in `pwm-browser-helper` (`hosts.rs`), with the registry and `for_this_user`; `browser_hosts.rs` in the app maps its errors to the screens' codes. Turning it off also removes the manifests' folder, and `--uninstall` the enrolments' folder, once each is empty.
+  - **The Flatpak** (`apps/desktop/flatpak/`) takes the release build from the `.deb`, on GNOME 50. Permissions: network, Wayland or X11, the GPU, Downloads (the Emergency Kit), and logind on the system bus (locking).
+  - **CI:** `desktop-installer-windows` and `desktop-installer-linux`, on the `desktop-changes` filter, keep the installers for 7 days.
+  - **Not run on this computer:** the installers themselves, by §10. Building with the CLI (`--no-bundle`) checked the settings and the helper's copy.

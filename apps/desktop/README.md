@@ -17,15 +17,22 @@ the core crates directly.
   - `app.rs`: the window, the one `request` command, the tray, one copy only,
     the timers, and locking on sleep and session lock (`system/`).
   - `browser_hosts.rs`: "Allow browser extensions to unlock with Windows
-    Hello" (D69): the browser helper's manifests and registry keys.
+    Hello" (D69), over the helper library's `hosts` module.
+  - `installer.conf.json`, `installer.windows.conf.json` and
+    `installer-hooks.nsh`: the installers' settings (D70), used only by
+    `just desktop-installer`.
 - **`hello/`:** `pwm-hello`, Windows Hello's signing key (D68) and DPAPI,
   shared by the app and the browser helper.
 - **`browser-helper/`:** `pwm-browser-helper` (D69), the native-messaging
   host the browser starts for "Unlock with Windows Hello": D48's protocol,
-  the extension's key kept under a Windows Hello signature's key.
+  the extension's key kept under a Windows Hello signature's key. Its
+  `hosts` module registers it with the browsers and undoes that, for the
+  app's switch and for the uninstaller (`--uninstall`, D70 §5).
 - **`web/`:** `@pwm/desktop`, the page Tauri serves: the shared screens with
   the desktop host, built by esbuild into `web/dist/`. `e2e/smoke.mjs` drives
-  the built app through `tauri-driver` (CI, Linux).
+  the built app through `tauri-driver` (CI, Linux). `scripts/installer.mjs`
+  builds the installers.
+- **`flatpak/`:** the Flatpak's manifest and desktop entry (D70 §2).
 - **`isolation/`:** Tauri's isolation hook: only the `request` command
   passes.
 - **`scripts/icon.mjs`:** the placeholder icon until the brand is chosen (D1).

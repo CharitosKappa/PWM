@@ -1,0 +1,40 @@
+# The Flatpak (D70 §2): the release build, taken from the .deb, on the GNOME
+# runtime, which carries WebKitGTK, so the package ships none of it.
+# CI copies the .deb in as pwm.deb, then runs flatpak-builder on this file.
+# Publishing (Flathub or our own repository) comes at release (M10).
+app-id: invalid.pwm.desktop
+runtime: org.gnome.Platform
+runtime-version: "50"
+sdk: org.gnome.Sdk
+command: pwm-desktop
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # The Emergency Kit is saved to Downloads (D66).
+  - --filesystem=xdg-download
+  # Locking when the computer sleeps or the session locks (D66 §6).
+  - --system-talk-name=org.freedesktop.login1
+  # The keys go to the Secret Service through the Secret portal (oo7, D66 §4),
+  # which needs no permission here.
+modules:
+  - name: pwm
+    buildsystem: simple
+    sources:
+      - type: file
+        path: pwm.deb
+      - type: file
+        path: invalid.pwm.desktop.desktop
+    build-commands:
+      - ar x pwm.deb
+      - tar -xf data.tar.*
+      - install -Dm755 usr/bin/pwm-desktop /app/bin/pwm-desktop
+      - install -Dm644 invalid.pwm.desktop.desktop /app/share/applications/invalid.pwm.desktop.desktop
+      - |
+        for icon in usr/share/icons/hicolor/*/apps/*.png; do
+          size="${icon#usr/share/icons/hicolor/}"
+          size="${size%%/*}"
+          install -Dm644 "$icon" "/app/share/icons/hicolor/$size/apps/invalid.pwm.desktop.png"
+        done

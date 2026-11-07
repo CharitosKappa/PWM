@@ -3852,6 +3852,7 @@ dependencies = [
  "serde",
  "serde_json",
  "windows",
+ "windows-registry",
 ]
 
 [[package]]
@@ -3924,7 +3925,6 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "windows",
- "windows-registry",
  "zbus 6.2.1",
  "zeroize",
 ]

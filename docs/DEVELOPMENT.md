@@ -163,11 +163,14 @@ Without the argument, that test is skipped and the others run.
 ```
 just desktop        # build the page, then build and run the app
 just desktop-test   # the page, clippy and the tests
+just desktop-installer   # the installers (D70), in apps/desktop/target/release/bundle
 ```
 
 The tests that talk to a server run with `PWM_TEST_SERVER=http://127.0.0.1:8080` and `just server` running, and are skipped otherwise. The app keeps its cache, keys and settings in its local data folder: `%LOCALAPPDATA%invalid.pwm.desktop` on Windows, `~/.local/share/invalid.pwm.desktop` on Linux (the identifier is a placeholder until D1). To use a local server, open Settings while signed out, choose "Self-hosted" and enter `http://localhost:8080`.
 
 The end-to-end check (`apps/desktop/web/e2e/smoke.mjs`) needs `tauri-driver` and, on Linux, `webkit2gtk-driver`; CI runs it under Xvfb.
+
+The installers (D70) are built and tested in CI (`desktop-installer-windows`, `desktop-installer-linux`), whose runs keep them for 7 days. Locally, `just desktop-installer` builds the NSIS installer on Windows (Tauri's bundler downloads NSIS the first time) or the `.deb` and `.rpm` on Linux (with `rpm` installed). Pass `--no-bundle` to check the settings without packaging. The Flatpak's manifest is in `apps/desktop/flatpak/`; CI shows how it's built from the `.deb`.
 
 ## Fuzzing
 
