@@ -702,7 +702,7 @@ jobs:
           gpg --batch --passphrase '' --quick-gen-key "PWM CI throwaway <ci@pwm.invalid>" rsa3072 sign 1d
           rpmsign --define "_gpg_name ci@pwm.invalid" --define "_gpg_path $GNUPGHOME" --addsign rpm/*.rpm
           gpg --armor --export ci@pwm.invalid > "$RUNNER_TEMP/ci.asc"
-          rpmkeys --dbpath "$RUNNER_TEMP/rpmdb" --initdb
+          rpm --dbpath "$RUNNER_TEMP/rpmdb" --initdb
           rpmkeys --dbpath "$RUNNER_TEMP/rpmdb" --import "$RUNNER_TEMP/ci.asc"
           rpmkeys --dbpath "$RUNNER_TEMP/rpmdb" --checksig rpm/*.rpm | tee "$RUNNER_TEMP/checksig.txt"
           grep -q "signatures OK" "$RUNNER_TEMP/checksig.txt"
