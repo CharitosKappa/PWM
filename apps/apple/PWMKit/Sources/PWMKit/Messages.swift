@@ -35,6 +35,7 @@ extension PWMError {
         "managed_elsewhere": "Change this plan where you bought it.",
         "no_subscription": "There's no plan to change.",
         "refund_window_passed": "Refunds are possible for 30 days after a charge, and that time has passed.",
+        "plan_required": "One-time codes are part of Premium. See Settings › Plan.",
         "approval_ended": "The request ended. Ask again, or sign in with your Secret Key.",
         "unknown_approval": "That request ended. Ask the new device to try again.",
         "approval_failed": "The approval didn't arrive safely. Sign in with your Secret Key.",

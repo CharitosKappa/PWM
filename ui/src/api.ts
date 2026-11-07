@@ -63,6 +63,7 @@ const MESSAGES: Record<string, string> = {
   refund_window_passed:
     "Refunds are possible for 30 days after a charge, and that time has passed.",
   managed_elsewhere: "Change this plan where you bought it.",
+  plan_required: "One-time codes are part of Premium. See Settings › Plan.",
   no_subscription: "There's no plan to change.",
   purchase_not_yours: "This purchase belongs to another account.",
   purchase_pending: "The payment is still waiting. Check again later.",

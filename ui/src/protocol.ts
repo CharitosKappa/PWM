@@ -177,6 +177,7 @@ export interface VaultRow {
   folderId: string | null;
   trashed: boolean;
   hasPassword: boolean;
+  /** A one-time code can be copied now: a secret, and a plan with codes. */
   hasCode: boolean;
 }
 
@@ -189,6 +190,8 @@ export interface FolderView {
 export interface VaultView {
   items: VaultRow[];
   folders: FolderView[];
+  /** The plan now includes one-time codes (D73 §1). */
+  codesIncluded: boolean;
 }
 
 /** An item to show (D67 §1): every hidden value left out, by its place. */
@@ -203,6 +206,9 @@ export interface ItemView {
   readOnly: boolean;
   /** The one-time code now, never its secret. */
   code: { code: string; secondsLeft: number } | null;
+  /** It has a one-time code secret, and the plan doesn't include codes
+   * (D73 §1): the secret stays in `hidden`, to show, copy or edit. */
+  codeNeedsPlan: boolean;
   passkeys: { rpId: string; userName: string; createdAt: number }[];
   /** Previous passwords, newest first, each to Show by its place. */
   passwordHistory: { savedAt: number; path: string }[];
@@ -365,6 +371,7 @@ export interface ItemSummary {
   username: string;
   url: string;
   hasPassword: boolean;
+  /** A one-time code can be copied now: a secret, and a plan with codes. */
   hasCode: boolean;
 }
 
