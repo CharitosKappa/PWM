@@ -43,5 +43,5 @@ const tokens = JSON.parse(
   fs.readFileSync(path.join(repo, "design", "tokens.json"), "utf8"),
 );
 fs.writeFileSync(path.join(dist, "tokens.css"), tokensCss(tokens));
-copyFonts(repo, dist);
+copyFonts(repo, dist, tokens);
 console.log(`build: ${path.relative(process.cwd(), dist)} ready`);

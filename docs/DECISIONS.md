@@ -20,9 +20,11 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **Android:** they are in `res/font` (`manrope`, `geist_mono`). The theme uses Manrope for every Material text style and Geist Mono for secrets.
     - **Copies:** `scripts/fonts.mjs` keeps the Apple and Android copies the same as `design/fonts`, and `just check` fails when they differ.
     - **Notices:** `just notices` writes `THIRD_PARTY_NOTICES/fonts.md` (the notice and both OFL texts), which the Apple and Android notice screens show.
-  - **Not done yet:**
-    - **Font names still hard-coded:** the family names are written in `AppFonts` (Swift), `Theme.kt` and `FONT_FILES` (`extension/scripts/tokens.mjs`) rather than generated from `tokens.json`. The extension's test checks that `tokens.json` and `FONT_FILES` agree.
-    - **System controls:** on Apple, navigation titles and other system controls keep the system font.
+  - **Font names from the tokens** · done 2026-11-07. Each `font.family` token carries its file, the weights the variable font covers and its licence text in `$extensions["pwm.font"]`. Everything else reads them:
+    - **Generated:** `Tokens.FontFamily` (Swift and Kotlin) and the Android app's `FontResources.kt` (`R.font` ids), by `scripts/tokens-swift.mjs` and `tokens-kotlin.mjs`. `AppFonts` and `Theme.kt` use them.
+    - **Scripts:** the extension and desktop builds (`fontFiles(tokens)` in `extension/scripts/tokens.mjs`) and `scripts/fonts.mjs` (the Apple and Android copies, and the notices).
+  - **System controls on iOS** · done 2026-11-07. `SystemControls.useAppFonts()` sets Manrope, scaled with Dynamic Type, in navigation bar titles and buttons, tab bar labels and segmented pickers. The app calls it at launch and the AutoFill extension when its view loads.
+    - **Still the system font:** alerts, menus and the keyboard, which can't be changed. On macOS, window titles and toolbars also keep it, as in every Mac app.
 - **D4 — Launch segment**: consumers first (this plan) vs SMB self-hosted first.
 - **D5 — Company jurisdiction and hosting region**: EU (Greece/Switzerland/Germany hosting) is a selling point.
 - **D7 — Bundled extras**: email aliases (planned Phase 3) yes; VPN no.

@@ -10,7 +10,7 @@ import {
   checkManifest,
   remoteUrls,
 } from "./check.mjs";
-import { FONT_FILES, copyFonts, tokensCss } from "./tokens.mjs";
+import { copyFonts, fontFiles, tokensCss } from "./tokens.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const read = (file: string): string =>
@@ -146,11 +146,10 @@ describe("remote code check", () => {
 });
 
 describe("design tokens", () => {
-  const css = tokensCss(
-    JSON.parse(
-      fs.readFileSync(path.join(root, "..", "design", "tokens.json"), "utf8"),
-    ) as Record<string, unknown>,
-  );
+  const tokens = JSON.parse(
+    fs.readFileSync(path.join(root, "..", "design", "tokens.json"), "utf8"),
+  ) as Record<string, unknown>;
+  const css = tokensCss(tokens);
 
   it("defines every variable the shared screens use", () => {
     const defined = new Set([...css.matchAll(/(--[\w-]+):/g)].map((m) => m[1]));
@@ -171,12 +170,15 @@ describe("design tokens", () => {
   });
 
   it("loads a bundled file for the first font of each family (D1)", () => {
-    const tokens = JSON.parse(
-      fs.readFileSync(path.join(root, "..", "design", "tokens.json"), "utf8"),
-    ) as { font: { family: Record<string, { $value: string[] }> } };
-    const first = Object.values(tokens.font.family).map((f) => f.$value[0]);
-    expect(first.sort()).toEqual(FONT_FILES.map((f) => f.family).sort());
-    for (const f of FONT_FILES) {
+    const files = fontFiles(tokens);
+    expect(files.map((f) => f.family).sort()).toEqual([
+      "Geist Mono",
+      "Manrope",
+    ]);
+    for (const f of files) {
+      expect(
+        fs.existsSync(path.join(root, "..", "design", "fonts", f.file)),
+      ).toBe(true);
       expect(css).toContain(`font-family: "${f.family}";`);
       expect(css).toContain(`url("fonts/${f.file}")`);
     }
@@ -185,7 +187,7 @@ describe("design tokens", () => {
   it("copies the fonts with their licence texts and notice", () => {
     const dist = fs.mkdtempSync(path.join(root, "node_modules", ".fonts-"));
     try {
-      copyFonts(path.join(root, ".."), dist);
+      copyFonts(path.join(root, ".."), dist, tokens);
       expect(fs.readdirSync(path.join(dist, "fonts")).sort()).toEqual(
         [
           "GeistMono.ttf",

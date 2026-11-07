@@ -1,7 +1,9 @@
 export function tokensCss(tokens: unknown): string;
-export const FONT_FILES: readonly {
+export interface FontFile {
   family: string;
   file: string;
   weights: string;
-}[];
-export function copyFonts(repo: string, dist: string): void;
+  licence: string;
+}
+export function fontFiles(tokens: unknown): FontFile[];
+export function copyFonts(repo: string, dist: string, tokens: unknown): void;
