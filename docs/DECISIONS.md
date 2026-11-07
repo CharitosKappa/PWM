@@ -3348,3 +3348,28 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The host** names it with `biometricName` instead of the `touchId` flag. The extension says "Touch ID" on a Mac. The desktop says "Windows Hello" on Windows, and none on Linux.
   - **Blocking calls:** the WinRT calls wait for their answer on the request's thread, while the backend is locked anyway. A Windows Hello prompt holds other requests until it closes.
   - **Not run anywhere yet:** a real Windows Hello prompt, which needs a person at the computer. This computer reports Windows Hello as set up, and the offer showed. The tests drive the rest through a fake key.
+- **D70 — Server operations: clean-up, tombstone compaction, backups and restore** · settled 2026-11-07 · founder (approved as proposed, horizon 180 days). M10.8 asks for three things. Open: when the clean-up runs and what it deletes, how long tombstones are kept, how a device behind that horizon finds out, and what the restore script does.
+  Proposal:
+  1. **Scheduled clean-up:** a task inside the server, at start-up and then every hour. Every delete is safe to repeat, so several servers on one database need no coordination. It deletes:
+     - **Sessions whose refresh token has expired** (90 days, `refresh_expires_at <= now()`). That includes revoked devices' sessions. They aren't deleted at revocation: the device's next refresh needs the row to be told `device_revoked` and clear its cache (D28), where a missing row would give a plain 401.
+     - **Login attempts, device approvals and autofill reports past their lifetime.** Today these go only when the next login, approval request or report arrives, so a quiet server keeps them longer.
+  2. **Tombstone compaction:**
+     - **Horizon: 180 days after the delete.** That is twice the refresh token's lifetime, so only a device unused for half a year pays for it. Paying means one full pull, at most 50,000 items per vault (D29).
+     - **How:** the same hourly task, per vault, in batches. One transaction deletes the vault's tombstones older than the horizon and raises a new `vaults.purged_seq` to the highest `seq` it deleted. Migration 0008 adds that column (default 0) and an index on `tombstones (deleted_at)`.
+     - **The signal:** `GET /v1/vaults/{id}/items?since=c` with `0 < c < purged_seq` answers 410 `resync_required`, because the device may have missed a delete that no longer exists. `since=0` always works.
+     - **The client (`pwm-sync`):** on 410 it pulls the vault again from 0, like the "server behind" case (D28 §9). The end differs:
+       - **Synced items the pull didn't return are deleted locally,** not uploaded again. No restore happened, so a delete is the only way the server lost them.
+       - **Unseen items with unsent edits are kept as new items** (new id), as D28 does for an edit against a tombstone.
+       - **A locked sync waits for the unlocked one,** as today.
+       - **No other changes:** the cache format stays, and no platform code changes, because every app syncs through the core.
+     - **Why not reuse "server behind":** it uploads unseen items again, which would bring back every item deleted since the device last synced.
+     - **Ids:** a compacted id is no longer refused with 409 `item_deleted`. Only a device past the horizon could send one, and the 410 makes it pull before it pushes, since the engine always pulls first.
+     - **Accepted risk:** a device away for more than 180 days, with a restore during that time, follows the restore path (D30). That path uploads unseen items, so items deleted while it was away can come back. A deleted item coming back can be fixed; a dropped item can't. So after a restore, uploading again stays the rule.
+  3. **Backups with a tested restore,** for the compose stack (other setups follow `DEPLOYMENT.md`):
+     - **`scripts/backup.sh <file>`:** `pg_dump` in custom format through `docker compose exec`.
+     - **`scripts/restore.sh <file>`:** stops the server, recreates the database, runs `pg_restore`, then `pwm-server mark-restored` as a one-off container, and starts the server only if that succeeded.
+     - **Both are POSIX `sh`.** They run on the host, since the image has no shell.
+     - **CI test** (the `image` job): smoke test, back up, smoke test again (more writes), restore. It then checks that the epoch changed, the later writes are gone, and the smoke test still passes.
+  4. **Tests:**
+     - **Server tests on Postgres:** each clean-up rule at its boundary; compaction raising `purged_seq`; 410 just below `purged_seq` but not at or above it; compaction running alongside writes.
+     - **`pwm-sync` tests for the 410 path:** unseen items dropped, unsent edits kept as new items, a locked sync holding.

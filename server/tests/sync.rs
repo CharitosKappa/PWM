@@ -203,3 +203,44 @@ async fn two_devices_sync_through_the_server() {
     assert!(phone.store().vaults().unwrap().is_empty());
     db.drop().await;
 }
+
+#[tokio::test]
+async fn a_device_behind_compacted_tombstones_pulls_again_and_drops_deletes() {
+    let Some((db, app)) = setup().await else {
+        return;
+    };
+    let account = register(&app, "alice@example.com").await;
+    let mut laptop = engine(&account, &account.tokens);
+    let (vault, step) = laptop.start_create_vault().unwrap();
+    assert!(matches!(
+        drive(&app, &mut laptop, step).await,
+        SyncOutcome::Synced(_)
+    ));
+    let bank = add(&mut laptop, &vault, "Bank");
+    add(&mut laptop, &vault, "Mail");
+    sync(&app, &mut laptop).await;
+    let (_, phone_tokens) = login(&app, &account, &new_id()).await;
+    let mut phone = engine(&account, &phone_tokens);
+    sync(&app, &mut phone).await;
+
+    // The laptop deletes Bank; half a year later the tombstone is compacted
+    // before the phone syncs again (D70 §2).
+    laptop.delete_item(&vault, &bank).unwrap();
+    sync(&app, &mut laptop).await;
+    sqlx::query("UPDATE tombstones SET deleted_at = now() - make_interval(days => $1::int)")
+        .bind(pwm_server::TOMBSTONE_HORIZON_DAYS + 1)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+    assert_eq!(pwm_server::clean_up(&db.pool).await.unwrap().tombstones, 1);
+
+    let report = sync(&app, &mut phone).await;
+    assert!(report.resynced);
+    assert_eq!(titles(&phone, &vault), ["Mail"]);
+    assert_eq!(phone.store().item(&vault, &bank).unwrap(), None);
+    // Nothing came back for the laptop either.
+    let report = sync(&app, &mut laptop).await;
+    assert!(!report.resynced);
+    assert_eq!(titles(&laptop, &vault), ["Mail"]);
+    db.drop().await;
+}

@@ -9,7 +9,9 @@ use pwm_store::{Store, SyncState, VaultRecord};
 use pwm_vault::{Item, ItemId, decrypt_item, encrypt_item_fitting};
 
 use crate::SyncError;
-use crate::apply::{apply_change, merge, move_to_copy, need, put, reseal, reupload_missing};
+use crate::apply::{
+    apply_change, drop_missing, merge, move_to_copy, need, put, reseal, reupload_missing,
+};
 use crate::backoff::{backoff_delay_ms, parse_retry_after, random_fraction};
 use crate::devices::{DeviceRecord, DeviceTask, device_list};
 use crate::http::{HttpRequest, HttpResponse, Method};
@@ -122,6 +124,10 @@ enum Task {
         seen: Option<HashSet<ItemId>>,
         /// The server was restored (new epoch): pull every vault from 0.
         resync_all: bool,
+        /// This vault is pulled again from 0 because its cursor is older
+        /// than the server's compacted tombstones (D70 §2): what the pull
+        /// doesn't return was deleted, so it goes here too.
+        drop_unseen: bool,
         /// A change in this vault needs the key (locked sync): its cursor
         /// stays, so the next unlocked sync pulls it again.
         hold: bool,
@@ -785,6 +791,7 @@ impl<S: Store> SyncEngine<S> {
             since,
             seen: resync_all.then(HashSet::new),
             resync_all,
+            drop_unseen: false,
             hold: false,
         };
         self.request(run)
@@ -825,6 +832,7 @@ impl<S: Store> SyncEngine<S> {
             since,
             seen,
             resync_all,
+            drop_unseen,
             hold,
         } = task
         else {
@@ -887,10 +895,30 @@ impl<S: Store> SyncEngine<S> {
                 if !page.more {
                     if let Some(seen) = seen.take() {
                         let key = need(self.keys.get(&vault_id))?;
-                        reupload_missing(&mut self.store, key, &vault_id, &seen)?;
+                        if *drop_unseen {
+                            drop_missing(&mut self.store, key, &vault_id, &seen)?;
+                        } else {
+                            reupload_missing(&mut self.store, key, &vault_id, &seen)?;
+                        }
                     }
                     finished = true;
                 }
+            }
+        } else if response.status == 410 {
+            // The cursor is older than the server's compacted tombstones
+            // (D70 §2), so a delete may be missing: pull the vault again
+            // from 0. Locked, that waits for the unlocked sync.
+            if locked {
+                *hold = true;
+                finished = true;
+            } else {
+                self.set_cursor(&vault_id, 0)?;
+                report.resynced = true;
+                // After a restore, what the server lost still goes up again.
+                *drop_unseen = !*resync_all;
+                *seen = Some(HashSet::new());
+                *since = 0;
+                return self.request(run);
             }
         } else if !finished {
             return Ok(self.wait(None));
@@ -898,6 +926,7 @@ impl<S: Store> SyncEngine<S> {
         if finished {
             *index += 1;
             *hold = false;
+            *drop_unseen = false;
             *seen = resync_all.then(HashSet::new);
             if let Some(next) = vaults.get(*index).copied() {
                 *since = if *resync_all { 0 } else { self.cursor(&next)? };

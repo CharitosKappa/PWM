@@ -43,6 +43,9 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+# Database backups (scripts/backup.sh): they hold account emails
+*.dump
+*.dump.partial
 
 # Playwright output
 playwright-report/

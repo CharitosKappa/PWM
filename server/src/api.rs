@@ -74,6 +74,8 @@ pub enum ApiError {
     ReadOnly,
     /// A write or delete without `If-Match` / `If-None-Match` (D27).
     PreconditionRequired,
+    /// A delta sync from before compacted tombstones (D70 §2): pull from 0.
+    ResyncRequired,
     Conflict(&'static str),
     NotFound,
     Internal,
@@ -93,6 +95,7 @@ impl ApiError {
             Self::PreconditionRequired => {
                 (StatusCode::PRECONDITION_REQUIRED, "precondition_required")
             }
+            Self::ResyncRequired => (StatusCode::GONE, "resync_required"),
             Self::Conflict(code) => (StatusCode::CONFLICT, code),
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             Self::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),

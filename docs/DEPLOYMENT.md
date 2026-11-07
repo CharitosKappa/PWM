@@ -59,15 +59,42 @@ Caddy sets `X-Forwarded-For` by default. Set `PWM_TRUSTED_PROXIES` to the addres
 
 ## Backups and restore
 
-Back up Postgres with your usual tool (`pg_dump`, or snapshots plus WAL archiving). The database holds only ciphertext, ids, sizes and times, plus account emails.
+The database holds only ciphertext, ids, sizes and times, plus account emails. Keep backups as carefully as the database.
 
-**After restoring a backup**, devices may hold changes newer than the backup. Before letting clients back in, run once:
+**With the compose stack,** two scripts do it from the repository root (`just backup <file>` and `just restore <file>` run the same):
 
 ```
-docker compose exec server /pwm-server mark-restored
+sh scripts/backup.sh backups/pwm-2026-11-07.dump
+sh scripts/restore.sh backups/pwm-2026-11-07.dump
+```
+
+- **`backup.sh`:** a `pg_dump` in custom format. It never replaces an existing file.
+- **`restore.sh`:**
+  1. Checks that the file is a backup.
+  2. Stops the server and recreates the database from the file.
+  3. Runs `pwm-server mark-restored`.
+  4. Starts the server again, but only if step 3 worked.
+
+  Everything written after the backup is replaced.
+- **Tested:** CI backs up, writes more, restores, and checks that the later writes are gone and the epoch is new.
+
+**Other setups** can use their usual tool (`pg_dump`, or snapshots plus WAL archiving). **After restoring a backup**, devices may hold changes newer than the backup. Before letting clients back in, run once:
+
+```
+docker compose run --rm server mark-restored
 ```
 
 This gives the server a new epoch. Every device notices it on its next sync, pulls everything again, and uploads what the backup lost. **Skipping this step can make devices miss changes made after the restore.**
+
+## Clean-up
+
+The server cleans up by itself, at start-up and then every hour (D70). Each run logs one line with counts only. It deletes:
+- **Sessions** whose refresh token has expired (90 days), including those of revoked devices.
+- **Login attempts and device approvals** past their lifetime.
+- **Autofill reports** older than 90 days.
+- **Tombstones** (the markers deleted items leave) older than 180 days. A device that hasn't synced since before such a delete gets 410 `resync_required` and pulls its vaults again from the start. Items the server no longer has are then deleted on that device; its unsent edits are kept as new items.
+
+Several servers on one database can all run it: each delete is safe to repeat.
 
 ## Health and logs
 

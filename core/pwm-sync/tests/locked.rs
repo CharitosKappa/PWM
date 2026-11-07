@@ -261,3 +261,35 @@ fn an_empty_locked_cache_syncs_nothing() {
     let report = sync(&mut device, &mut server, T0);
     assert_eq!((report.pulled, report.pushed), (0, 0));
 }
+
+#[test]
+fn a_device_behind_compacted_tombstones_waits_for_unlock() {
+    let mut server = FakeServer::new();
+    let account = Account::new();
+    let mut laptop = account.device(&mut server);
+    let vault = create_vault(&mut laptop, &mut server);
+    let bank = add(&mut laptop, &vault, "Bank", T0);
+    sync(&mut laptop, &mut server, T0);
+    let mut phone = account.device(&mut server);
+    sync(&mut phone, &mut server, T0);
+
+    laptop.delete_item(&vault, &bank).unwrap();
+    sync(&mut laptop, &mut server, T0);
+    server.compact(&vault);
+
+    // Locked, the phone can't tell a delete from a lost item yet: it keeps
+    // its cursor and Bank.
+    let mut phone = lock(phone, &mut server);
+    let before = cursor(&phone);
+    let report = sync(&mut phone, &mut server, T0);
+    assert!(!report.resynced);
+    assert_eq!(cursor(&phone), before);
+    assert_eq!(state(&phone, &vault, &bank), Some((1, SyncState::Synced)));
+
+    // Unlocked, it pulls again from 0 and Bank goes, without coming back.
+    let mut phone = unlock(phone, &account, &mut server);
+    let report = sync(&mut phone, &mut server, T0);
+    assert!(report.resynced);
+    assert_eq!(state(&phone, &vault, &bank), None);
+    assert!(server.vault(&vault).items.is_empty());
+}

@@ -13,6 +13,7 @@ mod error;
 mod items;
 mod limits;
 mod logging;
+mod maintenance;
 mod push;
 mod reports;
 mod routes;
@@ -27,6 +28,9 @@ pub use error::ServerError;
 pub use items::{MAX_ITEM_BLOB_BYTES, MAX_ITEMS_PER_VAULT};
 pub use limits::{Clock, Limits, ManualClock, Rate, TrustedProxies, system_clock};
 pub use logging::{LogFormat, install_panic_hook, log_subscriber, scrub};
+pub use maintenance::{
+    CleanUp, MAINTENANCE_EVERY, TOMBSTONE_HORIZON_DAYS, clean_up, spawn_maintenance,
+};
 pub use push::{
     APPROVAL_NOTICE, BACKGROUND_PAYLOAD, FCM_APPROVAL_DATA, FCM_SCOPE, FCM_SYNC_DATA, FcmConfig,
     PUSH_EVERY, Push, PushConfig,
