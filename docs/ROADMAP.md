@@ -770,6 +770,7 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
     - **Product ids** are placeholders until D1 and D8.
 - [ ] M9.2 Implement every commitment in `PRICING.md` with tests (price lock, reminders, cancel, refunds, export after lapse).
 - [ ] M9.3 Plan gates in core (TOTP, attachments, share links) checked client-side and server-side.
+- [ ] M9.4 Account deletion in every app (D72 §5): the master password proven again, everything deleted on the server, each device wiped, export offered first, and D6 §6's subscription rules. Needs its own decision first; Apple requires it before launch.
 
 ### M10 — Launch readiness
 - [ ] M10.1 Release pipeline: beta channels, staged rollout, auto-halt metrics, rollback (`QUALITY.md`).

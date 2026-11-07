@@ -3744,7 +3744,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **The product id** is the placeholder `premium_yearly`.
     - **Two more libraries in D60's exception,** approved by the founder on 2026-11-07: Play Billing 9.1.0 brings `com.google.android.gms:play-services-location` 19.0.0 and `play-services-places-placereport` 17.0.0, both under the Android SDK licence (versions 8.0 to 9.0 bring them too). They're allowed by name with `com.android.billingclient:billing`. The app asks for no location permission; its manifest gains only `com.android.vending.BILLING`.
   - **Messages:** the server's billing codes are in `design/messages.json` for both apps. Each app keeps only its store's own codes.
-- **D72 — The pricing commitments in code (M9.2): refunds, price changes and the hold, the reminders' outbox, export after a lapse, and where account deletion goes** · proposed 2026-11-07 · awaiting founder.
+- **D72 — The pricing commitments in code (M9.2): refunds, price changes and the hold, the reminders' outbox, export after a lapse, and where account deletion goes** · settled 2026-11-07 · founder (approved as proposed).
   M9.2 asks to "implement every commitment in `PRICING.md` with tests (price lock, reminders, cancel, refunds, export after lapse)". D6 §5 and §8 set the direction, and M9.1 built cancel and resume. What's still open:
   - **The refund:** the exact rule and amount, and how it's made safe to retry.
   - **Play:** Play's API can refund pro-rata after all (`purchases.subscriptionsv2.revoke` with `proratedRefund`), which closes one of D6's gaps.
