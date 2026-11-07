@@ -161,16 +161,10 @@ export function PlanSetting(): JSX.Element {
         )}
 
       {sub?.provider === "app_store" && (
+        // Plain text: the extensions ship no remote URLs (D40).
         <span class="caption muted">
-          To ask for a refund, use Apple's{" "}
-          <a
-            href="https://reportaproblem.apple.com"
-            target="_blank"
-            rel="noopener"
-          >
-            Report a Problem
-          </a>{" "}
-          page.
+          To ask for a refund, use Apple's Report a Problem page at
+          reportaproblem.apple.com.
         </span>
       )}
 
