@@ -254,6 +254,121 @@ final class PlanTests: XCTestCase {
         XCTAssertEqual(plan.error, "Change this plan where you bought it.")
     }
 
+    // MARK: Refunds (D72 §1)
+
+    func testTheRefundButtonShowsOnlyWhileTheServerSaysARefundApplies() async throws {
+        for checkout in [iOS(), mac()] {
+            for provider in [BillingProvider.stripe, .play] {
+                await account.setBilling(status(.premium, subscription(provider, refundableUntil: refundEnd)))
+                await checkout.load()
+                XCTAssertTrue(checkout.canRefund, "\(provider)")
+                XCTAssertEqual(checkout.subscription?.refundableUntil, refundEnd)
+
+                await account.setBilling(status(.premium, subscription(provider)))
+                await checkout.load()
+                XCTAssertFalse(checkout.canRefund, "after the window: \(provider)")
+            }
+            await account.setBilling(status(.premium, subscription(.appStore, refundableUntil: refundEnd)))
+            await checkout.load()
+            XCTAssertFalse(checkout.canRefund, "only Apple refunds an App Store purchase")
+        }
+    }
+
+    func testARefundEndsThePlanNowAndSaysTheMoneyIsOnItsWay() async throws {
+        await account.setBilling(status(.premium, subscription(.stripe, refundableUntil: refundEnd)))
+        let plan = mac()
+        await plan.load()
+        await plan.refund()
+        XCTAssertEqual(plan.plan, .free)
+        XCTAssertNil(plan.subscription)
+        XCTAssertTrue(plan.refunded)
+        XCTAssertFalse(plan.canRefund)
+        XCTAssertNil(plan.error)
+
+        await account.setBilling(status(.premium, subscription(.play, refundableUntil: refundEnd)))
+        let onIOS = iOS()
+        await onIOS.load()
+        XCTAssertFalse(onIOS.refunded)
+        await onIOS.refund()
+        XCTAssertEqual(onIOS.plan, .free)
+        XCTAssertTrue(onIOS.refunded)
+        let calls = await account.calls
+        XCTAssertEqual(calls, ["billing", "refund stripe", "billing", "refund play"])
+        let requests = await store.refundRequests
+        XCTAssertEqual(requests, [], "a Play refund never opens Apple's sheet")
+
+        // Buying again clears the line.
+        await account.setBilling(status(.premium, subscription(.stripe)))
+        await plan.load()
+        XCTAssertFalse(plan.refunded)
+    }
+
+    func testARefundAfterTheWindowShowsTheSharedMessage() async throws {
+        await account.setBilling(status(.premium, subscription(.stripe, refundableUntil: refundEnd)))
+        let plan = mac()
+        await plan.load()
+        await account.failBilling(with: "refund_window_passed")
+        await plan.refund()
+        let shared = try XCTUnwrap(PWMError.messages["refund_window_passed"], "in design/messages.json")
+        XCTAssertEqual(plan.error, shared)
+        XCTAssertEqual(plan.plan, .premium)
+        XCTAssertFalse(plan.refunded)
+    }
+
+    func testAnAppStoreRefundOpensApplesSheetOnIOS() async throws {
+        await account.setBilling(status(.premium, subscription(.appStore)))
+        let plan = iOS()
+        await plan.load()
+        XCTAssertTrue(plan.canRequestStoreRefund, "Apple decides, whatever the server's window")
+        XCTAssertFalse(plan.canRefund)
+        XCTAssertNil(plan.storeRefundURL)
+
+        await store.set(refundOutcome: .success(false))
+        await plan.requestStoreRefund()
+        XCTAssertFalse(plan.refundRequested, "closed without asking")
+
+        await store.set(refundOutcome: .success(true))
+        await plan.requestStoreRefund()
+        XCTAssertTrue(plan.refundRequested)
+        XCTAssertNil(plan.error)
+        let requests = await store.refundRequests
+        XCTAssertEqual(requests, [PlanModel.premiumProductId, PlanModel.premiumProductId])
+        let calls = await account.calls
+        XCTAssertEqual(calls, ["billing", "billing", "billing"], "the plan is read again; only Apple refunds")
+
+        // Apple granted it: its notification ended the plan on the server.
+        await account.setBilling(status(.free))
+        await plan.load()
+        XCTAssertFalse(plan.refundRequested)
+        XCTAssertFalse(plan.canRequestStoreRefund)
+    }
+
+    func testAnAppStoreRefundThatFailsShowsAPlainMessage() async throws {
+        await account.setBilling(status(.premium, subscription(.appStore)))
+        let plan = iOS()
+        await plan.load()
+        await store.set(refundOutcome: .failure(PWMError(code: "refund_requested_already")))
+        await plan.requestStoreRefund()
+        XCTAssertEqual(plan.error, "You've already asked Apple for a refund for this purchase.")
+        XCTAssertFalse(plan.refundRequested)
+    }
+
+    func testAnAppStoreRefundOnTheMacPointsToApplesPage() async throws {
+        await account.setBilling(status(.premium, subscription(.appStore)))
+        let plan = mac()
+        await plan.load()
+        XCTAssertFalse(plan.canRequestStoreRefund, "no StoreKit on the Mac")
+        XCTAssertFalse(plan.canRefund)
+        XCTAssertEqual(plan.storeRefundURL, URL(string: "https://reportaproblem.apple.com"))
+        await plan.requestStoreRefund()
+        let requests = await store.refundRequests
+        XCTAssertEqual(requests, [])
+
+        await account.setBilling(status(.premium, subscription(.stripe, refundableUntil: refundEnd)))
+        await plan.load()
+        XCTAssertNil(plan.storeRefundURL)
+    }
+
     // MARK: Servers
 
     func testAServerWithoutBillingGivesEveryAccountPremium() async throws {

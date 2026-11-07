@@ -65,17 +65,51 @@ struct AppStorePurchases: StorePurchases {
         try await Self.showManage()
     }
 
+    /// Apple's refund sheet for the latest verified transaction of
+    /// `productId` on this Apple Account (D72 §1).
+    func requestRefund(productId: String) async throws -> Bool {
+        guard let latest = await StoreKit.Transaction.latest(for: productId) else {
+            throw PWMError(code: "refund_no_purchase")
+        }
+        guard case let .verified(transaction) = latest else { throw PWMError(code: "purchase_unverified") }
+        return try await Self.beginRefund(transaction.id)
+    }
+
     @MainActor
     private static func showManage() async throws {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else {
-            throw PWMError(code: "store_failed")
-        }
+        let scene = try activeScene()
         do {
             try await AppStore.showManageSubscriptions(in: scene)
         } catch {
             throw PWMError(code: "store_failed")
         }
+    }
+
+    @MainActor
+    private static func beginRefund(_ transactionId: UInt64) async throws -> Bool {
+        let scene = try activeScene()
+        let status: StoreKit.Transaction.RefundRequestStatus
+        do {
+            status = try await StoreKit.Transaction.beginRefundRequest(for: transactionId, in: scene)
+        } catch StoreKit.Transaction.RefundRequestError.duplicateRequest {
+            throw PWMError(code: "refund_requested_already")
+        } catch {
+            throw PWMError(code: "store_failed")
+        }
+        switch status {
+        case .success: return true
+        case .userCancelled: return false
+        @unknown default: return false
+        }
+    }
+
+    @MainActor
+    private static func activeScene() throws -> UIWindowScene {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else {
+            throw PWMError(code: "store_failed")
+        }
+        return scene
     }
 
     private func findProduct(_ id: String) async throws -> Product? {

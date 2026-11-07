@@ -29,8 +29,12 @@ class PlanTest {
     private val Harness.plan get() = home.settings.plan
     private val Harness.account get() = accounts.single()
 
-    private fun subscription(provider: String, also: List<String> = emptyList(), canceling: Boolean = false) =
-        BillingStatus.Subscription(provider, "premium", "active", 2_000_000_000_000, canceling, null, also)
+    private fun subscription(
+        provider: String,
+        also: List<String> = emptyList(),
+        canceling: Boolean = false,
+        refundableUntil: Long? = null,
+    ) = BillingStatus.Subscription(provider, "premium", "active", 2_000_000_000_000, canceling, null, refundableUntil, also)
 
     @Test
     fun aFreePlanBuysPremiumOnPlayAndTheServerGetsThePurchase() = runTest {
@@ -170,6 +174,106 @@ class PlanTest {
         assertEquals("app_store", twice.plan.state.value.managedBy)
         assertEquals("the second subscription and where to cancel it", listOf("play"), twice.plan.state.value.alsoPaying)
         assertFalse(twice.plan.state.value.canBuy)
+    }
+
+    @Test
+    fun aRefundShowsOnlyWhileItAppliesAndEndsThePlan() = runTest {
+        // A Play plan just bought: refundable.
+        val h = unlocked()
+        h.plan.load()
+        advanceUntilIdle()
+        h.plan.buy()
+        advanceUntilIdle()
+        assertTrue(h.plan.state.value.refundOffered)
+        assertTrue(h.plan.state.value.canRefund)
+        assertFalse(h.plan.state.value.refundFromApple)
+
+        h.plan.refund()
+        advanceUntilIdle()
+        assertEquals(listOf("play"), h.account.refunds)
+        val after = h.plan.state.value
+        assertEquals("the plan ended now", "free", after.plan)
+        assertNull(after.status?.subscription)
+        assertTrue("the result says the refund is on its way", after.refunded)
+        assertFalse(after.refundOffered)
+        assertFalse(after.busy)
+        assertNull(after.error)
+        assertEquals("the token is kept from the status", Redacted(FakeAccount.BILLING_TOKEN), after.status?.token)
+        h.plan.refund()
+        advanceUntilIdle()
+        assertEquals("nothing left to refund", 1, h.account.refunds.size)
+
+        // A web plan inside the window: the same button, for Stripe.
+        val web = unlocked { _, account ->
+            account.billing = BillingStatus(
+                "premium", subscription("stripe", refundableUntil = FakeAccount.REFUNDABLE_UNTIL), listOf("stripe", "play"), Redacted("t"),
+            )
+        }
+        web.plan.load()
+        advanceUntilIdle()
+        assertTrue(web.plan.state.value.refundOffered)
+        web.plan.refund()
+        advanceUntilIdle()
+        assertEquals(listOf("stripe"), web.account.refunds)
+        assertEquals("free", web.plan.state.value.plan)
+
+        // Past the window, the server sends no date: no button, and a refund does nothing.
+        val late = unlocked { _, account ->
+            account.billing = BillingStatus("premium", subscription("play"), listOf("play"), Redacted("t"))
+        }
+        late.plan.load()
+        advanceUntilIdle()
+        assertFalse(late.plan.state.value.refundOffered)
+        assertFalse(late.plan.state.value.canRefund)
+        late.plan.refund()
+        advanceUntilIdle()
+        assertTrue(late.account.refunds.isEmpty())
+        assertEquals("premium", late.plan.state.value.plan)
+    }
+
+    @Test
+    fun aRefundAfterTheWindowShowsWhyAndKeepsThePlan() = runTest {
+        // The screen still shows the date, but the window closed meanwhile.
+        val h = unlocked { _, account ->
+            account.billing = BillingStatus(
+                "premium", subscription("play", refundableUntil = FakeAccount.REFUNDABLE_UNTIL), listOf("play"), Redacted("t"),
+            )
+            account.refundError = PwmError("refund_window_passed")
+        }
+        h.plan.load()
+        advanceUntilIdle()
+        h.plan.refund()
+        advanceUntilIdle()
+        val s = h.plan.state.value
+        assertEquals("Refunds are possible for 30 days after a charge, and that time has passed.", s.error)
+        assertEquals("premium", s.plan)
+        assertFalse(s.refunded)
+        assertFalse(s.busy)
+
+        // Loading again clears the message.
+        h.account.refundError = null
+        h.plan.load()
+        advanceUntilIdle()
+        assertNull(h.plan.state.value.error)
+    }
+
+    @Test
+    fun anAppStorePlanOffersNoRefundHere() = runTest {
+        val h = unlocked { _, account ->
+            // Even if a date came along, only Apple refunds an App Store purchase.
+            account.billing = BillingStatus(
+                "premium", subscription("app_store", refundableUntil = FakeAccount.REFUNDABLE_UNTIL), listOf("app_store", "play"), Redacted("t"),
+            )
+        }
+        h.plan.load()
+        advanceUntilIdle()
+        assertFalse(h.plan.state.value.refundOffered)
+        assertFalse(h.plan.state.value.canRefund)
+        assertTrue("the screen says to ask Apple", h.plan.state.value.refundFromApple)
+        h.plan.refund()
+        advanceUntilIdle()
+        assertTrue(h.account.refunds.isEmpty())
+        assertEquals("premium", h.plan.state.value.plan)
     }
 
     @Test

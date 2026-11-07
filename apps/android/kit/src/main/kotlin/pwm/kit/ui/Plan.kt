@@ -11,12 +11,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import pwm.kit.Account
 import pwm.kit.BillingStatus
+import pwm.kit.Messages
 import pwm.kit.PlayProducts
 import pwm.kit.PwmError
 import pwm.kit.Redacted
 
 // The plan in Settings (D6 §2-4): what the account has, where it's managed,
-// and on a server that sells through Google Play, buying Premium there.
+// on a server that sells through Google Play, buying Premium there, and
+// within 30 days of a charge, a refund (D72 §1).
 
 /** A subscription Play reports for this phone's Google account. Never printed. */
 class PlayPurchase(
@@ -81,7 +83,8 @@ object NoPlayBilling : PlayBilling {
  * The Plan section of Settings. The server says what the plan is; Play only
  * sells it. A purchase Play finished goes to the server at once, and one
  * that finished while the app was closed or locked goes after unlocking.
- * Nothing here prompts: buying is one button in Settings.
+ * Nothing here prompts: buying is one button in Settings, and so is a
+ * refund while one applies.
  */
 class PlanModel internal constructor(
     private val scope: CoroutineScope,
@@ -94,6 +97,8 @@ class PlanModel internal constructor(
         /** A Play payment is waiting (a cash or bank payment, say). */
         val pending: Boolean = false,
         val busy: Boolean = false,
+        /** A refund went through: the plan ended and the money is on its way. */
+        val refunded: Boolean = false,
         val error: String? = null,
     ) {
         val plan: String? get() = status?.plan
@@ -108,6 +113,20 @@ class PlanModel internal constructor(
         val canBuy: Boolean
             get() = status?.let { it.plan == BillingStatus.FREE && BillingStatus.PLAY in it.sells && it.token != null } == true &&
                 !pending && !busy
+
+        /**
+         * "Request a refund" shows while the server says one applies (D72 §1),
+         * for a subscription bought through Stripe or Play. Only Apple refunds
+         * an App Store purchase.
+         */
+        val refundOffered: Boolean
+            get() = status?.subscription?.let { it.refundableUntilMs != null && it.provider in REFUNDED_HERE } == true
+
+        /** The refund button is enabled: offered, and nothing else under way. */
+        val canRefund: Boolean get() = refundOffered && !busy
+
+        /** An App Store plan: refunds are asked of Apple. */
+        val refundFromApple: Boolean get() = status?.subscription?.provider == BillingStatus.APP_STORE
 
         /** Second subscriptions, bought by mistake: where to cancel each. */
         val alsoPaying: List<String> get() = status?.subscription?.also.orEmpty()
@@ -186,6 +205,29 @@ class PlanModel internal constructor(
         }
     }
 
+    /**
+     * "Request a refund": the server pays back the unused days and ends the
+     * plan now (D72 §1). The account keeps all its data on Free.
+     */
+    fun refund() {
+        val s = mutable.value
+        if (!s.canRefund) return
+        val provider = s.status?.subscription?.provider ?: return
+        mutable.update { it.copy(busy = true, error = null) }
+        scope.launch {
+            try {
+                val answer = account.refund(provider)
+                mutable.update { it.copy(status = answer.copy(token = answer.token ?: it.status?.token), refunded = true) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                mutable.update { it.copy(error = planMessage(e)) }
+            } finally {
+                mutable.update { it.copy(busy = false) }
+            }
+        }
+    }
+
     private suspend fun answered(result: PlayResult) {
         when (result) {
             is PlayResult.Purchases -> handOver(result.purchases, quiet = false)
@@ -229,7 +271,7 @@ class PlanModel internal constructor(
 
     /** The plan from the server; null on failure, which shows. */
     private suspend fun refresh(): BillingStatus? {
-        mutable.update { it.copy(loading = true, error = null) }
+        mutable.update { it.copy(loading = true, refunded = false, error = null) }
         return try {
             account.billingStatus().also { status -> mutable.update { it.copy(status = status, loading = false) } }
         } catch (e: CancellationException) {
@@ -242,6 +284,9 @@ class PlanModel internal constructor(
 
     private companion object {
         const val PLAY_SUBSCRIPTIONS = "https://play.google.com/store/account/subscriptions"
+
+        /** Where the server refunds (D72 §1). */
+        val REFUNDED_HERE = setOf(BillingStatus.STRIPE, BillingStatus.PLAY)
 
         /**
          * Google Play's own codes. The server's billing codes (D6 §7) are in
@@ -256,7 +301,7 @@ class PlanModel internal constructor(
 
         fun planMessage(error: Throwable): String {
             val e = PwmError.from(error)
-            return MESSAGES[e.code] ?: e.userMessage
+            return MESSAGES[e.code] ?: Messages.byCode[e.code] ?: e.userMessage
         }
     }
 }

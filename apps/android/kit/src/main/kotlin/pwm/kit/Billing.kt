@@ -28,6 +28,8 @@ data class BillingStatus(
         /** It ends at [untilMs] instead of renewing. */
         val canceling: Boolean,
         val priceLockedUntilMs: Long?,
+        /** Until when a refund can be asked for here (D72 §1): Stripe and Play, 30 days after the last charge; null otherwise. */
+        val refundableUntilMs: Long?,
         /** Other subscriptions that count too, bought by mistake: where to cancel each. */
         val also: List<String>,
     )
@@ -41,7 +43,7 @@ data class BillingStatus(
         internal fun of(info: BillingInfo): BillingStatus = BillingStatus(
             plan = info.plan,
             subscription = info.subscription?.let {
-                Subscription(it.provider, it.plan, it.status, it.untilMs, it.canceling, it.priceLockedUntilMs, it.also)
+                Subscription(it.provider, it.plan, it.status, it.untilMs, it.canceling, it.priceLockedUntilMs, it.refundableUntilMs, it.also)
             },
             sells = info.sells,
             token = info.token?.let(::Redacted),

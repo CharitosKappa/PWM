@@ -585,6 +585,13 @@ public actor Session {
         try await expectBilling(try core { try client.startResumeSubscription() })
     }
 
+    /// Refunds the unused part of the last charge and ends the plan now,
+    /// for a Stripe or Google Play subscription (D72 §1). After its 30 days,
+    /// `refund_window_passed`; an App Store one is `managed_elsewhere`.
+    public func refund(provider: BillingProvider) async throws -> BillingStatus {
+        try await expectBilling(try core { try client.startRefund(provider: provider.name) })
+    }
+
     /// Hands a finished App Store transaction to the server, which reads it
     /// from Apple (D6 §3). Finish the transaction after this returns.
     public func applePurchase(transactionId: String) async throws -> BillingStatus {

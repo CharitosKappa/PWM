@@ -24,4 +24,8 @@
     <string name="plan_also">You also pay for PWM %1$s. Cancel it there so you\'re not charged twice.</string>
     <string name="plan_open_play">Open Google Play subscriptions</string>
     <string name="plan_retry">Try again</string>
+    <string name="plan_refund">Request a refund</string>
+    <string name="plan_refund_hint">Ends your plan now and pays back the days you haven\'t used. Until %1$s.</string>
+    <string name="plan_refund_apple">Refunds for App Store purchases are asked of Apple, on its Report a Problem page.</string>
+    <string name="plan_refunded">Your plan ended. The refund is on its way.</string>
 </resources>

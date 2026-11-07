@@ -97,6 +97,13 @@ interface Account {
      */
     suspend fun playPurchase(productId: String, purchaseToken: Redacted<String>): BillingStatus
 
+    /**
+     * Refunds the unused part of the last charge and ends the plan now
+     * (D72 §1), for a `stripe` or `play` subscription within 30 days of the
+     * charge. The answer is the plan after it: Free, with no billing token.
+     */
+    suspend fun refund(provider: String): BillingStatus
+
     // --- Health, export and import (D59 §5-7) ---
 
     /** Weak and reused passwords across every vault; local only. */

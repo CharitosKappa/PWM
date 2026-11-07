@@ -3812,3 +3812,19 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Refund in full instead of pro-rata:** simpler and kinder, but it's not what `PRICING.md` says, and it invites buying a year and refunding it in month eleven.
   - **Let the stores' and Stripe's own reminder emails count:** Apple only reminds for some subscriptions and Stripe's emails aren't ours to word. The commitment is ours.
   - **Account deletion inside M9.2:** one PR fewer, but it doubles M9.2 and mixes a security-sensitive feature into billing.
+
+  Implementation notes (M9.2):
+  - **Refunds** (`server/src/billing/routes.rs`):
+    - **Stripe:** reads the last invoice (expanded on the subscription) for when it was paid, what it paid and the period, then its PaymentIntent (`GET /v1/invoices/{id}?expand[]=payments`). It refunds with the idempotency key `pwm-refund-<invoice>`, then `DELETE`s the subscription. A test checks the refund comes before the end.
+    - **Play:** revokes with `proratedRefund`. Its window comes from `last_charge_at`, which the server sets when a purchase is first stored or a new expiry shows.
+    - **Where the button shows:** the summary's `refundable_until` is set only for Stripe and Play, so the screens show the button only then.
+  - **A plan may list more than one price** (`premium=price_new,premium=price_old`): the first is sold, and the others still read as the plan. A price change would otherwise make held subscriptions unreadable. `PRICING.md` gains "Changing a price".
+  - **The outbox and the mailer** (`server/src/billing/commitments.rs`):
+    - **`Mailer`** is a trait with no implementation until D32. A message carries the account's email, read at send time, so the outbox itself holds none.
+    - **A reminder that no longer applies** (canceled, or a new period) isn't sent, and unsent messages about a past date are dropped.
+    - **The daily pass** schedules, delivers and then moves, in that order.
+  - **Moving a held price:** `may_move` requires the hold over and the reminder delivered 60 days before. The move uses `proration_behavior=none` from the next renewal.
+  - **The apps:**
+    - **The desktop and the extensions** show Request a refund, with the date it's possible until. An App Store plan points to Apple's Report a Problem page.
+    - **iOS** opens Apple's refund sheet. **Android** refunds Play and Stripe plans.
+    - **The message** `refund_window_passed` is in `design/messages.json`.

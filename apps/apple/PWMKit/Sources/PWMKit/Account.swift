@@ -129,6 +129,16 @@ public enum BillingProvider: Sendable, Equatable {
         default: self = .other(name)
         }
     }
+
+    /// The name the server uses.
+    public var name: String {
+        switch self {
+        case .stripe: "stripe"
+        case .appStore: "app_store"
+        case .play: "play"
+        case let .other(name): name
+        }
+    }
 }
 
 /// The subscription that gives the plan (D6 §7).
@@ -142,13 +152,17 @@ public struct SubscriptionEntry: Sendable, Equatable {
     /// It ends at `until` instead of renewing.
     public let canceling: Bool
     public let priceLockedUntil: Date?
+    /// Until when a refund can be asked for here: a Stripe or Google Play
+    /// subscription, 30 days after its last charge (D72 §1). `nil` when it
+    /// can't; only Apple refunds an App Store purchase.
+    public let refundableUntil: Date?
     /// Other subscriptions that count too, bought by mistake: where to
     /// cancel them.
     public let also: [BillingProvider]
 
     public init(
         provider: BillingProvider, plan: Plan, status: String, until: Date, canceling: Bool,
-        priceLockedUntil: Date?, also: [BillingProvider]
+        priceLockedUntil: Date?, refundableUntil: Date? = nil, also: [BillingProvider]
     ) {
         self.provider = provider
         self.plan = plan
@@ -156,6 +170,7 @@ public struct SubscriptionEntry: Sendable, Equatable {
         self.until = until
         self.canceling = canceling
         self.priceLockedUntil = priceLockedUntil
+        self.refundableUntil = refundableUntil
         self.also = also
     }
 }
@@ -186,7 +201,8 @@ public struct BillingStatus: Sendable, Equatable {
                 SubscriptionEntry(
                     provider: BillingProvider($0.provider), plan: Plan($0.plan), status: $0.status,
                     until: date($0.untilMs), canceling: $0.canceling,
-                    priceLockedUntil: $0.priceLockedUntilMs.map(date), also: $0.also.map(BillingProvider.init)
+                    priceLockedUntil: $0.priceLockedUntilMs.map(date),
+                    refundableUntil: $0.refundableUntilMs.map(date), also: $0.also.map(BillingProvider.init)
                 )
             },
             sells: info.sells.map(BillingProvider.init),
