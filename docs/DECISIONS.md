@@ -3442,3 +3442,74 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The extension:** `biometricName` is "Windows Hello" on Windows. The helper's error codes keep Touch ID's names; their texts name Windows Hello and the app for Windows there.
   - **Not run anywhere yet:** a browser starting the helper and a real Windows Hello prompt, which need a person at the computer. Whether the prompt shows in front (§3) is the first thing that check answers (`QUALITY.md`, desktop step 13).
   - **Not checked here:** the Linux build, since this computer has no Linux target; CI's `desktop` job builds it.
+- **D70 — Desktop installers for Windows and Linux: the formats, signing, the browser helper, uninstalling, and tests** · proposed 2026-11-07 · awaiting founder.
+  M7.3 asks for "signed installers (MSIX/EXE, AppImage, .deb, .rpm, Flatpak)". D69 §4 adds two duties: install `pwm-browser-helper.exe` next to the app, and remove the browser helper's registry keys on uninstall. D66 kept the Tauri CLI out until now ("it comes only with the installers").
+
+  Open:
+  - which formats, since some of the listed ones break D69 or carry licence duties
+  - who signs, with what, and when
+  - how the helper gets into the package
+  - what uninstalling removes
+  - updates
+  - tests, and what runs on this computer versus CI
+
+  Proposal:
+  1. **Windows: one per-user `.exe` installer (NSIS), built by Tauri's bundler.**
+     - **Per user, no administrator rights:** it installs under `%LOCALAPPDATA%\Programs\PWM`, the same scope as D69's `HKEY_CURRENT_USER` keys and D66's data folder.
+     - **Not MSIX for now:** an MSIX app's writes to `HKEY_CURRENT_USER` and `%LOCALAPPDATA%` are redirected into the package's own copy, so Chrome, Edge and Firefox would never see the manifests D69 writes. MSIX comes back only with the Microsoft Store, with its own decision.
+     - **Not MSI:** WiX installs per machine and needs administrator rights.
+     - **Compression:** zlib. NSIS itself is zlib/libpng, on the S6 list. Its LZMA and bzip2 modules carry their own terms, so they stay out of the stub. Tauri's `nsis_tauri_utils` plugin is MIT or Apache-2.0.
+  2. **Linux: `.deb`, `.rpm` and a Flatpak now. AppImage waits.**
+     - **`.deb` and `.rpm`** from Tauri's bundler, built on Ubuntu 22.04 (the WebKitGTK floor, D66 §9). WebKitGTK, GTK and GLib come from the system as dependencies, linked dynamically, as D3 allows.
+     - **The Flatpak** runs on the GNOME runtime, which carries WebKitGTK, so we ship none of it. The Secret Service works through the Secret portal (`oo7`, D66). It packages our release build. Publishing it (Flathub, or our own repository) comes at release (M10).
+     - **AppImage waits:** it would bundle WebKitGTK, GTK and their LGPL libraries inside our file. That's allowed, but each release would then owe the exact sources of those libraries beside it. Logged as a gap until the founder wants that duty.
+     - **No browser helper on Linux yet** (M7.8). Polkit's action file joins the `.deb`, `.rpm` and Flatpak with M7.8.
+  3. **Signing: wired now, the founder's identity at release, as D48 §3 did for the Mac.**
+     - **Windows:** Authenticode on `pwm-desktop.exe`, `pwm-browser-helper.exe` and the installer, through Tauri's `signCommand`, which runs one command per file.
+       - **Recommended:** Microsoft's Artifact Signing (Trusted Signing). The keys stay in Microsoft's HSMs, with no token to keep, for about US$10 a month. It needs the founder's Azure account and an identity check of the company (open to EU organisations).
+       - **Alternative:** an OV certificate from a CA on its cloud HSM, about €300 or more a year. EV no longer earns SmartScreen trust faster (since 2024), so it isn't worth its price.
+     - **Linux:** a release GPG key, its primary key kept offline by the founder and a signing subkey in CI's secrets.
+       - **`.rpm`:** signed inside the package (`rpmsign`).
+       - **`.deb`:** signed through the repository, as Debian does, once there is one (M10.1).
+       - **Every file:** a `SHA256SUMS` with a detached signature.
+       - **Flatpak:** its repository is GPG-signed when it's published.
+     - **Before release:** CI signs with a throwaway certificate and a throwaway GPG key it makes on each run, then verifies. So the signing path is tested on every run, and the real identity only changes the secrets. Release builds stay unsigned until the secrets exist.
+  4. **The helper in the package.**
+     - **Windows:** Tauri's `externalBin` copies `pwm-browser-helper.exe` next to `pwm-desktop.exe`, where the app looks for it (`current_exe().with_file_name`, D69).
+     - **Only on Windows:** set in `tauri.windows.conf.json`, merged over the shared config.
+     - **The build order:** a `just desktop-installer` recipe builds the helper in release, copies it in under the name Tauri expects (with the target triple), then runs `tauri build`.
+  5. **Uninstalling.**
+     - **The helper cleans up after itself:** the uninstaller first runs `pwm-browser-helper.exe --uninstall`. It does what the Settings switch does when turned off (D69 §4):
+       - removes the three keys, only where they still name our manifests
+       - removes the manifests
+       - deletes every enrolment and its Windows Hello key, which needs no prompt
+     - **One place for that code:** the cleanup moves from the app's `browser_hosts.rs` into the helper's library, so the switch and the uninstaller run the same code.
+     - **A browser can't trigger it:** browsers pass an origin or a manifest path, never `--uninstall`.
+     - **The app's own data stays** unless the user ticks Tauri's "Delete the application data" box, which removes `%LOCALAPPDATA%\invalid.pwm.desktop`. D68's Windows Hello key is useless without that data.
+     - **A running app** is asked to close first (Tauri's check).
+  6. **Updates:** none in M7.3. A new version installs over the old one and keeps the data. Automatic updates need their own signing key and the release channels, so they come with M10.1.
+  7. **The Tauri CLI:** `@tauri-apps/cli` (MIT or Apache-2.0), pinned as a dev dependency of `@pwm/desktop`. As dev tooling it's outside D9's npm check, but its licence is on the list anyway.
+  8. **Names:** "PWM" and `invalid.pwm.desktop` stay placeholders until D1, as everywhere else. The installer's publisher field reads "PWM".
+  9. **Tests, all in CI:**
+     - **Rust:** `--uninstall` against a fake registry and store: our keys and files go, while another program's key with our name stays. The switch's existing tests keep passing on the moved code.
+     - **A new `desktop-installers` job on Windows:**
+       - Build the installer, sign it with the throwaway certificate, and verify all three signatures.
+       - Install it silently for the user, and check the app and the helper are side by side.
+       - Write the three keys as the switch would, uninstall silently, and check the keys, the manifests and the install folder are gone.
+     - **On Ubuntu 22.04:**
+       - Build the `.deb` and `.rpm`. Sign the `.rpm` with the throwaway key and check it (`rpm -K`).
+       - Install the `.deb` with `apt`, and check its dependencies resolve and the app starts under Xvfb.
+       - Build the Flatpak with `flatpak-builder` and start it.
+     - **When it runs:** on pull requests that touch the desktop app (the `desktop-changes` filter), like the other desktop jobs.
+     - **The artifacts:** each run keeps the installers for 7 days, for a manual check on a real computer.
+     - **Manual, in `QUALITY.md`:** on a real Windows computer, install, turn on browser unlock, uninstall, and check the browsers no longer find the helper. On Ubuntu and Fedora, install the package and use the app.
+  10. **Downloads:**
+      - **This computer:** `@tauri-apps/cli` from npm. Installers are built and tested only in CI, so this computer doesn't download NSIS or install anything.
+      - **CI:** Tauri's bundler fetches NSIS and its plugin from Tauri's releases on GitHub. The Linux job gets `rpm`, `flatpak-builder` and the GNOME runtime from Ubuntu and Flathub.
+
+  Alternatives:
+  - **MSIX:** redirection breaks D69's manifests and keys. For the Store, later.
+  - **MSI:** per machine, needs administrator rights.
+  - **AppImage now:** it bundles LGPL libraries, and each release then owes their sources.
+  - **Signing only at release, nothing before:** the first real signing would also be the first test of the signing path.
+  - **Deleting the keys in the uninstaller's own NSIS script:** a second copy of D69's rules in another language, and NSIS can't delete Windows Hello keys.
