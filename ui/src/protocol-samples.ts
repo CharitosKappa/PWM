@@ -59,6 +59,10 @@ export const REQUESTS: Request[] = [
   { kind: "setPasskeys", on: false },
   { kind: "reportPreview", problem: "nothing_filled" },
   { kind: "reportSend" },
+  { kind: "plan" },
+  { kind: "checkout", plan: "premium" },
+  { kind: "cancelPlan" },
+  { kind: "resumePlan" },
   { kind: "devices" },
   {
     kind: "renameDevice",
@@ -171,6 +175,11 @@ export const DESKTOP_KINDS: Request["kind"][] = [
   "askApprovalPoll",
   "askApprovalCancel",
   "signInApproved",
+  // The plan (M9.1, D6).
+  "plan",
+  "checkout",
+  "cancelPlan",
+  "resumePlan",
   // The manage page (M7.6).
   "devices",
   "renameDevice",
@@ -245,6 +254,28 @@ export const REPLIES: {
     ],
   ],
   settings: [{ serverUrl: "https://api.pwm.invalid", autoLockMinutes: 15 }],
+  plan: [
+    { plan: "premium", subscription: null, sells: [] },
+    {
+      plan: "free",
+      subscription: null,
+      sells: ["stripe", "app_store", "play"],
+    },
+    {
+      plan: "premium",
+      subscription: {
+        provider: "stripe",
+        plan: "premium",
+        status: "active",
+        untilMs: 1_793_000_000_000,
+        canceling: true,
+        priceLockedUntilMs: null,
+        also: ["app_store"],
+      },
+      sells: ["stripe"],
+    },
+  ],
+  checkout: ["https://checkout.stripe.com/c/pay/cs_test_1"],
   devices: [
     [
       {

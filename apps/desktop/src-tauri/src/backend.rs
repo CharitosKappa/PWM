@@ -371,6 +371,10 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
                 self.asking = None;
                 null()
             }
+            Request::Plan => Ok(json!(self.plan().await?)),
+            Request::Checkout { plan } => Ok(json!(self.checkout(&plan).await?)),
+            Request::CancelPlan => Ok(json!(self.set_plan_canceling(true).await?)),
+            Request::ResumePlan => Ok(json!(self.set_plan_canceling(false).await?)),
             Request::Devices => Ok(json!(self.devices().await?)),
             Request::RenameDevice { device_id, name } => {
                 Ok(json!(self.rename_device(&device_id, &name).await?))

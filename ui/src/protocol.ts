@@ -99,6 +99,11 @@ export type Request =
   | { kind: "health" }
   | { kind: "checkLeaks" }
   | { kind: "setLeakCheck"; on: boolean }
+  // The plan (D6): Stripe on the desktop and in the extensions.
+  | { kind: "plan" }
+  | { kind: "checkout"; plan: string }
+  | { kind: "cancelPlan" }
+  | { kind: "resumePlan" }
   // Asking a signed-in device (D46), from the popup while signed out.
   | { kind: "askApproval"; email: string }
   | { kind: "askApprovalPoll" }
@@ -260,6 +265,29 @@ export interface ApprovalView {
   code: string | null;
 }
 
+/** Where a plan was bought (D6 §2). */
+export type PlanProvider = "stripe" | "app_store" | "play";
+
+/** The account's plan (D6 §7); times are Unix ms. */
+export interface PlanView {
+  /** `free`, `premium`, `family` or `teams`. */
+  plan: string;
+  subscription: {
+    provider: PlanProvider;
+    plan: string;
+    status: string;
+    /** The end of the paid period. */
+    untilMs: number;
+    /** It ends at `untilMs` instead of renewing. */
+    canceling: boolean;
+    priceLockedUntilMs: number | null;
+    /** Other subscriptions that count too, bought by mistake. */
+    also: PlanProvider[];
+  } | null;
+  /** The providers that sell plans on this server; empty: no billing, every account Premium. */
+  sells: PlanProvider[];
+}
+
 /** One of the account's devices; times are Unix ms. */
 export interface DeviceView {
   id: string;
@@ -380,6 +408,11 @@ export interface Replies {
   setPasskeys: boolean;
   reportPreview: ReportPreview;
   reportSend: null;
+  plan: PlanView;
+  /** Stripe's Checkout page, for the screen to open in the browser. */
+  checkout: string;
+  cancelPlan: PlanView;
+  resumePlan: PlanView;
   devices: DeviceView[];
   renameDevice: DeviceView[];
   revokeDevice: DeviceView[];
@@ -487,4 +520,8 @@ export const REQUEST_KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "acceptApproval",
   "completeApproval",
   "denyApproval",
+  "plan",
+  "checkout",
+  "cancelPlan",
+  "resumePlan",
 ]);

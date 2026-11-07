@@ -129,6 +129,19 @@
       "kind": "reportSend"
     },
     {
+      "kind": "plan"
+    },
+    {
+      "kind": "checkout",
+      "plan": "premium"
+    },
+    {
+      "kind": "cancelPlan"
+    },
+    {
+      "kind": "resumePlan"
+    },
+    {
       "kind": "devices"
     },
     {
@@ -300,6 +313,10 @@
     "askApprovalPoll",
     "askApprovalCancel",
     "signInApproved",
+    "plan",
+    "checkout",
+    "cancelPlan",
+    "resumePlan",
     "devices",
     "renameDevice",
     "revokeDevice",
@@ -376,6 +393,42 @@
         "serverUrl": "https://api.pwm.invalid",
         "autoLockMinutes": 15
       }
+    ],
+    "plan": [
+      {
+        "plan": "premium",
+        "subscription": null,
+        "sells": []
+      },
+      {
+        "plan": "free",
+        "subscription": null,
+        "sells": [
+          "stripe",
+          "app_store",
+          "play"
+        ]
+      },
+      {
+        "plan": "premium",
+        "subscription": {
+          "provider": "stripe",
+          "plan": "premium",
+          "status": "active",
+          "untilMs": 1793000000000,
+          "canceling": true,
+          "priceLockedUntilMs": null,
+          "also": [
+            "app_store"
+          ]
+        },
+        "sells": [
+          "stripe"
+        ]
+      }
+    ],
+    "checkout": [
+      "https://checkout.stripe.com/c/pay/cs_test_1"
     ],
     "devices": [
       [

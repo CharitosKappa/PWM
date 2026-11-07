@@ -287,6 +287,13 @@ async fn sign_up_lock_and_unlock(server: &str, secure: bool) -> (Rig, String, St
         assert_eq!(status["syncError"], Value::Null, "{status}");
         assert_eq!(r.ok(json!({"kind": "items", "query": ""})).await, json!([]));
 
+        // The plan (D6): the test server sells none, so every account is
+        // Premium and there is nothing to buy or cancel.
+        assert_eq!(
+            r.ok(json!({"kind": "plan"})).await,
+            json!({"plan": "premium", "subscription": null, "sells": []})
+        );
+
         // The kit, and the Secret Key copied.
         let kit = r.ok(json!({"kind": "emergencyKit"})).await;
         let pdf = base64_decode(kit["pdf"].as_str().unwrap());

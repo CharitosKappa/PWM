@@ -268,3 +268,63 @@ describe("export", () => {
     ).toBe("invalid_request");
   });
 });
+
+describe("plan", () => {
+  it("reads the plan, opens checkout, and cancels and resumes in one click", async () => {
+    const { background, core } = await signedUp();
+    expect(await background.handle({ kind: "plan" })).toEqual({
+      plan: "free",
+      subscription: null,
+      sells: ["stripe"],
+    });
+    expect(await background.handle({ kind: "checkout", plan: "premium" })).toBe(
+      "https://checkout.stripe.com/c/pay/cs_test_1",
+    );
+
+    core().billing_ = {
+      plan: "premium",
+      subscription: {
+        provider: "stripe",
+        plan: "premium",
+        status: "active",
+        until_ms: 1_793_000_000_000,
+        canceling: false,
+        price_locked_until_ms: null,
+        also: ["app_store"],
+      },
+      sells: ["stripe"],
+      token: null,
+    };
+    const canceled = await background.handle({ kind: "cancelPlan" });
+    expect(canceled.subscription).toEqual({
+      provider: "stripe",
+      plan: "premium",
+      status: "active",
+      untilMs: 1_793_000_000_000,
+      canceling: true,
+      priceLockedUntilMs: null,
+      also: ["app_store"],
+    });
+    const resumed = await background.handle({ kind: "resumePlan" });
+    expect(resumed.subscription?.canceling).toBe(false);
+  });
+
+  it("passes the server's billing codes on", async () => {
+    const { background, core } = await signedUp();
+    core().billingError = "managed_elsewhere";
+    expect(await errorOf(background.handle({ kind: "cancelPlan" }))).toBe(
+      "managed_elsewhere",
+    );
+    core().billingError = null;
+    core().checkoutUrl = "javascript:alert(1)";
+    expect(
+      await errorOf(background.handle({ kind: "checkout", plan: "premium" })),
+    ).toBe("internal");
+  });
+
+  it("needs an unlocked vault", async () => {
+    const { background } = await signedUp();
+    await background.handle({ kind: "lock" });
+    expect(await errorOf(background.handle({ kind: "plan" }))).toBe("locked");
+  });
+});

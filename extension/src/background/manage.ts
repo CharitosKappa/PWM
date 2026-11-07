@@ -9,6 +9,8 @@ import type {
   ExportFormat,
   HealthItem,
   HealthView,
+  PlanProvider,
+  PlanView,
 } from "../shared/messages.ts";
 import { toBase64 } from "../shared/bytes.ts";
 import type { Core, CoreFunctions, CoreStep } from "./core.ts";
@@ -43,6 +45,42 @@ interface DeviceJson {
   current: boolean;
 }
 
+interface BillingJson {
+  plan: string;
+  subscription: {
+    provider: PlanProvider;
+    plan: string;
+    status: string;
+    until_ms: number;
+    canceling: boolean;
+    price_locked_until_ms: number | null;
+    also: PlanProvider[];
+  } | null;
+  sells: PlanProvider[];
+}
+
+function planView(step: CoreStep): PlanView {
+  const b = JSON.parse(step.billing ?? "null") as BillingJson | null;
+  if (b === null) throw new ServiceError("internal");
+  const s = b.subscription;
+  return {
+    plan: b.plan,
+    subscription:
+      s === null
+        ? null
+        : {
+            provider: s.provider,
+            plan: s.plan,
+            status: s.status,
+            untilMs: s.until_ms,
+            canceling: s.canceling,
+            priceLockedUntilMs: s.price_locked_until_ms,
+            also: s.also,
+          },
+    sells: b.sells,
+  };
+}
+
 export class Manager {
   private leaked: Map<string, number> | null = null;
 
@@ -51,6 +89,51 @@ export class Manager {
   /** Forgets leak results; called when the vault locks. */
   clear(): void {
     this.leaked = null;
+  }
+
+  // --- The plan (D6) ---
+
+  async plan(): Promise<PlanView> {
+    await this.deps.touch();
+    return planView(
+      await this.conversation(
+        () => this.deps.core().startBillingStatus(),
+        "billing",
+      ),
+    );
+  }
+
+  /** Stripe's Checkout page for `plan`; the screen opens it. */
+  async checkout(plan: string): Promise<string> {
+    await this.deps.touch();
+    const step = await this.conversation(
+      () => this.deps.core().startCheckout(plan),
+      "checkout_url",
+    );
+    const url = step.url ?? "";
+    if (!url.startsWith("https://")) throw new ServiceError("internal");
+    return url;
+  }
+
+  /** One click (PRICING.md §4): the plan ends at the end of its period. */
+  async cancelPlan(): Promise<PlanView> {
+    await this.deps.touch();
+    return planView(
+      await this.conversation(
+        () => this.deps.core().startCancelSubscription(),
+        "billing",
+      ),
+    );
+  }
+
+  async resumePlan(): Promise<PlanView> {
+    await this.deps.touch();
+    return planView(
+      await this.conversation(
+        () => this.deps.core().startResumeSubscription(),
+        "billing",
+      ),
+    );
   }
 
   // --- Devices ---

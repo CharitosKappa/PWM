@@ -16,7 +16,8 @@ use crate::http::Transport;
 use crate::keys::{KeyStore, name};
 use crate::protocol::{
     ApprovalView, DeviceView, ExportFormat, HealthItem, HealthView, ImportColumnsView,
-    ImportDetected, ImportMapping, ImportPreviewView, LeakedItem, LeftOut,
+    ImportDetected, ImportMapping, ImportPreviewView, LeakedItem, LeftOut, PlanSubscription,
+    PlanView,
 };
 
 type Result<T> = std::result::Result<T, Failure>;
@@ -117,6 +118,63 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             Step::Done(Outcome::DeviceRevoked) => "device_revoked",
             _ => "internal",
         }))
+    }
+
+    // --- The plan (D6) ---
+
+    pub(crate) async fn plan(&mut self) -> Result<PlanView> {
+        let start = self.client.start_billing_status();
+        self.plan_conversation(start).await
+    }
+
+    /// Stripe's Checkout page; the screen opens it in the default browser.
+    pub(crate) async fn checkout(&mut self, plan: &str) -> Result<String> {
+        let start = self.client.start_checkout(plan);
+        let Outcome::CheckoutUrl(url) = self
+            .conversation(start, |o| matches!(o, Outcome::CheckoutUrl(_)))
+            .await?
+        else {
+            unreachable!("checked by the conversation");
+        };
+        if !url.starts_with("https://") {
+            return Err(Failure::code("internal"));
+        }
+        Ok(url)
+    }
+
+    /// One click either way (PRICING.md §4).
+    pub(crate) async fn set_plan_canceling(&mut self, canceling: bool) -> Result<PlanView> {
+        let start = if canceling {
+            self.client.start_cancel_subscription()
+        } else {
+            self.client.start_resume_subscription()
+        };
+        self.plan_conversation(start).await
+    }
+
+    async fn plan_conversation(
+        &mut self,
+        start: std::result::Result<Step, ClientError>,
+    ) -> Result<PlanView> {
+        let Outcome::Billing(info) = self
+            .conversation(start, |o| matches!(o, Outcome::Billing(_)))
+            .await?
+        else {
+            unreachable!("checked by the conversation");
+        };
+        Ok(PlanView {
+            plan: info.plan,
+            subscription: info.subscription.map(|s| PlanSubscription {
+                provider: s.provider,
+                plan: s.plan,
+                status: s.status,
+                until_ms: s.until_ms,
+                canceling: s.canceling,
+                price_locked_until_ms: s.price_locked_until_ms,
+                also: s.also,
+            }),
+            sells: info.sells,
+        })
     }
 
     // --- Devices ---
