@@ -24,6 +24,7 @@ class Harness(scope: TestScope, val prefs: MemoryPrefs = MemoryPrefs()) {
     val files = FakeFiles()
     val push = FakePush()
     val notices = FakeNotices()
+    val play = FakePlayBilling()
     var nextAccount: (URL) -> FakeAccount = { FakeAccount(it) }
     val copied = mutableListOf<Copied>()
     var now = 1_000_000L
@@ -51,6 +52,7 @@ class Harness(scope: TestScope, val prefs: MemoryPrefs = MemoryPrefs()) {
         importFiles = files,
         push = push,
         notices = notices,
+        playBilling = play,
     )
     val screen get() = app.state.value.screen
     val home get() = (screen as AppModel.Screen.Vault).model
@@ -337,6 +339,31 @@ class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = 
         pushTokens += token
     }
 
+    // Plan and billing (D6): free on a server selling through Play until a purchase arrives.
+    var billing = pwm.kit.BillingStatus(pwm.kit.BillingStatus.FREE, null, listOf("stripe", "play"), Redacted(BILLING_TOKEN))
+    var billingError: PwmError? = null
+    var billingCalls = 0
+    /** What the server was handed: "product purchaseToken". */
+    val playPurchases = mutableListOf<String>()
+    var playPurchaseError: PwmError? = null
+
+    override suspend fun billingStatus(): pwm.kit.BillingStatus {
+        billingCalls += 1
+        billingError?.let { throw it }
+        return billing
+    }
+
+    override suspend fun playPurchase(productId: String, purchaseToken: Redacted<String>): pwm.kit.BillingStatus {
+        playPurchaseError?.let { throw it }
+        playPurchases += "$productId ${purchaseToken.value}"
+        billing = billing.copy(
+            plan = "premium",
+            subscription = pwm.kit.BillingStatus.Subscription("play", "premium", "active", 2_000_000_000_000, false, null, emptyList()),
+        )
+        // The server's answer to a purchase has no token.
+        return billing.copy(token = null)
+    }
+
     // Health, export and import.
     var health = pwm.kit.PasswordHealth(emptyMap(), emptyList())
     var breached: Map<String, Long> = emptyMap()
@@ -409,6 +436,7 @@ class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = 
         const val PASSWORD = "right horse battery staple"
         const val KEY = "A1-FAKE00-SECRET-KEY000-000000-AAA"
         const val VAULT = "vault-1"
+        const val BILLING_TOKEN = "6f1c2a5e-0000-4000-8000-00000000b111"
     }
 }
 
@@ -453,5 +481,39 @@ class FakeNotices : Notices {
 
     override fun showApprovalNotice() {
         shown += 1
+    }
+}
+
+/** Play Billing as the app would see it: [next] is what Play's sheet answers. */
+class FakePlayBilling : PlayBilling {
+    override val packageName = "invalid.pwm.app"
+    val later = kotlinx.coroutines.flow.MutableSharedFlow<PlayResult>(extraBufferCapacity = 8)
+    /** Off, [results] ends at once, so tests that never lock don't leave a listener running. */
+    var live = false
+    override val results: kotlinx.coroutines.flow.Flow<PlayResult>
+        get() = if (live) later else kotlinx.coroutines.flow.emptyFlow()
+    /** What Play holds for this Google account. */
+    val owned = mutableListOf<PlayPurchase>()
+    /** The sheets shown: "product accountToken". */
+    val bought = mutableListOf<String>()
+    var next: (String, Redacted<String>) -> PlayResult = { product, account ->
+        PlayResult.Purchases(listOf(purchase(product, "purchase-1", account.value)))
+    }
+
+    override suspend fun buy(productId: String, accountToken: Redacted<String>): PlayResult {
+        bought += "$productId ${accountToken.value}"
+        return next(productId, accountToken)
+    }
+
+    override suspend fun owned(): List<PlayPurchase> = owned.toList()
+
+    companion object {
+        fun purchase(
+            product: String = pwm.kit.PlayProducts.PREMIUM,
+            token: String = "purchase-1",
+            account: String? = FakeAccount.BILLING_TOKEN,
+            state: PlayPurchase.State = PlayPurchase.State.PURCHASED,
+            acknowledged: Boolean = false,
+        ) = PlayPurchase(listOf(product), Redacted(token), state, account?.let(::Redacted), acknowledged)
     }
 }

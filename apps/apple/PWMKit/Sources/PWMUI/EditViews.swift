@@ -413,6 +413,7 @@ struct SettingsView: View {
                     }
                 }
             }
+            PlanSection(model: model.plan)
             if model.autofillOn == false {
                 Section {
                     #if os(macOS)

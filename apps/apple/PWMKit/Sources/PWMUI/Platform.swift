@@ -64,8 +64,9 @@ extension AppModel {
     /// with the AutoFill extension (D47 §2): the first launch moves the
     /// cache and keys there. On iOS it keeps the suggestions above the
     /// keyboard current and knows whether PWM is the AutoFill provider
-    /// (on macOS too, D48 §2).
-    public static func live() -> AppModel {
+    /// (on macOS too, D48 §2). `checkout`: the App Store on iOS, where the
+    /// app target has StoreKit; the web on the Mac (D6 §2).
+    public static func live(checkout: Checkout) -> AppModel {
         AppModel(
             makeAccount: { server in
                 let places = try SharedStorage.app()
@@ -78,7 +79,8 @@ extension AppModel {
             deviceName: currentDeviceName,
             autofill: liveAutoFill,
             browserTouchID: liveBrowserTouchID,
-            approvalNotices: liveApprovalNotices
+            approvalNotices: liveApprovalNotices,
+            checkout: checkout
         )
     }
 

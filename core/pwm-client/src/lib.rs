@@ -8,6 +8,7 @@
 mod approval;
 mod auth;
 mod autofill;
+mod billing;
 mod biometric;
 mod client;
 mod error;
@@ -22,6 +23,7 @@ mod totp;
 pub use approval::{ApprovalAsk, ApprovalRequest, AskStep, POLL_EVERY_MS};
 pub use auth::id_text;
 pub use autofill::AutofillMatch;
+pub use billing::{BillingInfo, SubscriptionInfo};
 pub use biometric::{BiometricUnlock, BrowserUnlock, WindowsHelloUnlock, windows_hello_challenge};
 pub use client::{Client, Outcome, PushToken, Step, new_id};
 pub use error::ClientError;

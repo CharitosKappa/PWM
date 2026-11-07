@@ -132,7 +132,7 @@ impl FcmConfig {
 }
 
 /// The DER inside a `PRIVATE KEY` PEM block (PKCS#8, as Google writes it).
-fn pem_private_key(pem: &str) -> Option<Vec<u8>> {
+pub(crate) fn pem_private_key(pem: &str) -> Option<Vec<u8>> {
     let start = "-----BEGIN PRIVATE KEY-----";
     let end = "-----END PRIVATE KEY-----";
     let body = pem.split_once(start)?.1.split_once(end)?.0;
@@ -600,11 +600,29 @@ fn fcm_message(token: &str, kind: Kind) -> serde_json::Value {
 /// The service account's assertion for Google's token endpoint: an RS256
 /// JWT for the messaging scope, valid an hour.
 fn fcm_assertion(config: &FcmConfig, iat: u64) -> Option<String> {
+    google_assertion(
+        &config.key,
+        &config.client_email,
+        FCM_SCOPE,
+        &config.token_url,
+        iat,
+    )
+}
+
+/// A Google service account's RS256 assertion for one scope, valid an hour
+/// (D60 §2; Play's billing API uses it too, D6 §3).
+pub(crate) fn google_assertion(
+    key: &ring::signature::RsaKeyPair,
+    client_email: &str,
+    scope: &str,
+    token_url: &str,
+    iat: u64,
+) -> Option<String> {
     let header = serde_json::json!({ "alg": "RS256", "typ": "JWT" });
     let claims = serde_json::json!({
-        "iss": config.client_email,
-        "scope": FCM_SCOPE,
-        "aud": config.token_url,
+        "iss": client_email,
+        "scope": scope,
+        "aud": token_url,
         "iat": iat,
         "exp": iat + 3600,
     });
@@ -613,16 +631,14 @@ fn fcm_assertion(config: &FcmConfig, iat: u64) -> Option<String> {
         URL_SAFE_NO_PAD.encode(header.to_string()),
         URL_SAFE_NO_PAD.encode(claims.to_string())
     );
-    let mut signature = vec![0; config.key.public().modulus_len()];
-    config
-        .key
-        .sign(
-            &ring::signature::RSA_PKCS1_SHA256,
-            &ring::rand::SystemRandom::new(),
-            signed.as_bytes(),
-            &mut signature,
-        )
-        .ok()?;
+    let mut signature = vec![0; key.public().modulus_len()];
+    key.sign(
+        &ring::signature::RSA_PKCS1_SHA256,
+        &ring::rand::SystemRandom::new(),
+        signed.as_bytes(),
+        &mut signature,
+    )
+    .ok()?;
     Some(format!("{signed}.{}", URL_SAFE_NO_PAD.encode(signature)))
 }
 

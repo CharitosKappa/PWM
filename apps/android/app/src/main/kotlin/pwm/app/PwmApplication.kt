@@ -88,6 +88,8 @@ class PwmApplication : Application() {
             // Push over FCM, when the build has Firebase's settings (D60).
             push = FcmPush(this),
             notices = AndroidNotices(this),
+            // Buying Premium through Google Play (D6 §2); the sheet needs the Activity on screen.
+            playBilling = PlayStoreBilling(this) { shown },
         )
         model.start()
         // The whole app's background and foreground, so moving between its

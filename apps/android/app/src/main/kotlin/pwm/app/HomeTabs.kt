@@ -174,6 +174,10 @@ internal fun SettingsTab(app: AppModel, model: SettingsModel) {
             style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted),
         )
 
+        // The plan and where it's managed (D6).
+        Heading(stringResource(R.string.plan))
+        PlanSection(model.plan)
+
         Heading(stringResource(R.string.lock_timeout))
         val names = stringArrayResource(R.array.lock_timeouts)
         LockTimeout.entries.forEachIndexed { i, timeout ->

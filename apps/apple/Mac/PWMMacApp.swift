@@ -50,7 +50,7 @@ struct PWMMacApp: App {
 /// on battery.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
-    let model = AppModel.live()
+    let model = AppModel.live(checkout: .web)
     private let scheduler: NSBackgroundActivityScheduler = {
         let scheduler = NSBackgroundActivityScheduler(identifier: "pwm.sync")
         scheduler.repeats = true

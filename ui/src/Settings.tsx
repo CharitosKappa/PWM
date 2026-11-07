@@ -7,6 +7,7 @@ import type { Settings as SettingsValue, Status } from "./protocol.ts";
 import { describe, send } from "./api.ts";
 import { host } from "./host.ts";
 import { InlineIconSetting, PasskeysSetting } from "./InlineIcon.tsx";
+import { PlanSetting } from "./Plan.tsx";
 import { Field, Notice } from "./ui.tsx";
 
 const LOCK_WORDS: Record<number, string> = {
@@ -95,6 +96,8 @@ export function Settings({
             : "It also locks when your computer locks or sleeps."}
         </span>
       </label>
+
+      {status.state === "unlocked" && <PlanSetting />}
 
       {host().browser && <InlineIconSetting />}
       {host().browser && <PasskeysSetting />}

@@ -12,6 +12,7 @@ use pwm_crypto::ServerSecrets;
 use serde::de::DeserializeOwned;
 use sqlx::PgPool;
 
+use crate::billing::Billing;
 use crate::limits::{Clock, Limits, RateLimiter, TrustedProxies, system_clock};
 use crate::push::Push;
 
@@ -23,6 +24,8 @@ pub struct AppState {
     pub(crate) trusted_proxies: Arc<TrustedProxies>,
     /// APNs (D50 §3); off unless configured.
     pub(crate) push: Push,
+    /// Plans and billing (D6); off (every account Premium) unless configured.
+    pub(crate) billing: Billing,
 }
 
 impl AppState {
@@ -34,7 +37,13 @@ impl AppState {
             limiter: Arc::new(RateLimiter::new(Limits::default(), system_clock())),
             trusted_proxies: Arc::new(TrustedProxies::default()),
             push: Push::off(),
+            billing: Billing::off(),
         }
+    }
+
+    pub fn with_billing(mut self, billing: Billing) -> Self {
+        self.billing = billing;
+        self
     }
 
     pub fn with_push(mut self, push: Push) -> Self {
@@ -75,6 +84,10 @@ pub enum ApiError {
     /// A write or delete without `If-Match` / `If-None-Match` (D27).
     PreconditionRequired,
     Conflict(&'static str),
+    /// 403 with its own code, such as `purchase_not_yours` (D6).
+    Forbidden(&'static str),
+    /// Billing is not set up here, or its provider can't be reached (D6).
+    BillingUnavailable,
     NotFound,
     Internal,
 }
@@ -94,6 +107,8 @@ impl ApiError {
                 (StatusCode::PRECONDITION_REQUIRED, "precondition_required")
             }
             Self::Conflict(code) => (StatusCode::CONFLICT, code),
+            Self::Forbidden(code) => (StatusCode::FORBIDDEN, code),
+            Self::BillingUnavailable => (StatusCode::SERVICE_UNAVAILABLE, "billing_unavailable"),
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             Self::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         }

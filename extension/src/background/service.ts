@@ -377,6 +377,14 @@ export class Background {
       case "activity":
         await this.touch();
         return null;
+      case "plan":
+        return this.manager.plan();
+      case "checkout":
+        return this.manager.checkout(request.plan);
+      case "cancelPlan":
+        return this.manager.cancelPlan();
+      case "resumePlan":
+        return this.manager.resumePlan();
       case "devices":
         return this.manager.devices();
       case "renameDevice":

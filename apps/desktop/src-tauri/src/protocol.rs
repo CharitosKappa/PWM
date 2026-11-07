@@ -106,6 +106,13 @@ pub enum Request {
         #[serde(deserialize_with = "secret")]
         password: Secret<String>,
     },
+    // The plan (D6; M9.1).
+    Plan,
+    Checkout {
+        plan: String,
+    },
+    CancelPlan,
+    ResumePlan,
     // The manage page (D44, D46, D51; M7.6).
     Devices,
     RenameDevice {
@@ -248,6 +255,28 @@ pub struct ImportMapping {
     pub folder: Option<usize>,
     pub favorite: Option<usize>,
     pub tags: Option<usize>,
+}
+
+/// The account's plan (`PlanView`, D6 §7); times are Unix ms.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanView {
+    pub plan: String,
+    pub subscription: Option<PlanSubscription>,
+    pub sells: Vec<String>,
+}
+
+/// The subscription that gives the plan (`PlanView["subscription"]`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanSubscription {
+    pub provider: String,
+    pub plan: String,
+    pub status: String,
+    pub until_ms: i64,
+    pub canceling: bool,
+    pub price_locked_until_ms: Option<i64>,
+    pub also: Vec<String>,
 }
 
 /// One of the account's devices (`DeviceView`).

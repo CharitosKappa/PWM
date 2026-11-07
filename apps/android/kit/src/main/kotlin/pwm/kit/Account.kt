@@ -85,6 +85,18 @@ interface Account {
     /** After a refused refresh token (D50 §5): the master password only. */
     suspend fun signInAgain(password: Redacted<String>): SyncResult
 
+    // --- Plan and billing (D6) ---
+
+    /** The plan, where it was bought, who sells on this server, and the billing token. */
+    suspend fun billingStatus(): BillingStatus
+
+    /**
+     * Hands a purchase Play Billing finished to the server, which reads it
+     * from Google and acknowledges it; the app never does. The answer has
+     * no billing token.
+     */
+    suspend fun playPurchase(productId: String, purchaseToken: Redacted<String>): BillingStatus
+
     // --- Health, export and import (D59 §5-7) ---
 
     /** Weak and reused passwords across every vault; local only. */

@@ -49,6 +49,11 @@ pub enum Outcome {
     ApprovalUpdated,
     /// This device's push token was registered or removed (D50 §3).
     PushTokenSet,
+    /// The account's plan (D6), from the billing calls.
+    Billing(crate::BillingInfo),
+    /// A Stripe Checkout page to open in the browser, from
+    /// [`Client::start_checkout`].
+    CheckoutUrl(String),
     /// The session is over on the server, from [`Client::start_sign_out`]
     /// (D62): the app wipes the device next with [`Client::sign_out`].
     LoggedOut,
@@ -90,6 +95,8 @@ pub(crate) enum Running {
     Devices,
     /// A device approval call (D46).
     Approval(crate::approval::ApprovalCall),
+    /// A billing call (D6).
+    Billing(crate::billing::BillingCall),
     /// Registering or removing the push token, locked or not (D50 §3).
     PushToken,
     /// Ending the session before signing out, locked or not (D62).
@@ -760,6 +767,15 @@ impl<S: Store> Client<S> {
                     400 => Err(ClientError::InvalidPushToken),
                     status => Err(ClientError::Server(status)),
                 };
+            }
+            pwm_sync::Step::Done(SyncOutcome::Answered { status, body })
+                if matches!(self.running, Running::Billing(_)) =>
+            {
+                let Running::Billing(call) = self.running else {
+                    unreachable!("matched above");
+                };
+                self.running = Running::Idle;
+                return Ok(Step::Done(self.billing_answer(call, status, &body)?));
             }
             pwm_sync::Step::Done(SyncOutcome::Answered { status, body }) => {
                 let Running::Approval(call) = self.running else {

@@ -5,6 +5,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use pwm_crypto::{Secret, ServerSecrets};
 
 use crate::ServerError;
+use crate::billing::BillingConfig;
 use crate::limits::TrustedProxies;
 use crate::push::{FcmConfig, PushConfig};
 
@@ -23,6 +24,9 @@ pub struct Config {
     pub push: Option<PushConfig>,
     /// FCM (D60), from `PWM_FCM_*`; `None` leaves Android push off.
     pub fcm: Option<FcmConfig>,
+    /// Plans and billing (D6), from `PWM_STRIPE_*`, `PWM_APPLE_*` and
+    /// `PWM_PLAY_*`; none set leaves billing off and every account Premium.
+    pub billing: BillingConfig,
 }
 
 impl Config {
@@ -57,6 +61,7 @@ impl Config {
         })?;
         let push = PushConfig::from_vars(&var)?;
         let fcm = FcmConfig::from_vars(&var)?;
+        let billing = BillingConfig::from_vars(&var)?;
         Ok(Self {
             database_url: Secret::new(database_url),
             listen,
@@ -64,6 +69,7 @@ impl Config {
             trusted_proxies,
             push,
             fcm,
+            billing,
         })
     }
 }

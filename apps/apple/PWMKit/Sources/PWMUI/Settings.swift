@@ -124,10 +124,14 @@ public final class SettingsModel {
 
     public private(set) var lockTimeout: LockTimeout
 
+    /// The plan section (D6); loads when it shows.
+    public let plan: PlanModel
+
     init(server: URL?, app: AppModel, account: any Account) {
         self.server = server
         self.app = app
         self.account = account
+        plan = PlanModel(account: account, checkout: app.checkout)
         lockTimeout = app.lockTimeout
         breachCheck = app.breachCheckOn
         hidesFromCapture = app.hidesFromCapture

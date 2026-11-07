@@ -708,6 +708,65 @@ export class FakeCore implements Core {
   exportGrant = false;
   authorizations = 0;
 
+  // The plan (D6).
+  billing_: {
+    plan: string;
+    subscription: {
+      provider: string;
+      plan: string;
+      status: string;
+      until_ms: number;
+      canceling: boolean;
+      price_locked_until_ms: number | null;
+      also: string[];
+    } | null;
+    sells: string[];
+    token: string | null;
+  } = { plan: "free", subscription: null, sells: ["stripe"], token: "tok" };
+  checkoutUrl = "https://checkout.stripe.com/c/pay/cs_test_1";
+  /** A billing error code the next billing call ends with, if any. */
+  billingError: string | null = null;
+
+  private billingStep(path: string, change?: () => void): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    this.next = () => {
+      if (this.billingError !== null) throw coreError(this.billingError);
+      change?.();
+      return done("billing", { billing: JSON.stringify(this.billing_) });
+    };
+    return send(path);
+  }
+
+  startBillingStatus(): CoreStep {
+    return this.billingStep("/v1/billing");
+  }
+
+  startCheckout(plan: string): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    this.next = () => {
+      if (this.billingError !== null) throw coreError(this.billingError);
+      if (plan !== "premium" && plan !== "family") throw coreError("server");
+      return done("checkout_url", { url: this.checkoutUrl });
+    };
+    return send("/v1/billing/stripe/checkout");
+  }
+
+  startCancelSubscription(): CoreStep {
+    return this.billingStep("/v1/billing/stripe/cancel", () => {
+      if (this.billing_.subscription === null)
+        throw coreError("no_subscription");
+      this.billing_.subscription.canceling = true;
+    });
+  }
+
+  startResumeSubscription(): CoreStep {
+    return this.billingStep("/v1/billing/stripe/resume", () => {
+      if (this.billing_.subscription === null)
+        throw coreError("no_subscription");
+      this.billing_.subscription.canceling = false;
+    });
+  }
+
   startListDevices(): CoreStep {
     if (!this.unlocked) throw coreError("locked");
     this.next = () =>

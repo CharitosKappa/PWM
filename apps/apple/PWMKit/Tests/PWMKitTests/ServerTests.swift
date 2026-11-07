@@ -209,6 +209,21 @@ extension ServerTests {
         XCTAssertNotNil(devices.last?.revoked)
         let result = try await phone.sync()
         XCTAssertEqual(result, .deviceRevoked)
+
+        // Plans (D6), here rather than in a test of their own, which would
+        // spend one more of the server's sign-ups. The test server has no
+        // billing settings: every account is Premium, and nothing is sold.
+        let billing = try await laptop.billing()
+        XCTAssertEqual(billing.plan, .premium)
+        XCTAssertEqual(billing.sells, [])
+        XCTAssertNil(billing.subscription)
+        XCTAssertNotNil(billing.token.flatMap { UUID(uuidString: $0.value) }, "the billing token is a UUID")
+        do {
+            _ = try await laptop.checkoutURL(for: .premium)
+            XCTFail("a checkout without billing")
+        } catch {
+            XCTAssertEqual(code(of: error), "billing_unavailable")
+        }
     }
 
     func testHealthBreachesAndExport() async throws {

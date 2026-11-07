@@ -9,7 +9,7 @@ Prices are proposals to validate; the **commitments are requirements** the billi
 | Family | ~$48/yr, 6 people | Premium for all + shared family vaults |
 | Teams / Business | ~$4–6/user/mo | Admin console, SSO, SCIM, audit log, self-hosted option |
 
-Billing: Stripe on web, App Store / Play Billing in apps, entitlements unified server-side (RevenueCat or own service — decision D6).
+Billing (D6): Stripe Checkout in the browser for the Mac, Windows, Linux and the extensions; the App Store in the iOS app; Google Play in the Android app. Our own entitlement service on the server is the one source of the plan, whoever sold it. A server without billing settings (self-hosted) makes every account Premium.
 
 ## Commitments (implement and test)
 
@@ -22,3 +22,12 @@ Billing: Stripe on web, App Store / Play Billing in apps, entitlements unified s
 7. **Export**: always free on every plan, including after a subscription lapses; downgrade never deletes data.
 
 Tests must cover: renewal reminder scheduling, price-lock enforcement on plan price changes, refund eligibility window, downgrade keeps data read/write within free limits.
+
+## Where a store limits a commitment (D6 §5)
+
+With Stripe we run the subscription, so every commitment holds in full. A plan bought in the App Store or Google Play is run by the store, and these gaps are known:
+
+- **§1 Price hold:** kept by choosing "preserve current price" (App Store) or a legacy price cohort (Play) at each price change, in the store's console, for at least 12 months. The server checks each renewal's price against `price_locked_until` and alerts on a mismatch.
+- **§4 One-click cancel:** we can't cancel a store subscription. The app's button opens the store's own subscription page.
+- **§5 Refunds:** only Apple refunds App Store purchases; the app opens Apple's request sheet, and if Apple declines we can't refund. Play's API refunds only in full, so a Play refund within the 30 days is a full one, more than pro-rata.
+- **Deleting an account** can't end a store subscription; the delete screen says so first, with the link to cancel it.

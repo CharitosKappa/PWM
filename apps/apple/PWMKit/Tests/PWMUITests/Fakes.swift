@@ -351,6 +351,148 @@ actor FakeAccount: Account {
         importPrepared = false
         calls.append("cancelImport")
     }
+
+    // Plan and billing (D6): a free account on a server that sells in the
+    // App Store and on the web, unless a test sets otherwise.
+    var billingStatus = BillingStatus(plan: .free, subscription: nil, sells: [.appStore, .stripe], token: Redacted(billingToken))
+    var billingFailure: PWMError?
+
+    func setBilling(_ status: BillingStatus, failure: String? = nil) {
+        billingStatus = status
+        billingFailure = failure.map(PWMError.init(code:))
+    }
+
+    func failBilling(with code: String?) {
+        billingFailure = code.map(PWMError.init(code:))
+    }
+
+    private func checkBilling() throws {
+        if let billingFailure { throw billingFailure }
+    }
+
+    /// Only the status call carries the token, as on the server.
+    private var answer: BillingStatus {
+        BillingStatus(plan: billingStatus.plan, subscription: billingStatus.subscription, sells: billingStatus.sells, token: nil)
+    }
+
+    func billing() throws -> BillingStatus {
+        calls.append("billing")
+        try checkBilling()
+        return billingStatus
+    }
+
+    func checkoutURL(for plan: Plan) throws -> URL {
+        calls.append("checkout \(plan.name)")
+        try checkBilling()
+        return checkoutPage
+    }
+
+    func cancelSubscription() throws -> BillingStatus {
+        calls.append("cancel")
+        try checkBilling()
+        try setCanceling(true)
+        return answer
+    }
+
+    func resumeSubscription() throws -> BillingStatus {
+        calls.append("resume")
+        try checkBilling()
+        try setCanceling(false)
+        return answer
+    }
+
+    private func setCanceling(_ canceling: Bool) throws {
+        guard let s = billingStatus.subscription else { throw PWMError(code: "no_subscription") }
+        let stripe = s.provider == .stripe ? s : nil
+        guard stripe != nil || s.also.contains(.stripe) else { throw PWMError(code: "managed_elsewhere") }
+        let changed = SubscriptionEntry(
+            provider: s.provider, plan: s.plan, status: s.status, until: s.until,
+            canceling: stripe == nil ? s.canceling : canceling, priceLockedUntil: s.priceLockedUntil,
+            also: stripe == nil && canceling ? s.also.filter { $0 != .stripe } : s.also
+        )
+        billingStatus = BillingStatus(plan: billingStatus.plan, subscription: changed, sells: billingStatus.sells, token: billingStatus.token)
+    }
+
+    func applePurchase(transactionId: String) throws -> BillingStatus {
+        calls.append("applePurchase \(transactionId)")
+        try checkBilling()
+        let bought = SubscriptionEntry(
+            provider: .appStore, plan: .premium, status: "active", until: periodEnd, canceling: false,
+            priceLockedUntil: periodEnd, also: []
+        )
+        billingStatus = BillingStatus(plan: .premium, subscription: bought, sells: billingStatus.sells, token: billingStatus.token)
+        return answer
+    }
+}
+
+let billingToken = "6f1c0b52-5d0e-4c55-9a43-2f1e7b8f0a11"
+let checkoutPage = URL(string: "https://checkout.stripe.com/c/pay/cs_test_a1")!
+let periodEnd = Date(timeIntervalSince1970: 1_798_761_600)
+
+/// A subscription for tests.
+func subscription(
+    _ provider: BillingProvider, canceling: Bool = false, status: String = "active", also: [BillingProvider] = []
+) -> SubscriptionEntry {
+    SubscriptionEntry(
+        provider: provider, plan: .premium, status: status, until: periodEnd, canceling: canceling,
+        priceLockedUntil: periodEnd, also: also
+    )
+}
+
+/// The App Store with no StoreKit: records purchases and finishes, and
+/// hands out `queued` transactions as if they finished while away.
+actor FakeStore: StorePurchases {
+    enum Outcome {
+        case purchased(String), pending, cancelled
+        case fails(String)
+    }
+
+    var price: String? = "€29.99 a year"
+    var outcome: Outcome = .purchased("2000000123")
+    /// "<product> <token>" for each purchase.
+    var purchases: [String] = []
+    var finished: [String] = []
+    var managed = 0
+    nonisolated let queued: [String]
+
+    init(queued: [String] = []) {
+        self.queued = queued
+    }
+
+    func set(price: String?) { self.price = price }
+    func set(outcome: Outcome) { self.outcome = outcome }
+
+    func priceText(of productId: String) -> String? { price }
+
+    func purchase(_ productId: String, accountToken: UUID) throws -> StorePurchase {
+        purchases.append("\(productId) \(accountToken.uuidString.lowercased())")
+        switch outcome {
+        case let .purchased(id): return .purchased(transaction(id))
+        case .pending: return .pending
+        case .cancelled: return .cancelled
+        case let .fails(code): throw PWMError(code: code)
+        }
+    }
+
+    nonisolated func transactions() -> AsyncStream<StoreTransaction> {
+        let list = queued.map { transaction($0) }
+        return AsyncStream { continuation in
+            for item in list { continuation.yield(item) }
+            continuation.finish()
+        }
+    }
+
+    func showManageSubscriptions() {
+        managed += 1
+    }
+
+    private nonisolated func transaction(_ id: String) -> StoreTransaction {
+        StoreTransaction(id: id) { await self.markFinished(id) }
+    }
+
+    private func markFinished(_ id: String) {
+        finished.append(id)
+    }
 }
 
 /// Files the import screen reads and deletes, in memory.
