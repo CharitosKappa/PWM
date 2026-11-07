@@ -20,6 +20,7 @@ JSON vectors for every crypto and format operation in `docs/SECURITY.md`. They f
 | `bitwarden_export.json` | Bitwarden's password-protected export (D51 §4), made by `bitwarden_export.mjs` with Node's crypto and read by `pwm-import` |
 | `windows_hello.json` | The biometric unlock key sealed under a key derived from a Windows Hello signature v1 (D68) |
 | `browser_hello.json` | The extension's key sealed by the Windows browser helper under a Windows Hello signature's key, bound to the caller v1 (D69) |
+| `linux_polkit.json` | The Linux key holder's answer to a challenge, and the desktop's unlock key and the extension's key sealed under it with Linux's labels v1 (D71) |
 | `totp.json` | RFC 4226 HOTP, RFC 6238 TOTP and Steam Guard codes from stored URIs (D23); RFC values copied from the RFC appendices |
 
 All byte strings are lowercase hex; revisions are decimal strings (JSON numbers above 2^53 lose precision in JavaScript).

@@ -206,10 +206,10 @@ pub struct Backend<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> {
     pub(crate) leaked: Option<std::collections::HashMap<String, u64>>,
     /// New devices asking to sign in, read after each sync (D46 §5).
     pub(crate) pending_approvals: u32,
-    /// Windows Hello's key (D68); none on Linux.
+    /// Windows Hello's key (D68), or Linux's key holder behind polkit (D71).
     pub(crate) hello: Box<dyn crate::hello::HelloKey>,
-    /// The browser helper's registration (D69); none on Linux.
-    pub(crate) browser_hosts: Option<crate::browser_hosts::BrowserHosts>,
+    /// The browser helper's registration (D69, D71).
+    pub(crate) browser_hosts: Option<Box<dyn crate::browser_hosts::Hosts>>,
 }
 
 impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
@@ -251,10 +251,11 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
         }
     }
 
-    /// Lets browser extensions unlock with Windows Hello (D69).
+    /// Lets browser extensions unlock with Windows Hello (D69) or Linux
+    /// login (D71).
     #[must_use]
-    pub fn with_browser_hosts(mut self, hosts: crate::browser_hosts::BrowserHosts) -> Self {
-        self.browser_hosts = Some(hosts);
+    pub fn with_browser_hosts(mut self, hosts: impl crate::browser_hosts::Hosts + 'static) -> Self {
+        self.browser_hosts = Some(Box::new(hosts));
         self
     }
 
@@ -472,7 +473,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             Request::BrowserUnlock => Ok(json!(
                 self.browser_hosts
                     .as_ref()
-                    .is_some_and(crate::browser_hosts::BrowserHosts::is_on)
+                    .is_some_and(|hosts| hosts.is_on())
             )),
             Request::SetBrowserUnlock { on } => {
                 let hosts = self

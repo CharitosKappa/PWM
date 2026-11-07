@@ -526,6 +526,35 @@ jobs:
         env:
           PWM_TEST_SERVER: http://127.0.0.1:8080
         run: cargo test --manifest-path apps/desktop/Cargo.toml --locked
+      - name: Linux login through the real pkexec and key holder (D71)
+        run: |
+          sudo apt-get install -y -qq policykit-1
+          cargo build --manifest-path apps/desktop/Cargo.toml --locked -p pwm-keyholder
+          sudo install -D -m 0755 apps/desktop/target/debug/pwm-keyholder /usr/libexec/pwm/pwm-keyholder
+          sudo install -D -m 0644 apps/desktop/linux/invalid.pwm.unlock.policy /usr/share/polkit-1/actions/invalid.pwm.unlock.policy
+          # polkit 0.105 here reads .pkla rules: let the runner through
+          # without a dialog, which needs a person.
+          sudo mkdir -p /etc/polkit-1/localauthority/50-local.d
+          {
+            echo "[PWM CI]"
+            echo "Identity=unix-user:$USER"
+            echo "Action=invalid.pwm.unlock"
+            echo "ResultAny=yes"
+            echo "ResultInactive=yes"
+            echo "ResultActive=yes"
+          } | sudo tee /etc/polkit-1/localauthority/50-local.d/pwm-ci.pkla > /dev/null
+          sudo systemctl restart polkit || true
+          export PWM_TEST_PKEXEC=1
+          cargo test --manifest-path apps/desktop/Cargo.toml --locked -p pwm-hello the_real_pkexec
+          cargo test --manifest-path apps/desktop/Cargo.toml --locked -p pwm-browser-helper the_real_key_holder
+          # Only root can read the secrets.
+          sudo stat -c '%U %a %n' /var/lib/pwm/keys "/var/lib/pwm/keys/$(id -u)"
+          test "$(sudo stat -c '%U %a' "/var/lib/pwm/keys/$(id -u)")" = "root 700"
+          ! ls "/var/lib/pwm/keys/$(id -u)" 2> /dev/null
+          # Run by hand, without pkexec, it refuses.
+          status=0
+          /usr/libexec/pwm/pwm-keyholder create pwm-x || status=$?
+          test "$status" -eq 3
       - run: cargo build --manifest-path apps/desktop/Cargo.toml --locked
       - run: cargo install tauri-driver --locked --version 2.1.0
       - name: End to end through tauri-driver
@@ -713,11 +742,21 @@ jobs:
         run: |
           deb=$(ls apps/desktop/target/release/bundle/deb/*.deb)
           dpkg-deb --field "$deb" Package Depends
+          # The browser helper, the key holder and polkit's action (D71 §6).
+          dpkg-deb -c "$deb" | tee "$RUNNER_TEMP/deb.txt"
+          for file in usr/bin/pwm-browser-helper usr/libexec/pwm/pwm-keyholder usr/share/polkit-1/actions/invalid.pwm.unlock.policy; do
+            grep -q " $file$" "$RUNNER_TEMP/deb.txt"
+          done
+          rpm -qlp apps/desktop/target/release/bundle/rpm/*.rpm | grep -qx /usr/libexec/pwm/pwm-keyholder
           sudo apt-get install -y -qq "./$deb"
           # Still running after 15 seconds: it started.
           status=0
           timeout 15 xvfb-run -a dbus-run-session -- /usr/bin/pwm-desktop || status=$?
           test "$status" -eq 124
+          # Purging deletes the key holder's secrets.
+          sudo mkdir -p /var/lib/pwm/keys/1000
+          sudo apt-get purge -y -qq pwm
+          test ! -e /var/lib/pwm
       - name: Build the Flatpak from the .deb and start it
         run: |
           cp apps/desktop/target/release/bundle/deb/*.deb apps/desktop/flatpak/pwm.deb

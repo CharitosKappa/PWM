@@ -6,7 +6,7 @@
 
 use std::fmt;
 
-use pwm_crypto::{AccountKeyset, Envelope, Secret, WINDOWS_HELLO_VERSION};
+use pwm_crypto::{AccountKeyset, Envelope, Secret, Signer, WINDOWS_HELLO_VERSION};
 use pwm_store::Store;
 
 use crate::client::parse_id;
@@ -79,11 +79,14 @@ fn challenge_of(challenge: &[u8]) -> Result<Secret<[u8; 32]>, ClientError> {
 }
 
 impl<S: Store> Client<S> {
-    /// Windows Hello unlock (D68): the biometric blob (D45), with its key
-    /// sealed under the key derived from `signature`, Windows Hello's
-    /// signature over `challenge`. Needs the vault unlocked.
+    /// Windows Hello unlock (D68), and unlock on Linux through the key
+    /// holder behind polkit (D71): the biometric blob (D45), with its key
+    /// sealed under the key derived from `signature`, the platform key's
+    /// answer to `challenge`, with that platform's labels. Needs the vault
+    /// unlocked.
     pub fn export_windows_hello(
         &self,
+        signer: Signer,
         device_id: &str,
         challenge: &[u8],
         signature: &[u8],
@@ -91,7 +94,8 @@ impl<S: Store> Client<S> {
         let device = parse_id(device_id)?;
         let account_id = self.account_record()?.account_id;
         let unlock = self.export_biometric_unlock(device_id)?;
-        let sealed = pwm_crypto::seal_windows_hello(
+        let sealed = pwm_crypto::seal_signed_unlock(
+            signer,
             &unlock.key,
             signature,
             &challenge_of(challenge)?,
@@ -110,8 +114,10 @@ impl<S: Store> Client<S> {
     /// Unlocks with a new Windows Hello signature over the same challenge,
     /// then answers a fresh blob and sealed key to keep instead (D68 §4).
     /// Anything that doesn't open is `biometric_unlock_failed`.
+    #[allow(clippy::too_many_arguments)]
     pub fn unlock_windows_hello(
         &mut self,
+        signer: Signer,
         blob: &[u8],
         sealed_key: &[u8],
         challenge: &[u8],
@@ -129,7 +135,8 @@ impl<S: Store> Client<S> {
         let key = match sealed_key.split_first() {
             Some((&WINDOWS_HELLO_VERSION, rest)) => Envelope::from_bytes(rest)
                 .and_then(|envelope| {
-                    pwm_crypto::open_windows_hello(
+                    pwm_crypto::open_signed_unlock(
+                        signer,
                         &envelope,
                         signature,
                         &challenge,
@@ -141,7 +148,7 @@ impl<S: Store> Client<S> {
             _ => return Err(ClientError::BiometricUnlockFailed),
         };
         self.unlock_biometric(blob, key.expose_secret(), device_id, tokens)?;
-        self.export_windows_hello(device_id, challenge.expose_secret(), signature)
+        self.export_windows_hello(signer, device_id, challenge.expose_secret(), signature)
     }
 
     /// The unlocked keyset for biometric unlock on this device. Make it again

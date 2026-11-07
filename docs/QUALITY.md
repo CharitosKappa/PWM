@@ -27,7 +27,7 @@ Most one-star reviews in this market come from broken updates. Release safety is
 | `bindings`: Swift/Kotlin smoke, the Swift package on Linux against a server (D41) | every PR | yes |
 | `apple`: the Swift package on macOS against a server (D41), and the iOS app's UI test in the simulator (D42) | PRs touching `apps/apple`, `core/` or the tokens | yes |
 | `ios-build`, `android-build` | PRs touching that app/core | yes |
-| `desktop-linux` (Ubuntu 22.04: clippy, tests with a server, end to end) and `desktop-windows` (clippy, tests, release build), D66 §9 | PRs touching `apps/desktop`, `ui/`, `core/` or the tokens | yes |
+| `desktop-linux` (Ubuntu 22.04: clippy, tests with a server, end to end, Linux login through the real `pkexec`, D71) and `desktop-windows` (clippy, tests, release build), D66 §9 | PRs touching `apps/desktop`, `ui/`, `core/` or the tokens | yes |
 | `desktop-installer-windows` (the NSIS installer signed with a throwaway certificate; install, replace in place, uninstall) and `desktop-installer-linux` (the `.deb` and `.rpm`, the `.rpm` and checksums signed with a throwaway key; the `.deb` installed and started; the Flatpak built and started), D70 §9 | PRs touching `apps/desktop`, `ui/`, `core/` or the tokens | yes |
 | `audit` (cargo audit/deny, npm audit) | every PR + nightly | high severity |
 | `autofill-top-sites` (D39) | nightly + release candidates | release only (`runner/compare.ts`, D64: the sites both runs counted) |
@@ -204,6 +204,11 @@ On Windows 11 and on Ubuntu (GNOME) and Fedora (KDE), for each release candidate
 14. The installers (D70), from a CI run's artifacts or the release build:
     - **Windows:** run the installer as a standard user: no administrator prompt; PWM is in the Start menu and starts. Turn on browser unlock (step 13), then install the next version over it: browser unlock still works. Uninstall from Settings, Apps: Chrome, Edge and Firefox no longer find the helper (the extension says it needs the app), and `%LOCALAPPDATA%PWM` is gone. Check SmartScreen with the release signature.
     - **Ubuntu and Fedora:** install the `.deb` or `.rpm` from the file manager or the terminal, start PWM from the menu, then remove it. Install the Flatpak, start it, save the Emergency Kit to Downloads, lock the session (the vault locks), and quit: the keys are in the keyring (through the Secret portal).
+15. Linux login (D71), on Ubuntu (GNOME) and Fedora (KDE) with the `.deb` or `.rpm`, once with the password and once with a fingerprint set up for polkit (`pam_fprintd`):
+    - **The desktop:** turn on "Unlock with Linux login" in Settings (three dialogs), lock, and unlock with the dialog. Cancel the dialog: the password field stays. Turn it off.
+    - **Browsers:** in Chrome and Firefox (installed as packages), turn on "Allow browser extensions to unlock with Linux login" in the app, then "Unlock with Linux login" in the extension; lock; unlock with the dialog. Check that Chromium, Edge, Brave and Vivaldi get a manifest when installed, and find Opera's folder.
+    - **What isn't offered:** in the Flatpak, turning it on says it needs the `.deb` or `.rpm`. A Snap browser doesn't find the helper.
+    - **Removing:** `sudo apt purge pwm` or `sudo dnf remove pwm` deletes `/var/lib/pwm`.
 
 ## Success metrics
 

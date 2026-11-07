@@ -93,6 +93,8 @@ const MESSAGES: Record<string, string> = {
   touch_id_unavailable: "Touch ID is not set up on this Mac.",
   browser_helper_missing:
     "PWM's browser helper is missing next to the app. Install PWM again, then try again.",
+  browser_not_found:
+    "Install Chrome, Chromium, Edge, Brave, Vivaldi or Firefox first. Browsers from Snap or Flatpak can't use it.",
   biometric_cancelled: "Unlock with your master password, or try again.",
   biometric_changed:
     "Touch ID changed. Enter your master password, then turn Touch ID on again.",
@@ -120,6 +122,31 @@ const WINDOWS_HELLO_MESSAGES: Record<string, string> = {
     "Windows Hello changed. Enter your master password, then turn Windows Hello on again.",
 };
 
+/**
+ * The texts on Linux (D71 §5): the same codes, naming Linux login, the PWM
+ * app for Linux and what it needs (the .deb or .rpm package, and a desktop
+ * that asks for the password).
+ */
+const LINUX_LOGIN_MESSAGES: Record<string, string> = {
+  helper_missing:
+    "Linux login needs the PWM app for Linux, with browser unlock turned on in its Settings.",
+  touch_id_off: "Turn on Linux login in Settings first.",
+  touch_id_unavailable:
+    "Linux login isn't available here. It needs PWM's .deb or .rpm package and a desktop that asks for your password.",
+  biometric_changed:
+    "Linux login changed. Enter your master password, then turn Linux login on again.",
+  hello_unavailable:
+    "Linux login needs PWM's .deb or .rpm package (not the Flatpak) and a desktop that asks for your password.",
+  hello_off: "Turn on Linux login in Settings first.",
+  hello_changed:
+    "Linux login changed. Enter your master password, then turn Linux login on again in Settings.",
+};
+
+const PLATFORM_MESSAGES: Record<string, Record<string, string>> = {
+  "Windows Hello": WINDOWS_HELLO_MESSAGES,
+  "Linux login": LINUX_LOGIN_MESSAGES,
+};
+
 function biometricName(): string | null {
   try {
     return host().biometricName;
@@ -129,10 +156,8 @@ function biometricName(): string | null {
 }
 
 export function describeCode(code: string): string {
-  const platform =
-    biometricName() === "Windows Hello"
-      ? WINDOWS_HELLO_MESSAGES[code]
-      : undefined;
+  const name = biometricName();
+  const platform = name === null ? undefined : PLATFORM_MESSAGES[name]?.[code];
   return platform ?? MESSAGES[code] ?? "Something went wrong. Try again.";
 }
 

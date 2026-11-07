@@ -3,7 +3,7 @@
 # tied to the server's. The core crates come in by path.
 [workspace]
 resolver = "3"
-members = ["src-tauri", "hello", "browser-helper"]
+members = ["src-tauri", "hello", "browser-helper", "keyholder"]
 
 [workspace.package]
 version = "0.1.0"

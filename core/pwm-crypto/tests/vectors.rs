@@ -619,6 +619,88 @@ fn vectors_browser_hello() {
 }
 
 #[test]
+fn vectors_linux_polkit() {
+    for v in load(include_str!("../../test-vectors/linux_polkit.json")) {
+        let account: Id = arr(&v["account_id"]);
+        let device: Id = arr(&v["device_id"]);
+        let challenge: [u8; 32] = arr(&v["challenge"]);
+        let answer = pwm_crypto::linux_polkit_response(&Secret::new(arr(&v["secret"])), &challenge);
+        assert_eq!(answer.expose_secret(), &arr::<32>(&v["response"]));
+        assert_eq!(
+            hkdf_sha256(
+                &arr::<32>(&v["secret"]),
+                &challenge,
+                &bytes(&v["response_info"])
+            )
+            .expose_secret(),
+            answer.expose_secret()
+        );
+        let answer = *answer.expose_secret();
+        let linux = pwm_crypto::Signer::LinuxPolkit;
+
+        // The desktop's unlock key.
+        assert_eq!(
+            Aad::signed_unlock(linux, 1, &account, &device).as_bytes(),
+            bytes(&v["aad"])
+        );
+        assert_eq!(
+            hkdf_sha256(&answer, &challenge, &bytes(&v["info"])).expose_secret(),
+            &arr::<32>(&v["wrapping_key"])
+        );
+        let sealed = bytes(&v["envelope"]);
+        let open = |b: &[u8]| {
+            Envelope::from_bytes(b).and_then(|env| {
+                pwm_crypto::open_signed_unlock(
+                    linux,
+                    &env,
+                    &answer,
+                    &Secret::new(challenge),
+                    &account,
+                    &device,
+                )
+            })
+        };
+        assert_eq!(
+            open(&sealed).unwrap().expose_secret(),
+            &arr::<32>(&v["unlock_key"])
+        );
+        assert_tamper_evident(&sealed, |b| open(b).is_ok());
+
+        // The browser helper's key.
+        let caller = v["caller"].as_str().unwrap();
+        assert_eq!(
+            Aad::signed_browser(linux, 1, caller, &account, &device)
+                .unwrap()
+                .as_bytes(),
+            bytes(&v["browser_aad"])
+        );
+        assert_eq!(
+            hkdf_sha256(&answer, &challenge, &bytes(&v["browser_info"])).expose_secret(),
+            &arr::<32>(&v["browser_wrapping_key"])
+        );
+        let sealed = bytes(&v["browser_envelope"]);
+        let open = |b: &[u8]| {
+            Envelope::from_bytes(b).and_then(|env| {
+                pwm_crypto::open_signed_browser(
+                    linux,
+                    &env,
+                    &answer,
+                    &Secret::new(challenge),
+                    caller,
+                    &account,
+                    &device,
+                )
+            })
+        };
+        assert_eq!(
+            open(&sealed).unwrap().expose_secret(),
+            &arr::<32>(&v["browser_key"])
+        );
+        assert_tamper_evident(&sealed, |b| open(b).is_ok());
+    }
+}
+
+#[test]
 fn vectors_windows_hello() {
     for v in load(include_str!("../../test-vectors/windows_hello.json")) {
         let account: Id = arr(&v["account_id"]);

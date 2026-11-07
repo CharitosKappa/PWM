@@ -1,8 +1,10 @@
-//! The browser helper on Windows (D69): the browser starts it for the
-//! extension's "Unlock with Windows Hello", with D48's protocol unchanged.
-//! It keeps the extension's key K sealed under a key derived from a Windows
-//! Hello signature (the core's `seal_browser_hello`), one enrolment per
-//! calling extension, account and device. K never touches the disk.
+//! The browser helper on Windows (D69) and Linux (D71): the browser starts
+//! it for the extension's "Unlock with Windows Hello" or "Unlock with Linux
+//! login", with D48's protocol unchanged. It keeps the extension's key K
+//! sealed under a key derived from the platform key's answer (the core's
+//! `seal_signed_browser`): a Windows Hello signature, or the Linux key
+//! holder's answer behind polkit. One enrolment per calling extension,
+//! account and device. K never touches the disk.
 //!
 //! The protocol: one framed JSON message in, one out. `enroll {account_id,
 //! device_id, key}`, `unlock {account_id, device_id}` and `forget
@@ -15,7 +17,8 @@ use std::io::{self, Read, Write};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use pwm_crypto::{
-    Envelope, Secret, hkdf_sha256, open_browser_hello, seal_browser_hello, windows_hello_challenge,
+    Envelope, Secret, hkdf_sha256, open_signed_browser, seal_signed_browser,
+    windows_hello_challenge,
 };
 use pwm_hello::{HelloError, HelloKey};
 use serde::{Deserialize, Serialize};
@@ -68,7 +71,7 @@ pub const REGISTRY_KEYS: &[(&str, bool)] = &[
 pub fn manifest(firefox: bool, helper_path: &str) -> String {
     let mut json = serde_json::json!({
         "name": HOST_NAME,
-        "description": "PWM: unlock with Windows Hello",
+        "description": "PWM: unlock the browser extension",
         "path": helper_path,
         "type": "stdio",
     });
@@ -129,10 +132,10 @@ pub trait Store {
     fn ids(&self) -> Vec<String>;
 }
 
-#[cfg(windows)]
 pub mod store;
 
 pub mod hosts;
+pub mod manifest_hosts;
 
 #[derive(Deserialize)]
 struct Request {
@@ -314,7 +317,8 @@ impl<'a> Handler<'a> {
             if first.expose_secret() != second.expose_secret() {
                 return Err("unavailable");
             }
-            let envelope = seal_browser_hello(
+            let envelope = seal_signed_browser(
+                self.hello.signer(),
                 key,
                 first.expose_secret(),
                 &challenge,
@@ -371,7 +375,8 @@ impl<'a> Handler<'a> {
             Err(error) => return Reply::failed(hello_error(error)),
         };
         // A signature that doesn't open K: the key changed (a reset).
-        match open_browser_hello(
+        match open_signed_browser(
+            self.hello.signer(),
             &envelope,
             signature.expose_secret(),
             &challenge,
@@ -398,3 +403,6 @@ mod tests;
 
 #[cfg(test)]
 mod hosts_tests;
+
+#[cfg(test)]
+mod manifest_hosts_tests;

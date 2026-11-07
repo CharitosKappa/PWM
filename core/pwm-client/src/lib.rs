@@ -32,6 +32,8 @@ pub use passkey::{
     PasskeyCreateCheck, asset_links_includes, passkey_asset_links_url,
 };
 pub use pwm_autofill::{AppLinkError, app_link};
+/// Which platform key answers the desktop's unlock challenge (D68, D71).
+pub use pwm_crypto::Signer;
 pub use pwm_crypto::{KdfParams, Secret};
 pub use pwm_generator::{
     PassphraseOptions, PasswordOptions, Strength, generate_passphrase, generate_password, strength,

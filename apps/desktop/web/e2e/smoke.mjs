@@ -54,6 +54,17 @@ async function waitFor(text, ms = 30_000) {
   }
 }
 
+/** Waits until the window's text contains one of `texts`. */
+async function waitForAny(texts, ms = 30_000) {
+  const end = Date.now() + ms;
+  for (;;) {
+    const body = await run("return document.body.innerText;");
+    if (texts.some((text) => body.includes(text))) return body;
+    if (Date.now() > end) throw new Error(`none of ${texts} in: ${body}`);
+    await sleep(250);
+  }
+}
+
 const click = (text) =>
   run(
     `const b = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === arguments[0] && !b.disabled);
@@ -102,7 +113,13 @@ try {
   await type("*password", PASSWORD);
   await sleep(300);
   await run(`document.querySelector("button.primary").click();`);
-  await waitFor("No items here yet");
+  // Where the computer has Linux login (the key holder, D71), the one offer
+  // after a master password unlock comes first (D45 §3).
+  const unlocked = await waitForAny(["No items here yet", "next time?"]);
+  if (unlocked.includes("next time?")) {
+    await click("Not now");
+    await waitFor("No items here yet");
+  }
   await waitFor("Synced");
 
   await click("Generator");

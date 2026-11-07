@@ -3524,3 +3524,94 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **No tray in the Flatpak:** the GNOME runtime has no appindicator library, and Tauri's tray panics when it's missing, which CI's first Flatpak run caught. The app now treats that as no tray, as on GNOME. Bundling the library would bring LGPL code into our package (§2). The `.deb` depends on it.
   - **CI:** `desktop-installer-windows` and `desktop-installer-linux`, on the `desktop-changes` filter, keep the installers for 7 days.
   - **Not run on this computer:** the installers themselves, by §10. Building with the CLI (`--no-bundle`) checked the settings and the helper's copy.
+- **D71 — Unlock on Linux with polkit, for the desktop app and the browser extensions: a root key holder, the construction, packaging, and tests** · settled 2026-11-07 · founder (approved as proposed).
+  M7.8 asks for "browser unlock on Linux (D69 §5): the helper asks polkit or fprintd, with the desktop's own unlock (D68 §7)". D69 §5 explains why it waited: on Linux a key the helper keeps in the Secret Service or a file is readable by any process of this user without a prompt, so it would only skip the master password. The platforms so far rest on a key the user's processes can't read: the Secure Enclave (D45, D48) and the TPM behind Windows Hello (D68, D69).
+
+  What Linux offers:
+  - **polkit** asks the user to confirm with their login password, or a fingerprint where PAM is set up for it (`pam_fprintd`), in the desktop's own dialog (GNOME, KDE and the others ship an agent). It answers yes or no and holds no secret.
+  - **fprintd** checks a finger and also holds no secret, and it isn't on every computer. polkit already uses it where it's set up.
+  - **The boundary between users:** a file only root can read is out of reach of this user's processes.
+
+  Open:
+  - how a key gets a gesture in front of it
+  - the construction, and whether D68 and D69 carry over
+  - which computers, browsers and packages
+  - the screens' wording
+  - packaging and uninstalling
+  - tests
+
+  Proposal:
+  1. **A root key holder behind polkit: `pwm-keyholder`.** A small binary installed at `/usr/libexec/pwm/pwm-keyholder`, run only through `pkexec`.
+     - **A polkit action, `invalid.pwm.unlock`** (a placeholder until D1): `auth_self` for the active session, with no remembered answer, so each call shows the dialog ("Confirm it's you to unlock PWM"). Inactive and remote sessions are refused.
+     - **What it keeps:** for each name, a random 32-byte secret S in `/var/lib/pwm/keys/<uid>/`, readable only by root, the user taken from `PKEXEC_UID`. It never returns S.
+     - **Two commands:**
+       - `create <name>` makes or replaces S.
+       - `sign <name>` reads a 32-byte challenge on stdin and answers `HKDF-SHA256(ikm = S, salt = challenge, info = "pwm/linux-polkit/response/v1")`.
+     - **So it works like a Windows Hello key:** a gesture, then a fixed answer for a fixed challenge, from a secret the user's processes can't read. The answer is computed in `pwm-crypto` (a new `linux_polkit_response`), so no crypto lives in the app.
+     - **No delete command:** turning it off deletes what the user's side keeps (the challenge and the sealed key), after which S opens nothing. The packages remove `/var/lib/pwm` on purge. That saves a prompt on every sign-out.
+     - **Checks:** it runs only as root with `PKEXEC_UID` set. A name is 32 hex digits. The folder is made 0700 and the files 0600, written atomically. Nothing is logged.
+  2. **D68 and D69 carry over unchanged, with Linux's own labels.**
+     - **The desktop's unlock (D68):** a `PolkitKey` implements the `HelloKey` trait through `pkexec`. Turning it on makes S and signs twice (three dialogs, as on Windows), and each unlock signs once.
+     - **The browser helper (D69):** the same handler and protocol, with `PolkitKey` instead of Windows Hello.
+     - **Its own labels,** so no key can stand in for another platform's: info `pwm/linux-polkit/v1` with AAD `pwm/linux-polkit`, and info `pwm/browser-unlock/linux-polkit/v1` with AAD `pwm/browser-unlock/linux-polkit`. The core's D68 and D69 functions take the platform as a parameter. Windows' labels and vectors don't change, and Linux gets new vectors.
+     - **"Changed":** an answer that doesn't open the sealed key (S lost, say after a purge) deletes the enrolment and asks for the master password, as D68 and D69 do.
+     - **D45's rules stay:** the master password every 14 days and at each sign-in.
+  3. **What it guards against, written into `SECURITY.md`:**
+     - **Guarded:** this user's processes can't read S. A copied home folder or browser profile holds only the challenge and the sealed key. Every unlock shows polkit's dialog.
+     - **Not guarded:**
+       - root
+       - a disk image of a computer without full-disk encryption, which holds both halves
+       - malware running as the user that makes the call, which still needs the user's gesture in the dialog (as D48 says for the Mac)
+     - **No enrolment check:** polkit can't tell a new fingerprint was added, unlike `.biometryCurrentSet`.
+     - **Weaker than the TPM, said plainly in the docs.** A TPM-sealed variant can come later where a TPM exists, with its own decision.
+  4. **Where it works:**
+     - **Packages:** the `.deb` and `.rpm` (D70), which install the key holder and the action.
+     - **Not in the Flatpak:** a sandbox can't run `pkexec`. The switch doesn't show there, and the gap is logged.
+     - **Browsers that are packages too:** Chrome, Chromium, Edge, Brave, Vivaldi and Firefox. The switch writes each one's manifest under the user's home, only for browsers whose profile folder exists:
+       - `~/.config/google-chrome/`, `chromium/`, `microsoft-edge/`, `BraveSoftware/Brave-Browser/` and `vivaldi/`, each with `NativeMessagingHosts/`
+       - `~/.mozilla/native-messaging-hosts/`
+       - Opera's folder gets checked on a real computer.
+     - **Not Snap or Flatpak browsers:** they can't start a helper on the computer. Firefox's portal for this is too young. Logged as a gap.
+     - **Without a polkit agent** (a bare window manager), `pkexec` fails: the switch says "unavailable" and the master password stays.
+  5. **The screens:**
+     - **The name:** `biometricName` is "Linux login" on Linux (the desktop, and the extension when the user agent says Linux and not Android). Labels read "Unlock with Linux login".
+     - **Linux's texts:** like Windows' (D69 §6), naming the PWM app for Linux. "Linux login" is the founder's to change.
+     - **The desktop's switch:** "Allow browser extensions to unlock with Linux login", as on Windows.
+  6. **Packaging (D70):**
+     - **The `.deb` and `.rpm` add three files:**
+       - `/usr/libexec/pwm/pwm-keyholder`
+       - `/usr/share/polkit-1/actions/invalid.pwm.unlock.policy`
+       - `pwm-browser-helper` next to the app in `/usr/bin`
+     - **Removing** (`.deb` purge, `.rpm` erase) deletes `/var/lib/pwm`.
+     - **Left behind:** the manifests in each home folder, which name a helper that's gone, so the extension says it needs the app.
+  7. **No new crates:** `hkdf` and `getrandom` through `pwm-crypto`, and `std`. The key holder finds its user from `PKEXEC_UID` and checks it's root from `/proc/self`'s owner, so no `unsafe` and no `libc`.
+  8. **Tests:**
+     - **Core:** `linux_polkit_response` and the Linux labels, with new vectors in Rust and `verify.mjs`.
+     - **`pwm-keyholder`:** over a temporary folder, with the root check injected: names, determinism, users kept apart, and replacing on `create`.
+     - **`PolkitKey`:** with a fake `pkexec`.
+     - **The Linux manifests:** written and removed against a temporary home.
+     - **The extension and the screens:** the wording.
+     - **CI (`desktop-linux`):**
+       - Install the key holder and the action, plus a polkit rule that allows the runner without a dialog (a `.pkla` file, since Ubuntu 22.04 has polkit 0.105).
+       - Through the real `pkexec`: create, sign twice and compare, then a browser enrolment and unlock through the helper's framing.
+     - **CI (`desktop-installer-linux`):** the `.deb` has the three files, and removing it with purge deletes `/var/lib/pwm`.
+     - **Manual, in `QUALITY.md`:** on Ubuntu (GNOME) and Fedora (KDE), with a password and with a fingerprint: the desktop's unlock and browser unlock in Chrome and Firefox, a cancelled dialog, and turning it off.
+
+  Alternatives:
+  - **The key in the Secret Service or a file, behind a polkit check in our own process:** any process of the user reads it without the dialog (D69 §5).
+  - **fprintd directly:** no secret, not on every computer, and polkit already uses it.
+  - **A system D-Bus service checking polkit itself:** the peer's user comes straight from the bus, but it needs a service file and a systemd unit. `pkexec` is enough for a few calls a day.
+  - **TPM 2.0 sealing:** hardware-backed, but not on every computer, with no gesture of its own, and much more code. Kept for later.
+  - **The same labels as Windows:** fewer core changes, but the names would lie about where a key came from.
+
+  Implementation notes (M7.8):
+  - **The core:** `Signer` (`WindowsHello`, `LinuxPolkit`) picks the labels for D68's and D69's constructions: `seal_signed_unlock`, `open_signed_unlock`, `seal_signed_browser` and `open_signed_browser`, with Windows' functions kept as wrappers and their vectors unchanged. A Linux answer is exactly 32 bytes. `linux_polkit_secret` and `linux_polkit_response` serve the key holder. Vectors: `linux_polkit.json`, checked in Rust and by `verify.mjs`. `pwm-client`'s `export_windows_hello` and `unlock_windows_hello` take the `Signer`.
+  - **`pwm-keyholder`** (`apps/desktop/keyholder`): `create` and `sign`. Exit codes: 2 for no secret (the app's "changed"), 3 for a bad request or a run without `pkexec`, 4 for storage. A secret's file is a version byte, then S.
+  - **Names differ from §1:** the key holder takes 1 to 64 of `a-z`, `0-9` and `-`, not 32 hex digits, because the app's key names carry the account id ("PWM <account>" becomes `pwm-<account>`). They are plain file names either way.
+  - **`PolkitKey`** (`pwm-hello`'s `polkit` module) implements `HelloKey` through `/usr/bin/pkexec`. `HelloKey` gained `signer()`. It's supported when the key holder and `pkexec` are installed and `/.flatpak-info` is absent. A dismissed dialog (exit code 126) is `cancelled`; a refusal (127) is `unavailable`.
+  - **The helper on Linux:** the same `Handler` with `PolkitKey`. Records go to `$XDG_DATA_HOME/pwm/browser-unlock/` (or `~/.local/share`), as 0600 files.
+  - **The switch on Linux:** `ManifestHosts` writes `invalid.pwm.browser.json` into each installed browser's folder. It's on when one of them names our helper. With no browser installed, the new code `browser_not_found` says to install one. Windows' `BrowserHosts` and `ManifestHosts` share a `Hosts` trait.
+  - **The screens:** "Linux login" on the desktop for Linux, and in the extension when the user agent says Linux and not Android. The Linux texts name the PWM app for Linux and the `.deb` or `.rpm` package.
+  - **Packaging:** `installer.linux.conf.json` adds the helper (`externalBin`, in `/usr/bin`), the key holder and the action file to both packages, plus `linux/postrm.sh`, which deletes `/var/lib/pwm` on `purge` (`.deb`) or `0` (`.rpm`).
+  - **CI:** `desktop-linux` installs the key holder, the action and a `.pkla` rule for the runner, then runs the real `pkexec` through `PolkitKey` and the helper. It checks the folder is root's with mode 700 and that the key holder refuses to run without `pkexec`. `desktop-installer-linux` checks the three files in the packages and that purging deletes `/var/lib/pwm`.
+  - **Not run anywhere yet:** polkit's real dialog with a password and a fingerprint, in GNOME and KDE, and a real browser starting the helper (`QUALITY.md`, desktop step 15).

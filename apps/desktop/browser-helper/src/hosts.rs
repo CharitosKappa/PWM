@@ -28,10 +28,21 @@ pub trait Registry: Send + Sync + 'static {
 /// Why turning it on failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostsError {
-    /// `pwm-browser-helper.exe` isn't next to the app.
+    /// `pwm-browser-helper` isn't next to the app.
     HelperMissing,
     /// A manifest or a registry key couldn't be written.
     Storage,
+    /// Linux: none of the browsers it knows is installed (D71 §4).
+    NoBrowser,
+}
+
+/// The desktop's switch: registering the helper with the browsers, and
+/// undoing it. The registry on Windows ([`BrowserHosts`]), manifest files
+/// on Linux (`ManifestHosts`).
+pub trait Hosts: Send + Sync {
+    fn is_on(&self) -> bool;
+    fn turn_on(&self) -> Result<(), HostsError>;
+    fn turn_off(&self, hello: &dyn HelloKey);
 }
 
 pub struct BrowserHosts {
@@ -80,15 +91,17 @@ impl BrowserHosts {
     fn names_ours(&self, key: &str, firefox: bool) -> bool {
         self.registry.get(key).as_deref() == self.manifest_path(firefox).to_str()
     }
+}
 
+impl Hosts for BrowserHosts {
     /// On when every browser's key names our manifest.
-    pub fn is_on(&self) -> bool {
+    fn is_on(&self) -> bool {
         REGISTRY_KEYS
             .iter()
             .all(|(key, firefox)| self.names_ours(key, *firefox))
     }
 
-    pub fn turn_on(&self) -> Result<(), HostsError> {
+    fn turn_on(&self) -> Result<(), HostsError> {
         if !self.helper.is_file() {
             return Err(HostsError::HelperMissing);
         }
@@ -112,7 +125,7 @@ impl BrowserHosts {
     /// Removes our keys (only where they still name our manifests), the
     /// manifests and their folder once empty, and every enrolment with its
     /// Windows Hello key. Deleting a key needs no prompt.
-    pub fn turn_off(&self, hello: &dyn HelloKey) {
+    fn turn_off(&self, hello: &dyn HelloKey) {
         for (key, firefox) in REGISTRY_KEYS {
             if self.names_ours(key, *firefox) {
                 self.registry.remove(key);

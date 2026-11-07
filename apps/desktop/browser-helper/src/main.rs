@@ -1,6 +1,7 @@
-//! `pwm-browser-helper` (D69): the browser starts it with the caller in its
-//! arguments and one framed message on stdin; it answers once and exits.
-//! On Linux it answers `unavailable` until polkit or fprintd (D69 §5).
+//! `pwm-browser-helper` (D69, D71): the browser starts it with the caller
+//! in its arguments and one framed message on stdin; it answers once and
+//! exits. Windows Hello on Windows; on Linux, the root key holder behind
+//! polkit, through `pkexec` (D71).
 //!
 //! The uninstaller starts it with `--uninstall` (D70 §5): it undoes what
 //! the desktop app's switch did, then exits.
@@ -48,7 +49,7 @@ fn answer(message: &[u8], caller: Option<&str>) -> Vec<u8> {
 /// uninstaller's.
 #[cfg(windows)]
 fn uninstall() {
-    use pwm_browser_helper::hosts::BrowserHosts;
+    use pwm_browser_helper::hosts::{BrowserHosts, Hosts};
     let Ok(helper) = std::env::current_exe() else {
         return;
     };
@@ -60,10 +61,16 @@ fn uninstall() {
     }
 }
 
+/// Linux's packages remove the key holder's secrets themselves (D71 §6).
 #[cfg(not(windows))]
 fn uninstall() {}
 
 #[cfg(not(windows))]
-fn answer(_message: &[u8], _caller: Option<&str>) -> Vec<u8> {
-    Reply::failed("unavailable").to_json()
+fn answer(message: &[u8], caller: Option<&str>) -> Vec<u8> {
+    use pwm_browser_helper::{Handler, callers};
+    let Some(store) = pwm_browser_helper::store::FileStore::new() else {
+        return Reply::failed("unavailable").to_json();
+    };
+    let key = pwm_hello::polkit::PolkitKey::system();
+    Handler::new(callers(), &key, &store).handle(message, caller)
 }

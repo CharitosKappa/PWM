@@ -116,11 +116,13 @@ fn open_backend(dir: &Path) -> Result<Live, Box<dyn std::error::Error>> {
         Device::this_computer(),
         Some(SettingsFile::new(dir)),
     );
-    // Windows Hello unlock (D68); Linux keeps the master password for now.
+    // Windows Hello unlock (D68).
     #[cfg(windows)]
     let backend = backend.with_hello(Box::new(crate::hello::WindowsHello));
-    // Browser extensions unlocking with Windows Hello (D69); Linux waits.
-    #[cfg(windows)]
+    // Linux login: the key holder behind polkit, from the packages (D71).
+    #[cfg(target_os = "linux")]
+    let backend = backend.with_hello(Box::new(pwm_hello::polkit::PolkitKey::system()));
+    // Browser extensions unlocking with Windows Hello (D69) or Linux login (D71).
     let backend = match browser_hosts() {
         Some(hosts) => backend.with_browser_hosts(hosts),
         None => backend,
@@ -136,6 +138,16 @@ fn browser_hosts() -> Option<crate::browser_hosts::BrowserHosts> {
         .ok()?
         .with_file_name("pwm-browser-helper.exe");
     crate::browser_hosts::BrowserHosts::for_this_user(helper)
+}
+
+/// The helper next to the app (`/usr/bin`), the manifests in each
+/// browser's folder under the home (D71 §4).
+#[cfg(not(windows))]
+fn browser_hosts() -> Option<crate::browser_hosts::ManifestHosts> {
+    let helper = std::env::current_exe()
+        .ok()?
+        .with_file_name("pwm-browser-helper");
+    crate::browser_hosts::ManifestHosts::for_this_user(helper)
 }
 
 fn main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {

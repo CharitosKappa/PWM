@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "externalBin": ["binaries/pwm-browser-helper"],
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/libexec/pwm/pwm-keyholder": "../target/release/pwm-keyholder",
+          "/usr/share/polkit-1/actions/invalid.pwm.unlock.policy": "../linux/invalid.pwm.unlock.policy"
+        },
+        "postRemoveScript": "../linux/postrm.sh"
+      },
+      "rpm": {
+        "files": {
+          "/usr/libexec/pwm/pwm-keyholder": "../target/release/pwm-keyholder",
+          "/usr/share/polkit-1/actions/invalid.pwm.unlock.policy": "../linux/invalid.pwm.unlock.policy"
+        },
+        "postRemoveScript": "../linux/postrm.sh"
+      }
+    }
+  }
+}
