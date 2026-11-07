@@ -22,3 +22,17 @@
 - Use tokens, not literal values, in UI code. Add a token here before using a new value.
 - No layout shift: components must reserve space for states (errors, loading) so nothing moves under the cursor.
 - Platform code generation (Swift, Kotlin, CSS variables) is added with the first app that consumes the tokens (M4.2 / M5.1).
+
+## Accessibility
+
+Every UI meets these. The design canvas has an Accessibility page that shows them (text at 200%, what VoiceOver and TalkBack say, keyboard focus), and every board was checked against them in light and dark on 2026-11-07.
+
+- **Contrast:** text 4.5:1, or 3:1 from 24 px (19 px bold). Icons, control outlines, switch tracks and focus rings 3:1 against what is next to them. The token pairs above already meet this; a new pair is checked before use. Placeholders use `text-muted`, never the platform's default grey. Text on a `danger` or `accent` fill uses `accent-text`, which is dark in the dark theme.
+- **Targets:** at least 44 × 44 pt on iOS, 48 × 48 dp on Android, and 24 × 24 px on desktop, the web and in the extension. A pill can look smaller when its touch area reaches the minimum without overlapping a neighbour's.
+- **Text size:** nothing under `caption` (12). All text follows the system text size up to 200%: rows stack, actions move under the text, labels wrap instead of truncating, and passwords and codes break anywhere rather than overflow.
+- **Never colour alone:** a state also changes shape, weight or text. Off switches are outlined, the current page or tab is bold or marked, strength and health always have a word, charts use patterns or labels.
+- **Focus:** a 2 px `focus` ring 2 px outside every focused control, never removed. Tab order follows reading order. Dialogs take focus, keep it inside, and give it back to what opened them.
+- **Screen readers:** every control has a name, including icon-only buttons. A list row is one stop and its copy and show buttons are its actions. Hidden secrets are never spoken; a shown password is read one character at a time. Copies, errors and locking are announced without moving focus.
+- **Motion:** spinners and transitions stop when the system asks for reduced motion.
+- **Allowed:** content behind a modal scrim, the platforms' own sheets (Touch ID, Windows Hello), iOS grouped fields identified by their label, and search fields identified by their icon and placeholder.
+- **Checked by hand on devices** before the beta: VoiceOver, TalkBack, Narrator and Orca (`docs/QUALITY.md`).

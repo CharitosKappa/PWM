@@ -89,7 +89,10 @@ fun PwmTheme(content: @Composable () -> Unit) {
         onSurface = pick(c.text),
         surfaceVariant = pick(c.surface),
         onSurfaceVariant = pick(c.textMuted),
-        outline = pick(c.border),
+        // Material draws text field borders, outlined buttons and off switches
+        // with `outline`, so it is text-muted (3:1); `border` is for dividers.
+        outline = pick(c.textMuted),
+        outlineVariant = pick(c.border),
         error = pick(c.danger),
     )
     val base = MaterialTheme.typography.inManrope()
