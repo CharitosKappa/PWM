@@ -3830,3 +3830,70 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **The desktop and the extensions** show Request a refund, with the date it's possible until. An App Store plan points to Apple's Report a Problem page.
     - **iOS** opens Apple's refund sheet. **Android** refunds Play and Stripe plans.
     - **The message** `refund_window_passed` is in `design/messages.json`.
+- **D73 — Plan gates (M9.3): what Free can do with one-time codes, where the client learns its plan, and the server's limits for share links and attachments** · proposed 2026-11-07 · awaiting founder.
+  M9.3 asks for "plan gates in core (TOTP, attachments, share links) checked client-side and server-side". Several rules are already set:
+  - **D6 §4:** the server is the one source of the plan. Clients cache it, so offline the last known plan holds, for at most the paid period it knew about.
+  - **D72 §4:** a gate never stops exporting, reading, editing or deleting existing items.
+  - **D23 §7:** the core generator doesn't check plans; the gate comes here.
+
+  What's still open:
+  - **What exists:** attachments (M14) and share links (M13) aren't built yet. Only TOTP has something to gate.
+  - **What a Free account can do** with a login that has a TOTP secret.
+  - **How a client learns its plan:** today the plan comes only with sign-in (`GET /v1/account`) and the Plan screen (`GET /v1/billing`), and nothing on the device keeps it.
+
+  Proposal:
+  1. **One-time codes need Premium; the secret stays free.**
+     - **Free still can:** store, see, copy, edit, remove, import and export a login's TOTP secret (the `otpauth://` URI). That's D72's rule, and it means a lapsed user can move their codes to another authenticator at any time.
+     - **Premium (or Family, Teams) is needed for:** the current code, whether shown, copied or filled.
+     - **Where it's checked:** `Client::current_code` returns the new error `plan_required` on Free. Every platform gets its codes from that one function: the extension's background and its fill, the desktop, iOS and its AutoFill extension, Android and its autofill service. So one check covers them all.
+     - **The screens:**
+       - **An item's code:** instead of the code, "One-time codes are part of Premium" with a link to Settings › Plan.
+       - **Editing:** the secret field works the same, with the same caption.
+       - **Autofill:** the code step isn't offered at all. There's no prompt and no message during autofill (CLAUDE.md: no nag prompts during autofill).
+     - **Not chosen:**
+       - **Blocking new secrets on Free:** that would stop editing.
+       - **Keeping codes for secrets added while Premium:** it needs a per-item flag, and importing would get around it.
+     - **Commitment 6** ("nothing moves from free to paid"): codes have never been free in a release, since nothing has launched, so no notice is due.
+  2. **The plan on the device.**
+     - **What the server sends:** two headers on the vault list that every sync starts with (`GET /v1/vaults`), like `pwm-epoch` (D30):
+       - `pwm-plan`: `free`, `premium`, `family` or `teams`
+       - `pwm-plan-until`: Unix ms when the plan stops counting if nothing renews, or absent when it has no end
+     - **`pwm-plan-until` for each status:** it follows D6's `ENTITLED` rule.
+       - **active:** the period end + 3 days
+       - **canceled:** the period end
+       - **past_due:** `grace_until`, or the period end + 3 days while Play hasn't given one
+       - **Free, and a server without billing (every account Premium):** absent
+     - **`GET /v1/account` and `GET /v1/billing`** carry the same two values, as `plan` and `plan_until`. So sign-in and every Plan screen action refresh them too.
+     - **What the client keeps:** `plan` and `plan_until_ms` in the account record.
+       - **SQLite:** migration v3 adds them as nullable columns.
+       - **The extension:** the in-memory snapshot goes to version 2. A version-1 snapshot reads with no plan.
+       - Each has a migration test.
+     - **The rule** (`Client::plan_now(now_ms)`, also given to the apps):
+       - the stored plan while `plan_until_ms` is absent or in the future
+       - Free after that, until a sync says otherwise
+       - **Unknown** (an account signed in before this version, or an old server without the headers): treated as Premium until the first sync, so an update never takes codes away from anyone.
+     - **This gate is a courtesy, not protection:** the secret is the user's own, and a modified client could compute codes. The point is to be honest about what Premium includes, not DRM.
+  3. **The server's limits, ready for M13 and M14.**
+     - **One table in `server/src/billing/`,** read through the same function as the plan (D6 §4):
+       - **Free:** 1 share link a day, 0 bytes of attachments
+       - **Premium, Family, Teams:** unlimited share links, 1 GiB of attachments per person
+       - **A server without billing:** like Premium
+     - **`GET /v1/account` and `GET /v1/billing`** carry them as `limits: { share_links_per_day, attachment_bytes }`. A null value means unlimited.
+     - **`ApiError::PlanRequired`:** 403 `{"error":"plan_required"}`, for the share and attachment routes when they come. It joins `design/messages.json`.
+     - **M13 and M14 check the limits in their routes,** with their own tests. M9.3 tests the table, the summary and the error.
+  4. **Tests:**
+     - **Core:**
+       - `current_code` gives a code on Premium, on an unknown plan and with no end date
+       - it refuses on Free and after `plan_until_ms`
+       - the v3 store migration and the v2 snapshot
+       - the sync engine storing the two headers, and keeping the old values when they're missing
+     - **Server:** the headers, `plan_until` for each status, a server without billing, and the limits table.
+     - **The apps:** the extension's background, the desktop's samples, the Apple and Android view-model tests for the item screen on Free, and an autofill test that the code step is skipped.
+  5. **Docs:**
+     - **`PRICING.md`:** a section "What Free does with paid items".
+     - **`SECURITY.md`:** the two headers carry only the plan and a date.
+     - **The ROADMAP entry for M9.3:** attachments and share links done as limits only, with the route checks moving to M13 and M14.
+
+  Alternatives:
+  - **Read `GET /v1/billing` on each sync:** one more request per sync. The headers cost nothing.
+  - **Gate only in the screens:** each of six platforms would need its own check, and an autofill path could miss it.
