@@ -22,7 +22,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use pwm_server::{
-    AppState, Config, DEFAULT_LISTEN, LogFormat, Push, ServerError, app, connect,
+    AppState, Billing, Config, DEFAULT_LISTEN, LogFormat, Push, ServerError, app, connect,
     generate_server_secrets, install_panic_hook, log_subscriber, migrate,
 };
 use tokio::net::TcpListener;
@@ -193,9 +193,12 @@ async fn run() -> Result<(), ServerError> {
         tracing::info!("push over FCM is on");
     }
     let push = Push::start(pool.clone(), config.push, config.fcm);
+    let billing = Billing::new(config.billing)?;
+    billing.start_daily(pool.clone());
     let state = AppState::new(pool.clone(), config.server_secrets)
         .with_trusted_proxies(config.trusted_proxies)
-        .with_push(push);
+        .with_push(push)
+        .with_billing(billing);
     // The peer address is needed for per-IP rate limits.
     axum::serve(
         listener,

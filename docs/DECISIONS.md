@@ -25,7 +25,6 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **System controls:** on Apple, navigation titles and other system controls keep the system font.
 - **D4 — Launch segment**: consumers first (this plan) vs SMB self-hosted first.
 - **D5 — Company jurisdiction and hosting region**: EU (Greece/Switzerland/Germany hosting) is a selling point.
-- **D6 — Entitlements/billing**: RevenueCat vs own entitlement service on Stripe + store receipts. · proposed 2026-11-07 · awaiting founder: the full proposal is at the end of this file.
 - **D7 — Bundled extras**: email aliases (planned Phase 3) yes; VPN no.
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D32 — Transactional email provider** · open · founder. Needed for M10.7: email verification at sign-up (so registration stops revealing which emails have accounts) and account notices. To choose: provider and region (EU hosting fits D5), and its licence and data-processing terms.
@@ -3615,7 +3614,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Packaging:** `installer.linux.conf.json` adds the helper (`externalBin`, in `/usr/bin`), the key holder and the action file to both packages, plus `linux/postrm.sh`, which deletes `/var/lib/pwm` on `purge` (`.deb`) or `0` (`.rpm`).
   - **CI:** `desktop-linux` installs the key holder, the action and a `.pkla` rule for the runner, then runs the real `pkexec` through `PolkitKey` and the helper. It checks the folder is root's with mode 700 and that the key holder refuses to run without `pkexec`. `desktop-installer-linux` checks the three files in the packages and that purging deletes `/var/lib/pwm`.
   - **Not run anywhere yet:** polkit's real dialog with a password and a fingerprint, in GNOME and KDE, and a real browser starting the helper (`QUALITY.md`, desktop step 15).
-- **D6 — Entitlements and billing: our own service on Stripe and the stores' server APIs, the server as the one source of the plan, and how each `PRICING.md` commitment holds per store** · proposed 2026-11-07 · awaiting founder.
+- **D6 — Entitlements and billing: our own service on Stripe and the stores' server APIs, the server as the one source of the plan, and how each `PRICING.md` commitment holds per store** · settled 2026-11-07 · founder (approved as proposed, with the Play Billing Library download, its licence exception once confirmed, and the first charge counting for refunds).
   M9.1 asks for an "entitlements service (decision D6); Stripe web checkout; App Store / Play Billing". `PRICING.md` names the choice: RevenueCat or our own service. What's already in place:
   - **The `subscriptions` table** (migration 0001), provider-neutral: plan, status, provider (`stripe`, `app_store`, `play`), the provider's reference, price and currency, `current_period_end`, `price_locked_until`, `cancel_at_period_end`. One row per account.
   - **`GET /v1/account`** already answers `plan`: `free` without a live subscription, and a canceled one lasts to the end of the paid period.

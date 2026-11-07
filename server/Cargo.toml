@@ -13,11 +13,12 @@ workspace = true
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "matched-path", "tokio"] }
 base64 = "0.23.1"
-# Push over APNs (D50 §3): HTTP/2 with rustls, and ES256 provider tokens.
+# Push over APNs (D50 §3) and the billing providers (D6): HTTP/1.1 and 2
+# with rustls, and ES256 tokens.
 http-body-util = "0.1"
-hyper = { version = "1", default-features = false, features = ["client", "http2"] }
-hyper-rustls = { version = "0.27", default-features = false, features = ["http2", "native-tokio", "ring", "tls12"] }
-hyper-util = { version = "0.1", default-features = false, features = ["client-legacy", "http2", "tokio"] }
+hyper = { version = "1", default-features = false, features = ["client", "http1", "http2"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "native-tokio", "ring", "tls12"] }
+hyper-util = { version = "0.1", default-features = false, features = ["client-legacy", "http1", "http2", "tokio"] }
 p256 = { version = "0.14.0", default-features = false, features = ["ecdsa", "pkcs8", "pem", "alloc"] }
 pwm-crypto = { version = "0.0.0", path = "../core/pwm-crypto" }
 # Push over FCM (D60 §2): RS256 for the OAuth token only. Already in the build through rustls.
@@ -35,6 +36,9 @@ uuid = { version = "1", features = ["serde"] }
 # A fake APNs over HTTP/2 without TLS (D50 §3).
 axum = { version = "0.8", default-features = false, features = ["http1", "http2", "tokio"] }
 tower = { version = "0.5", default-features = false, features = ["util"] }
+# Signing Stripe webhooks in the billing tests (D6); both already in the build.
+hmac = "0.13.0"
+sha2 = "0.11.1"
 # The sync client and the app API, end to end against this server (D28, D31).
 pwm-client = { path = "../core/pwm-client" }
 pwm-store = { path = "../core/pwm-store" }

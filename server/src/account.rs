@@ -117,24 +117,21 @@ struct AccountResponse {
     x25519_pub: Vec<u8>,
     #[serde(with = "b64")]
     ed25519_pub: Vec<u8>,
-    plan: String,
+    /// The plan, its subscription and what this server sells (D6 §7).
+    #[serde(flatten)]
+    billing: crate::billing::Summary,
 }
 
-/// The sealed keyset and what unlocking needs, plus the plan: `free`
-/// without a live subscription (a canceled one lasts to the end of the paid
-/// period, `PRICING.md` §4).
+/// The sealed keyset and what unlocking needs, plus the plan (D6 §4, §7):
+/// `free` without a subscription that counts (a canceled one lasts to the
+/// end of the paid period, `PRICING.md` §4), and `premium` for every account
+/// on a server without billing.
 async fn account(
     State(state): State<AppState>,
     auth: Authenticated,
 ) -> Result<Json<AccountResponse>, ApiError> {
     let row = sqlx::query(
-        "SELECT a.email, a.kdf_m, a.kdf_t, a.kdf_p, a.salt_pw, a.sealed_keyset, \
-                a.x25519_pub, a.ed25519_pub, \
-                CASE WHEN s.status IN ('active', 'past_due') \
-                       OR (s.status = 'canceled' AND s.current_period_end > now()) \
-                     THEN s.plan ELSE 'free' END \
-         FROM accounts a LEFT JOIN subscriptions s ON s.account_id = a.id \
-         WHERE a.id = $1",
+        "SELECT email, kdf_m, kdf_t, kdf_p, salt_pw, sealed_keyset, x25519_pub, ed25519_pub \n         FROM accounts WHERE id = $1",
     )
     .bind(auth.account_id)
     .fetch_one(&state.pool)
@@ -147,7 +144,7 @@ async fn account(
         sealed_keyset: row.get(5),
         x25519_pub: row.get(6),
         ed25519_pub: row.get(7),
-        plan: row.get(8),
+        billing: crate::billing::summary(&state.pool, &state.billing, auth.account_id).await?,
     }))
 }
 

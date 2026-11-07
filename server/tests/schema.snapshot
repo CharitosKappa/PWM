@@ -12,6 +12,9 @@ table accounts
   column ed25519_pub bytea not null
   column opaque_record bytea not null
   column created_at timestamp with time zone not null default now()
+  column billing_token uuid not null default gen_random_uuid()
+  column stripe_customer text null
+  constraint accounts_billing_token_key: UNIQUE (billing_token)
   constraint accounts_ed25519_pub_check: CHECK ((octet_length(ed25519_pub) = 32))
   constraint accounts_email_check: CHECK (((email = btrim(email)) AND (POSITION(('@'::text) IN (email)) > 1)))
   constraint accounts_email_key: UNIQUE (email)
@@ -21,9 +24,13 @@ table accounts
   constraint accounts_pkey: PRIMARY KEY (id)
   constraint accounts_salt_pw_check: CHECK ((octet_length(salt_pw) = 16))
   constraint accounts_sealed_keyset_check: CHECK ((octet_length(sealed_keyset) >= 41))
+  constraint accounts_stripe_customer_check: CHECK ((stripe_customer ~ '^cus_[A-Za-z0-9]{1,64}$'::text))
+  constraint accounts_stripe_customer_key: UNIQUE (stripe_customer)
   constraint accounts_x25519_pub_check: CHECK ((octet_length(x25519_pub) = 32))
+  index CREATE UNIQUE INDEX accounts_billing_token_key ON public.accounts USING btree (billing_token)
   index CREATE UNIQUE INDEX accounts_email_key ON public.accounts USING btree (email)
   index CREATE UNIQUE INDEX accounts_pkey ON public.accounts USING btree (id)
+  index CREATE UNIQUE INDEX accounts_stripe_customer_key ON public.accounts USING btree (stripe_customer)
 
 table approvals
   column id uuid not null default gen_random_uuid()
@@ -62,6 +69,16 @@ table autofill_reports
   constraint autofill_reports_site_check: CHECK ((length(site) <= 300))
   index CREATE UNIQUE INDEX autofill_reports_pkey ON public.autofill_reports USING btree (id)
   index CREATE INDEX autofill_reports_received_at ON public.autofill_reports USING btree (received_at)
+
+table billing_events
+  column provider text not null
+  column event_id text not null
+  column received_at timestamp with time zone not null default now()
+  constraint billing_events_event_id_check: CHECK (((event_id <> ''::text) AND (octet_length(event_id) <= 200)))
+  constraint billing_events_pkey: PRIMARY KEY (provider, event_id)
+  constraint billing_events_provider_check: CHECK ((provider = ANY (ARRAY['stripe'::text, 'app_store'::text, 'play'::text])))
+  index CREATE UNIQUE INDEX billing_events_pkey ON public.billing_events USING btree (provider, event_id)
+  index CREATE INDEX billing_events_received_at ON public.billing_events USING btree (received_at)
 
 table devices
   column id uuid not null
@@ -185,17 +202,20 @@ table subscriptions
   column cancel_at_period_end boolean not null default false
   column created_at timestamp with time zone not null default now()
   column updated_at timestamp with time zone not null default now()
+  column grace_until timestamp with time zone null
+  column last_charge_at timestamp with time zone null
+  column sandbox boolean not null default false
   constraint subscriptions_account_id_fkey: FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
   constraint subscriptions_currency_check: CHECK ((currency ~ '^[A-Z]{3}$'::text))
-  constraint subscriptions_pkey: PRIMARY KEY (account_id)
+  constraint subscriptions_pkey: PRIMARY KEY (provider, provider_ref)
   constraint subscriptions_plan_check: CHECK ((plan = ANY (ARRAY['premium'::text, 'family'::text, 'teams'::text])))
   constraint subscriptions_price_minor_check: CHECK ((price_minor >= 0))
   constraint subscriptions_provider_check: CHECK ((provider = ANY (ARRAY['stripe'::text, 'app_store'::text, 'play'::text])))
-  constraint subscriptions_provider_provider_ref_key: UNIQUE (provider, provider_ref)
   constraint subscriptions_provider_ref_check: CHECK ((provider_ref <> ''::text))
+  constraint subscriptions_provider_ref_length_check: CHECK ((octet_length(provider_ref) <= 1024))
   constraint subscriptions_status_check: CHECK ((status = ANY (ARRAY['active'::text, 'past_due'::text, 'canceled'::text, 'expired'::text])))
-  index CREATE UNIQUE INDEX subscriptions_pkey ON public.subscriptions USING btree (account_id)
-  index CREATE UNIQUE INDEX subscriptions_provider_provider_ref_key ON public.subscriptions USING btree (provider, provider_ref)
+  index CREATE INDEX subscriptions_account ON public.subscriptions USING btree (account_id)
+  index CREATE UNIQUE INDEX subscriptions_pkey ON public.subscriptions USING btree (provider, provider_ref)
 
 table tombstones
   column vault_id uuid not null

@@ -21,6 +21,10 @@ const TEXT_COLUMNS: &[(&str, &str)] = &[
         "accounts.email",
         "login lookup and the notices PRICING.md requires",
     ),
+    (
+        "accounts.stripe_customer",
+        "Stripe's customer id for the account (D6 §8)",
+    ),
     ("approvals.platform", "enum, CHECK constraint (D46)"),
     ("approvals.state", "enum, CHECK constraint (D46)"),
     (
@@ -31,6 +35,11 @@ const TEXT_COLUMNS: &[(&str, &str)] = &[
         "autofill_reports.site",
         "the reported site's origin (D38), not tied to any account",
     ),
+    (
+        "billing_events.event_id",
+        "a billing provider's notification id (D6 §8)",
+    ),
+    ("billing_events.provider", "enum, CHECK constraint (D6)"),
     ("devices.platform", "enum, CHECK constraint"),
     ("push_tokens.app", "enum, CHECK constraint (D50)"),
     ("push_tokens.environment", "enum, CHECK constraint (D50)"),
@@ -597,5 +606,79 @@ async fn push_tokens_take_android_after_0007() {
     )
     .await
     .unwrap();
+    db.drop().await;
+}
+
+/// Subscriptions written under 0007 survive 0008, which lets an account
+/// hold more than one and gives every account its own billing token (D6 §8).
+#[tokio::test]
+async fn subscriptions_survive_0008_and_accounts_get_billing_tokens() {
+    let Some(db) = test_db().await else { return };
+    MIGRATOR.run_to(7, &db.pool).await.unwrap();
+    exec(&db.pool, seed()).await.unwrap();
+    let second = format!(
+        "INSERT INTO subscriptions (account_id, plan, status, provider, provider_ref, price_minor, currency, current_period_end)          VALUES ('{A}', 'premium', 'active', 'app_store', '2000000001', 2399, 'EUR', now() + interval '1 year')"
+    );
+    assert!(
+        exec(&db.pool, second.clone()).await.is_err(),
+        "one per account before 0008"
+    );
+
+    migrate(&db.pool).await.unwrap();
+    let kept: (String, String, i64, Option<i64>, bool) = sqlx::query_as(
+        "SELECT plan, provider_ref, price_minor,                 (extract(epoch FROM grace_until))::bigint, sandbox          FROM subscriptions WHERE account_id = $1",
+    )
+    .bind(uuid::Uuid::parse_str(A).unwrap())
+    .fetch_one(&db.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        kept,
+        ("premium".into(), "sub_123".into(), 2400, None, false)
+    );
+    exec(&db.pool, second).await.unwrap();
+    assert_eq!(count(&db.pool, "subscriptions").await, 2);
+
+    let tokens: Vec<uuid::Uuid> = sqlx::query_scalar("SELECT DISTINCT billing_token FROM accounts")
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+    assert_eq!(tokens.len(), 3, "each account has its own token");
+    for sql in [
+        format!("UPDATE accounts SET stripe_customer = 'not-a-customer' WHERE id = '{A}'"),
+        format!(
+            "UPDATE subscriptions SET provider_ref = repeat('x', 1025) WHERE account_id = '{A}' AND provider = 'stripe'"
+        ),
+        "INSERT INTO billing_events (provider, event_id) VALUES ('paypal', 'e')".to_owned(),
+        "INSERT INTO billing_events (provider, event_id) VALUES ('stripe', '')".to_owned(),
+    ] {
+        let err = exec(&db.pool, sql.clone())
+            .await
+            .expect_err(&format!("accepted: {sql}"));
+        let code = err
+            .as_database_error()
+            .and_then(|e| e.code())
+            .map(|c| c.into_owned());
+        assert_eq!(code.as_deref(), Some("23514"), "{sql}: {err}");
+    }
+    exec(
+        &db.pool,
+        format!("UPDATE accounts SET stripe_customer = 'cus_1' WHERE id = '{A}'"),
+    )
+    .await
+    .unwrap();
+    let duplicate = exec(
+        &db.pool,
+        format!("UPDATE accounts SET stripe_customer = 'cus_1' WHERE id = '{B}'"),
+    )
+    .await
+    .expect_err("one customer per account");
+    assert_eq!(
+        duplicate
+            .as_database_error()
+            .and_then(|e| e.code())
+            .as_deref(),
+        Some("23505")
+    );
     db.drop().await;
 }

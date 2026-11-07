@@ -37,7 +37,10 @@ async fn register_login_refresh_and_logout() {
     let (status, me) = call(&app, "GET", "/v1/account", Some(account.access()), None).await;
     assert_eq!(status, StatusCode::OK, "{me}");
     assert_eq!(me["email"], "alice@example.com");
-    assert_eq!(me["plan"], "free");
+    // No billing on this server: every account is Premium (D6 §7).
+    assert_eq!(me["plan"], "premium");
+    assert_eq!(me["billing"], json!([]));
+    assert_eq!(me["subscription"], json!(null));
     assert_eq!(unb64(&me["sealed_keyset"]), account.sealed_keyset);
     assert_eq!(unb64(&me["x25519_pub"]), account.keyset.x25519_public());
 

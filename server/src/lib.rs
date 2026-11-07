@@ -6,6 +6,7 @@ mod account;
 mod api;
 mod approvals;
 mod auth;
+mod billing;
 mod config;
 mod db;
 mod email;
@@ -20,6 +21,9 @@ mod session;
 mod vaults;
 
 pub use api::AppState;
+pub use billing::{
+    AppleConfig, Billing, BillingConfig, PLAY_SCOPE, PlayConfig, STRIPE_VERSION, StripeConfig,
+};
 pub use config::{Config, DEFAULT_LISTEN, generate_server_secrets};
 pub use db::{MIGRATOR, connect, healthcheck, mark_restored, migrate};
 pub use email::normalize_email;
