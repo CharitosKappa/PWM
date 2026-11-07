@@ -3830,7 +3830,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **The desktop and the extensions** show Request a refund, with the date it's possible until. An App Store plan points to Apple's Report a Problem page.
     - **iOS** opens Apple's refund sheet. **Android** refunds Play and Stripe plans.
     - **The message** `refund_window_passed` is in `design/messages.json`.
-- **D73 — Plan gates (M9.3): what Free can do with one-time codes, where the client learns its plan, and the server's limits for share links and attachments** · proposed 2026-11-07 · awaiting founder.
+- **D73 — Plan gates (M9.3): what Free can do with one-time codes, where the client learns its plan, and the server's limits for share links and attachments** · settled 2026-11-07 · founder (approved as proposed).
   M9.3 asks for "plan gates in core (TOTP, attachments, share links) checked client-side and server-side". Several rules are already set:
   - **D6 §4:** the server is the one source of the plan. Clients cache it, so offline the last known plan holds, for at most the paid period it knew about.
   - **D72 §4:** a gate never stops exporting, reading, editing or deleting existing items.
