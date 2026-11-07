@@ -557,6 +557,61 @@ public actor Session {
         guard case .approvalUpdated = try await runOnline(first) else { throw PWMError(code: "protocol") }
     }
 
+    // MARK: Plan and billing (D6)
+
+    /// The plan, its subscription, what this server sells and the account's
+    /// billing token for an App Store purchase.
+    public func billing() async throws -> BillingStatus {
+        try await expectBilling(try core { try client.startBillingStatus() })
+    }
+
+    /// A Stripe Checkout page for `plan`, to open in the browser (the Mac
+    /// app, D6 §2). The plan shows once Stripe tells the server it was paid.
+    public func checkoutURL(for plan: Plan) async throws -> URL {
+        guard case let .checkoutUrl(url) = try await runBilling(try core { try client.startCheckout(plan: plan.name) }),
+              let link = URL(string: url)
+        else { throw PWMError(code: "protocol") }
+        return link
+    }
+
+    /// Cancels the Stripe subscription at the end of its period; one in a
+    /// store is `managed_elsewhere`.
+    public func cancelSubscription() async throws -> BillingStatus {
+        try await expectBilling(try core { try client.startCancelSubscription() })
+    }
+
+    /// Lets a canceling Stripe subscription renew again.
+    public func resumeSubscription() async throws -> BillingStatus {
+        try await expectBilling(try core { try client.startResumeSubscription() })
+    }
+
+    /// Hands a finished App Store transaction to the server, which reads it
+    /// from Apple (D6 §3). Finish the transaction after this returns.
+    public func applePurchase(transactionId: String) async throws -> BillingStatus {
+        try await expectBilling(try core { try client.startApplePurchase(transactionId: transactionId) })
+    }
+
+    private func expectBilling(_ first: Step) async throws -> BillingStatus {
+        guard case let .billing(info) = try await runBilling(first) else { throw PWMError(code: "protocol") }
+        return BillingStatus(info)
+    }
+
+    /// A billing call: the server or a provider unavailable (a 503, or no
+    /// connection) is `billing_unavailable`, to try again later.
+    private func runBilling(_ first: Step) async throws -> Outcome {
+        let outcome: Outcome
+        do {
+            outcome = try await run(first)
+        } catch RunEnd.wait {
+            throw PWMError(code: "billing_unavailable")
+        }
+        switch outcome {
+        case .deviceRevoked: throw PWMError(code: "device_revoked")
+        case .signedOut: throw PWMError(code: "signed_out")
+        default: return outcome
+        }
+    }
+
     // MARK: Health (D22, D43 §7)
 
     /// Weak and reused passwords across every vault; local only.

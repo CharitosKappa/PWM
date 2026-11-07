@@ -21,7 +21,7 @@ Most one-star reviews in this market come from broken updates. Release safety is
 | --- | --- | --- |
 | `fmt-lint` (rustfmt, clippy, eslint, swiftlint, ktlint) | every PR | yes |
 | `core-test` + `test-vectors`, and `qpdf --check` on the Emergency Kit's golden PDFs (D42) | every PR | yes |
-| `server-test` | PRs touching server/core | yes |
+| `server-test`, with billing against fake Stripe, App Store and Play servers (D6 §12: no keys, no network) | PRs touching server/core | yes |
 | `extension-test` + autofill fixtures | PRs touching extension/core | yes |
 | `wasm`: both extension builds, `web-ext lint`, Firefox smoke (D40) | PRs touching extension/core | yes |
 | `bindings`: Swift/Kotlin smoke, the Swift package on Linux against a server (D41) | every PR | yes |
@@ -209,6 +209,17 @@ On Windows 11 and on Ubuntu (GNOME) and Fedora (KDE), for each release candidate
     - **Browsers:** in Chrome and Firefox (installed as packages), turn on "Allow browser extensions to unlock with Linux login" in the app, then "Unlock with Linux login" in the extension; lock; unlock with the dialog. Check that Chromium, Edge, Brave and Vivaldi get a manifest when installed, and find Opera's folder.
     - **What isn't offered:** in the Flatpak, turning it on says it needs the `.deb` or `.rpm`. A Snap browser doesn't find the helper.
     - **Removing:** `sudo apt purge pwm` or `sudo dnf remove pwm` deletes `/var/lib/pwm`.
+
+### Billing checklist (D6)
+
+With a server whose `PWM_STRIPE_*`, `PWM_APPLE_*` and `PWM_PLAY_*` settings use Stripe's test mode, the App Store sandbox and a Play license tester, for each release candidate (CI runs only fake providers, with no keys):
+
+1. **Stripe, on the desktop and in the extension:** Settings shows Free. Get Premium opens Checkout in the browser; pay with Stripe's test card `4242 4242 4242 4242`. The return page says to go back; "check again" shows Premium and its renewal date. Cancel plan: it shows when it ends, and Stripe's dashboard shows it canceling at the period end. Keep my plan: it renews again. Ending it in Stripe's dashboard makes the app show Free within a minute.
+2. **The App Store, on an iPhone with a sandbox account:** buy Premium in Settings. The server stores it with the account's token (`subscriptions` has an `app_store` row, `sandbox` true). Manage subscription opens Apple's sheet; turning off renewal there shows when it ends. On the Mac and the desktop the plan shows as managed in the App Store, with no buy button.
+3. **Google Play, with a license tester:** buy Premium in Settings. The server acknowledges it (the Play Console shows it acknowledged). A slow test card shows "waiting for payment", then Premium. Manage subscription opens Play's page.
+4. **Two subscriptions:** with a Stripe plan, buy in the App Store too: every app says there's a second subscription and where to cancel it.
+5. **Another account's purchase:** sign in on the iPhone with a second account, restore purchases: the server refuses it (`purchase_not_yours`) and the second account stays Free.
+6. **A self-hosted server** (no billing settings): every account shows Premium, "Your server includes every feature", and nothing to buy.
 
 ## Success metrics
 

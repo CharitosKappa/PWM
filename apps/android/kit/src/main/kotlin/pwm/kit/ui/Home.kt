@@ -140,7 +140,12 @@ class SettingsModel internal constructor(
     /** Push is set up in this build (D60): the notice switch shows. */
     pushAvailable: Boolean = false,
     private val notices: Notices = NoNotices,
+    /** Google Play Billing (D6 §2), for the Plan section. */
+    playBilling: PlayBilling = NoPlayBilling,
 ) {
+    /** The Plan section (D6): read when Settings shows; listens to Play while unlocked. */
+    val plan = PlanModel(scope, account, playBilling)
+
     enum class Page { MAIN, NOTICES, DEVICES, APPROVALS, HEALTH, EXPORT, IMPORT }
 
     data class State(
@@ -322,6 +327,7 @@ class SettingsModel internal constructor(
     /** The kit, an export's file and an import's file leave memory when the vault locks. */
     internal fun drop() {
         closePages()
+        plan.stop()
         mutable.update { it.copy(kit = null) }
     }
 }

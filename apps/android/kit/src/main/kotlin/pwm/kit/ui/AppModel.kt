@@ -48,6 +48,8 @@ class AppModel(
     private val notices: Notices = NoNotices,
     /** The sites' asset links files for the Credential Manager (D61 §4), kept for an hour. */
     val assetLinks: AssetLinks = AssetLinks(),
+    /** Google Play Billing (D6 §2), for Settings' Plan section. */
+    private val playBilling: PlayBilling = NoPlayBilling,
 ) {
     sealed class Screen {
         data object Loading : Screen()
@@ -217,6 +219,7 @@ class AppModel(
                 onHideFromCapture = ::setHideFromCapture,
                 vault = vault, work = work, files = importFiles,
                 pushAvailable = push.available, notices = notices,
+                playBilling = playBilling,
                 onEditItem = { entry ->
                     vault.edit(entry)
                     home.setTab(HomeModel.Tab.VAULT)
@@ -225,6 +228,8 @@ class AppModel(
             signInAgain = signInAgain,
         )
         show(Screen.Vault(home))
+        // A Play purchase that finished while the app was closed or locked goes to the server now (D6 §3).
+        home.settings.plan.start()
         registerPush(account)
         if (approvalsWaiting) {
             approvalsWaiting = false
@@ -472,6 +477,7 @@ class AppModel(
     }
 
     private fun didSignOut() {
+        (mutable.value.screen as? Screen.Vault)?.model?.settings?.plan?.stop()
         forgetCredentials()
         background.cancel()
         prefs.pushToken = null

@@ -65,6 +65,15 @@ public protocol Account: AnyObject, Sendable {
     // Suggestions above the keyboard (D47 §5).
     func suggestionsOn() async -> Bool
     func setSuggestions(on: Bool) async
+
+    // Plan and billing (D6).
+    func billing() async throws -> BillingStatus
+    /// Stripe's Checkout page, for the browser.
+    func checkoutURL(for plan: Plan) async throws -> URL
+    func cancelSubscription() async throws -> BillingStatus
+    func resumeSubscription() async throws -> BillingStatus
+    /// Right after StoreKit finished a purchase, before finishing it.
+    func applePurchase(transactionId: String) async throws -> BillingStatus
 }
 
 extension Session: Account {}

@@ -3715,3 +3715,31 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Checking the stores' signed receipts ourselves** (Apple's JWS chain to its root, Google's push tokens): no API call per event, but X.509 chain checks and more crypto on the server for little gain, since the API answers anyway.
   - **Stripe on iOS and Android too** (link-outs where the law allows, as in the US and the EU): a lower fee, but the rules differ by country and keep changing, and the review risk lands on launch. It can come later as its own decision.
   - **A merchant of record (Paddle, Lemon Squeezy) instead of Stripe on the web:** they handle VAT and invoices, for a higher fee and less control over the cancel and refund screens the commitments rely on.
+
+  Implementation notes (M9.1):
+  - **The server** (`server/src/billing/`): `Billing` in the app state, off without any provider's settings (`DEPLOYMENT.md` lists them). One HTTPS client (HTTP/1.1 or 2) for all three providers.
+    - **Stripe** pins API version `2025-03-31.basil` and reads the period end from the subscription's item. Customers carry only the billing token. Checkout returns to the server's own `/billing/done` and `/billing/canceled` pages.
+    - **Apple:** "Get All Subscription Statuses" answers for any transaction id, so the purchase call and the notifications use it alone. Production is asked first, then the sandbox, and the row remembers which (`sandbox`).
+    - **Play:** `subscriptionsv2` for the state, then the v1 `:acknowledge` call while the read says it's pending. A `linkedPurchaseToken` expires the purchase it replaced.
+    - **The plan rule** (§4) is one SQL condition (`ENTITLED`): `active` counts with three days' slack after its period end, so a lost notice doesn't cut anyone off before the daily pass runs; Stripe's `past_due` rows have no `grace_until`, so Stripe's retry schedule bounds them (set it to end in cancellation).
+    - **Notifications** are recorded only once handled, so a failed read is retried by the provider. At most 300 reads per minute come from notifications.
+    - **Status and token in one call:** `GET /v1/billing` answers the summary and the billing token, in place of §7's `GET /v1/billing/token`. `GET /v1/account` carries the same summary, as `plan`, `subscription` and `billing` (the providers that sell here).
+    - **Our checkout sells no second plan:** `already_subscribed` when the account has one.
+  - **Left for M9.2:** the refund button (§5), the account-deletion rules (§6, there is no deletion route yet), the outbox with its reminders and notices, and the price-hold checks. Only cancel and resume are in M9.1, since a plan can't be sold without a way to stop it (PRICING.md §4).
+  - **Shared code:** Google's RS256 assertion is shared by FCM and Play (`push::google_assertion`). The rule in `CLAUDE.md` about `ring` now reads "the server's RS256 tokens to Google only: FCM and Play".
+  - **The app API:** `pwm-client` gains `start_billing_status`, `start_checkout`, `start_cancel_subscription`, `start_resume_subscription`, `start_apple_purchase` and `start_play_purchase`, with `Outcome::Billing` and `Outcome::CheckoutUrl`, through the FFI and WASM. Errors keep the server's codes (`ClientError::Billing`), plus `no_subscription` for a 404.
+  - **The desktop and the extensions:** a Plan section in Settings (`ui/src/Plan.tsx`), shown while unlocked. Get Premium opens Checkout with `window.open`, which the desktop sends to the default browser. Cancel plan and Keep my plan are one click each. A store plan says where to manage it, and a second subscription is pointed out.
+  - **Tests:**
+    - **Server:** 8 tests against a fake provider server, plus the 0008 migration test, and 14 unit tests for the providers' parsing, tokens and signatures.
+    - **The app API:** end to end through the server.
+    - **The core:** RFC 4231 vectors for the HMAC check.
+    - **Extension and desktop:** the extension's background against its fake core, and the desktop's protocol samples and its server test.
+  - **The Apple apps:** a Plan section in Settings (`PWMUI/Plan.swift`, `PlanViews.swift`).
+    - **iOS** buys with StoreKit 2 in the app target (`App/AppStorePurchases.swift`), since the package also builds for the AutoFill extension and Linux. The purchase carries the billing token as `appAccountToken`, goes to the server, and is finished only once the server accepted it. Unfinished transactions and `Transaction.updates` are sent while the vault is unlocked. Manage subscription opens Apple's sheet.
+    - **The Mac** opens Stripe's Checkout in the browser, and has one-click cancel and resume.
+    - **Gap: a Stripe plan on iOS** can be canceled there but not resumed, since resuming means paying outside the App Store. iOS says to resume it on a computer.
+    - **Not done:** the StoreKit Testing test (§12) needs a host app, which `swift test` doesn't give. It comes with an Xcode scheme or the iOS UI test. The product id is the placeholder `invalid.pwm.premium.yearly` until D1 and D8, so iOS shows "Premium isn't available in the App Store right now".
+  - **The Android app:** a Plan section in Settings (`kit/ui/Plan.kt`, `app/PlanSection.kt`).
+    - **Buying** goes through Play Billing 9.1.0 (`app/PlayStoreBilling.kt`) with `setObfuscatedAccountId(billingToken)`. The server acknowledges purchases; the app never does. Purchases that finish later reach the server through the listener and `queryPurchasesAsync` at each unlock. A pending payment says so. Manage subscription opens Play's page.
+    - **The product id** is the placeholder `premium_yearly`.
+  - **Messages:** the server's billing codes are in `design/messages.json` for both apps. Each app keeps only its store's own codes.

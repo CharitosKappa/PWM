@@ -529,12 +529,28 @@ class Session(
         syncNow()
     }
 
-    /** A conversation that needs the server: offline is `network`, and a refused session says so. */
-    private suspend fun runOnline(first: Step): Outcome {
+    // --- Plan and billing (D6) ---
+
+    override suspend fun billingStatus(): BillingStatus = on {
+        billing(core { client.startBillingStatus() })
+    }
+
+    override suspend fun playPurchase(productId: String, purchaseToken: Redacted<String>): BillingStatus = on {
+        billing(core { client.startPlayPurchase(productId, purchaseToken.value) })
+    }
+
+    /** Offline or a 503 (the server can't reach the provider) both mean try again later. */
+    private suspend fun billing(first: Step): BillingStatus {
+        val outcome = runOnline(first, waited = "billing_unavailable")
+        return BillingStatus.of((outcome as? Outcome.Billing ?: throw PwmError("protocol")).billing)
+    }
+
+    /** A conversation that needs the server: offline is `network` (or [waited]), and a refused session says so. */
+    private suspend fun runOnline(first: Step, waited: String = "network"): Outcome {
         val outcome = try {
             run(first)
         } catch (e: Wait) {
-            throw PwmError("network")
+            throw PwmError(waited)
         }
         return when (outcome) {
             Outcome.DeviceRevoked -> throw PwmError("device_revoked")

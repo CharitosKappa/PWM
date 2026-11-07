@@ -46,7 +46,7 @@ enum BackgroundRefresh {
 /// notice shows while the app is open too.
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    let model = AppModel.live()
+    let model = AppModel.live(checkout: .appStore(AppStorePurchases()))
 
     func application(
         _ application: UIApplication,

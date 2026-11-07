@@ -61,6 +61,11 @@ public final class AppModel {
     let approvalNotices: any ApprovalNotices
     /// Reading and deleting an import's file (D51 §9).
     let importFiles: any ImportFiles
+    /// Where this app sells plans (D6 §2).
+    let checkout: Checkout
+    /// iOS: App Store transactions that finish outside a purchase, sent to
+    /// the server while the vault is unlocked (D6 §3).
+    private(set) var storeUpdates: Task<Void, Never>?
     /// "Sign in again to sync" (D50 §5), while the vault shows.
     public private(set) var signInAgain: SignInAgainModel?
     private let clock: @MainActor () -> ContinuousClock.Instant
@@ -82,6 +87,7 @@ public final class AppModel {
         browserTouchID: (any BrowserTouchID)? = nil,
         approvalNotices: any ApprovalNotices = NoApprovalNotices(),
         importFiles: any ImportFiles = SystemImportFiles(),
+        checkout: Checkout = .web,
         clock: @escaping @MainActor () -> ContinuousClock.Instant = { ContinuousClock.now }
     ) {
         self.makeAccount = makeAccount
@@ -92,6 +98,7 @@ public final class AppModel {
         self.browserTouchID = browserTouchID
         self.approvalNotices = approvalNotices
         self.importFiles = importFiles
+        self.checkout = checkout
         self.clock = clock
     }
 
@@ -185,6 +192,21 @@ public final class AppModel {
         let server = accountServer.flatMap { $0 == Server.hosted ? nil : $0 }
         settings = SettingsModel(server: server, app: self, account: account)
         screen = .vault
+        listenForStoreTransactions(account: account)
+    }
+
+    /// Unfinished and later App Store transactions go to the server, then
+    /// are finished; the plan on screen updates. Only while unlocked: the
+    /// server call needs the session, and StoreKit offers what's left again.
+    private func listenForStoreTransactions(account: any Account) {
+        guard case let .appStore(store) = checkout else { return }
+        storeUpdates?.cancel()
+        storeUpdates = Task { [weak self] in
+            for await transaction in store.transactions() {
+                guard let status = try? await PlanModel.deliver(transaction, to: account) else { continue }
+                self?.settings?.plan.apply(status)
+            }
+        }
     }
 
     /// Back to welcome once the account is gone from this device.
@@ -197,6 +219,8 @@ public final class AppModel {
     }
 
     private func dropVault() {
+        storeUpdates?.cancel()
+        storeUpdates = nil
         vault = nil
         generator = nil
         settings = nil
