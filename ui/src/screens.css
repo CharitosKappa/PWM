@@ -109,6 +109,12 @@ select {
   padding: var(--space-2);
 }
 
+/* The browser's default placeholder grey is 3.3 to 4.2:1 on our surfaces. */
+::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
 input[type="radio"] {
   padding: 0;
 }
@@ -148,6 +154,8 @@ button.link {
   border: 0;
   background: none;
   padding: 0;
+  /* A 24 px target at least (design/README.md, Accessibility). */
+  min-height: 24px;
   color: var(--color-accent);
   align-self: flex-start;
 }
