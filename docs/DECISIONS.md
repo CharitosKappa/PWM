@@ -25,6 +25,9 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **Scripts:** the extension and desktop builds (`fontFiles(tokens)` in `extension/scripts/tokens.mjs`) and `scripts/fonts.mjs` (the Apple and Android copies, and the notices).
   - **System controls on iOS** · done 2026-11-07. `SystemControls.useAppFonts()` sets Manrope, scaled with Dynamic Type, in navigation bar titles and buttons, tab bar labels and segmented pickers. The app calls it at launch and the AutoFill extension when its view loads.
     - **Still the system font:** alerts, menus and the keyboard, which can't be changed. On macOS, window titles and toolbars also keep it, as in every Mac app.
+  - **Screen readers** · gap logged 2026-11-08. The apps meet the contrast, target and text size rules in `design/README.md`, but only some of the screen reader rules. Until the rest are built, the screen reader checklist in `QUALITY.md` fails on:
+    - **Apple and Android apps:** list rows and item fields aren't one stop with Copy and Show as actions. Nothing is announced after a copy or when the vault locks. Hidden values are drawn as dots in plain text, so a reader may read the dots out. Icon-only buttons already have names, and the strength meter says its word.
+    - **Desktop app and extension (the shared screens):** copies, notices and errors are already announced. Hidden values are also dots in plain text.
 - **D4 — Launch segment**: consumers first (this plan) vs SMB self-hosted first.
 - **D5 — Company jurisdiction and hosting region**: EU (Greece/Switzerland/Germany hosting) is a selling point.
 - **D7 — Bundled extras**: email aliases (planned Phase 3) yes; VPN no.

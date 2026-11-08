@@ -210,6 +210,32 @@ On Windows 11 and on Ubuntu (GNOME) and Fedora (KDE), for each release candidate
     - **What isn't offered:** in the Flatpak, turning it on says it needs the `.deb` or `.rpm`. A Snap browser doesn't find the helper.
     - **Removing:** `sudo apt purge pwm` or `sudo dnf remove pwm` deletes `/var/lib/pwm`.
 
+### Screen reader and text size checklist (D1)
+
+Before the beta, and after any change to a screen's layout. Use VoiceOver on an iPhone and on a Mac, TalkBack on an Android phone, Narrator on Windows 11 with Edge and Chrome, and Orca on Ubuntu (GNOME) with Firefox. Use a test account with synthetic items only: a login with a one-time code, a card and a note. Each reader takes about half an hour. The rules are in `design/README.md` (Accessibility). The canvas's Accessibility page shows what each stop should say.
+
+**How to move:**
+
+- **VoiceOver on iPhone:** swipe right or left to move, double-tap to press. Swipe up or down to go through a stop's actions.
+- **VoiceOver on Mac:** VO is Control+Option; use VO+arrows to move and VO+Space to press.
+- **TalkBack:** swipe right or left to move, double-tap to press. A three-finger tap opens the actions.
+- **Narrator:** Tab and the arrows, Enter to press, Caps Lock+arrows to read.
+- **Orca:** Tab and the arrows, Enter to press. H jumps between headings in Narrator's scan mode and in Orca's browse mode.
+
+**Steps, with each reader:**
+
+1. **Sign in and unlock:** every field says its label (Email, Master password, Secret Key). The password field never reads what was typed. A wrong password is announced without moving focus. The strength meter says its word.
+2. **The vault list:** the title and section names are headings, so they can be jumped between. Each row is one stop that says the name, the username and "has a one-time code" when it has one. Copy password, Copy username and Copy code are that stop's actions, not separate small stops. Icon-only buttons (Add item, Favorite) and the search field say a name. The current tab or section says it is selected.
+3. **An item:** the back button names where it goes. Each field is one stop with its label and value, and the icon tile is skipped. A hidden password says "hidden", never dots or characters. Shown, it can be read one character at a time. After Copy, "Copied" and the 30-second clear are said, and focus stays where it was. The one-time code is read in digit groups, and the countdown isn't read every second.
+4. **Edit and save:** every field has a label, and Generate a password and Scan QR code have names. An error is announced without moving focus. Saving says it saved.
+5. **Dialogs and sheets** (delete, Request a refund, sign out): focus moves into them, stays inside, and goes back to the button that opened them when they close. Escape closes them on the desktop and in the extension.
+6. **Lock:** locking, from the button or the timeout, is announced. After unlocking, focus starts at the top of the vault.
+7. **Autofill:** on the iPhone, the PWM list above the keyboard and in AutoFill Passwords reads each login. On Android, the fill suggestions and the passkey screen do. In the browser, the extension popup (opened with its shortcut) starts on the search field, reads its rows and Fill, and announces the lock.
+8. **Largest text size:** the biggest Dynamic Type size with Larger Accessibility Sizes on, 200% font size on Android, Text size 200% on Windows, and Large Text on GNOME. Nothing is cut off or overlaps. Rows stack and labels wrap. Passwords and codes break instead of running off the screen.
+9. **Reduced motion:** with Reduce Motion (Apple), Remove animations (Android), Animation effects off (Windows) or Animations off (GNOME), spinners and transitions stop.
+
+**For each failure,** note the reader, the screen, what was said and what should have been said. Fix it, or log it under D1 in `DECISIONS.md`, before the beta.
+
 ### Billing checklist (D6)
 
 With a server whose `PWM_STRIPE_*`, `PWM_APPLE_*` and `PWM_PLAY_*` settings use Stripe's test mode, the App Store sandbox and a Play license tester, for each release candidate (CI runs only fake providers, with no keys):
