@@ -3922,7 +3922,7 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
       - **Not done yet:** the editor's caption, which needs the plan in the editors' models. The item screen says it, so nothing is hidden. It's logged here under the platform-parity rule.
     - **Settings › Plan** is named in the text rather than linked: the item screens have no route to Settings on every platform.
   - **Messages:** `plan_required` in `design/messages.json` and the screens' `api.ts`.
-- **D74 — Account deletion (M9.4): proving the master password, deleting at once, subscriptions, wiping every device, and restores** · proposed 2026-11-08 · awaiting founder.
+- **D74 — Account deletion (M9.4): proving the master password, deleting at once, subscriptions, wiping every device, and restores** · settled 2026-11-08 · founder (approved as proposed).
   M9.4 asks for "account deletion in every app (D72 §5): the master password proven again, everything deleted on the server, each device wiped, export offered first, and D6 §6's subscription rules". Apple requires it before launch (App Review guideline 5.1.1(v)). What exists:
   - **The schema:** deleting the `accounts` row already cascades to everything the account owns: devices, sessions, vaults (`owner_id`), vault keys, items, tombstones, shares, subscriptions, approvals, push tokens and the reminders' outbox (D25 §3).
   - **No deletion route.** The server never deletes an account today.
@@ -4010,3 +4010,30 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **A deletion token from the login** (OPAQUE login, then `DELETE /v1/account` with the token): one more secret to store and expire, for the same result as deleting inside finish.
   - **Leaving the other devices on 401:** no new table, but each would keep its cache until its user signs out by hand, which breaks "each device wiped".
   - **Keeping every account id forever** instead of 60 days: covers very old backups, but keeps a trace of every account for good. Backups older than 30 days aren't supported.
+
+  Implementation notes (M9.4, part 1: the server, the core and the bindings):
+  - **§6 changed before building, with the founder's approval:** the database's list alone doesn't survive a restore, since it goes back in time with the backup. So each deletion is also appended to a file outside the database (`PWM_DELETIONS_FILE`, one line `<id> <unix seconds>`, on its own volume), and `mark-restored` deletes again what either lists.
+    - **Order:** the line is written after the commit, so a failed delete never lists a live account. A failed write is logged, and the table still has it.
+    - **The file:** one server writes it. The daily pass prunes lines older than 60 days (written to a new file and renamed over), and a line cut short is skipped. `compose.yaml` adds the `deletions` volume, and the image makes `/var/lib/pwm` the server's.
+  - **The server** (`server/src/deletion.rs`):
+    - The calls use the login's field names: start `{credential_request}` → `{login_id, credential_response}`, finish `{login_id, credential_finalization}` → 204.
+    - `auth.rs`'s OPAQUE steps became `begin_login` and `verify_login`, shared with login. `verify_login` refuses an attempt for another account.
+    - **A failed proof is 403 `invalid_credentials`, not 401:** under a session, 401 means the access token, and the sync engine would refresh and retry.
+    - **Every session's refresh hash** goes to `deleted_sessions`, this device's too, so a retry after a lost answer is told `account_deleted`.
+    - **The push** reuses the content-free background push, read inside the transaction before the cascade, sent after the commit, and not held back by the minute between background pushes.
+  - **Billing** (`end_for_deletion` in `billing/routes.rs`):
+    - Each Stripe and Play subscription that counts (D6's `ENTITLED`) is ended. Stripe refunds the last charge's unused days with D72's idempotency key, so a retry refunds once, then ends the subscription. Play uses `revoke_prorated`.
+    - **What counts as already over:** 404 from a provider. Any other failure is `billing_unavailable`.
+    - **The Stripe customer** is deleted after. If Stripe was turned off on the server since, it's left, with a warning: nothing of it can renew from here.
+  - **The core:**
+    - `pwm-sync`: `SyncOutcome::AccountDeleted` clears the store and keys, like `DeviceRevoked`.
+    - `pwm-client`: `start_delete_account(password, secret_key)` (`deletion.rs`).
+      - It derives the keys as at login. A wrong password or Secret Key fails on the device, as `wrong_password`.
+      - It ends with `Outcome::AccountDeleted` after `sign_out` clears the store.
+      - A 503 is the engine's usual wait: the apps say nothing was deleted, try again later.
+  - **The apps:** each handles `account_deleted` as `device_revoked` (wipe and sign out), and the message joins `design/messages.json`.
+    - Apple and Android: a new `SyncResult` case.
+    - The desktop and the extension: their outcome switches.
+  - **Tests:**
+    - **Server:** 7 in `tests/deletion.rs`, 3 for billing, 1 for push, the rate limit, and the 0010 migration and snapshot.
+    - **Elsewhere:** 1 sync engine test, 1 end-to-end client test against the server, and the extension's background.
