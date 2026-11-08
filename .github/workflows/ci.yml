@@ -7,12 +7,19 @@ on:
   schedule:
     - cron: "0 3 * * *" # nightly audit
   workflow_dispatch:
+    inputs:
+      first_dashboard:
+        description: "First deploy of the autofill dashboard: start its history empty (D77 §4)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # By event too, so a push to main doesn't cancel the nightly run (and the
+  # dashboard deploy at its end, D77).
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 env:
@@ -942,6 +949,48 @@ jobs:
           name: autofill-report
           path: tests/autofill-harness/autofill-report.json
           retention-days: 90
+
+  # The public autofill dashboard (D77): last night's report and the live
+  # history.json become a static page on GitHub Pages. If the history can't
+  # be downloaded, or more than 20% of the sites couldn't load (the runner
+  # broke), nothing is published and the last good page stays up.
+  autofill-dashboard:
+    needs: autofill-top-sites
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: autofill-report
+      - id: pages
+        uses: actions/configure-pages@v5
+      - name: Download the live history
+        if: ${{ !inputs.first_dashboard }}
+        env:
+          BASE_URL: ${{ steps.pages.outputs.base_url }}
+        run: curl -fsSL --retry 3 "$BASE_URL/history.json" -o history.json
+      - name: Build the page
+        env:
+          HISTORY: ${{ inputs.first_dashboard && '--first' || '--history history.json' }}
+        # HISTORY is two words on purpose.
+        run: node tests/autofill-harness/dashboard/build.ts --report autofill-report.json $HISTORY --out site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
 
   extension-test:
     if: github.event_name != 'schedule'
