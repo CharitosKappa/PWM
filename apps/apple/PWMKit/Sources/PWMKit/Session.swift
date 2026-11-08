@@ -10,6 +10,9 @@ public enum SyncResult: Sendable, Equatable {
     case signedOut
     /// This device was revoked: its cache is cleared and the session locked.
     case deviceRevoked
+    /// The account was deleted from another device (D74 §5): as for a
+    /// revoked device.
+    case accountDeleted
 }
 
 /// Something the app may want to show.
@@ -317,6 +320,7 @@ public actor Session {
             return .synced(pulled: pulled, pushed: pushed, conflicts: conflicts, failed: failed)
         case .signedOut: return .signedOut
         case .deviceRevoked: return .deviceRevoked
+        case .accountDeleted: return .accountDeleted
         default: throw PWMError(code: "protocol")
         }
     }
@@ -469,6 +473,7 @@ public actor Session {
         }
         switch outcome {
         case .deviceRevoked: throw PWMError(code: "device_revoked")
+        case .accountDeleted: throw PWMError(code: "account_deleted")
         case .signedOut: throw PWMError(code: "signed_out")
         default: return outcome
         }
@@ -614,6 +619,7 @@ public actor Session {
         }
         switch outcome {
         case .deviceRevoked: throw PWMError(code: "device_revoked")
+        case .accountDeleted: throw PWMError(code: "account_deleted")
         case .signedOut: throw PWMError(code: "signed_out")
         default: return outcome
         }

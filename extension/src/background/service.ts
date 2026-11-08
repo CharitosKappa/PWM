@@ -926,10 +926,12 @@ export class Background {
         this.syncError = "signed_out";
         return;
       case "device_revoked":
-        // The core cleared the cache; nothing of the account stays here.
+      case "account_deleted":
+        // The core cleared the cache; nothing of the account stays here
+        // (D74 §5 for a deleted account).
         await this.platform.session.clear();
         await this.platform.disk.remove(["email", "secretKey", "sealedTokens"]);
-        this.syncError = "device_revoked";
+        this.syncError = step.outcome;
         return;
       default:
         this.syncError = "internal";
