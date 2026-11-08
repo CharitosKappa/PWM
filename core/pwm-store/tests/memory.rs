@@ -4,8 +4,8 @@
 
 use pwm_crypto::{Envelope, Id, KdfParams};
 use pwm_store::{
-    AccountRecord, ItemRecord, MemoryStore, SNAPSHOT_VERSION, Store, StoreError, SyncState,
-    VaultRecord,
+    AccountRecord, ItemRecord, MemoryStore, PlanRecord, SNAPSHOT_VERSION, Store, StoreError,
+    SyncState, VaultRecord,
 };
 use pwm_vault::ItemId;
 
@@ -44,11 +44,19 @@ fn item(n: u8, state: SyncState) -> ItemRecord {
     }
 }
 
+fn plan() -> PlanRecord {
+    PlanRecord {
+        plan: "premium".to_owned(),
+        until_ms: Some(1_800_000_000_000),
+    }
+}
+
 /// A store holding one of everything.
 fn filled() -> MemoryStore {
     let mut store = MemoryStore::new();
     store.put_account(&account(0xA0)).unwrap();
     store.set_server_epoch(&[0xE0; 16]).unwrap();
+    store.set_plan(&plan()).unwrap();
     store.put_vault(&vault(VAULT, 42)).unwrap();
     store.put_vault(&vault([0xB1; 16], 0)).unwrap();
     store
@@ -167,12 +175,47 @@ const SNAPSHOT_V1: &str = include_str!("fixtures/snapshot_v1.hex");
 #[test]
 fn the_frozen_v1_snapshot_loads() {
     let bytes = hex(SNAPSHOT_V1);
-    let store = MemoryStore::load(&bytes).unwrap();
+    let mut store = MemoryStore::load(&bytes).unwrap();
     assert_eq!(store.account().unwrap(), Some(account(0xA0)));
     assert_eq!(store.server_epoch().unwrap(), Some([0xE0; 16]));
     assert_eq!(store.vaults().unwrap().len(), 2);
     assert_eq!(store.items(&VAULT).unwrap().len(), 3);
+    // v1 had no plan: unknown until the next sync (D73 §2).
+    assert_eq!(store.plan().unwrap(), None);
+    // With the plan the next sync brings, it saves as v2.
+    store.set_plan(&plan()).unwrap();
+    assert_eq!(store.snapshot(), hex(SNAPSHOT_V2));
+}
+
+/// A frozen v2 snapshot (hex), with a plan (D73). Never edit.
+const SNAPSHOT_V2: &str = include_str!("fixtures/snapshot_v2.hex");
+
+#[test]
+fn the_frozen_v2_snapshot_loads() {
+    let bytes = hex(SNAPSHOT_V2);
+    let store = MemoryStore::load(&bytes).unwrap();
+    assert_eq!(store.plan().unwrap(), Some(plan()));
+    assert_eq!(store.items(&VAULT).unwrap().len(), 3);
     assert_eq!(store.snapshot(), bytes);
+}
+
+#[test]
+fn a_plan_without_an_end_and_a_bad_name() {
+    let mut store = MemoryStore::new();
+    let free = PlanRecord {
+        plan: "free".to_owned(),
+        until_ms: None,
+    };
+    store.set_plan(&free).unwrap();
+    let loaded = MemoryStore::load(&store.snapshot()).unwrap();
+    assert_eq!(loaded.plan().unwrap(), Some(free));
+    let long = PlanRecord {
+        plan: "x".repeat(33),
+        until_ms: None,
+    };
+    assert!(store.set_plan(&long).is_err());
+    store.clear().unwrap();
+    assert_eq!(store.plan().unwrap(), None);
 }
 
 /// Prints the fixture; run once with `--ignored --nocapture` when the format

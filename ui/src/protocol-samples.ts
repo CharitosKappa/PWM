@@ -436,7 +436,10 @@ export const REPLIES: {
           title: "Work",
         },
       ],
+      codesIncluded: true,
     },
+    // On Free (D73 §1): no code to copy.
+    { items: [], folders: [], codesIncluded: false },
   ],
   item: [
     {
@@ -452,10 +455,28 @@ export const REPLIES: {
       hidden: ["/login/password", "/login/totp", "/history/0/login/password"],
       readOnly: false,
       code: { code: "123456", secondsLeft: 17 },
+      codeNeedsPlan: false,
       passkeys: [{ rpId: "example.com", userName: "a", createdAt: 5 }],
       passwordHistory: [
         { savedAt: 1_762_300_000_000, path: "/history/0/login/password" },
       ],
+    },
+    {
+      vaultId: "00000000-0000-4000-8000-000000000001",
+      itemId: "00000000-0000-4000-8000-000000000002",
+      item: {
+        id: "00000000-0000-4000-8000-000000000002",
+        v: 1,
+        type: "login",
+        title: "Mail",
+        login: { username: "a@example.com", password: "", totp: "" },
+      },
+      hidden: ["/login/password", "/login/totp"],
+      readOnly: false,
+      code: null,
+      codeNeedsPlan: true,
+      passkeys: [],
+      passwordHistory: [],
     },
     {
       vaultId: "00000000-0000-4000-8000-000000000001",
@@ -464,6 +485,7 @@ export const REPLIES: {
       hidden: [],
       readOnly: true,
       code: null,
+      codeNeedsPlan: false,
       passkeys: [],
       passwordHistory: [],
     },

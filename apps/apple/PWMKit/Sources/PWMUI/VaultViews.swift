@@ -492,6 +492,10 @@ struct ItemDetailView: View {
                                 try? await Task.sleep(for: .seconds(1))
                             }
                         }
+                    if model.codeNeedsPlan {
+                        // The secret stays the user's, to move elsewhere (D73 §1).
+                        FieldRow(label: String(localized: "One-time code secret"), value: totp, key: "totp", hidden: true, monospaced: true, model: model)
+                    }
                 }
             }
             if !login.urls.isEmpty {
@@ -668,7 +672,10 @@ struct CodeRow: View {
                 Text("One-time code")
                     .textStyle(Tokens.Text.caption)
                     .foregroundStyle(Tokens.Color.textMuted.color)
-                if model.codeUnsupported {
+                if model.codeNeedsPlan {
+                    Text("One-time codes are part of Premium. See Settings › Plan.")
+                        .foregroundStyle(Tokens.Color.textMuted.color)
+                } else if model.codeUnsupported {
                     Text("Unsupported code type").foregroundStyle(Tokens.Color.textMuted.color)
                 } else if model.hiddenByCapture, model.code != nil {
                     Text(verbatim: ScreenCapture.hiddenLine)
@@ -710,6 +717,7 @@ struct CodeRow: View {
     }
 
     private var spokenValue: Text {
+        if model.codeNeedsPlan { return Text("One-time codes are part of Premium. See Settings › Plan.") }
         if model.codeUnsupported { return Text("Unsupported code type") }
         guard let code = model.code else { return Text(verbatim: "") }
         if model.hiddenByCapture { return Text(verbatim: ScreenCapture.hiddenLine) }

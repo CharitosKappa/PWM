@@ -3835,3 +3835,95 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **The desktop and the extensions** show Request a refund, with the date it's possible until. An App Store plan points to Apple's Report a Problem page.
     - **iOS** opens Apple's refund sheet. **Android** refunds Play and Stripe plans.
     - **The message** `refund_window_passed` is in `design/messages.json`.
+- **D73 — Plan gates (M9.3): what Free can do with one-time codes, where the client learns its plan, and the server's limits for share links and attachments** · settled 2026-11-07 · founder (approved as proposed).
+  M9.3 asks for "plan gates in core (TOTP, attachments, share links) checked client-side and server-side". Several rules are already set:
+  - **D6 §4:** the server is the one source of the plan. Clients cache it, so offline the last known plan holds, for at most the paid period it knew about.
+  - **D72 §4:** a gate never stops exporting, reading, editing or deleting existing items.
+  - **D23 §7:** the core generator doesn't check plans; the gate comes here.
+
+  What's still open:
+  - **What exists:** attachments (M14) and share links (M13) aren't built yet. Only TOTP has something to gate.
+  - **What a Free account can do** with a login that has a TOTP secret.
+  - **How a client learns its plan:** today the plan comes only with sign-in (`GET /v1/account`) and the Plan screen (`GET /v1/billing`), and nothing on the device keeps it.
+
+  Proposal:
+  1. **One-time codes need Premium; the secret stays free.**
+     - **Free still can:** store, see, copy, edit, remove, import and export a login's TOTP secret (the `otpauth://` URI). That's D72's rule, and it means a lapsed user can move their codes to another authenticator at any time.
+     - **Premium (or Family, Teams) is needed for:** the current code, whether shown, copied or filled.
+     - **Where it's checked:** `Client::current_code` returns the new error `plan_required` on Free. Every platform gets its codes from that one function: the extension's background and its fill, the desktop, iOS and its AutoFill extension, Android and its autofill service. So one check covers them all.
+     - **The screens:**
+       - **An item's code:** instead of the code, "One-time codes are part of Premium" with a link to Settings › Plan.
+       - **Editing:** the secret field works the same, with the same caption.
+       - **Autofill:** the code step isn't offered at all. There's no prompt and no message during autofill (CLAUDE.md: no nag prompts during autofill).
+     - **Not chosen:**
+       - **Blocking new secrets on Free:** that would stop editing.
+       - **Keeping codes for secrets added while Premium:** it needs a per-item flag, and importing would get around it.
+     - **Commitment 6** ("nothing moves from free to paid"): codes have never been free in a release, since nothing has launched, so no notice is due.
+  2. **The plan on the device.**
+     - **What the server sends:** two headers on the vault list that every sync starts with (`GET /v1/vaults`), like `pwm-epoch` (D30):
+       - `pwm-plan`: `free`, `premium`, `family` or `teams`
+       - `pwm-plan-until`: Unix ms when the plan stops counting if nothing renews, or absent when it has no end
+     - **`pwm-plan-until` for each status:** it follows D6's `ENTITLED` rule.
+       - **active:** the period end + 3 days
+       - **canceled:** the period end
+       - **past_due:** `grace_until`, or the period end + 3 days while Play hasn't given one
+       - **Free, and a server without billing (every account Premium):** absent
+     - **`GET /v1/account` and `GET /v1/billing`** carry the same two values, as `plan` and `plan_until`. So sign-in and every Plan screen action refresh them too.
+     - **What the client keeps:** `plan` and `plan_until_ms` in the account record.
+       - **SQLite:** migration v3 adds them as nullable columns.
+       - **The extension:** the in-memory snapshot goes to version 2. A version-1 snapshot reads with no plan.
+       - Each has a migration test.
+     - **The rule** (`Client::plan_now(now_ms)`, also given to the apps):
+       - the stored plan while `plan_until_ms` is absent or in the future
+       - Free after that, until a sync says otherwise
+       - **Unknown** (an account signed in before this version, or an old server without the headers): treated as Premium until the first sync, so an update never takes codes away from anyone.
+     - **This gate is a courtesy, not protection:** the secret is the user's own, and a modified client could compute codes. The point is to be honest about what Premium includes, not DRM.
+  3. **The server's limits, ready for M13 and M14.**
+     - **One table in `server/src/billing/`,** read through the same function as the plan (D6 §4):
+       - **Free:** 1 share link a day, 0 bytes of attachments
+       - **Premium, Family, Teams:** unlimited share links, 1 GiB of attachments per person
+       - **A server without billing:** like Premium
+     - **`GET /v1/account` and `GET /v1/billing`** carry them as `limits: { share_links_per_day, attachment_bytes }`. A null value means unlimited.
+     - **`ApiError::PlanRequired`:** 403 `{"error":"plan_required"}`, for the share and attachment routes when they come. It joins `design/messages.json`.
+     - **M13 and M14 check the limits in their routes,** with their own tests. M9.3 tests the table, the summary and the error.
+  4. **Tests:**
+     - **Core:**
+       - `current_code` gives a code on Premium, on an unknown plan and with no end date
+       - it refuses on Free and after `plan_until_ms`
+       - the v3 store migration and the v2 snapshot
+       - the sync engine storing the two headers, and keeping the old values when they're missing
+     - **Server:** the headers, `plan_until` for each status, a server without billing, and the limits table.
+     - **The apps:** the extension's background, the desktop's samples, the Apple and Android view-model tests for the item screen on Free, and an autofill test that the code step is skipped.
+  5. **Docs:**
+     - **`PRICING.md`:** a section "What Free does with paid items".
+     - **`SECURITY.md`:** the two headers carry only the plan and a date.
+     - **The ROADMAP entry for M9.3:** attachments and share links done as limits only, with the route checks moving to M13 and M14.
+
+  Alternatives:
+  - **Read `GET /v1/billing` on each sync:** one more request per sync. The headers cost nothing.
+  - **Gate only in the screens:** each of six platforms would need its own check, and an autofill path could miss it.
+
+  Implementation notes (M9.3):
+  - **The server** (`server/src/billing/mod.rs`, `vaults.rs`):
+    - `plan_until` comes from `ENTITLED_UNTIL`, which follows `ENTITLED` row by row.
+    - **A past-due row without `grace_until`:** Stripe's retries count with no end date, so it gets three days from now (or from its period end, if later), and the next sync moves it on.
+    - **Two subscriptions:** the later end wins.
+    - `GET /v1/vaults` sends `pwm-plan` always, and `pwm-plan-until` when there's an end.
+    - `Limits::of(plan)` is the table, and `ApiError::PlanRequired` answers 403 `plan_required`.
+  - **The core:**
+    - **Storage:** `PlanRecord` in `pwm-store` (`plan()`, `set_plan()`; the name must be 1 to 32 bytes). It's a table of its own in SQLite v3, and a section after the epoch in snapshot v2. `clear()` drops it. Frozen fixtures `store_v3.sql` and `snapshot_v2.hex`.
+    - **What fills it:** the sync engine stores the headers when a sync starts; a server without them leaves the old value. Billing replies (`BillingInfo.plan_until_ms`) store the plan too.
+    - **Sign-in doesn't store it:** the first sync right after does, and until then the plan is unknown, which counts as Premium.
+    - **The API:** `Client::plan_now(now_ms)` and `codes_included(now_ms)`, in the FFI and WASM as `plan_now` / `planNow` and `codes_included` / `codesIncluded`. `current_code` checks only items that have a secret, so items without one still answer `None`.
+  - **The screens:**
+    - **The extensions and the desktop:**
+      - `ItemView.codeNeedsPlan` shows the line and a "One-time code secret" row, using the existing Show and Copy of hidden values.
+      - `VaultView.codesIncluded` drives the editor's caption.
+      - `hasCode` in lists and suggestions now means "a code can be copied now".
+      - The extension's fill skips the code step, and a code-only page answers `no_form`, as for a login without a code.
+    - **Apple and Android:** the item screen shows the line and the secret.
+      - **Android's autofill** fills without the code.
+      - **iOS's AutoFill** already ignored a failed code.
+      - **Not done yet:** the editor's caption, which needs the plan in the editors' models. The item screen says it, so nothing is hidden. It's logged here under the platform-parity rule.
+    - **Settings › Plan** is named in the text rather than linked: the item screens have no route to Settings on every platform.
+  - **Messages:** `plan_required` in `design/messages.json` and the screens' `api.ts`.

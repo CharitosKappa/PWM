@@ -800,6 +800,7 @@ export class Background {
 
   private items(query: string): ItemSummary[] {
     const needle = query.trim().toLowerCase();
+    const codesIncluded = this.core.codesIncluded(this.platform.now());
     return this.storedItems()
       .filter(
         ({ item }) => item.trashed_at === undefined || item.trashed_at === null,
@@ -812,7 +813,7 @@ export class Background {
         username: loginFields(item).username,
         url: loginFields(item).url,
         hasPassword: loginFields(item).password !== "",
-        hasCode: loginFields(item).totp !== "",
+        hasCode: codesIncluded && loginFields(item).totp !== "",
       }))
       .filter(
         (s) =>
@@ -848,7 +849,11 @@ export class Background {
     return {
       username: loginFields(found.item).username,
       password: loginFields(found.item).password,
-      hasCode: loginFields(found.item).totp !== "",
+      // Without a plan that has codes, autofill offers no code step and
+      // says nothing about it (D73 §1).
+      hasCode:
+        loginFields(found.item).totp !== "" &&
+        this.core.codesIncluded(this.platform.now()),
     };
   }
 

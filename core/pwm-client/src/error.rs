@@ -42,6 +42,10 @@ pub enum ClientError {
     /// secret (D23).
     #[error("not a one-time-code secret")]
     InvalidTotp,
+    /// The account's plan doesn't include this (D73): one-time codes need
+    /// Premium, Family or Teams.
+    #[error("not included in the plan")]
+    PlanRequired,
     /// A device name over 63 bytes or with control characters (D26).
     #[error("the device name is not valid")]
     InvalidDeviceName,
@@ -129,6 +133,7 @@ impl ClientError {
             Self::InvalidItem => "invalid_item",
             Self::ReadOnlyItem => "read_only_item",
             Self::InvalidTotp => "invalid_totp",
+            Self::PlanRequired => "plan_required",
             Self::InvalidDeviceName => "invalid_device_name",
             Self::UnknownDevice => "unknown_device",
             Self::ExportNotAuthorized => "export_not_authorized",

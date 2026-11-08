@@ -315,6 +315,25 @@ class VaultTest {
         assertEquals("1234", ItemDetailModel.grouped("1234"))
     }
 
+    /** On Free the screen says codes are part of Premium, not that the code is unsupported (D73 §1). */
+    @Test
+    fun onFreeTheCodeNeedsAPlan() = runTest {
+        val h = unlocked(login("1", "Bank").edited { totp = "otpauth://totp/Bank?secret=JBSWY3DPEHPK3PXP" })
+        h.accounts.single().codeNeedsPlan = true
+        h.vault.open(h.vault.state.value.visible.single())
+        val detail = (h.vault.state.value.stack.single() as VaultModel.Route.Detail).model
+        detail.refreshCode()
+        assertNull(detail.state.value.code)
+        assertTrue(detail.state.value.codeNeedsPlan)
+        assertFalse(detail.state.value.codeUnsupported)
+        detail.copyCode()
+        assertTrue(h.copied.isEmpty())
+        h.accounts.single().codeNeedsPlan = false
+        detail.refreshCode()
+        assertFalse(detail.state.value.codeNeedsPlan)
+        assertEquals("123456", detail.state.value.code!!.code.value)
+    }
+
     @Test
     fun theGeneratorsOptions() = runTest {
         val h = unlocked()

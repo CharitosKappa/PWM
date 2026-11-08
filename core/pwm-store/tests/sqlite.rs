@@ -5,13 +5,14 @@ use std::path::{Path, PathBuf};
 
 use pwm_crypto::{Envelope, Id, KdfParams, Secret, SymmetricKey, generate_id};
 use pwm_store::{
-    AccountRecord, ItemRecord, SCHEMA_VERSION, SqliteStore, Store, StoreError, SyncState,
-    VaultRecord,
+    AccountRecord, ItemRecord, PlanRecord, SCHEMA_VERSION, SqliteStore, Store, StoreError,
+    SyncState, VaultRecord,
 };
 use pwm_vault::{Item, ItemId, ItemKind, Login, encrypt_item};
 
 const FIXTURE_V1: &str = include_str!("fixtures/store_v1.sql");
 const FIXTURE_V2: &str = include_str!("fixtures/store_v2.sql");
+const FIXTURE_V3: &str = include_str!("fixtures/store_v3.sql");
 
 /// A database file under the system temp dir, removed on drop.
 struct TempDb(PathBuf);
@@ -102,6 +103,35 @@ fn server_epoch_round_trip_and_clear() {
     assert_eq!(store.server_epoch().unwrap(), Some([8; 16]));
     store.clear().unwrap();
     assert_eq!(store.server_epoch().unwrap(), None);
+}
+
+#[test]
+fn plan_round_trip_and_clear() {
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    assert_eq!(store.plan().unwrap(), None);
+    for plan in [
+        PlanRecord {
+            plan: "premium".to_owned(),
+            until_ms: Some(1_800_000_000_000),
+        },
+        PlanRecord {
+            plan: "free".to_owned(),
+            until_ms: None,
+        },
+    ] {
+        store.set_plan(&plan).unwrap();
+        assert_eq!(store.plan().unwrap(), Some(plan));
+    }
+    assert!(
+        store
+            .set_plan(&PlanRecord {
+                plan: String::new(),
+                until_ms: None
+            })
+            .is_err()
+    );
+    store.clear().unwrap();
+    assert_eq!(store.plan().unwrap(), None);
 }
 
 #[test]
@@ -348,7 +378,7 @@ fn deleted_ciphertext_is_overwritten() {
 
 #[test]
 fn a_new_file_gets_the_current_schema() {
-    assert_eq!(SCHEMA_VERSION, 2);
+    assert_eq!(SCHEMA_VERSION, 3);
     let db = TempDb::new();
     SqliteStore::open(db.path()).unwrap();
     let conn = rusqlite::Connection::open(db.path()).unwrap();
@@ -364,27 +394,29 @@ fn a_new_file_gets_the_current_schema() {
 
 /// The schema the migrations build must match the frozen fixture of the
 /// current version exactly, so a shipped migration can never be edited by
-/// accident; a v1 file migrated to v2 must end up the same.
+/// accident; v1 and v2 files migrated to v3 must end up the same.
 #[test]
-fn migrations_build_the_frozen_v2_schema() {
+fn migrations_build_the_frozen_v3_schema() {
     let db = TempDb::new();
     SqliteStore::open(db.path()).unwrap();
     let migrated = schema_of(&rusqlite::Connection::open(db.path()).unwrap());
 
     let frozen = rusqlite::Connection::open_in_memory().unwrap();
-    frozen.execute_batch(FIXTURE_V2).unwrap();
+    frozen.execute_batch(FIXTURE_V3).unwrap();
     assert_eq!(migrated, schema_of(&frozen));
 
-    let old = TempDb::new();
-    rusqlite::Connection::open(old.path())
-        .unwrap()
-        .execute_batch(FIXTURE_V1)
-        .unwrap();
-    SqliteStore::open(old.path()).unwrap();
-    assert_eq!(
-        schema_of(&rusqlite::Connection::open(old.path()).unwrap()),
-        migrated
-    );
+    for fixture in [FIXTURE_V1, FIXTURE_V2] {
+        let old = TempDb::new();
+        rusqlite::Connection::open(old.path())
+            .unwrap()
+            .execute_batch(fixture)
+            .unwrap();
+        SqliteStore::open(old.path()).unwrap();
+        assert_eq!(
+            schema_of(&rusqlite::Connection::open(old.path()).unwrap()),
+            migrated
+        );
+    }
 }
 
 fn schema_of(conn: &rusqlite::Connection) -> Vec<(String, String)> {
@@ -440,6 +472,7 @@ fn a_v1_file_opens_and_reads() {
     assert_eq!(store.pending_items().unwrap().len(), 1);
     // v1 had no server epoch: the next sync records one without a resync.
     assert_eq!(store.server_epoch().unwrap(), None);
+    assert_eq!(store.plan().unwrap(), None);
 }
 
 #[test]
@@ -461,6 +494,26 @@ fn a_v2_file_opens_and_reads() {
             0xE0, 0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xEB, 0xEC, 0xED,
             0xEE, 0xEF
         ])
+    );
+    // v2 had no plan: treated as unknown until the next sync (D73 §2).
+    assert_eq!(store.plan().unwrap(), None);
+}
+
+#[test]
+fn a_v3_file_opens_and_reads() {
+    let db = TempDb::new();
+    rusqlite::Connection::open(db.path())
+        .unwrap()
+        .execute_batch(FIXTURE_V3)
+        .unwrap();
+    let store = SqliteStore::open(db.path()).unwrap();
+    assert_eq!(store.vaults().unwrap()[0].sync_cursor, 9);
+    assert_eq!(
+        store.plan().unwrap(),
+        Some(PlanRecord {
+            plan: "premium".to_owned(),
+            until_ms: Some(1_800_000_000_000)
+        })
     );
 }
 

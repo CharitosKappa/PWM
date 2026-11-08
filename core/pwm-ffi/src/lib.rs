@@ -672,6 +672,18 @@ impl PwmClient {
         Ok(self.lock_inner().account_id()?)
     }
 
+    /// The plan that counts now (D73 §2): `free`, `premium`, `family` or
+    /// `teams`; `None` until the server has said, treated as Premium.
+    pub fn plan_now(&self, now_ms: i64) -> Result<Option<String>, PwmError> {
+        Ok(self.lock_inner().plan_now(now_ms)?)
+    }
+
+    /// Whether the plan now includes one-time codes (D73 §1); without them,
+    /// `current_code` answers `plan_required` and the secret stays readable.
+    pub fn codes_included(&self, now_ms: i64) -> Result<bool, PwmError> {
+        Ok(self.lock_inner().codes_included(now_ms)?)
+    }
+
     pub fn start_sync(&self) -> Result<Step, PwmError> {
         Ok(step(self.lock_inner().start_sync()?))
     }

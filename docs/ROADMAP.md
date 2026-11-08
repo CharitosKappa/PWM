@@ -775,7 +775,15 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
     - **Reminders:** an outbox with one reminder 14 days before each charge (migration 0009). Cancel and resume came with M9.1. A lapsed account keeps, edits and exports everything.
   - **Tests:** 9 more server tests against the fake providers (17 in all) plus the 0009 migration test, the hold rule and the price list in unit tests, the refund through the app API, the extension's background, the desktop's samples, and the Apple and Android Plan tests.
   - **Deferred:** sending the outbox needs the email provider (D32, M10.7); until then no price change applies. Account deletion is M9.4.
-- [ ] M9.3 Plan gates in core (TOTP, attachments, share links) checked client-side and server-side.
+- [x] M9.3 Plan gates in core (TOTP, attachments, share links) checked client-side and server-side.
+  - Done per D73 (implementation notes there):
+    - **One-time codes:** need Premium. The core's `current_code` answers `plan_required` on Free, so every app and autofill path is covered by one check. Every app shows "One-time codes are part of Premium" and the secret instead of the code; autofill offers no code step and says nothing.
+    - **The plan on the device:** comes with every sync (`pwm-plan`, `pwm-plan-until` on the vault list) and with billing replies, and is kept in the cache (store v3, snapshot v2). Unknown counts as Premium; after its end, Free until the next sync.
+    - **Share links and attachments:** the server's limits per plan, in `GET /v1/account` and `GET /v1/billing`, and `plan_required`. The routes come with M13 and M14 and check them there.
+  - **Tests:** 2 server tests (the headers and `plan_until` for every status, a server without billing) and the limits in a unit test; the store's v3 migration and fixtures, the v2 snapshot, the sync engine keeping the plan, the core's gate (Free, after the end, unknown); the extension's item screen, list and fill on Free; the desktop's samples; Apple's and Android's item screens on Free, and Android's fill.
+  - **Deferred:**
+    - **The editor's caption:** on Apple and Android, editing doesn't say codes need Premium yet; the item screen does (logged in D73's notes).
+    - **The route checks:** move to M13 (share links) and M14 (attachments).
 - [ ] M9.4 Account deletion in every app (D72 §5): the master password proven again, everything deleted on the server, each device wiped, export offered first, and D6 §6's subscription rules. Needs its own decision first; Apple requires it before launch.
 
 ### M10 — Launch readiness

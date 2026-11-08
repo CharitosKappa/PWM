@@ -1467,3 +1467,101 @@ async fn the_app_api_refunds_and_ends_the_plan() {
     assert_eq!(w.fake.lock().unwrap().refunds.len(), 1);
     w.db.drop().await;
 }
+
+/// The plan and when it stops counting, in the headers of the vault list
+/// every sync starts with and in the account (D73 §2), for every status.
+#[tokio::test]
+async fn every_sync_carries_the_plan_and_when_it_ends() {
+    let Some(w) = world().await else { return };
+    let alice = register(&w.app, "alice@example.com").await;
+    let now_ms = i64::try_from(now_secs()).unwrap() * 1000;
+    let headers = |label: &'static str| {
+        let app = w.app.clone();
+        let access = alice.access().to_owned();
+        async move {
+            let reply = send(&app, "GET", "/v1/vaults", Some(&access), &[], None).await;
+            assert_eq!(reply.status, StatusCode::OK, "{label}");
+            let plan = reply.headers["pwm-plan"].to_str().unwrap().to_owned();
+            let until = reply
+                .headers
+                .get("pwm-plan-until")
+                .map(|v| v.to_str().unwrap().parse::<i64>().unwrap());
+            let (_, me) = call(&app, "GET", "/v1/account", Some(&access), None).await;
+            assert_eq!(me["plan"], plan.as_str(), "{label}");
+            // Three days from now() for Stripe's retries, so a moment apart.
+            let near = match (me["plan_until"].as_i64(), until) {
+                (Some(a), Some(b)) => (a - b).abs() < 60_000,
+                (a, b) => a == b,
+            };
+            assert!(near, "{label}");
+            (plan, until)
+        }
+    };
+    assert_eq!(headers("no subscription").await, ("free".to_owned(), None));
+    let (_, me) = call(&w.app, "GET", "/v1/account", Some(alice.access()), None).await;
+    assert_eq!(
+        me["limits"],
+        json!({ "share_links_per_day": 1, "attachment_bytes": 0 })
+    );
+
+    const HOUR: i64 = 3_600_000;
+    // (status, period end and grace, expected end relative to now, ± an hour)
+    let cases = [
+        ("active", "now() + interval '1 day', NULL", 4 * 24 * HOUR),
+        ("canceled", "now() + interval '1 day', NULL", 24 * HOUR),
+        (
+            "past_due",
+            "now() - interval '1 day', now() + interval '2 days'",
+            2 * 24 * HOUR,
+        ),
+        // Stripe's retries: no grace date, so three days from now.
+        ("past_due", "now() - interval '1 day', NULL", 3 * 24 * HOUR),
+    ];
+    for (i, (status, extra, ends_in)) in cases.into_iter().enumerate() {
+        sqlx::query("DELETE FROM subscriptions")
+            .execute(&w.db.pool)
+            .await
+            .unwrap();
+        seed_subscription(&w.db.pool, alice.id, &format!("sub_{i}"), status, extra).await;
+        let (plan, until) = headers(status).await;
+        assert_eq!(plan, "premium", "{status}");
+        let until = until.expect(status);
+        assert!(
+            (until - (now_ms + ends_in)).abs() < HOUR,
+            "{status} {extra}: {until}"
+        );
+    }
+    let (_, me) = call(&w.app, "GET", "/v1/account", Some(alice.access()), None).await;
+    assert_eq!(
+        me["limits"],
+        json!({ "share_links_per_day": null, "attachment_bytes": 1_073_741_824 })
+    );
+
+    // A second subscription that lasts longer keeps the plan counting.
+    seed_subscription(
+        &w.db.pool,
+        alice.id,
+        "sub_long",
+        "canceled",
+        "now() + interval '30 days', NULL",
+    )
+    .await;
+    let until = headers("two").await.1.unwrap();
+    assert!((until - (now_ms + 30 * 24 * HOUR)).abs() < HOUR);
+    w.db.drop().await;
+}
+
+#[tokio::test]
+async fn without_billing_the_plan_has_no_end() {
+    let Some((db, app)) = common::flows::setup().await else {
+        return;
+    };
+    let alice = register(&app, "alice@example.com").await;
+    let reply = send(&app, "GET", "/v1/vaults", Some(alice.access()), &[], None).await;
+    assert_eq!(reply.headers["pwm-plan"], "premium");
+    assert!(reply.headers.get("pwm-plan-until").is_none());
+    let (_, me) = call(&app, "GET", "/v1/billing", Some(alice.access()), None).await;
+    assert_eq!(me["plan_until"], Value::Null);
+    assert_eq!(me["limits"]["share_links_per_day"], Value::Null);
+    db.drop().await;
+}

@@ -15,6 +15,7 @@ mod error;
 mod import;
 mod kit;
 mod passkey;
+mod plan;
 mod save;
 mod session;
 mod tools;

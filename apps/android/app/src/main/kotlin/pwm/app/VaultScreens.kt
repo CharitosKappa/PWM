@@ -431,6 +431,7 @@ private fun LoginFields(model: ItemDetailModel, state: ItemDetailModel.State) {
         val code = state.code
         val codeLabel = stringResource(R.string.one_time_code)
         val unsupported = stringResource(R.string.code_unsupported)
+        val needsPlan = stringResource(R.string.code_needs_plan)
         val copyCode = stringResource(R.string.copy_code)
         Column(
             Modifier.fillMaxWidth().testTag("codeRow").clearAndSetSemantics {
@@ -440,6 +441,7 @@ private fun LoginFields(model: ItemDetailModel, state: ItemDetailModel.State) {
                         text = AnnotatedString(spokenCode(code.code.value))
                         customActions = listOf(CustomAccessibilityAction(copyCode) { model.copyCode(); true })
                     }
+                    state.codeNeedsPlan -> stateDescription = needsPlan
                     state.codeUnsupported -> stateDescription = unsupported
                 }
             },
@@ -454,9 +456,18 @@ private fun LoginFields(model: ItemDetailModel, state: ItemDetailModel.State) {
                     Text(stringResource(R.string.code_seconds, code.secondsLeft.toInt()), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))
                     CopyButton(state.copied == "code", "copy.code", model::copyCode)
                 }
+            } else if (state.codeNeedsPlan) {
+                Text(
+                    stringResource(R.string.code_needs_plan), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted),
+                    modifier = Modifier.testTag("code.needsPlan"),
+                )
             } else if (state.codeUnsupported) {
                 Text(stringResource(R.string.code_unsupported), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))
             }
+        }
+        // The secret stays the user's, to move elsewhere (D73 §1).
+        if (state.codeNeedsPlan) {
+            FieldRow(model, state, stringResource(R.string.one_time_code_secret), item.totp.orEmpty(), "totp", secret = true, monospace = true)
         }
     }
     val websiteLabel = stringResource(R.string.website)

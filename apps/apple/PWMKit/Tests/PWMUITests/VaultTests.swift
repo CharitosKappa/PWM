@@ -257,6 +257,29 @@ final class VaultTests: XCTestCase {
         XCTAssertEqual(ItemDetailModel.grouped("1234"), "1234")
     }
 
+    /// On Free the screen says codes are part of Premium, not that the code
+    /// is unsupported (D73 §1).
+    func testOnFreeTheCodeNeedsAPlan() async throws {
+        var item = loginItem("1", "Example", username: "ada", password: "hunter2")
+        item.login?.totp = "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP"
+        await account.put(item)
+        await account.setCodeNeedsPlan(true)
+        let vault = await vault()
+        let detail = vault.detail(try XCTUnwrap(vault.entry("1")))
+        await detail.refreshCode()
+        XCTAssertNil(detail.code)
+        XCTAssertTrue(detail.codeNeedsPlan)
+        XCTAssertFalse(detail.codeUnsupported)
+        detail.copyCode()
+        XCTAssertTrue(pasteboard.copied.isEmpty)
+
+        await account.setCodeNeedsPlan(false)
+        await account.setCode("123456", secondsLeft: 12)
+        await detail.refreshCode()
+        XCTAssertFalse(detail.codeNeedsPlan)
+        XCTAssertEqual(detail.code?.value.value, "123456")
+    }
+
     // MARK: Editing
 
     func testANewLoginWithAGeneratedPasswordAndACode() async throws {
