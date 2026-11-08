@@ -15,7 +15,7 @@ final class SecurityTests: XCTestCase {
     }
 
     func vault() async -> VaultModel {
-        let vault = VaultModel(account: account, pasteboard: pasteboard) {}
+        let vault = VaultModel(account: account, pasteboard: pasteboard) { _ in }
         await vault.load()
         return vault
     }

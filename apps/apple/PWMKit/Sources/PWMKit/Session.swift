@@ -158,6 +158,33 @@ public actor Session {
         }
     }
 
+    /// Deletes the account on the server and this device (D74), with the
+    /// master password and the Secret Key from the Keychain. A wrong
+    /// password is `wrong_password`; `delete_unavailable` means a plan
+    /// couldn't be ended or the server wasn't reached, and nothing was
+    /// deleted. Afterwards nothing of the account stays here, as after
+    /// `signOut`.
+    public func deleteAccount(password: Redacted<String>) async throws {
+        guard let secretKey = try keys.get(.secretKey) else { throw PWMError(code: "signed_out") }
+        let outcome: Outcome
+        do {
+            outcome = try await run(try core { try client.startDeleteAccount(password: password.value, secretKey: secretKey) })
+        } catch RunEnd.wait {
+            throw PWMError(code: "delete_unavailable")
+        }
+        switch outcome {
+        case .accountDeleted: break
+        case .deviceRevoked: throw PWMError(code: "device_revoked")
+        case .signedOut: throw PWMError(code: "signed_out")
+        default: throw PWMError(code: "protocol")
+        }
+        suggestions?.clear()
+        try disableBiometricUnlock()
+        for name in [KeyName.secretKey, .accessToken, .refreshToken, .email, .passwordUnlockedAt] {
+            try keys.delete(name)
+        }
+    }
+
     /// How long signing out waits for the server (D62), as for the push token on Android (D60 §4).
     static let signOutTimeout: TimeInterval = 5
 

@@ -521,6 +521,8 @@ struct SettingsView: View {
             Section {
                 Button("Sign out", role: .destructive) { confirmSignOut = true }
                     .accessibilityIdentifier("signOut")
+                NavigationLink("Delete account") { DeleteAccountHost(settings: model) }
+                    .accessibilityIdentifier("deleteAccount")
             }
             ErrorText(text: model.error)
         }

@@ -17,7 +17,7 @@ final class VaultTests: XCTestCase {
     }
 
     func vault() async -> VaultModel {
-        let vault = VaultModel(account: account, pasteboard: pasteboard) { [unowned self] in self.signedOut += 1 }
+        let vault = VaultModel(account: account, pasteboard: pasteboard) { [unowned self] _ in self.signedOut += 1 }
         await vault.load()
         return vault
     }

@@ -184,7 +184,8 @@ final class ServerTests: XCTestCase {
 extension ServerTests {
     func testDevicesAreNamedAtLoginRenamedAndRevoked() async throws {
         let email = "swift-\(UUID().uuidString.lowercased())@example.com"
-        let laptop = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
+        let laptopKeys = MemoryKeyStore()
+        let laptop = try Session(cachePath: nil, server: server, keys: laptopKeys)
         let secretKey = try await laptop.signUp(email: email, password: strong, deviceName: "Mac")
         let phone = try Session(cachePath: nil, server: server, keys: MemoryKeyStore())
         _ = try await phone.logIn(email: email, password: strong, secretKey: secretKey, deviceName: "iPhone")
@@ -224,6 +225,22 @@ extension ServerTests {
         } catch {
             XCTAssertEqual(code(of: error), "billing_unavailable")
         }
+
+        // Deleting the account (D74), here too to spare a sign-up: the
+        // password first, then nothing of it stays, here or on the server.
+        do {
+            try await laptop.deleteAccount(password: Redacted("not the password at all"))
+            XCTFail("deleted with a wrong password")
+        } catch {
+            XCTAssertEqual(code(of: error), "wrong_password")
+        }
+        let gone = try XCTUnwrap(laptopKeys.get(.refreshToken))
+        try await laptop.deleteAccount(password: strong)
+        let signedIn = try await laptop.isSignedIn()
+        XCTAssertFalse(signedIn)
+        XCTAssertNil(laptopKeys.get(.secretKey))
+        let status = try await refreshStatus(gone)
+        XCTAssertEqual(status, 403, "account_deleted")
     }
 
     func testHealthBreachesAndExport() async throws {
