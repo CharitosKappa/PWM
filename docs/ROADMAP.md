@@ -784,12 +784,23 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
   - **Deferred:**
     - **The editor's caption:** on Apple and Android, editing doesn't say codes need Premium yet; the item screen does (logged in D73's notes).
     - **The route checks:** move to M13 (share links) and M14 (attachments).
-- [ ] M9.4 Account deletion in every app (D72 §5): the master password proven again, everything deleted on the server, each device wiped, export offered first, and D6 §6's subscription rules. Needs its own decision first; Apple requires it before launch.
+- [x] M9.4 Account deletion in every app (D72 §5): the master password proven again, everything deleted on the server, each device wiped, export offered first, and D6 §6's subscription rules. Needs its own decision first; Apple requires it before launch.
   - Per D74 (implementation notes there). **Part 1 done: the server, the core and the bindings.**
     - **Server:** `POST /v1/account/delete/start` and `/finish`, the subscriptions ended first (Stripe and Play pro-rata, the Stripe customer deleted, `billing_unavailable` deletes nothing), `deleted_sessions` and `deleted_accounts` (migration 0010), 403 `account_deleted` on refresh, the push to the other devices, the deletions file (`PWM_DELETIONS_FILE`) and `mark-restored` deleting again, the daily purge.
     - **Core:** `start_delete_account` (`AccountDeleted`, the store cleared), `account_deleted` clearing the cache like `device_revoked`; `start_delete_account` / `startDeleteAccount` in the FFI and WASM.
     - **Every app** wipes itself on `account_deleted`, as on `device_revoked`.
-  - **Part 2, next:** the delete screens on every platform (D74 §7), and "This account was deleted." on the other devices' sign-in screen.
+  - **Part 2 done: the screens.**
+    - **Delete account** in Settings on every platform (D74 §7). The steps are what will happen with Export first, then the plan when there is one, then the master password. There's no typed word and no countdown.
+      - **The extensions and the desktop:** an Account tab on the manage page, opened from Settings.
+      - **iOS and macOS:** a page from Settings.
+      - **Android:** a page of Settings.
+    - **The first screen says why the account left this device:** "This account was deleted." or "This device was signed out from another device." On the deleting device too.
+    - **When nothing was deleted:** a plan couldn't be ended or the server wasn't reached. Every app says so (`delete_unavailable`).
+  - **Tests:**
+    - **Background and model tests:** the extension's background (3); the desktop's backend against a real server (the wrong password, deletion, the sign-in that fails afterwards); Apple's and Android's view models (4 and 3).
+    - **The welcome message:** Android, for a deleted account and a revoked device.
+    - **Against a real server:** Android's and Apple's session tests delete their fresh account. Apple's runs in CI only.
+  - **Not checked on a device:** the screens themselves, and the App Store's subscription sheet from the plan step (iOS).
 
 ### M10 — Launch readiness
 - [ ] M10.1 Release pipeline: beta channels, staged rollout, auto-halt metrics, rollback (`QUALITY.md`).

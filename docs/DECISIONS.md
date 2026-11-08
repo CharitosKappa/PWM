@@ -4040,3 +4040,23 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Tests:**
     - **Server:** 7 in `tests/deletion.rs`, 3 for billing, 1 for push, the rate limit, and the 0010 migration and snapshot.
     - **Elsewhere:** 1 sync engine test, 1 end-to-end client test against the server, and the extension's background.
+
+  Implementation notes (M9.4, part 2: the screens):
+  - **Where it is:**
+    - **The extensions and the desktop:** Settings has a "Delete account" link that opens the manage page at its new Account tab. Its "Export first" switches to the Export tab.
+    - **Apple:** a page pushed from Settings, whose "Export first" pushes Export.
+    - **Android:** a page of Settings, whose "Export first" opens Export. Back returns to Settings.
+  - **The plan step** shows only with a subscription, reading the plan the Plan section reads.
+    - **Stripe or Play:** "Your plan ends now, and you'll get back the unused days." The shared screens and Apple name the plan; Android keeps one sentence.
+    - **App Store:** "Apple bills this plan." The extensions give the path as plain text, since they ship no remote URLs (D40). iOS opens the App Store's subscription sheet. The Mac and Android give the page or the path.
+    - **A second subscription** (D6 §8) is covered by the same lines.
+  - **The Secret Key never reaches the screens.** The request carries only the master password (`deleteAccount` in the protocol), and each host adds the stored Secret Key, as for export.
+  - **When nothing was deleted:** a wait (the server's 503, or no connection) becomes `delete_unavailable`: "Couldn't reach the server or end your plan, so nothing was deleted. Try again later." It joins `design/messages.json`.
+  - **Why the account left:**
+    - The extension's background and the desktop's backend keep it in memory, and `Status` gains an optional `ended` (`account_deleted` or `device_revoked`) on `signedOut`.
+    - **Shown on:** the sign-in screen, and the manage page's signed-out view, which on the desktop gets a "Go to sign in" button.
+    - **Apple and Android:** the welcome screen shows the message until the user moves on.
+    - **A revoked device** now says why too, which it didn't before; the desktop's end-to-end test expects it.
+    - **A restart forgets it:** a stopped service worker or a relaunched app shows the plain sign-in screen.
+  - **The desktop** deletes the account's Windows Hello key by the name it had before the account was gone, since the name comes from the account id.
+  - **Apple's `VaultModel` and Android's** pass the reason to the app's sign-out callback.
