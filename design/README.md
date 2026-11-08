@@ -25,7 +25,7 @@
 
 ## Accessibility
 
-Every UI meets these. The design canvas has an Accessibility page that shows them (text at 200%, what VoiceOver and TalkBack say, keyboard focus), and every board was checked against them in light and dark on 2026-11-07.
+Every UI must meet these. The design canvas has an Accessibility page that shows them (text at 200%, what VoiceOver and TalkBack say, keyboard focus), and every board was checked against them in light and dark on 2026-11-07.
 
 - **Contrast:** text 4.5:1, or 3:1 from 24 px (19 px bold). Icons, control outlines, switch tracks and focus rings 3:1 against what is next to them. The token pairs above already meet this; a new pair is checked before use. Placeholders use `text-muted`, never the platform's default grey. Text on a `danger` or `accent` fill uses `accent-text`, which is dark in the dark theme.
 - **Targets:** at least 44 × 44 pt on iOS, 48 × 48 dp on Android, and 24 × 24 px on desktop, the web and in the extension. A pill can look smaller when its touch area reaches the minimum without overlapping a neighbour's.
@@ -35,4 +35,4 @@ Every UI meets these. The design canvas has an Accessibility page that shows the
 - **Screen readers:** every control has a name, including icon-only buttons. A list row is one stop and its copy and show buttons are its actions. Hidden secrets are never spoken; a shown password is read one character at a time. Copies, errors and locking are announced without moving focus.
 - **Motion:** spinners and transitions stop when the system asks for reduced motion.
 - **Allowed:** content behind a modal scrim, the platforms' own sheets (Touch ID, Windows Hello), iOS grouped fields identified by their label, and search fields identified by their icon and placeholder.
-- **Checked by hand on devices** before the beta: VoiceOver, TalkBack, Narrator and Orca (`docs/QUALITY.md`).
+- **Checked by hand on devices** before the beta: VoiceOver, TalkBack, Narrator and Orca, with the steps in `docs/QUALITY.md` (screen reader and text size checklist). Some screen reader rules aren't built in the apps yet; the gap is logged under D1 in `docs/DECISIONS.md`.
