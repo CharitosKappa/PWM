@@ -813,10 +813,24 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
   - **Verify the email at sign-up.**
   - **Stop revealing existing accounts.** Today registration answers 409 for an email that already has an account. Instead, answer the same either way, and email the owner of an existing account.
   - **Account notices:** use email for these too, such as a new device signing in.
-- [ ] M10.8 Server operations, from M3:
+- [x] M10.8 Server operations, from M3:
   - **Scheduled clean-up:** delete expired sessions and login attempts, and the session rows of revoked devices. They are already refused, just not deleted.
   - **Tombstone compaction:** decide the horizon first. A device whose cursor is older than the horizon must resync from 0.
   - **Backups with a tested restore:** the restore script runs `pwm-server mark-restored` automatically.
+  - Done per D76:
+    - **Clean-up:** `maintenance.rs` runs at start-up and then every hour. It deletes:
+      - sessions whose refresh token expired, revoked devices' included (kept until then, so the device is still told `device_revoked`)
+      - login attempts, approvals and autofill reports past their lifetime
+    - **Compaction:**
+      - **Server:** tombstones older than 180 days go in batches of 10,000. One statement deletes them and raises the new `vaults.purged_seq` (migration 0011, snapshot updated). A delta sync with `0 < since < purged_seq` answers 410 `resync_required`.
+      - **Client (`pwm-sync`):** on 410 the engine pulls the vault again from 0. Synced items the server no longer has are deleted, not uploaded again; unsent edits are kept as new items; items never uploaded still go up. A locked sync waits for the unlocked one. After a restore (new epoch), unseen items still go up again.
+    - **Backups:** `scripts/backup.sh` and `scripts/restore.sh` (also `just backup` / `just restore`). The restore stops the server, recreates the database, restores the file, runs `mark-restored`, and starts the server only if that worked.
+    - **Tests:**
+      - **Server on Postgres** (`tests/maintenance.rs`): each clean-up rule at its boundary, including a revoked device still told so; the 410 just below `purged_seq` but not at or above it; more than one batch; compaction running alongside deletes.
+      - **End to end** (`tests/sync.rs`): a device behind compacted tombstones drops the deleted item.
+      - **`pwm-sync`** with the fake server: deletes reach the device, nothing deleted comes back, an unsent edit and a new item survive; a locked device holds its cursor.
+      - **CI `image` job:** backs up, writes more, restores, and checks the later writes are gone, the epoch is new and the smoke test passes. It also checks that an existing file and a file that isn't a backup are refused.
+    - **Deferred:** backups for setups other than compose (they follow `DEPLOYMENT.md`); scheduled backups and off-site copies belong to the hosted service's operations.
 
 **Gate — Public launch:** audit published, top-1,000 autofill ≥ 95%, crash-free ≥ 99.5% on all platforms.
 

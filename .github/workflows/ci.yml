@@ -848,6 +848,23 @@ jobs:
       - run: cargo run --locked -p pwm-server --example smoke -- http://127.0.0.1:8080
       - run: docker compose exec -T server /pwm-server mark-restored
       - run: cargo run --locked -p pwm-server --example smoke -- http://127.0.0.1:8080
+      # Backups (D76 §3): what was written after the backup is gone after the
+      # restore, the epoch is new, and the server still works.
+      - name: Back up and restore
+        run: |
+          sql() { docker compose exec -T postgres psql -U pwm -d pwm -tAc "$1"; }
+          sh scripts/backup.sh backup.dump
+          epoch=$(sql "select epoch from server_meta")
+          accounts=$(sql "select count(*) from accounts")
+          cargo run --locked -p pwm-server --example smoke -- http://127.0.0.1:8080
+          test "$(sql "select count(*) from accounts")" -gt "$accounts"
+          # Refused: an existing file, and a file that isn't a backup.
+          if sh scripts/backup.sh backup.dump; then exit 1; fi
+          if sh scripts/restore.sh compose.yaml; then exit 1; fi
+          sh scripts/restore.sh backup.dump
+          test "$(sql "select count(*) from accounts")" -eq "$accounts"
+          test "$(sql "select epoch from server_meta")" != "$epoch"
+          cargo run --locked -p pwm-server --example smoke -- http://127.0.0.1:8080
       - if: failure()
         run: docker compose logs
 

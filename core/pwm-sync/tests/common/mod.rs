@@ -33,6 +33,8 @@ pub struct FakeVault {
     pub wrapped_key: Vec<u8>,
     pub items: BTreeMap<Id, (u64, u64, Vec<u8>)>,
     pub tombstones: BTreeMap<Id, (u64, u64)>,
+    /// The highest compacted tombstone's seq (D76 §2).
+    pub purged_seq: u64,
 }
 
 pub enum Fault {
@@ -101,6 +103,15 @@ impl FakeServer {
     /// What `pwm-server mark-restored` does after a restore.
     pub fn mark_restored(&mut self) {
         self.epoch = *ItemId::generate().unwrap().as_bytes();
+    }
+
+    /// Tombstone compaction (D76 §2): every tombstone of `vault` goes.
+    pub fn compact(&mut self, vault: &Id) {
+        let v = self.vaults.get_mut(vault).unwrap();
+        if let Some(top) = v.tombstones.values().map(|(_, seq)| *seq).max() {
+            v.purged_seq = v.purged_seq.max(top);
+        }
+        v.tombstones.clear();
     }
 
     /// A token pair for a new device.
@@ -299,6 +310,9 @@ impl FakeServer {
                 "limit" => limit = value as usize,
                 _ => {}
             }
+        }
+        if since > 0 && since < v.purged_seq {
+            return error(410, "resync_required");
         }
         let mut all: Vec<(u64, Value)> = v
             .items
