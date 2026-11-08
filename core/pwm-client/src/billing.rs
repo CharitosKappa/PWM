@@ -25,6 +25,9 @@ pub(crate) enum BillingCall {
 pub struct BillingInfo {
     /// `free`, `premium`, `family` or `teams`.
     pub plan: String,
+    /// When the plan stops counting if nothing renews (Unix ms, D73 §2);
+    /// `None` when it has no end.
+    pub plan_until_ms: Option<i64>,
     /// The subscription that gives the plan, if any.
     pub subscription: Option<SubscriptionInfo>,
     /// The providers that sell plans on this server (`stripe`,
@@ -60,6 +63,8 @@ pub struct SubscriptionInfo {
 #[derive(Deserialize)]
 struct SummaryJson {
     plan: String,
+    #[serde(default)]
+    plan_until: Option<i64>,
     subscription: Option<SubscriptionJson>,
     billing: Vec<String>,
     #[serde(default)]
@@ -93,6 +98,7 @@ fn read_summary(body: &[u8]) -> Result<BillingInfo, ClientError> {
     let s: SummaryJson = serde_json::from_slice(body).map_err(|_| ClientError::Protocol)?;
     Ok(BillingInfo {
         plan: s.plan,
+        plan_until_ms: s.plan_until,
         subscription: s.subscription.map(|j| SubscriptionInfo {
             provider: j.provider,
             plan: j.plan,
@@ -227,7 +233,7 @@ impl<S: Store> Client<S> {
     }
 
     pub(crate) fn billing_answer(
-        &self,
+        &mut self,
         call: BillingCall,
         status: u16,
         body: &[u8],
@@ -241,7 +247,11 @@ impl<S: Store> Client<S> {
                 }
                 Ok(crate::Outcome::CheckoutUrl(checkout.url))
             }
-            (_, 200) => Ok(crate::Outcome::Billing(read_summary(body)?)),
+            (_, 200) => {
+                let info = read_summary(body)?;
+                self.remember_plan(&info.plan, info.plan_until_ms);
+                Ok(crate::Outcome::Billing(info))
+            }
             (_, status) => Err(billing_error(status, body)),
         }
     }
@@ -263,6 +273,9 @@ mod tests {
         let sub = info.subscription.unwrap();
         assert_eq!((sub.until_ms, sub.canceling), (5, true));
         assert_eq!(sub.also, ["app_store"]);
+        assert_eq!(info.plan_until_ms, None, "a server older than D73");
+        let with_end = br#"{"plan":"premium","plan_until":7,"billing":[],"subscription":null}"#;
+        assert_eq!(read_summary(with_end).unwrap().plan_until_ms, Some(7));
         assert!(matches!(read_summary(b"{}"), Err(ClientError::Protocol)));
     }
 

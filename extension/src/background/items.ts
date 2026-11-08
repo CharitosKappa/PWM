@@ -17,6 +17,7 @@ import type {
   VaultRow,
   VaultView,
 } from "../shared/messages.ts";
+import { errorCode } from "./core.ts";
 import type { Core, CoreFunctions } from "./core.ts";
 import { ServiceError } from "./errors.ts";
 
@@ -178,8 +179,14 @@ export class Items {
     return first;
   }
 
+  /** Whether the plan now includes one-time codes (D73 §1). */
+  private codesIncluded(): boolean {
+    return this.deps.core().codesIncluded(this.deps.now());
+  }
+
   vault(): VaultView {
     const core = this.deps.core();
+    const codesIncluded = this.codesIncluded();
     const items: VaultRow[] = [];
     const folders: FolderView[] = [];
     for (const vaultId of core.vaultIds()) {
@@ -204,27 +211,30 @@ export class Items {
           folderId: typeof item.folder_id === "string" ? item.folder_id : null,
           trashed,
           hasPassword: nonEmpty(pointer(item, "/login/password")),
-          hasCode: nonEmpty(pointer(item, "/login/totp")),
+          hasCode: codesIncluded && nonEmpty(pointer(item, "/login/totp")),
         });
       }
     }
     folders.sort((a, b) =>
       a.title.toLowerCase().localeCompare(b.title.toLowerCase()),
     );
-    return { items, folders };
+    return { items, folders, codesIncluded };
   }
 
   item(vaultId: string, itemId: string): ItemView {
     const item = this.stored(vaultId, itemId);
     let code: ItemView["code"] = null;
+    let codeNeedsPlan = false;
     try {
       const now = this.deps
         .core()
         .currentCode(vaultId, itemId, this.deps.now());
       if (now?.[0] !== undefined)
         code = { code: now[0], secondsLeft: Number(now[1] ?? 0) };
-    } catch {
-      // A code the core can't read shows no code, as on the desktop.
+    } catch (error) {
+      // Without a plan that has codes, the screen says so (D73 §1). A code
+      // the core can't read shows no code, as on the desktop.
+      codeNeedsPlan = errorCode(error) === "plan_required";
     }
     const passkeys = pointer(item, "/login/passkeys");
     const history = pointer(item, "/history");
@@ -235,6 +245,7 @@ export class Items {
       readOnly: !editable(item),
       item: masked(item),
       code,
+      codeNeedsPlan,
       passkeys: Array.isArray(passkeys)
         ? passkeys.map((p: unknown) => ({
             rpId: text(pointer(p, "/rp_id")),

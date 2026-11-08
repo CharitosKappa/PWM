@@ -10,6 +10,7 @@ import pwm.kit.Account
 import pwm.kit.AutofillMatch
 import pwm.kit.Caller
 import pwm.kit.Item
+import pwm.kit.PwmError
 import pwm.kit.Redacted
 
 /** What to fill (D58 §7): never more than the login's username, password and current code. */
@@ -122,10 +123,21 @@ class FillModel internal constructor(
     }
 
     internal companion object {
-        /** The login's values, with its current code when it has one. */
+        /** The login's values, with its current code when it has one and the plan includes codes. */
         suspend fun values(account: Account, itemId: String, vaultId: String): FillValues? {
             val item = account.item(itemId, vaultId) ?: return null
-            val code = if (item.totp.isNullOrEmpty()) null else account.currentCode(itemId, vaultId)?.code
+            val code = if (item.totp.isNullOrEmpty()) {
+                null
+            } else {
+                try {
+                    account.currentCode(itemId, vaultId)?.code
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // No code on Free, and nothing said about it (D73 §1).
+                    if (PwmError.from(e).code == "plan_required") null else throw e
+                }
+            }
             return FillValues(item.username, Redacted(item.password), code)
         }
     }

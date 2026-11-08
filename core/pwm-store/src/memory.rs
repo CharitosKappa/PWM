@@ -2,15 +2,18 @@
 //! extension: IndexedDB is asynchronous and the [`Store`] trait is not, so
 //! the extension keeps this store in memory and persists [`snapshot`]s.
 //!
-//! Snapshot v1, all integers big-endian:
+//! Snapshot v2, all integers big-endian:
 //!
 //! ```text
-//! "PWMS" || v:u8 (= 1)
+//! "PWMS" || v:u8 (= 2)
 //! || has_account:u8 [account_id:16 salt:16 m:u32 t:u32 p:u32 len:u32 sealed_keyset]
 //! || has_epoch:u8 [epoch:16]
+//! || has_plan:u8 [len:u8 plan has_until:u8 [until_ms:i64]]
 //! || vaults:u32 { vault_id:16 cursor:u64 len:u32 wrapped_key }
 //! || items:u32 { vault_id:16 item_id:16 revision:u64 state:u8 len:u32 envelope }
 //! ```
+//!
+//! v1 (D31) is the same without `has_plan` (D73); it loads with no plan.
 //!
 //! Vaults and items are sorted by id, so equal contents give equal bytes. It
 //! holds only what the SQLite cache holds: ids, revisions, cursors, KDF
@@ -23,16 +26,17 @@ use std::collections::BTreeMap;
 use pwm_crypto::{Envelope, Id, KdfParams};
 use pwm_vault::ItemId;
 
-use crate::{AccountRecord, ItemRecord, Store, StoreError, SyncState, VaultRecord};
+use crate::{AccountRecord, ItemRecord, PlanRecord, Store, StoreError, SyncState, VaultRecord};
 
 /// Snapshot format this build writes and the newest it can load.
-pub const SNAPSHOT_VERSION: u8 = 1;
+pub const SNAPSHOT_VERSION: u8 = 2;
 const MAGIC: &[u8; 4] = b"PWMS";
 
 #[derive(Debug, Default, Clone)]
 pub struct MemoryStore {
     account: Option<AccountRecord>,
     epoch: Option<Id>,
+    plan: Option<PlanRecord>,
     vaults: BTreeMap<Id, VaultRecord>,
     items: BTreeMap<(Id, ItemId), ItemRecord>,
 }
@@ -76,6 +80,22 @@ impl MemoryStore {
             Some(epoch) => {
                 out.push(1);
                 out.extend_from_slice(epoch);
+            }
+            None => out.push(0),
+        }
+        match &self.plan {
+            Some(plan) => {
+                out.push(1);
+                // At most 32 bytes (`PlanRecord::check`).
+                out.push(u8::try_from(plan.plan.len()).unwrap_or(0));
+                out.extend_from_slice(plan.plan.as_bytes());
+                match plan.until_ms {
+                    Some(until) => {
+                        out.push(1);
+                        out.extend_from_slice(&until.to_be_bytes());
+                    }
+                    None => out.push(0),
+                }
             }
             None => out.push(0),
         }
@@ -125,6 +145,18 @@ impl MemoryStore {
         }
         if r.flag()? {
             store.epoch = Some(r.array()?);
+        }
+        if version >= 2 && r.flag()? {
+            let len = usize::from(r.u8()?);
+            let plan = String::from_utf8(r.take(len)?.to_vec()).map_err(|_| StoreError::Corrupt)?;
+            let until_ms = if r.flag()? {
+                Some(i64::from_be_bytes(r.array()?))
+            } else {
+                None
+            };
+            let plan = PlanRecord { plan, until_ms };
+            plan.check().map_err(|_| StoreError::Corrupt)?;
+            store.plan = Some(plan);
         }
         for _ in 0..r.u32()? {
             let vault = VaultRecord {
@@ -236,6 +268,16 @@ impl Store for MemoryStore {
 
     fn set_server_epoch(&mut self, epoch: &Id) -> Result<(), StoreError> {
         self.epoch = Some(*epoch);
+        Ok(())
+    }
+
+    fn plan(&self) -> Result<Option<PlanRecord>, StoreError> {
+        Ok(self.plan.clone())
+    }
+
+    fn set_plan(&mut self, plan: &PlanRecord) -> Result<(), StoreError> {
+        plan.check()?;
+        self.plan = Some(plan.clone());
         Ok(())
     }
 

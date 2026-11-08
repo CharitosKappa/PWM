@@ -31,6 +31,8 @@ interface Props {
   onFoldersChanged: () => void;
   onSaved: (vaultId: string, itemId: string) => void;
   onCancel: () => void;
+  /** The plan includes one-time codes (D73 §1); the secret saves either way. */
+  codesIncluded: boolean;
 }
 
 const NEW_FOLDER = "__new__";
@@ -72,6 +74,7 @@ export function ItemEditor({
   onFoldersChanged,
   onSaved,
   onCancel,
+  codesIncluded,
 }: Props): JSX.Element {
   const [item, setItem] = useState<ItemJson | null>(
     editing ? null : newItem(type),
@@ -286,6 +289,8 @@ export function ItemEditor({
           {text("One-time code setup", ["login", "totp"], { mono: true })}
           <span class="caption muted">
             Paste the otpauth:// link or the secret the site shows.
+            {!codesIncluded &&
+              " It's kept, and one-time codes are part of Premium (Settings › Plan)."}
           </span>
         </>
       )}

@@ -16,6 +16,8 @@ actor FakeAccount: Account {
     var syncResult: SyncResult = .synced(pulled: 0, pushed: 0, conflicts: 0, failed: 0)
     var code: (code: Redacted<String>, secondsLeft: UInt64)?
     var codeFails = false
+    /// The plan doesn't include one-time codes (D73 §1).
+    var codeNeedsPlan = false
     var nextId = 0
     let nowMs: Int64 = 1_767_225_600_000
 
@@ -35,6 +37,10 @@ actor FakeAccount: Account {
     func setCode(_ value: String?, secondsLeft: UInt64 = 20, fails: Bool = false) {
         code = value.map { (code: Redacted($0), secondsLeft: secondsLeft) }
         codeFails = fails
+    }
+
+    func setCodeNeedsPlan(_ value: Bool) {
+        codeNeedsPlan = value
     }
 
     func put(_ item: Item, in vault: String = "vault-1") {
@@ -156,6 +162,7 @@ actor FakeAccount: Account {
     }
 
     func currentCode(_ itemId: String, in vaultId: String) throws -> (code: Redacted<String>, secondsLeft: UInt64)? {
+        if codeNeedsPlan { throw PWMError(code: "plan_required") }
         if codeFails { throw PWMError(code: "invalid_item") }
         return code
     }
