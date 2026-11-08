@@ -135,7 +135,8 @@ final class SessionTests: XCTestCase {
         let password = try Generator.password()
         XCTAssertEqual(password.value.value.count, 20)
         XCTAssertGreaterThan(password.entropyBits, 100)
-        XCTAssertEqual(try Generator.passphrase().value.value.split(separator: "-").count, 5)
+        // A space, since a few list words contain "-" ("t-shirt").
+        XCTAssertEqual(try Generator.passphrase(separator: " ").value.value.split(separator: " ").count, 5)
         XCTAssertLessThanOrEqual(Generator.strength(of: Redacted("password")).score, 1)
         XCTAssertThrowsError(try Generator.password(length: 3))
     }
