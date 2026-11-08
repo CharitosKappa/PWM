@@ -14,13 +14,32 @@ import android.view.autofill.AutofillValue
 import android.widget.RemoteViews
 import androidx.activity.compose.setContent
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import pwm.kit.AutofillMatch
 import pwm.kit.Caller
 import pwm.kit.FieldRoles
+import pwm.kit.ui.FillModel
 import pwm.kit.ui.FillValues
 import pwm.kit.ui.SecretKeyModel
+
+/**
+ * The fill outlives its screen. Android can recreate the screen at any time
+ * (a rotation, a configuration it changed), and the new one carries on with
+ * the same search, unlock and pick, and returns a login picked while the old
+ * one was closing: otherwise the search starts again empty and the pick is lost.
+ */
+internal class FillHolder : ViewModel() {
+    var model: FillModel? = null
+    val done = MutableStateFlow<Done?>(null)
+
+    class Done(val values: FillValues?)
+}
 
 /**
  * PWM's fill screen, opened by a tap on an autofill entry (D58 §6): unlock
@@ -43,7 +62,11 @@ class FillActivity : FragmentActivity() {
             lifecycleScope.launch { finishWith(app.fillValues(match), roles) }
             return
         }
-        val model = app.fillModel(caller) { values -> finishWith(values, roles) } ?: return finish()
+        val holder = ViewModelProvider(this)[FillHolder::class.java]
+        val model = holder.model
+            ?: app.fillModel(caller) { values -> holder.done.value = FillHolder.Done(values) }?.also { holder.model = it }
+            ?: return finish()
+        lifecycleScope.launch { finishWith(holder.done.filterNotNull().first().values, roles) }
         setContent { PwmTheme { FillScreen(model) } }
     }
 
