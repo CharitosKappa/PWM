@@ -37,63 +37,6 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D32 — Transactional email provider** · open · founder. Needed for M10.7: email verification at sign-up (so registration stops revealing which emails have accounts) and account notices. To choose: provider and region (EU hosting fits D5), and its licence and data-processing terms.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
-- **D77 — The public autofill dashboard (M10.4): what it shows, how it is built, where it lives, and its history** · proposed 2026-11-08 · Claude Code. The roadmap says "Public autofill compatibility dashboard (static site fed by nightly JSON)". `AUTOFILL.md` adds that the 7-day fix SLA for top sites is published there. The nightly runner (D39) already writes `autofill-report.json` (`"v": 1`) as a CI artifact kept 90 days. Open: what is public, how the page is made, where it is hosted, how history survives, and what happens after a bad night.
-  Proposal:
-  1. **What the page shows:**
-     - **Tonight's pass rate,** counted as the runner counts it (pass ÷ (pass + fail)), with the counts per status and the date of the run. It also shows the 90% and 95% targets (D39).
-     - **A trend of the last 90 nights:** the pass rate as a small inline SVG line, with the sites tested each night.
-     - **One row per site:** the site, its status, since when it has had that status, and the reason in plain words.
-       - Statuses read **Works**, **Doesn't work**, **Not tested** (a bot check or an error page, which we never try to get past) and **Couldn't load**.
-       - Reasons are mapped from the runner's codes. For example, `wrong_inputs` becomes "Filled the wrong fields", `challenge` becomes "The site showed a bot check", and `timeout` becomes "The page didn't load in 20 seconds". An unknown code shows as "Other".
-       - **Sorting:** sites that don't work come first, then the rest by name.
-     - **"How we test":**
-       - Chromium with the extension built from `main` that night, one site at a time.
-       - A made-up login is filled and never submitted, and no real account is used.
-       - Multi-step sites pass when their first page fills.
-       - Bot checks are left alone.
-       - It names the versions from the report.
-     - **The fix SLA:** a site that has not worked for more than 7 days is marked "Over 7 days". It counts from the first night that site didn't work, since tickets from user reports don't exist yet (D39 §4). Once they do, the same mark covers reported sites too.
-     - **Not shown:**
-       - the fill targets (field descriptions, D38): useful for us, noise for readers
-       - user reports (D38) and their counts
-       - anything about who runs the check
-     - **Attribution:** "Site order from the Tranco list (CC BY 4.0)" appears once the list is ordered by Tranco (D39 §2).
-  2. **How it is made:**
-     - **The script:** `tests/autofill-harness/dashboard/build.ts`, in TypeScript and run by Node, needs no new dependencies. It reads a report and the previous `history.json`, and writes a folder:
-       - `index.html`
-       - `style.css`
-       - `report.json` (tonight's per-site status and reason, without the fill targets)
-       - `history.json`
-     - **The page is plain HTML, prerendered:**
-       - no JavaScript, cookies, analytics, web fonts or third-party requests
-       - a Content-Security-Policy of `default-src 'none'; style-src 'self'; img-src 'self'`
-       - colors from `design/tokens.json` (light and dark), status in words and not only in color, a real table with headers, and a phone-width layout
-     - **Escaping:** every value from the report (sites, reasons, versions) is escaped. A report that fails its schema check stops the build.
-     - **The name:** the page says "PWM" until D1, from one constant.
-  3. **Where it lives:**
-     - **GitHub Pages,** deployed from this repository by the nightly job with GitHub's own `actions/upload-pages-artifact` and `actions/deploy-pages`. It needs no secrets or new services. The address is `charitoskappa.github.io/PWM/` until D1 gives a domain, and then a CNAME.
-     - **Founder step:** turn on Pages with "GitHub Actions" as the source, under Settings › Pages.
-     - **If this repository becomes private** (S6), Pages needs a paid plan or another host. The build doesn't change, only the deploy step.
-  4. **History:**
-     - **Where it lives:** the published `history.json` holds the last 90 nights. Each night is `{date, pass_rate, sites: {site: status}}`, about 2 KB a night for 100 sites.
-     - **How it grows:** the nightly job downloads the live `history.json` from the site, adds tonight, and deploys. If the download fails, the job doesn't publish, so a network error can't wipe the history. The very first deploy, when no site exists yet, uses `--first`.
-     - **No commits to `main`** for history. Nothing is kept in the repository.
-     - **"Since"** is the first of the consecutive nights with the site's current status. A site that is new to the list counts from its first night.
-  5. **After a bad night:** the page isn't published when more than 20% of sites end as **Couldn't load** (the runner's `error`). That means our runner broke, not the sites. The job then fails and the last good page stays up. Bot checks don't count towards this.
-  6. **Tests (Vitest, with the harness):**
-     - **The pass rate and counts** match the report.
-     - **"Since":** a site that changed status, one that didn't, and a site new to the list.
-     - **The SLA mark:** at exactly 7 days and at more.
-     - **Every reason code** maps to text, and an unknown one shows "Other".
-     - **Escaping:** a site name holding `<script>` is shown as text.
-     - **Bad input:** a report that fails the schema stops the build.
-     - **History:** it keeps 90 nights and drops the oldest.
-     - **The bad-night rule:** a night with 21% errors is refused, one with 20% is not.
-     - **No scripts:** the output has no `<script>` and refers to no other host.
-  - **Alternatives:**
-    - **A JavaScript page that reads `report.json` in the browser:** easier filters, but it needs JavaScript to show anything, and the prerendered page already works on every device.
-    - **History committed to the repository nightly:** survives a host change, but every night adds a commit to `main` that nobody reviews.
-    - **A separate public repository or Cloudflare Pages:** needed only if this repository goes private. Either takes a token and the founder's setup now, for no gain today.
 
 ## Settled
 
@@ -4151,3 +4094,71 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **Strength: no.** The generator picks list entries, not characters, so the entropy is still 12.9 bits per word. No two word sequences give the same text: `drop`, `felt`, `tip`, `t` and `yo` are not list words, so each hyphenated word can be read only one way. An attacker gains nothing from the hyphens.
   - **Display: minor.** Someone may read `yo-yo-camera-…` as six words, and a hyphenated word can't be told apart from two words when read aloud. No app counts words from the text: the entropy and strength shown come from the core.
   - **Decision: keep the list unmodified.** The rule: nothing (code, tests or UI) counts words by splitting the text; the word count comes from the options or the entropy. Rejected: dropping the four words from the compiled list (7,772 words, 12.92 bits each). That changes the published EFF list, so `NOTICE.md` stops saying "unmodified" and the attribution says it was modified, and every entropy constant in the tests changes. Not worth it for a display quirk.
+- **D77 — The public autofill dashboard (M10.4): what it shows, how it is built, where it lives, and its history** · settled 2026-11-08 · founder (approved as proposed). The roadmap says "Public autofill compatibility dashboard (static site fed by nightly JSON)". `AUTOFILL.md` adds that the 7-day fix SLA for top sites is published there. The nightly runner (D39) already writes `autofill-report.json` (`"v": 1`) as a CI artifact kept 90 days. Open: what is public, how the page is made, where it is hosted, how history survives, and what happens after a bad night.
+  Proposal:
+  1. **What the page shows:**
+     - **Tonight's pass rate,** counted as the runner counts it (pass ÷ (pass + fail)), with the counts per status and the date of the run. It also shows the 90% and 95% targets (D39).
+     - **A trend of the last 90 nights:** the pass rate as a small inline SVG line, with the sites tested each night.
+     - **One row per site:** the site, its status, since when it has had that status, and the reason in plain words.
+       - Statuses read **Works**, **Doesn't work**, **Not tested** (a bot check or an error page, which we never try to get past) and **Couldn't load**.
+       - Reasons are mapped from the runner's codes. For example, `wrong_inputs` becomes "Filled the wrong fields", `challenge` becomes "The site showed a bot check", and `timeout` becomes "The page didn't load in 20 seconds". An unknown code shows as "Other".
+       - **Sorting:** sites that don't work come first, then the rest by name.
+     - **"How we test":**
+       - Chromium with the extension built from `main` that night, one site at a time.
+       - A made-up login is filled and never submitted, and no real account is used.
+       - Multi-step sites pass when their first page fills.
+       - Bot checks are left alone.
+       - It names the versions from the report.
+     - **The fix SLA:** a site that has not worked for more than 7 days is marked "Over 7 days". It counts from the first night that site didn't work, since tickets from user reports don't exist yet (D39 §4). Once they do, the same mark covers reported sites too.
+     - **Not shown:**
+       - the fill targets (field descriptions, D38): useful for us, noise for readers
+       - user reports (D38) and their counts
+       - anything about who runs the check
+     - **Attribution:** "Site order from the Tranco list (CC BY 4.0)" appears once the list is ordered by Tranco (D39 §2).
+  2. **How it is made:**
+     - **The script:** `tests/autofill-harness/dashboard/build.ts`, in TypeScript and run by Node, needs no new dependencies. It reads a report and the previous `history.json`, and writes a folder:
+       - `index.html`
+       - `style.css`
+       - `report.json` (tonight's per-site status and reason, without the fill targets)
+       - `history.json`
+     - **The page is plain HTML, prerendered:**
+       - no JavaScript, cookies, analytics, web fonts or third-party requests
+       - a Content-Security-Policy of `default-src 'none'; style-src 'self'; img-src 'self'`
+       - colors from `design/tokens.json` (light and dark), status in words and not only in color, a real table with headers, and a phone-width layout
+     - **Escaping:** every value from the report (sites, reasons, versions) is escaped. A report that fails its schema check stops the build.
+     - **The name:** the page says "PWM" until D1, from one constant.
+  3. **Where it lives:**
+     - **GitHub Pages,** deployed from this repository by the nightly job with GitHub's own `actions/upload-pages-artifact` and `actions/deploy-pages`. It needs no secrets or new services. The address is `charitoskappa.github.io/PWM/` until D1 gives a domain, and then a CNAME.
+     - **Founder step:** turn on Pages with "GitHub Actions" as the source, under Settings › Pages.
+     - **If this repository becomes private** (S6), Pages needs a paid plan or another host. The build doesn't change, only the deploy step.
+  4. **History:**
+     - **Where it lives:** the published `history.json` holds the last 90 nights. Each night is `{date, pass_rate, sites: {site: status}}`, about 2 KB a night for 100 sites.
+     - **How it grows:** the nightly job downloads the live `history.json` from the site, adds tonight, and deploys. If the download fails, the job doesn't publish, so a network error can't wipe the history. The very first deploy, when no site exists yet, uses `--first`.
+     - **No commits to `main`** for history. Nothing is kept in the repository.
+     - **"Since"** is the first of the consecutive nights with the site's current status. A site that is new to the list counts from its first night.
+  5. **After a bad night:** the page isn't published when more than 20% of sites end as **Couldn't load** (the runner's `error`). That means our runner broke, not the sites. The job then fails and the last good page stays up. Bot checks don't count towards this.
+  6. **Tests (Vitest, with the harness):**
+     - **The pass rate and counts** match the report.
+     - **"Since":** a site that changed status, one that didn't, and a site new to the list.
+     - **The SLA mark:** at exactly 7 days and at more.
+     - **Every reason code** maps to text, and an unknown one shows "Other".
+     - **Escaping:** a site name holding `<script>` is shown as text.
+     - **Bad input:** a report that fails the schema stops the build.
+     - **History:** it keeps 90 nights and drops the oldest.
+     - **The bad-night rule:** a night with 21% errors is refused, one with 20% is not.
+     - **No scripts:** the output has no `<script>` and refers to no other host.
+  - **Alternatives:**
+    - **A JavaScript page that reads `report.json` in the browser:** easier filters, but it needs JavaScript to show anything, and the prerendered page already works on every device.
+    - **History committed to the repository nightly:** survives a host change, but every night adds a commit to `main` that nobody reviews.
+    - **A separate public repository or Cloudflare Pages:** needed only if this repository goes private. Either takes a token and the founder's setup now, for no gain today.
+  Implementation notes (M10.4):
+  - **The tests use Playwright's test runner,** like `compare.spec.ts`, instead of Vitest. The harness already has it, and they need no browser.
+  - **The workflow's concurrency group** now includes the event (`ci-<ref>-<event>`). Before, a push to `main` during the nightly run cancelled it, and with it the deploy.
+  - **The policy is a `<meta>` tag,** since Pages can't set headers, so `frame-ancestors` isn't available.
+  - **On a phone** the sites table becomes labeled rows, and the trend's labels and line are drawn larger.
+  - **The edge cases:**
+    - A night where no site could be tested shows 0%.
+    - A night with no sites at all isn't published.
+    - A site whose run of nights starts at the oldest kept night may have had that status for longer.
+  - **The CI job** runs the script with Node alone, with no install, since it imports only Node's own modules.
+  - **The first deploy is a manual run** of the workflow with `first_dashboard` ticked. It needs Pages turned on first.

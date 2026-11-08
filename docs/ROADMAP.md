@@ -806,7 +806,24 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
 - [ ] M10.1 Release pipeline: beta channels, staged rollout, auto-halt metrics, rollback (`QUALITY.md`).
 - [ ] M10.2 Crash reporting with secret scrubbing; opt-in analytics.
 - [ ] M10.3 Public status page, help center, in-app support entry.
-- [ ] M10.4 Public autofill compatibility dashboard (static site fed by nightly JSON).
+- [x] M10.4 Public autofill compatibility dashboard (static site fed by nightly JSON).
+  - Done per D77:
+    - **The page:** `tests/autofill-harness/dashboard/build.ts` builds it from the night's report and the live `history.json`. It is plain HTML and CSS with no scripts, cookies, fonts or requests to other hosts, and uses the design's colors in light and dark.
+      - **What it shows:** last night's pass rate against the 90% and 95% targets, the counts per status, and the last 90 nights as a line (the numbers are under "Show the numbers").
+      - **Sites:** one row each, with its status, since when, and why in plain words. Sites that don't work come first, and those not working for more than 7 days are marked.
+      - **Also:** "How we test", and the data as `report.json` and `history.json`.
+    - **The deploy:** the new `autofill-dashboard` CI job runs after the nightly runner, on `main`, and publishes to GitHub Pages. It publishes nothing when the history can't be downloaded, the report fails its checks, or more than 20% of the sites couldn't load.
+    - **The workflow's concurrency group** now includes the event, so a push to `main` no longer cancels the nightly run.
+    - **Tests:** `tests/dashboard.spec.ts` (13, no browser) covers the counts, "since", the 7-day mark, the order, every reason code, escaping, no scripts or other hosts, 90 nights, a broken report or history, and the 20% rule.
+    - **Checked by eye:** a page built from made-up nights, in Chrome at desktop and phone widths, light and dark.
+    - **Founder steps before the first deploy:**
+      - turn on Pages with "GitHub Actions" as the source (Settings › Pages)
+      - run the CI workflow by hand on `main` with `first_dashboard` ticked
+    - **Not checked yet:** the deploy itself and a real night's report, which both wait for Pages.
+    - **Deferred:**
+      - **The domain:** comes with D1, as a CNAME.
+      - **User reports on the page:** they wait for tickets (D39 §4).
+      - **The Tranco attribution:** shown once the list is ordered by Tranco (`--tranco`).
 - [ ] M10.5 Bug bounty live; external audit fixes closed; audit reports published.
 - [ ] M10.6 Private beta with ≥ 1,000 users; fix top issues.
 - [ ] M10.7 Transactional email, from M3. It needs the provider decision in D32.
