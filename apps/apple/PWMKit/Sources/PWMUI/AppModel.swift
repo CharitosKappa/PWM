@@ -14,6 +14,9 @@ public final class AppModel {
 
     public private(set) var screen: Screen = .loading
     public private(set) var error: String?
+    /// Why the last account left this device, on the welcome screen: it
+    /// was deleted (D74) or this device was signed out elsewhere.
+    public private(set) var ended: String?
 
     /// The server choice on the welcome screen: the hosted service, or a
     /// self-hosted address.
@@ -61,6 +64,11 @@ public final class AppModel {
     let approvalNotices: any ApprovalNotices
     /// Reading and deleting an import's file (D51 §9).
     let importFiles: any ImportFiles
+    /// Where this app sells plans (D6 §2).
+    let checkout: Checkout
+    /// iOS: App Store transactions that finish outside a purchase, sent to
+    /// the server while the vault is unlocked (D6 §3).
+    private(set) var storeUpdates: Task<Void, Never>?
     /// "Sign in again to sync" (D50 §5), while the vault shows.
     public private(set) var signInAgain: SignInAgainModel?
     private let clock: @MainActor () -> ContinuousClock.Instant
@@ -82,6 +90,7 @@ public final class AppModel {
         browserTouchID: (any BrowserTouchID)? = nil,
         approvalNotices: any ApprovalNotices = NoApprovalNotices(),
         importFiles: any ImportFiles = SystemImportFiles(),
+        checkout: Checkout = .web,
         clock: @escaping @MainActor () -> ContinuousClock.Instant = { ContinuousClock.now }
     ) {
         self.makeAccount = makeAccount
@@ -92,6 +101,7 @@ public final class AppModel {
         self.browserTouchID = browserTouchID
         self.approvalNotices = approvalNotices
         self.importFiles = importFiles
+        self.checkout = checkout
         self.clock = clock
     }
 
@@ -118,6 +128,7 @@ public final class AppModel {
 
     public func showCreateAccount() {
         error = nil
+        ended = nil
         createAccount = CreateAccountModel(deviceName: deviceName, account: { [unowned self] in try self.chosenAccount() }) {
             [unowned self] account, key in
             self.createAccount = nil
@@ -133,6 +144,7 @@ public final class AppModel {
 
     public func showSignIn() {
         error = nil
+        ended = nil
         signIn = SignInModel(
             deviceName: deviceName,
             account: { [unowned self] in try self.chosenAccount() },
@@ -171,7 +183,9 @@ public final class AppModel {
 
     private func showVault() {
         guard let account else { return }
-        let vault = VaultModel(account: account, pasteboard: pasteboard) { [unowned self] in self.didSignOut() }
+        let vault = VaultModel(account: account, pasteboard: pasteboard) { [unowned self] ended in
+            self.didSignOut(ended: ended)
+        }
         // Signing in again already synced; the server needs the push token again.
         let again = SignInAgainModel(account: account, defaults: defaults) { [weak self, weak vault] in
             await vault?.load()
@@ -185,10 +199,28 @@ public final class AppModel {
         let server = accountServer.flatMap { $0 == Server.hosted ? nil : $0 }
         settings = SettingsModel(server: server, app: self, account: account)
         screen = .vault
+        listenForStoreTransactions(account: account)
     }
 
-    /// Back to welcome once the account is gone from this device.
-    func didSignOut() {
+    /// Unfinished and later App Store transactions go to the server, then
+    /// are finished; the plan on screen updates. Only while unlocked: the
+    /// server call needs the session, and StoreKit offers what's left again.
+    private func listenForStoreTransactions(account: any Account) {
+        guard case let .appStore(store) = checkout else { return }
+        storeUpdates?.cancel()
+        storeUpdates = Task { [weak self] in
+            for await transaction in store.transactions() {
+                guard let status = try? await PlanModel.deliver(transaction, to: account) else { continue }
+                self?.settings?.plan.apply(status)
+            }
+        }
+    }
+
+    /// Back to welcome once the account is gone from this device; `ended`
+    /// says why when it wasn't signed out here (`account_deleted`,
+    /// `device_revoked`).
+    func didSignOut(ended code: String? = nil) {
+        ended = code.map { PWMError(code: $0).message }
         dropVault()
         unlock = nil
         SignInAgainModel.clear(in: defaults)
@@ -197,6 +229,8 @@ public final class AppModel {
     }
 
     private func dropVault() {
+        storeUpdates?.cancel()
+        storeUpdates = nil
         vault = nil
         generator = nil
         settings = nil
@@ -269,7 +303,12 @@ public final class AppModel {
             case .deviceRevoked:
                 // The core has cleared the cache; finish signing out.
                 try? await account.signOut()
-                didSignOut()
+                didSignOut(ended: "device_revoked")
+                return .noData
+            case .accountDeleted:
+                // As for a revoked device (D74 §5).
+                try? await account.signOut()
+                didSignOut(ended: "account_deleted")
                 return .noData
             }
         } catch {
@@ -319,7 +358,11 @@ public final class AppModel {
         await account.lock()
         dropVault()
         await showUnlock()
+        Speech.say(Self.lockedLine)
     }
+
+    /// Said when the vault locks, from the button or the timeout.
+    public static let lockedLine = "Vault locked"
 
     /// The app left the screen.
     public func didEnterBackground() async {

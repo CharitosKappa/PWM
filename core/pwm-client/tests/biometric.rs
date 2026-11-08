@@ -1,7 +1,7 @@
 //! Face ID / Touch ID unlock through the client (decision D45): the blob the
 //! app keeps and the key it wraps with a hardware key.
 
-use pwm_client::{Client, ClientError, MemoryStore, Tokens, new_id};
+use pwm_client::{Client, ClientError, MemoryStore, Signer, Tokens, new_id};
 use pwm_crypto::{KdfParams, SymmetricKey, create_account};
 use pwm_store::{AccountRecord, Store, VaultRecord};
 use pwm_vault::{Item, ItemId, ItemKind};
@@ -148,7 +148,12 @@ fn windows_hello_unlocks_with_the_same_signature_and_remakes_the_blob() {
     let device = new_id().unwrap();
     let challenge = pwm_client::windows_hello_challenge().unwrap();
     let hello = client
-        .export_windows_hello(&device, challenge.expose_secret(), &signature(1))
+        .export_windows_hello(
+            Signer::WindowsHello,
+            &device,
+            challenge.expose_secret(),
+            &signature(1),
+        )
         .unwrap();
     assert_eq!(hello.blob[0], 1, "the biometric blob, versioned");
     assert_eq!(hello.sealed_key[0], 1, "the sealed key, versioned");
@@ -156,6 +161,7 @@ fn windows_hello_unlocks_with_the_same_signature_and_remakes_the_blob() {
 
     let again = client
         .unlock_windows_hello(
+            Signer::WindowsHello,
             &hello.blob,
             &hello.sealed_key,
             challenge.expose_secret(),
@@ -171,6 +177,7 @@ fn windows_hello_unlocks_with_the_same_signature_and_remakes_the_blob() {
     client.lock();
     client
         .unlock_windows_hello(
+            Signer::WindowsHello,
             &again.blob,
             &again.sealed_key,
             challenge.expose_secret(),
@@ -188,7 +195,12 @@ fn windows_hello_refuses_another_signature_challenge_or_device() {
     let device = new_id().unwrap();
     let challenge = pwm_client::windows_hello_challenge().unwrap();
     let hello = client
-        .export_windows_hello(&device, challenge.expose_secret(), &signature(1))
+        .export_windows_hello(
+            Signer::WindowsHello,
+            &device,
+            challenge.expose_secret(),
+            &signature(1),
+        )
         .unwrap();
     client.lock();
     let other = pwm_client::windows_hello_challenge().unwrap();
@@ -219,9 +231,61 @@ fn windows_hello_refuses_another_signature_challenge_or_device() {
         ),
     ] {
         assert_eq!(
-            code(client.unlock_windows_hello(&hello.blob, &sealed, ch, &sig, &dev, tokens())),
+            code(client.unlock_windows_hello(
+                Signer::WindowsHello,
+                &hello.blob,
+                &sealed,
+                ch,
+                &sig,
+                &dev,
+                tokens()
+            )),
             "biometric_unlock_failed"
         );
         assert!(!client.is_unlocked());
     }
+}
+
+// --- Linux (D71): the same, with the key holder's 32-byte answer ---
+
+#[test]
+fn linux_unlocks_with_the_key_holders_answer_and_not_as_windows() {
+    let (mut client, _, vault) = unlocked();
+    let device = new_id().unwrap();
+    let challenge = pwm_client::windows_hello_challenge().unwrap();
+    let answer = [0x42; 32];
+    let linux = client
+        .export_windows_hello(
+            Signer::LinuxPolkit,
+            &device,
+            challenge.expose_secret(),
+            &answer,
+        )
+        .unwrap();
+    client.lock();
+    // Taken as a Windows signature, the same bytes open nothing.
+    assert_eq!(
+        code(client.unlock_windows_hello(
+            Signer::WindowsHello,
+            &linux.blob,
+            &linux.sealed_key,
+            challenge.expose_secret(),
+            &[0x42; 64],
+            &device,
+            tokens(),
+        )),
+        "biometric_unlock_failed"
+    );
+    client
+        .unlock_windows_hello(
+            Signer::LinuxPolkit,
+            &linux.blob,
+            &linux.sealed_key,
+            challenge.expose_secret(),
+            &answer,
+            &device,
+            tokens(),
+        )
+        .unwrap();
+    assert_eq!(client.items(&vault).unwrap().len(), 1);
 }

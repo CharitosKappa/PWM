@@ -334,6 +334,7 @@ export function VaultWindow({
             editing={pane.kind === "edit" ? selected : null}
             type={pane.kind === "new" ? pane.type : "login"}
             folders={folders}
+            codesIncluded={vault?.codesIncluded ?? true}
             onFoldersChanged={load}
             onSaved={(vaultId, itemId) => {
               load();

@@ -113,4 +113,14 @@
     <string name="left_out_empty">empty rows</string>
     <string name="left_out_too_large">items too large to sync</string>
     <string name="left_out_duplicates">items already in your vault</string>
+
+    <!-- Deleting the account (D74 §7). -->
+    <string name="delete_account">Delete account</string>
+    <string name="delete_intro">Your vaults and items will be deleted from every device and from our server. This can\'t be undone.</string>
+    <string name="delete_export_first">Export first</string>
+    <string name="delete_continue">Continue</string>
+    <string name="delete_plan_refund">Your plan ends now, and you\'ll get back the unused days.</string>
+    <string name="delete_plan_apple">Apple bills this plan. Cancel it in your Apple account, or Apple will keep charging you.</string>
+    <string name="delete_plan_apple_how">On an iPhone or iPad: Settings › your name › Subscriptions. On the web: apps.apple.com/account/subscriptions.</string>
+    <string name="delete_working">Deleting…</string>
 </resources>

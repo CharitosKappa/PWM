@@ -20,6 +20,13 @@ public enum Tokens {
         public static let danger = ThemedColor(light: RGBA(0xC0, 0x30, 0x4A, alpha: 1), dark: RGBA(0xFF, 0x80, 0x95, alpha: 1))
     }
 
+    /// The bundled fonts (D1): each family's first name, and the font files.
+    public enum FontFamily {
+        public static let sans = "Manrope"
+        public static let mono = "Geist Mono"
+        public static let files = ["Manrope.ttf", "GeistMono.ttf"]
+    }
+
     /// Sizes are the web sizes in points; SwiftUI scales them with Dynamic Type.
     public enum Text {
         public static let caption = TypeStyle(size: 12, weight: 400, lineHeight: 1.33, monospaced: false)

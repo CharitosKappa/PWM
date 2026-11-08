@@ -224,7 +224,7 @@ async fn a_device_behind_compacted_tombstones_pulls_again_and_drops_deletes() {
     sync(&app, &mut phone).await;
 
     // The laptop deletes Bank; half a year later the tombstone is compacted
-    // before the phone syncs again (D70 §2).
+    // before the phone syncs again (D76 §2).
     laptop.delete_item(&vault, &bank).unwrap();
     sync(&app, &mut laptop).await;
     sqlx::query("UPDATE tombstones SET deleted_at = now() - make_interval(days => $1::int)")

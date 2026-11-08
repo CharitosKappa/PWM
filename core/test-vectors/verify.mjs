@@ -347,6 +347,39 @@ for (const v of load("windows_hello")) {
   check("windows hello open", eq(openEnvelope(key, hex(v.envelope), aad), hex(v.unlock_key)));
 }
 
+for (const v of load("browser_hello")) {
+  const key = hkdf(hex(v.signature), hex(v.challenge), hex(v.info));
+  check("browser hello info", hex(v.info).toString("utf8") === "pwm/browser-unlock/windows-hello/v1");
+  check("browser hello key", eq(key, hex(v.wrapping_key)));
+  const caller = Buffer.from(v.caller, "utf8");
+  const len = Buffer.alloc(2);
+  len.writeUInt16BE(caller.length);
+  const aad = labelled("pwm/browser-unlock/windows-hello", Buffer.from([1]), len, caller, hex(v.account_id), hex(v.device_id));
+  check("browser hello aad", eq(aad, hex(v.aad)));
+  check("browser hello open", eq(openEnvelope(key, hex(v.envelope), aad), hex(v.browser_key)));
+}
+
+for (const v of load("linux_polkit")) {
+  const answer = hkdf(hex(v.secret), hex(v.challenge), hex(v.response_info));
+  check("linux polkit response info", hex(v.response_info).toString("utf8") === "pwm/linux-polkit/response/v1");
+  check("linux polkit response", eq(answer, hex(v.response)));
+  const key = hkdf(answer, hex(v.challenge), hex(v.info));
+  check("linux polkit info", hex(v.info).toString("utf8") === "pwm/linux-polkit/v1");
+  check("linux polkit key", eq(key, hex(v.wrapping_key)));
+  const aad = labelled("pwm/linux-polkit", Buffer.from([1]), hex(v.account_id), hex(v.device_id));
+  check("linux polkit aad", eq(aad, hex(v.aad)));
+  check("linux polkit open", eq(openEnvelope(key, hex(v.envelope), aad), hex(v.unlock_key)));
+  const browserKey = hkdf(answer, hex(v.challenge), hex(v.browser_info));
+  check("linux polkit browser info", hex(v.browser_info).toString("utf8") === "pwm/browser-unlock/linux-polkit/v1");
+  check("linux polkit browser key", eq(browserKey, hex(v.browser_wrapping_key)));
+  const caller = Buffer.from(v.caller, "utf8");
+  const len = Buffer.alloc(2);
+  len.writeUInt16BE(caller.length);
+  const browserAad = labelled("pwm/browser-unlock/linux-polkit", Buffer.from([1]), len, caller, hex(v.account_id), hex(v.device_id));
+  check("linux polkit browser aad", eq(browserAad, hex(v.browser_aad)));
+  check("linux polkit browser open", eq(openEnvelope(browserKey, hex(v.browser_envelope), browserAad), hex(v.browser_key)));
+}
+
 for (const v of load("session")) {
   const account = hex(v.account_id);
   const keyset = openKeyset(v);

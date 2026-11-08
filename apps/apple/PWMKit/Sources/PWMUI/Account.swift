@@ -11,6 +11,8 @@ public protocol Account: AnyObject, Sendable {
     func unlock(password: Redacted<String>) async throws
     func lock() async
     func signOut() async throws
+    /// Deletes the account everywhere and wipes this device (D74).
+    func deleteAccount(password: Redacted<String>) async throws
     func emergencyKit(paper: EmergencyKit.Paper) async throws -> Redacted<Data>
 
     // The vault (D43).
@@ -65,6 +67,18 @@ public protocol Account: AnyObject, Sendable {
     // Suggestions above the keyboard (D47 §5).
     func suggestionsOn() async -> Bool
     func setSuggestions(on: Bool) async
+
+    // Plan and billing (D6).
+    func billing() async throws -> BillingStatus
+    /// Stripe's Checkout page, for the browser.
+    func checkoutURL(for plan: Plan) async throws -> URL
+    func cancelSubscription() async throws -> BillingStatus
+    func resumeSubscription() async throws -> BillingStatus
+    /// Pays back the unused days of a Stripe or Google Play subscription and
+    /// ends the plan now (D72 §1).
+    func refund(provider: BillingProvider) async throws -> BillingStatus
+    /// Right after StoreKit finished a purchase, before finishing it.
+    func applePurchase(transactionId: String) async throws -> BillingStatus
 }
 
 extension Session: Account {}

@@ -2,19 +2,25 @@
 //! `PWM_SERVER_SECRETS`, `PWM_LISTEN`, `PWM_TRUSTED_PROXIES`, `PWM_LOG`,
 //! `PWM_LOG_FORMAT`, and the optional `PWM_APNS_*` for push), applies pending migrations and serves the API until
 //! Ctrl-C or SIGTERM. While serving, it cleans up expired rows and old
-//! tombstones every hour (D70).
+//! tombstones every hour (D76).
 //!
 //! Subcommands:
 //! - `keygen` prints new server secrets for `PWM_SERVER_SECRETS`;
 //!   `keygen --env <file>` writes them as `PWM_SERVER_SECRETS=...` to a new
 //!   file (and leaves an existing one alone). Keep them in a secret manager
 //!   with a backup: losing them locks every account out.
-//! - `mark-restored` gives the server a new epoch; run it once after
-//!   restoring the database from a backup (D30).
+//! - `mark-restored` deletes again the accounts deleted after the backup
+//!   (D74 §6) and gives the server a new epoch; run it once after restoring
+//!   the database from a backup (D30).
 //! - `healthcheck` exits 0 if the server on `PWM_LISTEN` answers
 //!   `/healthz` (the container health check).
 //! - `reports export [--since YYYY-MM-DD]` writes the autofill failure
 //!   reports (D38) to stdout as JSON lines, for triage.
+//! - `price-change <stripe|app_store|play> <plan> <price id> <amount> <currency>`
+//!   records a price change (D72 §2): subscribers paying another price keep
+//!   it for 12 months and are told now and 60 days before it ends. Change
+//!   the price setting (`PWM_STRIPE_PRICES`, or the store's console, keeping
+//!   existing subscribers' price) for new subscribers.
 #![forbid(unsafe_code)]
 
 use std::io::{IsTerminal, Write};
@@ -23,8 +29,9 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use pwm_server::{
-    AppState, Config, DEFAULT_LISTEN, LogFormat, Push, ServerError, app, connect,
-    generate_server_secrets, install_panic_hook, log_subscriber, migrate, spawn_maintenance,
+    AppState, Billing, Config, DEFAULT_LISTEN, DeletionLog, LogFormat, Push, ServerError, app,
+    connect, generate_server_secrets, install_panic_hook, log_subscriber, migrate,
+    spawn_maintenance,
 };
 use tokio::net::TcpListener;
 
@@ -35,10 +42,11 @@ async fn main() -> ExitCode {
         Some("keygen") => return keygen(args.get(1).map(String::as_str), args.get(2)),
         Some("healthcheck") => return healthcheck(),
         Some("reports") => return reports(&args[1..]).await,
+        Some("price-change") => return price_change(&args[1..]).await,
         Some("mark-restored") | None => {}
         Some(_) => {
             eprintln!(
-                "usage: pwm-server [keygen [--env <file>] | mark-restored | healthcheck | reports export [--since YYYY-MM-DD]]"
+                "usage: pwm-server [keygen [--env <file>] | mark-restored | healthcheck | reports export [--since YYYY-MM-DD] | price-change <provider> <plan> <price id> <amount> <currency>]"
             );
             return ExitCode::FAILURE;
         }
@@ -165,10 +173,49 @@ async fn reports(args: &[String]) -> ExitCode {
     }
 }
 
+async fn price_change(args: &[String]) -> ExitCode {
+    let [provider, plan, price, amount, currency] = args else {
+        eprintln!(
+            "usage: pwm-server price-change <stripe|app_store|play> <premium|family|teams> <price id> <amount in minor units> <currency>"
+        );
+        return ExitCode::FAILURE;
+    };
+    let Ok(amount) = amount.parse::<i64>() else {
+        eprintln!("the amount is in minor units, like 2400");
+        return ExitCode::FAILURE;
+    };
+    let result = async {
+        let config = Config::from_env()?;
+        let pool = connect(config.database_url.expose_secret())?;
+        migrate(&pool).await?;
+        let held =
+            pwm_server::record_price_change(&pool, provider, plan, price, amount, currency).await?;
+        pool.close().await;
+        Ok::<_, ServerError>(held)
+    }
+    .await;
+    match result {
+        Ok(held) => {
+            println!(
+                "recorded: {held} subscriptions keep their price for 12 months and will be told (D72)"
+            );
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 async fn mark_restored() -> Result<(), ServerError> {
     let config = Config::from_env()?;
     let pool = connect(config.database_url.expose_secret())?;
     migrate(&pool).await?;
+    // Before clients come back: accounts deleted since the backup stay deleted (D74 §6).
+    let log = deletion_log(config.deletions_file);
+    let again = pwm_server::redelete(&pool, &log).await?;
+    tracing::info!("{again} accounts deleted after the backup were deleted again");
     let epoch = pwm_server::mark_restored(&pool).await?;
     tracing::info!(%epoch, "new server epoch: every client will pull again and upload what the backup lost");
     pool.close().await;
@@ -194,11 +241,17 @@ async fn run() -> Result<(), ServerError> {
         tracing::info!("push over FCM is on");
     }
     let push = Push::start(pool.clone(), config.push, config.fcm);
-    // Expired rows and old tombstones (D70).
+    // Expired rows and old tombstones (D76).
     let maintenance = spawn_maintenance(pool.clone());
+    let billing = Billing::new(config.billing)?;
+    billing.start_daily(pool.clone());
+    let deletions = deletion_log(config.deletions_file);
+    deletions.start_daily(pool.clone());
     let state = AppState::new(pool.clone(), config.server_secrets)
         .with_trusted_proxies(config.trusted_proxies)
-        .with_push(push);
+        .with_push(push)
+        .with_billing(billing)
+        .with_deletions(deletions);
     // The peer address is needed for per-IP rate limits.
     axum::serve(
         listener,
@@ -210,6 +263,20 @@ async fn run() -> Result<(), ServerError> {
     pool.close().await;
     tracing::info!("stopped");
     Ok(())
+}
+
+/// The deletions file, or a warning that a restore could bring back accounts
+/// deleted after its backup (D74 §6).
+fn deletion_log(path: Option<std::path::PathBuf>) -> DeletionLog {
+    match path {
+        Some(path) => DeletionLog::at(path),
+        None => {
+            tracing::warn!(
+                "PWM_DELETIONS_FILE is not set: restoring a backup could bring back accounts deleted after it"
+            );
+            DeletionLog::off()
+        }
+    }
 }
 
 async fn shutdown() {

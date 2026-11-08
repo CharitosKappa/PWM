@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -32,6 +34,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import java.text.NumberFormat
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +46,7 @@ import pwm.kit.ImportFile
 import pwm.kit.ImportSummary
 import pwm.kit.design.Tokens
 import pwm.kit.ui.AppModel
+import pwm.kit.ui.DeleteAccountModel
 import pwm.kit.ui.Entry
 import pwm.kit.ui.ExportModel
 import pwm.kit.ui.HealthModel
@@ -92,7 +97,7 @@ internal fun HealthPage(settings: SettingsModel, model: HealthModel) {
 
 @Composable
 private fun Group(title: String, hint: String?) {
-    Text(title, style = Tokens.Text.title.compose(), color = color(Tokens.Color.text))
+    Text(title, style = Tokens.Text.title.compose(), color = color(Tokens.Color.text), modifier = Modifier.semantics { heading() })
     if (hint != null) Text(hint, style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))
 }
 
@@ -214,7 +219,10 @@ internal fun ImportPage(app: AppModel, settings: SettingsModel, model: ImportMod
                 )
             }
             state.columns?.takeIf { state.format == "csv" }?.let { columns ->
-                Text(stringResource(R.string.import_columns), style = Tokens.Text.title.compose(), color = color(Tokens.Color.text))
+                Text(
+                    stringResource(R.string.import_columns), style = Tokens.Text.title.compose(), color = color(Tokens.Color.text),
+                    modifier = Modifier.semantics { heading() },
+                )
                 val none = stringResource(R.string.import_column_none)
                 val headers = columns.headers.mapIndexed { i, h -> h.ifBlank { stringResource(R.string.import_column_n, i + 1) } }
                 for ((field, label) in COLUMN_FIELDS) {
@@ -315,5 +323,44 @@ private fun Choice(label: String, current: String, options: List<String>, tag: S
                 }
             }
         }
+    }
+}
+
+/** Deleting the account (D74 §7): what will happen, with export first; the plan, when there is one; then the master password. */
+@Composable
+internal fun DeleteAccountPage(settings: SettingsModel, model: DeleteAccountModel) {
+    val state by model.state.collectAsState()
+    Page(stringResource(R.string.delete_account), null, tag = "deleteAccountScreen") {
+        TextButton(onClick = { settings.back() }, modifier = Modifier.testTag("back")) { Text(stringResource(R.string.back)) }
+        when (state.step) {
+            DeleteAccountModel.Step.INTRO -> {
+                Text(stringResource(R.string.delete_intro), style = Tokens.Text.body.compose(), color = color(Tokens.Color.text))
+                Secondary(stringResource(R.string.delete_export_first), tag = "deleteExportFirst", onClick = settings::exportFirst)
+                Primary(stringResource(R.string.delete_continue), enabled = true, tag = "deleteContinue", onClick = model::next)
+            }
+            DeleteAccountModel.Step.PLAN -> {
+                if (state.endsWithRefund) {
+                    Text(stringResource(R.string.delete_plan_refund), style = Tokens.Text.body.compose(), color = color(Tokens.Color.text))
+                }
+                if (state.appleBills) {
+                    Text(
+                        stringResource(R.string.delete_plan_apple), style = Tokens.Text.body.compose(), color = color(Tokens.Color.text),
+                        modifier = Modifier.testTag("deleteAppleBills"),
+                    )
+                    Text(stringResource(R.string.delete_plan_apple_how), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))
+                }
+                Primary(stringResource(R.string.delete_continue), enabled = true, tag = "deletePlanContinue", onClick = model::next)
+            }
+            DeleteAccountModel.Step.PASSWORD -> {
+                Field(stringResource(R.string.master_password), state.password.value, model::setPassword, tag = "deletePassword", secret = true)
+                Button(
+                    onClick = model::delete,
+                    enabled = state.canDelete,
+                    colors = ButtonDefaults.buttonColors(containerColor = color(Tokens.Color.danger)),
+                    modifier = Modifier.fillMaxWidth().testTag("deleteConfirm"),
+                ) { Text(stringResource(if (state.busy) R.string.delete_working else R.string.delete_account)) }
+            }
+        }
+        ErrorLine(state.error)
     }
 }

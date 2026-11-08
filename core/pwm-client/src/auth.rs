@@ -20,7 +20,7 @@ pub(crate) fn b64(bytes: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
-fn unb64(text: &str) -> Result<Vec<u8>, ClientError> {
+pub(crate) fn unb64(text: &str) -> Result<Vec<u8>, ClientError> {
     URL_SAFE_NO_PAD
         .decode(text)
         .map_err(|_| ClientError::Protocol)

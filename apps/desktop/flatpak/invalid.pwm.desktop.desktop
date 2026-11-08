@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=PWM
+Comment=Password manager
+Exec=pwm-desktop
+Icon=invalid.pwm.desktop
+Categories=Utility;
+Terminal=false

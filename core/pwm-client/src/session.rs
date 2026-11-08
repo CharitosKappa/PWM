@@ -110,6 +110,8 @@ impl<S: Store> Client<S> {
     }
 
     /// The current one-time code of a login, and the seconds it stays valid.
+    /// `plan_required` when the plan doesn't include codes (D73 §1); the
+    /// secret itself stays readable in the item.
     pub fn current_code(
         &self,
         vault_id: &str,
@@ -127,6 +129,9 @@ impl<S: Store> Client<S> {
         let Some(uri) = &login.totp else {
             return Ok(None);
         };
+        if !self.codes_included(now_ms)? {
+            return Err(ClientError::PlanRequired);
+        }
         let totp = Totp::parse(uri).map_err(|_| ClientError::InvalidItem)?;
         let code = totp.code(u64::try_from(now_ms / 1000).unwrap_or(0));
         Ok(Some((code.code, code.seconds_left)))

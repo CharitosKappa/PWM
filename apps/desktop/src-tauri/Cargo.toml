@@ -16,6 +16,8 @@ tauri-build = { version = "2.7", features = ["isolation"] }
 [dependencies]
 pwm-client = { path = "../../../core/pwm-client" }
 pwm-store = { path = "../../../core/pwm-store" }
+pwm-hello = { path = "../hello" }
+pwm-browser-helper = { path = "../browser-helper" }
 
 tauri = { version = "2.12", features = ["tray-icon", "isolation"] }
 tauri-plugin-single-instance = "2.5"

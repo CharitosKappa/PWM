@@ -268,3 +268,138 @@ describe("export", () => {
     ).toBe("invalid_request");
   });
 });
+
+describe("plan", () => {
+  it("reads the plan, opens checkout, and cancels and resumes in one click", async () => {
+    const { background, core } = await signedUp();
+    expect(await background.handle({ kind: "plan" })).toEqual({
+      plan: "free",
+      subscription: null,
+      sells: ["stripe"],
+    });
+    expect(await background.handle({ kind: "checkout", plan: "premium" })).toBe(
+      "https://checkout.stripe.com/c/pay/cs_test_1",
+    );
+
+    core().billing_ = {
+      plan: "premium",
+      subscription: {
+        provider: "stripe",
+        plan: "premium",
+        status: "active",
+        until_ms: 1_793_000_000_000,
+        canceling: false,
+        price_locked_until_ms: null,
+        refundable_until_ms: null,
+        also: ["app_store"],
+      },
+      sells: ["stripe"],
+      token: null,
+    };
+    const canceled = await background.handle({ kind: "cancelPlan" });
+    expect(canceled.subscription).toEqual({
+      provider: "stripe",
+      plan: "premium",
+      status: "active",
+      untilMs: 1_793_000_000_000,
+      canceling: true,
+      priceLockedUntilMs: null,
+      refundableUntilMs: null,
+      also: ["app_store"],
+    });
+    const resumed = await background.handle({ kind: "resumePlan" });
+    expect(resumed.subscription?.canceling).toBe(false);
+  });
+
+  it("passes the server's billing codes on", async () => {
+    const { background, core } = await signedUp();
+    core().billingError = "managed_elsewhere";
+    expect(await errorOf(background.handle({ kind: "cancelPlan" }))).toBe(
+      "managed_elsewhere",
+    );
+    core().billingError = null;
+    core().checkoutUrl = "javascript:alert(1)";
+    expect(
+      await errorOf(background.handle({ kind: "checkout", plan: "premium" })),
+    ).toBe("internal");
+  });
+
+  it("refunds within the window, and says when it has passed", async () => {
+    const { background, core } = await signedUp();
+    const sub = {
+      provider: "stripe",
+      plan: "premium",
+      status: "active",
+      until_ms: 1_793_000_000_000,
+      canceling: false,
+      price_locked_until_ms: null,
+      refundable_until_ms: null as number | null,
+      also: [],
+    };
+    core().billing_ = {
+      plan: "premium",
+      subscription: sub,
+      sells: ["stripe"],
+      token: null,
+    };
+    expect(await errorOf(background.handle({ kind: "refundPlan" }))).toBe(
+      "refund_window_passed",
+    );
+    sub.refundable_until_ms = 1_765_000_000_000;
+    expect(await background.handle({ kind: "refundPlan" })).toEqual({
+      plan: "free",
+      subscription: null,
+      sells: ["stripe"],
+    });
+    expect(await errorOf(background.handle({ kind: "refundPlan" }))).toBe(
+      "no_subscription",
+    );
+  });
+
+  it("needs an unlocked vault", async () => {
+    const { background } = await signedUp();
+    await background.handle({ kind: "lock" });
+    expect(await errorOf(background.handle({ kind: "plan" }))).toBe("locked");
+  });
+});
+
+describe("deleting the account (D74)", () => {
+  it("needs the master password and changes nothing without it", async () => {
+    const { background } = await signedUp();
+    expect(
+      await errorOf(
+        background.handle({ kind: "deleteAccount", masterPassword: "nope" }),
+      ),
+    ).toBe("wrong_password");
+    expect(await background.status()).toMatchObject({ state: "unlocked" });
+  });
+
+  it("deletes nothing while a plan can't be ended", async () => {
+    const { background, core } = await signedUp();
+    core().deleteResult = "wait";
+    expect(
+      await errorOf(
+        background.handle({ kind: "deleteAccount", masterPassword: PASSWORD }),
+      ),
+    ).toBe("delete_unavailable");
+    expect(await background.status()).toMatchObject({ state: "unlocked" });
+  });
+
+  it("wipes this device and says why at sign-in", async () => {
+    const { background, platform } = await signedUp();
+    expect(
+      await background.handle({
+        kind: "deleteAccount",
+        masterPassword: PASSWORD,
+      }),
+    ).toBeNull();
+    expect(await background.status()).toEqual({
+      state: "signedOut",
+      ended: "account_deleted",
+    });
+    for (const key of ["email", "secretKey", "sealedTokens"] as const) {
+      expect(platform.disk.values.has(key)).toBe(false);
+    }
+    expect(platform.sessionBytes.value).toBeUndefined();
+  });
+});

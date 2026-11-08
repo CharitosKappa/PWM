@@ -16,6 +16,7 @@ import pwm.kit.CredentialCaller
 import pwm.kit.PasskeyCaller
 import pwm.kit.PasskeyCheck
 import pwm.kit.PasskeyOffer
+import pwm.kit.PwmError
 import pwm.kit.EmergencyKit
 import pwm.kit.Redacted
 import pwm.kit.Server
@@ -48,6 +49,8 @@ class AppModel(
     private val notices: Notices = NoNotices,
     /** The sites' asset links files for the Credential Manager (D61 §4), kept for an hour. */
     val assetLinks: AssetLinks = AssetLinks(),
+    /** Google Play Billing (D6 §2), for Settings' Plan section. */
+    private val playBilling: PlayBilling = NoPlayBilling,
 ) {
     sealed class Screen {
         data object Loading : Screen()
@@ -72,6 +75,8 @@ class AppModel(
         val usesOtherServer: Boolean = false,
         val otherServer: String = "",
         val error: String? = null,
+        /** Why the last account left this device, on the welcome screen: deleted (D74) or signed out elsewhere. */
+        val ended: String? = null,
         /** The Settings switch (D56 §2). */
         val hideFromCapture: Boolean = true,
     ) {
@@ -180,7 +185,9 @@ class AppModel(
         else -> false
     }
 
-    private fun show(screen: Screen) = mutable.update { it.copy(screen = screen, error = null) }
+    private fun show(screen: Screen) = mutable.update {
+        it.copy(screen = screen, error = null, ended = if (screen is Screen.Welcome) it.ended else null)
+    }
 
     private fun showSecretKey(account: Account, key: Redacted<String>) {
         val model = SecretKeyModel(scope, key, account, clipboard, paper, onDone = {
@@ -213,10 +220,12 @@ class AppModel(
             vault = vault,
             generator = GeneratorModel(scope, work, clipboard).also { it.regenerate() },
             settings = SettingsModel(
-                scope, account, prefs, paper, onLock = { lock(account) }, onSignedOut = ::didSignOut,
+                scope, account, prefs, paper, onLock = { lock(account) }, onSignedOut = { didSignOut() },
+                onAccountDeleted = { didSignOut("account_deleted") },
                 onHideFromCapture = ::setHideFromCapture,
                 vault = vault, work = work, files = importFiles,
                 pushAvailable = push.available, notices = notices,
+                playBilling = playBilling,
                 onEditItem = { entry ->
                     vault.edit(entry)
                     home.setTab(HomeModel.Tab.VAULT)
@@ -225,6 +234,8 @@ class AppModel(
             signInAgain = signInAgain,
         )
         show(Screen.Vault(home))
+        // A Play purchase that finished while the app was closed or locked goes to the server now (D6 §3).
+        home.settings.plan.start()
         registerPush(account)
         if (approvalsWaiting) {
             approvalsWaiting = false
@@ -297,6 +308,7 @@ class AppModel(
         showUnlock(account)
         forgetCredentials()
         scope.launch { account.lock() }
+        Speech.say(Announcement.LOCKED)
     }
 
     // --- Autofill (D58) ---
@@ -422,10 +434,10 @@ class AppModel(
                     (mutable.value.screen as? Screen.Vault)?.model?.signInAgain?.sessionEnded()
                     BackgroundResult.NO_DATA
                 }
-                SyncResult.DeviceRevoked -> {
+                SyncResult.DeviceRevoked, SyncResult.AccountDeleted -> {
                     // The core has cleared the cache; finish signing out.
                     runCatching { account.signOut() }
-                    didSignOut()
+                    didSignOut(if (result == SyncResult.AccountDeleted) "account_deleted" else "device_revoked")
                     BackgroundResult.NO_DATA
                 }
             }
@@ -471,7 +483,9 @@ class AppModel(
         if (mutable.value.screen is Screen.Vault) account?.let(::lock)
     }
 
-    private fun didSignOut() {
+    /** Back to welcome once the account is gone from this device; [ended] says why when it wasn't signed out here. */
+    private fun didSignOut(ended: String? = null) {
+        (mutable.value.screen as? Screen.Vault)?.model?.settings?.plan?.stop()
         forgetCredentials()
         background.cancel()
         prefs.pushToken = null
@@ -479,6 +493,7 @@ class AppModel(
         prefs.signInAgain = false
         prefs.kitPending = false
         backgroundedAt = null
+        mutable.update { it.copy(ended = ended?.let { code -> PwmError(code).userMessage }) }
         showWelcome()
     }
 

@@ -1,4 +1,4 @@
-//! Scheduled clean-up and tombstone compaction (D70) against a real
+//! Scheduled clean-up and tombstone compaction (D76) against a real
 //! Postgres: what goes, what stays, and the 410 a device behind the
 //! compacted tombstones gets.
 

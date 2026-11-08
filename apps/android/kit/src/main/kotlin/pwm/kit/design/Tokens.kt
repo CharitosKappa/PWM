@@ -27,6 +27,12 @@ object Tokens {
         val danger = ThemedColor(light = 0xFFC0304A, dark = 0xFFFF8095)
     }
 
+    /** The bundled fonts (D1): each family's first name. */
+    object FontFamily {
+        const val sans = "Manrope"
+        const val mono = "Geist Mono"
+    }
+
     /** Sizes are the web sizes in sp; Android scales them with the font size setting. */
     object Text {
         val caption = TypeStyle(size = 12.0, weight = 400, lineHeight = 1.33, monospaced = false)

@@ -6,8 +6,10 @@ mod account;
 mod api;
 mod approvals;
 mod auth;
+mod billing;
 mod config;
 mod db;
+mod deletion;
 mod email;
 mod error;
 mod items;
@@ -21,8 +23,13 @@ mod session;
 mod vaults;
 
 pub use api::AppState;
+pub use billing::{
+    AppleConfig, Billing, BillingConfig, Mailer, OutboxMessage, PLAY_SCOPE, PlayConfig,
+    STRIPE_VERSION, StripeConfig, record_price_change,
+};
 pub use config::{Config, DEFAULT_LISTEN, generate_server_secrets};
 pub use db::{MIGRATOR, connect, healthcheck, mark_restored, migrate};
+pub use deletion::{DELETED_ACCOUNTS_KEPT_DAYS, DeletionLog, purge_deletions, redelete};
 pub use email::normalize_email;
 pub use error::ServerError;
 pub use items::{MAX_ITEM_BLOB_BYTES, MAX_ITEMS_PER_VAULT};

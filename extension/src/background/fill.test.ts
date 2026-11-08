@@ -275,6 +275,21 @@ describe("filling from the popup", () => {
     expect(message).toMatchObject({ fills: [{ index: 0, value: "287082" }] });
   });
 
+  it("offers no code step on Free, and says nothing about it (D73 §1)", async () => {
+    const { background, pages, platform, core } = await setup();
+    core.plan_ = "free";
+    for (const code of [
+      field(0, { autocomplete: "one-time-code" }),
+      field(0, { name: "otp" }),
+    ]) {
+      pages.frames = [frame({ fields: [code] })];
+      // A code page has nothing else to fill, as for a login without a code.
+      expect(await errorOf(background.handle(fill()))).toBe("no_form");
+    }
+    expect(pages.sent).toEqual([]);
+    expect(platform.clipboardText.value).not.toBe("287082");
+  });
+
   it("copies the code when the field is not surely a code field", async () => {
     const { background, pages, platform } = await setup();
     pages.frames = [frame({ fields: [field(0, { name: "otp" })] })];

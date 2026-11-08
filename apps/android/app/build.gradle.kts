@@ -128,6 +128,8 @@ dependencies {
     implementation(libs.firebase.messaging)
     // The Credential Manager provider (D61); not credentials-play-services-auth, which is for callers.
     implementation(libs.credentials)
+    // Buying Premium through Google Play (D6 §2); the server acknowledges purchases, never the app.
+    implementation(libs.billing)
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)

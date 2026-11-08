@@ -179,3 +179,46 @@ pub fn invalid_credentials() -> (StatusCode, Value) {
         json!({ "error": "invalid_credentials" }),
     )
 }
+
+/// Starts proving the password to delete the account (D74 §1); returns the
+/// client state, the login id and the server's answer.
+pub async fn delete_start(app: &Router, account: &Account) -> (OpaqueLogin, Value, Vec<u8>) {
+    let (client, request) = OpaqueLogin::start(&account.auth_secret).unwrap();
+    let (status, body) = call(
+        app,
+        "POST",
+        "/v1/account/delete/start",
+        Some(account.access()),
+        Some(json!({ "credential_request": b64(&request) })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let response = unb64(&body["credential_response"]);
+    (client, body["login_id"].clone(), response)
+}
+
+/// The last step of deleting, with any finalization.
+pub async fn delete_finish(
+    app: &Router,
+    account: &Account,
+    login_id: &Value,
+    finalization: &[u8],
+) -> (StatusCode, Value) {
+    call(
+        app,
+        "POST",
+        "/v1/account/delete/finish",
+        Some(account.access()),
+        Some(json!({ "login_id": login_id, "credential_finalization": b64(finalization) })),
+    )
+    .await
+}
+
+/// Proves the password and deletes the account, as an app does.
+pub async fn delete_account(app: &Router, account: &Account) -> (StatusCode, Value) {
+    let (client, login_id, response) = delete_start(app, account).await;
+    let finalization = client
+        .finish(&account.auth_secret, account.id.as_bytes(), &response)
+        .unwrap();
+    delete_finish(app, account, &login_id, &finalization).await
+}

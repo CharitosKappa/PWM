@@ -3843,6 +3843,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "pwm-browser-helper"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "pwm-crypto",
+ "pwm-hello",
+ "serde",
+ "serde_json",
+ "windows",
+ "windows-registry",
+]
+
+[[package]]
 name = "pwm-client"
 version = "0.0.0"
 dependencies = [
@@ -3896,7 +3909,9 @@ dependencies = [
  "futures-util",
  "oo7",
  "open",
+ "pwm-browser-helper",
  "pwm-client",
+ "pwm-hello",
  "pwm-store",
  "reqwest",
  "rustls",
@@ -3949,6 +3964,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pwm-hello"
+version = "0.1.0"
+dependencies = [
+ "pwm-crypto",
+ "pwm-keyholder",
+ "windows",
+]
+
+[[package]]
 name = "pwm-import"
 version = "0.0.0"
 dependencies = [
@@ -3971,6 +3995,13 @@ dependencies = [
  "url",
  "zeroize",
  "zip",
+]
+
+[[package]]
+name = "pwm-keyholder"
+version = "0.1.0"
+dependencies = [
+ "pwm-crypto",
 ]
 
 [[package]]

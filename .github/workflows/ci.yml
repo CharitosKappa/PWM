@@ -460,7 +460,7 @@ jobs:
         env:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
-          if git diff --name-only "$BASE" HEAD | grep -qE '^(apps/desktop/|ui/|core/|Cargo\.(toml|lock)$|design/|pnpm-lock\.yaml$)'; then
+          if git diff --name-only "$BASE" HEAD | grep -qE '^(apps/desktop/|ui/|core/|Cargo\.(toml|lock)$|design/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -526,6 +526,35 @@ jobs:
         env:
           PWM_TEST_SERVER: http://127.0.0.1:8080
         run: cargo test --manifest-path apps/desktop/Cargo.toml --locked
+      - name: Linux login through the real pkexec and key holder (D71)
+        run: |
+          sudo apt-get install -y -qq policykit-1
+          cargo build --manifest-path apps/desktop/Cargo.toml --locked -p pwm-keyholder
+          sudo install -D -m 0755 apps/desktop/target/debug/pwm-keyholder /usr/libexec/pwm/pwm-keyholder
+          sudo install -D -m 0644 apps/desktop/linux/invalid.pwm.unlock.policy /usr/share/polkit-1/actions/invalid.pwm.unlock.policy
+          # polkit 0.105 here reads .pkla rules: let the runner through
+          # without a dialog, which needs a person.
+          sudo mkdir -p /etc/polkit-1/localauthority/50-local.d
+          {
+            echo "[PWM CI]"
+            echo "Identity=unix-user:$USER"
+            echo "Action=invalid.pwm.unlock"
+            echo "ResultAny=yes"
+            echo "ResultInactive=yes"
+            echo "ResultActive=yes"
+          } | sudo tee /etc/polkit-1/localauthority/50-local.d/pwm-ci.pkla > /dev/null
+          sudo systemctl restart polkit || true
+          export PWM_TEST_PKEXEC=1
+          cargo test --manifest-path apps/desktop/Cargo.toml --locked -p pwm-hello the_real_pkexec
+          cargo test --manifest-path apps/desktop/Cargo.toml --locked -p pwm-browser-helper the_real_key_holder
+          # Only root can read the secrets.
+          sudo stat -c '%U %a %n' /var/lib/pwm/keys "/var/lib/pwm/keys/$(id -u)"
+          test "$(sudo stat -c '%U %a' "/var/lib/pwm/keys/$(id -u)")" = "root 700"
+          ! ls "/var/lib/pwm/keys/$(id -u)" 2> /dev/null
+          # Run by hand, without pkexec, it refuses.
+          status=0
+          /usr/libexec/pwm/pwm-keyholder create pwm-x || status=$?
+          test "$status" -eq 3
       - run: cargo build --manifest-path apps/desktop/Cargo.toml --locked
       - run: cargo install tauri-driver --locked --version 2.1.0
       - name: End to end through tauri-driver
@@ -565,6 +594,245 @@ jobs:
       - run: cargo test --manifest-path apps/desktop/Cargo.toml --locked
       - run: cargo build --manifest-path apps/desktop/Cargo.toml --locked --release
 
+  # The Windows installer (D70): built and signed with a throwaway
+  # certificate made on each run, the signatures checked, then installed and
+  # uninstalled silently for this user. Uninstalling undoes the browser
+  # helper's registration (D69 §4), except when another installer replaces
+  # this version in place.
+  desktop-installer-windows:
+    needs: desktop-changes
+    if: needs.desktop-changes.outputs.run == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop -> target
+          key: installer
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Tauri downloads its NSIS toolchain from GitHub Releases while
+      # bundling, with no retry, and skips that when %LOCALAPPDATA%\tauri\NSIS
+      # already holds it. So fetch it here, with retries and a mirror, and
+      # cache it per Tauri CLI version. The URLs and SHA-1s are the ones in
+      # the CLI's bundler (crates/tauri-bundler/src/bundle/windows/nsis/mod.rs
+      # at the tauri-cli tag); update them when a CLI bump changes them, or
+      # Tauri replaces the folder with its own download.
+      - name: The Tauri CLI version, for the NSIS cache key
+        id: tauri
+        shell: bash
+        run: echo "cli=$(node -p "require('./apps/desktop/web/package.json').devDependencies['@tauri-apps/cli']")" >> "$GITHUB_OUTPUT"
+      - name: Restore the NSIS toolchain
+        id: nsis
+        uses: actions/cache/restore@v4
+        with:
+          path: ~\AppData\Local\tauri\NSIS
+          key: tauri-nsis-${{ steps.tauri.outputs.cli }}
+      - name: Fetch the NSIS toolchain where Tauri looks for it
+        if: steps.nsis.outputs.cache-hit != 'true'
+        run: |
+          $ErrorActionPreference = "Stop"
+          function Fetch($urls, $sha1, $out) {
+            foreach ($url in $urls) {
+              curl.exe -fsSL --retry 8 --retry-all-errors --retry-delay 10 --connect-timeout 30 --max-time 300 -o $out $url
+              if ($LASTEXITCODE -eq 0 -and (Get-FileHash -Algorithm SHA1 $out).Hash -eq $sha1) { return }
+              Write-Warning "no good copy from $url"
+            }
+            throw "could not fetch $out"
+          }
+          $tools = Join-Path $env:LOCALAPPDATA "tauri"
+          $nsis = Join-Path $tools "NSIS"
+          if (Test-Path $nsis) { Remove-Item -Recurse -Force $nsis }
+          New-Item -ItemType Directory -Force $tools | Out-Null
+          $zip = Join-Path $env:RUNNER_TEMP "nsis-3.13.zip"
+          Fetch @(
+            "https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.13/nsis-3.13.zip",
+            "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip"
+          ) "DB14F8AF2EA346B786C6AE19343F61AAF5E09B8E" $zip
+          Expand-Archive $zip -DestinationPath $tools
+          Rename-Item (Join-Path $tools "nsis-3.13") "NSIS"
+          $additional = Join-Path $nsis "Plugins\x86-unicode\additional"
+          New-Item -ItemType Directory -Force $additional | Out-Null
+          Fetch @(
+            "https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll"
+          ) "75197FEE3C6A814FE035788D1C34EAD39349B860" (Join-Path $additional "nsis_tauri_utils.dll")
+          if ((Get-FileHash -Algorithm SHA1 (Join-Path $nsis "NSIS.exe")).Hash -ne "6D45D4E8CCF18FE1FDAC9164058F356102A2ECF2") {
+            throw "NSIS.exe is not the one Tauri expects"
+          }
+      - name: Save the NSIS toolchain
+        if: steps.nsis.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~\AppData\Local\tauri\NSIS
+          key: tauri-nsis-${{ steps.tauri.outputs.cli }}
+      - name: A throwaway code-signing certificate, trusted on this runner only
+        run: |
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=PWM CI throwaway" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(1)
+          Export-Certificate -Cert $cert -FilePath "$env:RUNNER_TEMP\ci.cer" | Out-Null
+          Import-Certificate -FilePath "$env:RUNNER_TEMP\ci.cer" -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          $sign = @{ cmd = $signtool.FullName; args = @("sign", "/fd", "SHA256", "/sha1", $cert.Thumbprint, "%1") }
+          @{ bundle = @{ windows = @{ signCommand = $sign } } } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 "$env:RUNNER_TEMP\sign.json"
+          "PWM_SIGNER=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+      - name: Build and sign the installer
+        run: node apps/desktop/web/scripts/installer.mjs --config "$env:RUNNER_TEMP\sign.json"
+      - name: Install, check, replace in place, uninstall
+        run: |
+          $ErrorActionPreference = "Stop"
+          function Assert-Signed($path) {
+            $sig = Get-AuthenticodeSignature $path
+            if ($sig.Status -ne "Valid" -or $sig.SignerCertificate.Thumbprint -ne $env:PWM_SIGNER) {
+              throw "$path is not signed by the CI certificate: $($sig.Status)"
+            }
+          }
+          $setup = (Get-ChildItem apps/desktop/target/release/bundle/nsis/*-setup.exe)[0].FullName
+          Assert-Signed $setup
+          $dir = "$env:LOCALAPPDATA\PWM"
+
+          # Installed for this user, the helper next to the app, all signed.
+          Start-Process $setup -ArgumentList "/S" -Wait
+          foreach ($name in "pwm-desktop.exe", "pwm-browser-helper.exe", "uninstall.exe") {
+            Assert-Signed (Join-Path $dir $name)
+          }
+
+          # What the Settings switch writes (D69 §4), another program's key
+          # under our name, and an enrolment.
+          $hosts = Join-Path $dir "NativeMessagingHosts"
+          New-Item -ItemType Directory -Force $hosts, (Join-Path $dir "browser-unlock") | Out-Null
+          $chromium = Join-Path $hosts "invalid.pwm.browser.chromium.json"
+          $firefox = Join-Path $hosts "invalid.pwm.browser.firefox.json"
+          Set-Content $chromium "{}"
+          Set-Content $firefox "{}"
+          Set-Content (Join-Path $dir "browser-unlock\0123456789abcdef0123456789abcdef.bin") "x"
+          $keys = @{
+            "HKCU:\Software\Google\Chrome\NativeMessagingHosts\invalid.pwm.browser" = $chromium
+            "HKCU:\Software\Mozilla\NativeMessagingHosts\invalid.pwm.browser" = $firefox
+            "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\invalid.pwm.browser" = "C:\Other\manifest.json"
+          }
+          foreach ($key in $keys.Keys) {
+            New-Item -Force $key | Out-Null
+            Set-ItemProperty $key -Name "(default)" -Value $keys[$key]
+          }
+
+          # Another installer replacing this version runs the uninstaller in
+          # place: browser unlock stays.
+          Start-Process (Join-Path $dir "uninstall.exe") -ArgumentList "/S", "_?=$dir" -Wait
+          if (-not (Test-Path $chromium) -or -not (Test-Path "HKCU:\Software\Google\Chrome\NativeMessagingHosts\invalid.pwm.browser")) {
+            throw "replacing the app in place removed browser unlock"
+          }
+          Start-Process $setup -ArgumentList "/S" -Wait
+
+          # Uninstalling from Windows' Settings runs a copy from the temporary
+          # folder, which goes on after this process exits.
+          Start-Process (Join-Path $dir "uninstall.exe") -ArgumentList "/S" -Wait
+          for ($i = 0; $i -lt 60 -and (Test-Path (Join-Path $dir "uninstall.exe")); $i++) { Start-Sleep 1 }
+          Start-Sleep 2
+
+          foreach ($key in "HKCU:\Software\Google\Chrome\NativeMessagingHosts\invalid.pwm.browser", "HKCU:\Software\Mozilla\NativeMessagingHosts\invalid.pwm.browser") {
+            if (Test-Path $key) { throw "$key is still there" }
+          }
+          $edge = (Get-ItemProperty "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\invalid.pwm.browser")."(default)"
+          if ($edge -ne "C:\Other\manifest.json") { throw "another program's key was touched" }
+          if (Test-Path $dir) {
+            Get-ChildItem -Recurse $dir | Select-Object -ExpandProperty FullName
+            throw "$dir is still there"
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-installer-windows
+          path: apps/desktop/target/release/bundle/nsis/*-setup.exe
+          retention-days: 7
+
+  # The Linux packages (D70): the .deb and .rpm on Ubuntu 22.04 (the
+  # WebKitGTK floor), the .rpm and the checksums signed with a throwaway GPG
+  # key made on each run, the .deb installed and started, and the Flatpak
+  # built from it on the GNOME runtime and started.
+  desktop-installer-linux:
+    needs: desktop-changes
+    if: needs.desktop-changes.outputs.run == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop -> target
+          key: installer
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: WebKitGTK, the tray library, rpm, Flatpak and Xvfb
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev rpm flatpak flatpak-builder xvfb dbus
+      - run: pnpm install --frozen-lockfile
+      - name: Build the .deb and the .rpm
+        run: node apps/desktop/web/scripts/installer.mjs
+      - name: Sign the .rpm and the checksums with a throwaway key, then check them
+        working-directory: apps/desktop/target/release/bundle
+        run: |
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 -p "$GNUPGHOME"
+          gpg --batch --passphrase '' --quick-gen-key "PWM CI throwaway <ci@pwm.invalid>" rsa3072 sign 1d
+          rpmsign --define "_gpg_name ci@pwm.invalid" --define "_gpg_path $GNUPGHOME" --addsign rpm/*.rpm
+          gpg --armor --export ci@pwm.invalid > "$RUNNER_TEMP/ci.asc"
+          rpm --dbpath "$RUNNER_TEMP/rpmdb" --initdb
+          rpmkeys --dbpath "$RUNNER_TEMP/rpmdb" --import "$RUNNER_TEMP/ci.asc"
+          rpmkeys --dbpath "$RUNNER_TEMP/rpmdb" --checksig rpm/*.rpm | tee "$RUNNER_TEMP/checksig.txt"
+          grep -q "signatures OK" "$RUNNER_TEMP/checksig.txt"
+          sha256sum deb/*.deb rpm/*.rpm > SHA256SUMS
+          gpg --batch --armor --detach-sign SHA256SUMS
+          gpg --verify SHA256SUMS.asc SHA256SUMS
+      - name: Install the .deb and start the app
+        run: |
+          deb=$(ls apps/desktop/target/release/bundle/deb/*.deb)
+          dpkg-deb --field "$deb" Package Depends
+          # The browser helper, the key holder and polkit's action (D71 §6).
+          dpkg-deb -c "$deb" | tee "$RUNNER_TEMP/deb.txt"
+          for file in usr/bin/pwm-browser-helper usr/libexec/pwm/pwm-keyholder usr/share/polkit-1/actions/invalid.pwm.unlock.policy; do
+            grep -q " $file$" "$RUNNER_TEMP/deb.txt"
+          done
+          rpm -qlp apps/desktop/target/release/bundle/rpm/*.rpm | grep -qx /usr/libexec/pwm/pwm-keyholder
+          sudo apt-get install -y -qq "./$deb"
+          # Still running after 15 seconds: it started.
+          status=0
+          timeout 15 xvfb-run -a dbus-run-session -- /usr/bin/pwm-desktop || status=$?
+          test "$status" -eq 124
+          # Purging deletes the key holder's secrets.
+          sudo mkdir -p /var/lib/pwm/keys/1000
+          sudo apt-get purge -y -qq pwm
+          test ! -e /var/lib/pwm
+      - name: Build the Flatpak from the .deb and start it
+        run: |
+          cp apps/desktop/target/release/bundle/deb/*.deb apps/desktop/flatpak/pwm.deb
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak-builder --user --install-deps-from=flathub --force-clean --repo="$RUNNER_TEMP/repo" "$RUNNER_TEMP/flatpak" apps/desktop/flatpak/invalid.pwm.desktop.yml
+          flatpak build-bundle "$RUNNER_TEMP/repo" apps/desktop/target/release/bundle/pwm.flatpak invalid.pwm.desktop
+          flatpak install --user -y --noninteractive apps/desktop/target/release/bundle/pwm.flatpak
+          status=0
+          timeout 20 xvfb-run -a dbus-run-session -- flatpak run invalid.pwm.desktop || status=$?
+          test "$status" -eq 124
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-installer-linux
+          path: |
+            apps/desktop/target/release/bundle/deb/*.deb
+            apps/desktop/target/release/bundle/rpm/*.rpm
+            apps/desktop/target/release/bundle/SHA256SUMS*
+            apps/desktop/target/release/bundle/pwm.flatpak
+          if-no-files-found: ignore
+          retention-days: 7
+
   image:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -580,7 +848,7 @@ jobs:
       - run: cargo run --locked -p pwm-server --example smoke -- http://127.0.0.1:8080
       - run: docker compose exec -T server /pwm-server mark-restored
       - run: cargo run --locked -p pwm-server --example smoke -- http://127.0.0.1:8080
-      # Backups (D70 §3): what was written after the backup is gone after the
+      # Backups (D76 §3): what was written after the backup is gone after the
       # restore, the epoch is new, and the server still works.
       - name: Back up and restore
         run: |

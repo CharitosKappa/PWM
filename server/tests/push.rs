@@ -654,3 +654,36 @@ async fn an_unregistered_fcm_token_is_deleted_and_apns_tokens_wait_for_apns() {
     assert_eq!(left, "macos");
     db.drop().await;
 }
+
+/// D74 §5: after deleting, the account's other devices get the content-free
+/// push at once, even one pushed less than a minute ago; the deleting device
+/// gets none.
+#[tokio::test]
+async fn a_deleted_accounts_other_devices_are_woken() {
+    let Some((db, app, apns)) = setup().await else {
+        return;
+    };
+    let (account, phone, vault, key) = two_devices(&app).await;
+    assert_eq!(
+        set_push(&app, account.access(), "macos", LAPTOP_TOKEN).await,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        set_push(&app, &phone, "ios", PHONE_TOKEN).await,
+        StatusCode::NO_CONTENT
+    );
+    // The laptop writes: the phone is pushed now.
+    write_item(&app, account.access(), &vault, &key).await;
+    assert_eq!(apns.wait_for(1).await.len(), 1);
+
+    let (status, body) = delete_account(&app, &account).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let got = apns.wait_for(2).await;
+    assert_eq!(got.len(), 2, "the phone again, never the laptop");
+    let (token, headers, body) = &got[1];
+    assert_eq!(token, PHONE_TOKEN);
+    assert_eq!(headers["apns-push-type"], "background");
+    assert_eq!(body, BACKGROUND_PAYLOAD);
+    assert_eq!(push_rows(&db).await, 0);
+    db.drop().await;
+}

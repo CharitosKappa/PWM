@@ -672,8 +672,34 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
     - **The extension:** its `chromeHost` passes requests to the background and access to `chrome.permissions`, with nothing awaited before a permission request. Its build copies `screens.css` in as `popup.css`.
   - **Tests:** 4 Vitest tests of `send` and the error messages against a fake host. All 224 extension tests pass, and its `build.test.ts` checks the moved stylesheet's tokens. The Firefox build (not minified), compared with `main`'s, differs only where the screens call the host instead of Chrome. The Playwright specs that open the popup and the manage page (`manage.spec.ts`, `approval.spec.ts`) run in CI.
   - **Deferred to M7.4:** a full-window layout with a sidebar for the desktop app, and a host flag that hides what only a browser can do (filling a page, the save offer, the autofill report), since filling also closes the window.
-- [ ] M7.2 Native-messaging host for browser unlock on Windows/Linux (D48's protocol, a second binary in the desktop workspace).
-- [ ] M7.3 Signed installers (MSIX/EXE, AppImage, .deb, .rpm, Flatpak).
+- [x] M7.2 Native-messaging host for browser unlock on Windows/Linux (D48's protocol, a second binary in the desktop workspace).
+  - Done per D69 (implementation notes there), for Windows:
+    - **`pwm-browser-helper`:** D48's protocol unchanged, the extension's key sealed under a Windows Hello signature's key (`seal_browser_hello`, new vectors), one enrolment per caller, account and device, in DPAPI files. A window of its own in front for each prompt.
+    - **`pwm-hello`:** D68's Windows Hello key and DPAPI, shared by the app and the helper.
+    - **The desktop app:** "Allow browser extensions to unlock with Windows Hello" in Settings writes the manifests and the `HKEY_CURRENT_USER` keys for Chrome (Brave and Opera read its key), Edge and Firefox; off removes them and every enrolment.
+    - **The extension:** "Unlock with Windows Hello" on Windows, with the same requests, and texts naming the app for Windows.
+    - **Tests:** 5 crypto tests and the vectors, 11 for the helper (the protocol, callers, cancel and changed, damaged records, framing, manifests, the DPAPI store), 3 for the registration, a backend test of the switch, and a Vitest test of the wording.
+  - **Not run anywhere yet:** a browser starting the helper and a real Windows Hello prompt (`QUALITY.md`, desktop step 13). If the prompt doesn't come up in front, D69 §3's fallback goes through the running app.
+  - **Linux:** M7.8.
+- [x] M7.3 Signed installers (MSIX/EXE, AppImage, .deb, .rpm, Flatpak). They install `pwm-browser-helper.exe` next to the app, and remove the browser helper's registry keys on uninstall (D69 §4).
+  - Done per D70 (implementation notes there):
+    - **Windows:** a per-user NSIS installer (no administrator rights), with the helper next to the app. Uninstalling runs `pwm-browser-helper.exe --uninstall`, the Settings switch's own cleanup, except when a new version replaces this one.
+    - **Linux:** `.deb` and `.rpm` built on Ubuntu 22.04, and a Flatpak on the GNOME runtime.
+    - **Signing:** Authenticode through Tauri's sign command, and GPG for the `.rpm` and a signed `SHA256SUMS`. CI signs with a throwaway certificate and key on each run and checks them.
+    - **`just desktop-installer`** builds them.
+    - **Tests:** 5 Rust tests of the cleanup and `--uninstall` (the switch's 3 moved into the helper); CI installs, replaces in place and uninstalls on Windows, checking the signatures, the keys and the folder; it installs and starts the `.deb`, checks the `.rpm`'s signature, and builds and starts the Flatpak.
+  - **Deferred:**
+    - **The founder's signing identity** (Artifact Signing, the release GPG key) and publishing (Flathub or our own repository, an apt and dnf repository): at release (M10.1).
+    - **MSIX** (the Store, with its own decision) and **AppImage** (the LGPL sources it would owe): gaps, D70 §1-2.
+    - **Automatic updates:** M10.1.
+    - **On real computers:** `QUALITY.md`, desktop step 14.
+- [x] M7.8 Browser unlock on Linux (D69 §5): the helper asks polkit or fprintd, with the desktop's own unlock (D68 §7), after M7.3 installs polkit's action file. Logged as a parity gap until then.
+  - Done per D71 (implementation notes there):
+    - **`pwm-keyholder`:** run as root through `pkexec` behind polkit's dialog, it keeps a secret per name that only root reads and answers challenges with it. The `.deb` and `.rpm` install it with the polkit action.
+    - **The desktop's "Unlock with Linux login"** and **browser unlock on Linux** reuse D68's and D69's code through `PolkitKey`, with Linux's own labels (new vectors). The switch writes the manifests for Chrome, Chromium, Edge, Brave, Vivaldi and Firefox.
+    - **Tests:** 5 core tests and the vectors, a `pwm-client` test, 6 for the key holder, 4 for `PolkitKey` against the key holder's code, 4 for the Linux manifests, wording tests in `ui` and the extension. CI runs the real `pkexec`, and the packages' contents and purge.
+  - **Gaps (D71 §4):** the Flatpak, Snap and Flatpak browsers, and computers without a polkit agent keep the master password. Opera's folder is still to check. A TPM-sealed variant would need its own decision.
+  - **Not run anywhere yet:** polkit's real dialog and a real browser (`QUALITY.md`, desktop step 15).
 - [x] M7.4 The Tauri app on Windows and Linux (D3 §1, §3–§5, D66): the project, the backend answering the screens' protocol, storage and HTTP; onboarding, master-password unlock (+ polkit/fprintd later), the vault list, copying, the generator and Settings; the tray and the lock rules, screen-capture exclusion on Windows, `cargo deny` on its dependency tree, the WebKitGTK floor, and a `desktop` CI job.
   - Done per D66 (implementation notes there):
     - **`apps/desktop`:** its own Cargo workspace with `pwm-desktop` (Tauri 2.12), the `@pwm/desktop` page, Tauri's isolation hook, and a placeholder icon until D1.
@@ -735,9 +761,46 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
   - **Deferred:** KDBX 3.1 files from a real KeePass app (made once by the founder, see the fixtures README); until then 3.1 is read by the crate but not tested here.
 
 ### M9 — Plans and billing
-- [ ] M9.1 Entitlements service (decision D6); Stripe web checkout; App Store / Play Billing.
-- [ ] M9.2 Implement every commitment in `PRICING.md` with tests (price lock, reminders, cancel, refunds, export after lapse).
-- [ ] M9.3 Plan gates in core (TOTP, attachments, share links) checked client-side and server-side.
+- [x] M9.1 Entitlements service (decision D6); Stripe web checkout; App Store / Play Billing.
+  - Done per D6 (implementation notes there). The server reads each subscription from Stripe, the App Store Server API or the Play Developer API, linked by the account's billing token, and reads them all again daily (migration 0008). The apps show the plan in Settings: Stripe Checkout on the desktop, the Mac and the extensions, StoreKit 2 on iOS, Play Billing on Android. A server without billing makes every account Premium.
+  - **Tests:** 8 server tests against fake providers plus the migration test and 14 unit tests, an end-to-end app API test, HMAC vectors, the extension's background, the desktop's samples and server test, 17 Apple screen tests and 7 Android ones.
+  - **Deferred:**
+    - **To M9.2:** refunds, account deletion, the reminders' outbox and the price-hold checks.
+    - **Not tested yet:** the StoreKit Testing test (it needs a host app), and real purchases in Stripe's test mode, the App Store sandbox and with a Play license tester (`QUALITY.md`, billing checklist).
+    - **Product ids** are placeholders until D1 and D8.
+- [x] M9.2 Implement every commitment in `PRICING.md` with tests (price lock, reminders, cancel, refunds, export after lapse).
+  - Done per D72 (implementation notes there):
+    - **Refunds:** one button within 30 days of the last charge, pro-rata. Stripe refunds the invoice's payment once, then ends the subscription; Play revokes with `proratedRefund`; Apple's own sheet on iOS.
+    - **Price changes:** `pwm-server price-change` holds existing subscribers for 12 months; a Stripe subscription moves only after its 60-day reminder was delivered.
+    - **Reminders:** an outbox with one reminder 14 days before each charge (migration 0009). Cancel and resume came with M9.1. A lapsed account keeps, edits and exports everything.
+  - **Tests:** 9 more server tests against the fake providers (17 in all) plus the 0009 migration test, the hold rule and the price list in unit tests, the refund through the app API, the extension's background, the desktop's samples, and the Apple and Android Plan tests.
+  - **Deferred:** sending the outbox needs the email provider (D32, M10.7); until then no price change applies. Account deletion is M9.4.
+- [x] M9.3 Plan gates in core (TOTP, attachments, share links) checked client-side and server-side.
+  - Done per D73 (implementation notes there):
+    - **One-time codes:** need Premium. The core's `current_code` answers `plan_required` on Free, so every app and autofill path is covered by one check. Every app shows "One-time codes are part of Premium" and the secret instead of the code; autofill offers no code step and says nothing.
+    - **The plan on the device:** comes with every sync (`pwm-plan`, `pwm-plan-until` on the vault list) and with billing replies, and is kept in the cache (store v3, snapshot v2). Unknown counts as Premium; after its end, Free until the next sync.
+    - **Share links and attachments:** the server's limits per plan, in `GET /v1/account` and `GET /v1/billing`, and `plan_required`. The routes come with M13 and M14 and check them there.
+  - **Tests:** 2 server tests (the headers and `plan_until` for every status, a server without billing) and the limits in a unit test; the store's v3 migration and fixtures, the v2 snapshot, the sync engine keeping the plan, the core's gate (Free, after the end, unknown); the extension's item screen, list and fill on Free; the desktop's samples; Apple's and Android's item screens on Free, and Android's fill.
+  - **Deferred:**
+    - **The editor's caption:** on Apple and Android, editing doesn't say codes need Premium yet; the item screen does (logged in D73's notes).
+    - **The route checks:** move to M13 (share links) and M14 (attachments).
+- [x] M9.4 Account deletion in every app (D72 §5): the master password proven again, everything deleted on the server, each device wiped, export offered first, and D6 §6's subscription rules. Needs its own decision first; Apple requires it before launch.
+  - Per D74 (implementation notes there). **Part 1 done: the server, the core and the bindings.**
+    - **Server:** `POST /v1/account/delete/start` and `/finish`, the subscriptions ended first (Stripe and Play pro-rata, the Stripe customer deleted, `billing_unavailable` deletes nothing), `deleted_sessions` and `deleted_accounts` (migration 0010), 403 `account_deleted` on refresh, the push to the other devices, the deletions file (`PWM_DELETIONS_FILE`) and `mark-restored` deleting again, the daily purge.
+    - **Core:** `start_delete_account` (`AccountDeleted`, the store cleared), `account_deleted` clearing the cache like `device_revoked`; `start_delete_account` / `startDeleteAccount` in the FFI and WASM.
+    - **Every app** wipes itself on `account_deleted`, as on `device_revoked`.
+  - **Part 2 done: the screens.**
+    - **Delete account** in Settings on every platform (D74 §7). The steps are what will happen with Export first, then the plan when there is one, then the master password. There's no typed word and no countdown.
+      - **The extensions and the desktop:** an Account tab on the manage page, opened from Settings.
+      - **iOS and macOS:** a page from Settings.
+      - **Android:** a page of Settings.
+    - **The first screen says why the account left this device:** "This account was deleted." or "This device was signed out from another device." On the deleting device too.
+    - **When nothing was deleted:** a plan couldn't be ended or the server wasn't reached. Every app says so (`delete_unavailable`).
+  - **Tests:**
+    - **Background and model tests:** the extension's background (3); the desktop's backend against a real server (the wrong password, deletion, the sign-in that fails afterwards); Apple's and Android's view models (4 and 3).
+    - **The welcome message:** Android, for a deleted account and a revoked device.
+    - **Against a real server:** Android's and Apple's session tests delete their fresh account. Apple's runs in CI only.
+  - **Not checked on a device:** the screens themselves, and the App Store's subscription sheet from the plan step (iOS).
 
 ### M10 — Launch readiness
 - [ ] M10.1 Release pipeline: beta channels, staged rollout, auto-halt metrics, rollback (`QUALITY.md`).
@@ -754,12 +817,12 @@ Tauri 2, with the screens shared with the extension (D3), and the backend per D6
   - **Scheduled clean-up:** delete expired sessions and login attempts, and the session rows of revoked devices. They are already refused, just not deleted.
   - **Tombstone compaction:** decide the horizon first. A device whose cursor is older than the horizon must resync from 0.
   - **Backups with a tested restore:** the restore script runs `pwm-server mark-restored` automatically.
-  - Done per D70:
+  - Done per D76:
     - **Clean-up:** `maintenance.rs` runs at start-up and then every hour. It deletes:
       - sessions whose refresh token expired, revoked devices' included (kept until then, so the device is still told `device_revoked`)
       - login attempts, approvals and autofill reports past their lifetime
     - **Compaction:**
-      - **Server:** tombstones older than 180 days go in batches of 10,000. One statement deletes them and raises the new `vaults.purged_seq` (migration 0008, snapshot updated). A delta sync with `0 < since < purged_seq` answers 410 `resync_required`.
+      - **Server:** tombstones older than 180 days go in batches of 10,000. One statement deletes them and raises the new `vaults.purged_seq` (migration 0011, snapshot updated). A delta sync with `0 < since < purged_seq` answers 410 `resync_required`.
       - **Client (`pwm-sync`):** on 410 the engine pulls the vault again from 0. Synced items the server no longer has are deleted, not uploaded again; unsent edits are kept as new items; items never uploaded still go up. A locked sync waits for the unlocked one. After a restore (new epoch), unseen items still go up again.
     - **Backups:** `scripts/backup.sh` and `scripts/restore.sh` (also `just backup` / `just restore`). The restore stops the server, recreates the database, restores the file, runs `mark-restored`, and starts the server only if that worked.
     - **Tests:**

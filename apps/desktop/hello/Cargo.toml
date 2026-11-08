@@ -1,0 +1,27 @@
+[package]
+name = "pwm-hello"
+description = "Windows Hello's signing key and DPAPI (D68, D69), shared by the desktop app and the browser helper."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+pwm-crypto = { path = "../../../core/pwm-crypto" }
+
+[dev-dependencies]
+pwm-keyholder = { path = "../keyholder" }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Security_Cryptography",
+    "Foundation",
+    "Security_Credentials",
+    "Security_Cryptography",
+    "Storage_Streams",
+] }

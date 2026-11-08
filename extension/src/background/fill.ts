@@ -338,7 +338,11 @@ export class Autofill {
     const now = this.platform.now();
     let code = "";
     if (plan.code !== undefined || plan.copyCode) {
-      code = this.core.currentCode(vaultId, itemId, now)?.[0] ?? "";
+      try {
+        code = this.core.currentCode(vaultId, itemId, now)?.[0] ?? "";
+      } catch {
+        // No code (D73 §1): the rest still fills.
+      }
     }
     const fills = [
       plan.username !== undefined

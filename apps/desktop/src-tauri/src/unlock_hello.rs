@@ -30,7 +30,7 @@ fn b64() -> base64::engine::GeneralPurpose {
 
 impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
     /// The key credential's name: one per account on this computer.
-    fn hello_name(&self) -> Result<String> {
+    pub(crate) fn hello_name(&self) -> Result<String> {
         let account = self
             .client
             .account_id()?
@@ -111,6 +111,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             return Err(Failure::code("hello_unavailable"));
         }
         let unlock = self.client.export_windows_hello(
+            self.hello.signer(),
             &device,
             challenge.expose_secret(),
             first.expose_secret(),
@@ -158,6 +159,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             Err(other) => return Err(other.into()),
         };
         match self.client.unlock_windows_hello(
+            self.hello.signer(),
             &blob,
             &sealed,
             &challenge,

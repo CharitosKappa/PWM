@@ -57,11 +57,11 @@ secrets:
 smoke url="http://127.0.0.1:8080":
     cargo run -q -p pwm-server --example smoke -- {{url}}
 
-# back up the `just server` database to a new file (D70 §3)
+# back up the `just server` database to a new file (D76 §3)
 backup file:
     sh scripts/backup.sh {{file}}
 
-# restore a backup into the `just server` stack, then mark it restored (D70 §3)
+# restore a backup into the `just server` stack, then mark it restored (D76 §3)
 restore file:
     sh scripts/restore.sh {{file}}
 
@@ -93,7 +93,12 @@ extension: wasm
 # the desktop app for Windows and Linux (D66): its page, then the app, run
 desktop:
     pnpm --filter @pwm/desktop build
-    cargo run --manifest-path apps/desktop/Cargo.toml --locked
+    cargo run --manifest-path apps/desktop/Cargo.toml --locked -p pwm-desktop
+
+# the desktop installers (D70): the NSIS installer on Windows, the .deb and .rpm on Linux,
+# in apps/desktop/target/release/bundle; extra arguments go to `tauri build`
+desktop-installer *ARGS:
+    node apps/desktop/web/scripts/installer.mjs {{ARGS}}
 
 # the desktop app's checks and tests (D66 §9); the server tests run with PWM_TEST_SERVER set
 desktop-test:

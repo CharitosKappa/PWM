@@ -27,10 +27,28 @@ How to run `pwm-server` outside development (decisions D25, D29, D30). The same 
 | `PWM_APNS_URL` | no | Replaces Apple's addresses; for tests only. |
 | `PWM_FCM_CREDENTIALS_FILE` | no | Path to the Firebase service account's JSON key (Firebase console, Project settings, Service accounts), for push to Android (D60). Mount it read-only; keep it like `PWM_SERVER_SECRETS`. Without it, Android push is off and the app still syncs every 15 minutes. APNs and FCM are each on or off by themselves. |
 | `PWM_FCM_URL`, `PWM_FCM_TOKEN_URL` | no | Replace Google's send and token addresses; for tests only. |
+| `PWM_STRIPE_SECRET_KEY` | no | Stripe's secret key (`sk_…`, or a restricted `rk_…` key with Customers, Checkout Sessions and Subscriptions), for plans bought on the web (D6). Keep it like `PWM_SERVER_SECRETS`. **Without any of the Stripe, App Store and Play settings, billing is off and every account is Premium**, as a self-hosted server wants. |
+| `PWM_STRIPE_WEBHOOK_SECRET` | with the key | The webhook endpoint's signing secret (`whsec_…`). Point the endpoint at `https://<server>/v1/billing/stripe/webhook`, with the `checkout.session.completed`, `customer.subscription.*` and `invoice.*` events. |
+| `PWM_STRIPE_PRICES` | with the key | Each plan's Stripe price, like `premium=price_123,family=price_456`. Prices without a cheaper first term (PRICING.md §3). After a price change, list the new price first and keep the old one after it while anyone pays it (`premium=price_new,premium=price_old`, PRICING.md "Changing a price"). |
+| `PWM_PUBLIC_URL` | with the key | This server's public address, like `https://pwm.example`: Checkout returns to its `/billing/done` and `/billing/canceled` pages. |
+| `PWM_STRIPE_URL` | no | Replaces Stripe's address; for tests only. |
+| `PWM_APPLE_IAP_KEY_FILE` | no | Path to the in-app purchase key's `.p8` file (App Store Connect, Users and Access, Integrations, In-App Purchase), for the App Store Server API (D6). Mount it read-only; keep it like `PWM_SERVER_SECRETS`. Set the App Store Server Notifications (V2) URL to `https://<server>/v1/billing/apple/notifications`, for production and the sandbox. |
+| `PWM_APPLE_IAP_KEY_ID`, `PWM_APPLE_IAP_ISSUER_ID` | with the key | The key's id and the issuer id shown with it. |
+| `PWM_APPLE_BUNDLE_ID` | with the key | The iOS app's bundle id. |
+| `PWM_APPLE_PRODUCTS` | with the key | Each plan's App Store product id, like `premium=com.example.premium.yearly`. A plan may list more than one, the current one first. |
+| `PWM_APPLE_URL`, `PWM_APPLE_SANDBOX_URL` | no | Replace Apple's production and sandbox addresses; for tests only. |
+| `PWM_PLAY_CREDENTIALS_FILE` | no | Path to a Google service account's JSON key with access to the Play Console's financial data and orders, for the Play Developer API (D6). Mount it read-only; keep it like `PWM_SERVER_SECRETS`. |
+| `PWM_PLAY_PACKAGE` | with the file | The Android app's package name. |
+| `PWM_PLAY_PRODUCTS` | with the file | Each plan's Play subscription product id, like `premium=premium_yearly`. A plan may list more than one, the current one first. |
+| `PWM_PLAY_NOTIFY_SECRET` | with the file | At least 32 random letters and digits. Real-time developer notifications go through a Pub/Sub push subscription to `https://<server>/v1/billing/play/notifications/<secret>`. |
+| `PWM_PLAY_URL`, `PWM_PLAY_TOKEN_URL` | no | Replace Google's API and token addresses; for tests only. |
+| `PWM_DELETIONS_FILE` | yes, in production | Path to the deletions file (D74 §6): each deleted account's random id and time, kept 60 days, so a restored backup can't bring an account back. Put it on its own volume, back it up separately or not at all, and **never restore it together with a database backup**. One server writes it. `compose.yaml` mounts the `deletions` volume at `/var/lib/pwm`. Without it, only the database's own list counts, which a restore takes back in time. |
 | `PWM_LOG` | no | Log filter, default `info,sqlx=warn`. |
 | `PWM_LOG_FORMAT` | no | `json` (default in the image) or `text`. |
 
 The container can run with a read-only root filesystem, all capabilities dropped and `no-new-privileges`, as `compose.yaml` does.
+
+With billing on, the server reads every subscription that isn't expired again once a day, which catches a lost notification. The same pass schedules the renewal reminders, hands due reminders and notices to the email provider (none until D32, so it logs how many wait), and moves held Stripe subscriptions to a new price when their hold and notice allow (D72). The providers' notifications are only hints: the server always asks the provider's own API before changing a plan (D6 §3).
 
 ## TLS in front: required
 
@@ -61,6 +79,8 @@ Caddy sets `X-Forwarded-For` by default. Set `PWM_TRUSTED_PROXIES` to the addres
 
 The database holds only ciphertext, ids, sizes and times, plus account emails. Keep backups as carefully as the database.
 
+**Keep backups at most 30 days.** A deleted account's data stays in the backups made before it was deleted until they age out, and the privacy text says so (D74 §3). The deletions file and the database's own list keep deleted ids 60 days, twice that age, so every restore is covered.
+
 **With the compose stack,** two scripts do it from the repository root (`just backup <file>` and `just restore <file>` run the same):
 
 ```
@@ -72,7 +92,7 @@ sh scripts/restore.sh backups/pwm-2026-11-07.dump
 - **`restore.sh`:**
   1. Checks that the file is a backup.
   2. Stops the server and recreates the database from the file.
-  3. Runs `pwm-server mark-restored`.
+  3. Runs `pwm-server mark-restored`, which also deletes again the accounts deleted since the backup (D74 §6). The deletions volume is left as it is.
   4. Starts the server again, but only if step 3 worked.
 
   Everything written after the backup is replaced.
@@ -84,11 +104,11 @@ sh scripts/restore.sh backups/pwm-2026-11-07.dump
 docker compose run --rm server mark-restored
 ```
 
-This gives the server a new epoch. Every device notices it on its next sync, pulls everything again, and uploads what the backup lost. **Skipping this step can make devices miss changes made after the restore.**
+This deletes again every account deleted since the backup (from the deletions file and the database's list, D74 §6) and gives the server a new epoch. Every device notices it on its next sync, pulls everything again, and uploads what the backup lost. **Skipping this step can make devices miss changes made after the restore, and brings deleted accounts back.**
 
 ## Clean-up
 
-The server cleans up by itself, at start-up and then every hour (D70). Each run logs one line with counts only. It deletes:
+The server cleans up by itself, at start-up and then every hour (D76). Each run logs one line with counts only. It deletes:
 - **Sessions** whose refresh token has expired (90 days), including those of revoked devices.
 - **Login attempts and device approvals** past their lifetime.
 - **Autofill reports** older than 90 days.

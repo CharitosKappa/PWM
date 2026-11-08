@@ -59,8 +59,10 @@ public struct AutoFillView: View {
     private var logins: some View {
         List {
             if !model.matches.isEmpty && model.query.isEmpty {
-                Section("For this site") {
+                Section {
                     ForEach(model.matches) { choice in row(choice) }
+                } header: {
+                    SectionHeader("For this site")
                 }
             }
             Section(model.query.isEmpty ? "Other logins" : "Results") {

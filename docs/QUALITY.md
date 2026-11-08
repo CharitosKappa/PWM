@@ -21,13 +21,14 @@ Most one-star reviews in this market come from broken updates. Release safety is
 | --- | --- | --- |
 | `fmt-lint` (rustfmt, clippy, eslint, swiftlint, ktlint) | every PR | yes |
 | `core-test` + `test-vectors`, and `qpdf --check` on the Emergency Kit's golden PDFs (D42) | every PR | yes |
-| `server-test` | PRs touching server/core | yes |
+| `server-test`, with billing against fake Stripe, App Store and Play servers (D6 §12: no keys, no network) | PRs touching server/core | yes |
 | `extension-test` + autofill fixtures | PRs touching extension/core | yes |
 | `wasm`: both extension builds, `web-ext lint`, Firefox smoke (D40) | PRs touching extension/core | yes |
 | `bindings`: Swift/Kotlin smoke, the Swift package on Linux against a server (D41) | every PR | yes |
 | `apple`: the Swift package on macOS against a server (D41), and the iOS app's UI test in the simulator (D42) | PRs touching `apps/apple`, `core/` or the tokens | yes |
 | `ios-build`, `android-build` | PRs touching that app/core | yes |
-| `desktop-linux` (Ubuntu 22.04: clippy, tests with a server, end to end) and `desktop-windows` (clippy, tests, release build), D66 §9 | PRs touching `apps/desktop`, `ui/`, `core/` or the tokens | yes |
+| `desktop-linux` (Ubuntu 22.04: clippy, tests with a server, end to end, Linux login through the real `pkexec`, D71) and `desktop-windows` (clippy, tests, release build), D66 §9 | PRs touching `apps/desktop`, `ui/`, `core/` or the tokens | yes |
+| `desktop-installer-windows` (the NSIS installer signed with a throwaway certificate; install, replace in place, uninstall) and `desktop-installer-linux` (the `.deb` and `.rpm`, the `.rpm` and checksums signed with a throwaway key; the `.deb` installed and started; the Flatpak built and started), D70 §9 | PRs touching `apps/desktop`, `ui/`, `core/` or the tokens | yes |
 | `audit` (cargo audit/deny, npm audit) | every PR + nightly | high severity |
 | `autofill-top-sites` (D39) | nightly + release candidates | release only (`runner/compare.ts`, D64: the sites both runs counted) |
 
@@ -199,6 +200,59 @@ On Windows 11 and on Ubuntu (GNOME) and Fedora (KDE), for each release candidate
 10. Sign out, then create another account on the same computer: it works.
 11. In the vault window, make a login, a card, an identity and a note, each with a custom field; Show and Copy their hidden values; edit one and see its password history; move one into a new folder; trash, restore and delete forever. Narrow the window below 720 pixels: one pane at a time, with Back.
 12. On Windows with Windows Hello: turn on "Unlock with Windows Hello" in Settings (up to three prompts), lock, and unlock with a face, a finger and the PIN; cancel the prompt; change the Windows Hello PIN, then unlock: it asks for the master password and is off; turn it off.
+13. Browser unlock on Windows (D69), in Chrome, Edge and Firefox with the test build of the extension: turn on "Allow browser extensions to unlock with Windows Hello" in the app's Settings; in the extension, turn on "Unlock with Windows Hello" (up to three prompts); lock; unlock with Windows Hello. Each prompt comes up in front, over the browser: if one doesn't, note which browser, since D69 §3 then needs its fallback. Cancel a prompt: the password field stays. Turn the app's switch off: the extension says it needs the app.
+14. The installers (D70), from a CI run's artifacts or the release build:
+    - **Windows:** run the installer as a standard user: no administrator prompt; PWM is in the Start menu and starts. Turn on browser unlock (step 13), then install the next version over it: browser unlock still works. Uninstall from Settings, Apps: Chrome, Edge and Firefox no longer find the helper (the extension says it needs the app), and `%LOCALAPPDATA%PWM` is gone. Check SmartScreen with the release signature.
+    - **Ubuntu and Fedora:** install the `.deb` or `.rpm` from the file manager or the terminal, start PWM from the menu, then remove it. Install the Flatpak, start it, save the Emergency Kit to Downloads, lock the session (the vault locks), and quit: the keys are in the keyring (through the Secret portal).
+15. Linux login (D71), on Ubuntu (GNOME) and Fedora (KDE) with the `.deb` or `.rpm`, once with the password and once with a fingerprint set up for polkit (`pam_fprintd`):
+    - **The desktop:** turn on "Unlock with Linux login" in Settings (three dialogs), lock, and unlock with the dialog. Cancel the dialog: the password field stays. Turn it off.
+    - **Browsers:** in Chrome and Firefox (installed as packages), turn on "Allow browser extensions to unlock with Linux login" in the app, then "Unlock with Linux login" in the extension; lock; unlock with the dialog. Check that Chromium, Edge, Brave and Vivaldi get a manifest when installed, and find Opera's folder.
+    - **What isn't offered:** in the Flatpak, turning it on says it needs the `.deb` or `.rpm`. A Snap browser doesn't find the helper.
+    - **Removing:** `sudo apt purge pwm` or `sudo dnf remove pwm` deletes `/var/lib/pwm`.
+
+### Screen reader and text size checklist (D1)
+
+Before the beta, and after any change to a screen's layout. Use VoiceOver on an iPhone and on a Mac, TalkBack on an Android phone, Narrator on Windows 11 with Edge and Chrome, and Orca on Ubuntu (GNOME) with Firefox. Use a test account with synthetic items only: a login with a one-time code, a card and a note. Each reader takes about half an hour. The rules are in `design/README.md` (Accessibility). The canvas's Accessibility page shows what each stop should say.
+
+**How to move:**
+
+- **VoiceOver on iPhone:** swipe right or left to move, double-tap to press. Swipe up or down to go through a stop's actions.
+- **VoiceOver on Mac:** VO is Control+Option; use VO+arrows to move and VO+Space to press.
+- **TalkBack:** swipe right or left to move, double-tap to press. A three-finger tap opens the actions.
+- **Narrator:** Tab and the arrows, Enter to press, Caps Lock+arrows to read.
+- **Orca:** Tab and the arrows, Enter to press. H jumps between headings in Narrator's scan mode and in Orca's browse mode.
+
+**Steps, with each reader:**
+
+1. **Sign in and unlock:** every field says its label (Email, Master password, Secret Key). The password field never reads what was typed. A wrong password is announced without moving focus. The strength meter says its word.
+2. **The vault list:** the title and section names are headings, so they can be jumped between. Each row is one stop that says the name, the username and "has a one-time code" when it has one. Copy password, Copy username and Copy code are that stop's actions, not separate small stops. Icon-only buttons (Add item, Favorite) and the search field say a name. The current tab or section says it is selected.
+3. **An item:** the back button names where it goes. Each field is one stop with its label and value, and the icon tile is skipped. A hidden password says "hidden", never dots or characters. Shown, it can be read one character at a time. After Copy, "Copied" and the 30-second clear are said, and focus stays where it was. The one-time code is read in digit groups, and the countdown isn't read every second.
+4. **Edit and save:** every field has a label, and Generate a password and Scan QR code have names. An error is announced without moving focus. Saving says it saved.
+5. **Dialogs and sheets** (delete, Request a refund, sign out): focus moves into them, stays inside, and goes back to the button that opened them when they close. Escape closes them on the desktop and in the extension.
+6. **Lock:** locking, from the button or the timeout, is announced. After unlocking, focus starts at the top of the vault.
+7. **Autofill:** on the iPhone, the PWM list above the keyboard and in AutoFill Passwords reads each login. On Android, the fill suggestions and the passkey screen do. In the browser, the extension popup (opened with its shortcut) starts on the search field, reads its rows and Fill, and announces the lock.
+8. **Largest text size:** the biggest Dynamic Type size with Larger Accessibility Sizes on, 200% font size on Android, Text size 200% on Windows, and Large Text on GNOME. Nothing is cut off or overlaps. Rows stack and labels wrap. Passwords and codes break instead of running off the screen.
+9. **Reduced motion:** with Reduce Motion (Apple), Remove animations (Android), Animation effects off (Windows) or Animations off (GNOME), spinners and transitions stop.
+
+**For each failure,** note the reader, the screen, what was said and what should have been said. Fix it, or log it under D1 in `DECISIONS.md`, before the beta.
+
+### Billing checklist (D6)
+
+With a server whose `PWM_STRIPE_*`, `PWM_APPLE_*` and `PWM_PLAY_*` settings use Stripe's test mode, the App Store sandbox and a Play license tester, for each release candidate (CI runs only fake providers, with no keys):
+
+1. **Stripe, on the desktop and in the extension:** Settings shows Free. Get Premium opens Checkout in the browser; pay with Stripe's test card `4242 4242 4242 4242`. The return page says to go back; "check again" shows Premium and its renewal date. Cancel plan: it shows when it ends, and Stripe's dashboard shows it canceling at the period end. Keep my plan: it renews again. Ending it in Stripe's dashboard makes the app show Free within a minute.
+2. **The App Store, on an iPhone with a sandbox account:** buy Premium in Settings. The server stores it with the account's token (`subscriptions` has an `app_store` row, `sandbox` true). Manage subscription opens Apple's sheet; turning off renewal there shows when it ends. On the Mac and the desktop the plan shows as managed in the App Store, with no buy button.
+3. **Google Play, with a license tester:** buy Premium in Settings. The server acknowledges it (the Play Console shows it acknowledged). A slow test card shows "waiting for payment", then Premium. Manage subscription opens Play's page.
+4. **Two subscriptions:** with a Stripe plan, buy in the App Store too: every app says there's a second subscription and where to cancel it.
+5. **Another account's purchase:** sign in on the iPhone with a second account, restore purchases: the server refuses it (`purchase_not_yours`) and the second account stays Free.
+6. **A self-hosted server** (no billing settings): every account shows Premium, "Your server includes every feature", and nothing to buy.
+7. **Refunds (D72):** within 30 days of a Stripe test charge, Request a refund: Stripe's dashboard shows a refund for the unused days and the subscription canceled, and the app shows Free. The same with a Play license tester (Google refunds pro-rata). On the iPhone, Request a refund opens Apple's sheet. After 30 days the button is gone.
+8. **A price change (D72):** create a new Stripe test price, list it first in `PWM_STRIPE_PRICES`, and run `pwm-server price-change stripe premium <price> <amount> <currency>`: the existing subscription shows its price held for 12 months and the outbox has its notice and reminder. Without an email provider nothing moves.
+9. **Plan gates (D73):** on a test account with a login that has a one-time code, let the subscription lapse (or refund it). After the next sync, every app shows "One-time codes are part of Premium" and the secret instead of the code, autofill fills the username and password with no code step and no message, and export still includes the secret. Subscribe again: the code is back after the next sync.
+10. **Account deletion (D74):** on a test account signed in on two devices, with a test subscription, delete the account from Settings on one.
+    - **On the deleting device:** Export first opens Export. The plan step says what happens to the plan, and an App Store plan offers its subscription page. A wrong password changes nothing; the right one deletes. The first screen then says "This account was deleted."
+    - **On the other device:** within a minute, or at its next sync, it shows the same and keeps nothing.
+    - **On the server and at the provider:** the account can't sign in again. The Stripe or Play subscription is refunded and over, and Stripe has no customer for it.
 
 ## Success metrics
 

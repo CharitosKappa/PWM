@@ -106,6 +106,19 @@ pub enum Request {
         #[serde(deserialize_with = "secret")]
         password: Secret<String>,
     },
+    // The plan (D6; M9.1).
+    Plan,
+    Checkout {
+        plan: String,
+    },
+    CancelPlan,
+    ResumePlan,
+    RefundPlan,
+    /// Deleting the account (D74); the backend adds the Secret Key.
+    DeleteAccount {
+        #[serde(deserialize_with = "secret")]
+        master_password: Secret<String>,
+    },
     // The manage page (D44, D46, D51; M7.6).
     Devices,
     RenameDevice {
@@ -206,6 +219,11 @@ pub enum Request {
     UnlockTouchId,
     BiometricOffer,
     DismissBiometricOffer,
+    // Browser extensions unlocking with Windows Hello (D69 §4).
+    BrowserUnlock,
+    SetBrowserUnlock {
+        on: bool,
+    },
     /// Every other kind: the browser's requests (filling, offers, passkeys,
     /// the report, Touch ID).
     #[serde(other)]
@@ -243,6 +261,29 @@ pub struct ImportMapping {
     pub folder: Option<usize>,
     pub favorite: Option<usize>,
     pub tags: Option<usize>,
+}
+
+/// The account's plan (`PlanView`, D6 §7); times are Unix ms.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanView {
+    pub plan: String,
+    pub subscription: Option<PlanSubscription>,
+    pub sells: Vec<String>,
+}
+
+/// The subscription that gives the plan (`PlanView["subscription"]`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanSubscription {
+    pub provider: String,
+    pub plan: String,
+    pub status: String,
+    pub until_ms: i64,
+    pub canceling: bool,
+    pub price_locked_until_ms: Option<i64>,
+    pub refundable_until_ms: Option<i64>,
+    pub also: Vec<String>,
 }
 
 /// One of the account's devices (`DeviceView`).
@@ -341,7 +382,12 @@ pub struct ImportPreviewView {
     rename_all_fields = "camelCase"
 )]
 pub enum Status {
-    SignedOut,
+    SignedOut {
+        /// Why the last account left this computer, when it wasn't signed
+        /// out here: `account_deleted` (D74) or `device_revoked`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ended: Option<String>,
+    },
     Locked {
         email: String,
         touch_id: bool,
@@ -409,9 +455,12 @@ pub struct FolderView {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VaultView {
     pub items: Vec<VaultRow>,
     pub folders: Vec<FolderView>,
+    /// The plan now includes one-time codes (D73 §1).
+    pub codes_included: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -446,6 +495,8 @@ pub struct ItemView {
     pub hidden: Vec<String>,
     pub read_only: bool,
     pub code: Option<TotpNow>,
+    /// A secret, and a plan without codes (D73 §1).
+    pub code_needs_plan: bool,
     pub passkeys: Vec<PasskeyView>,
     pub password_history: Vec<PastPassword>,
 }

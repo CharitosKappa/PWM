@@ -43,13 +43,13 @@ final class MacUITests: XCTestCase {
         type("Bank", into: app.textFields["title"])
         type("ada", into: app.textFields["username"])
         click(app.buttons["save"], once: .enabled)
-        expect(app.staticTexts["Bank"].firstMatch)
+        expect(row("Bank, ada"))
 
         // ⇧⌘L locks; the master password unlocks.
         app.typeKey("l", modifierFlags: [.command, .shift])
         type(password, into: app.secureTextFields["password"])
         click(app.buttons["unlock"], once: .enabled)
-        expect(app.staticTexts["Bank"].firstMatch, timeout: 30)
+        expect(row("Bank, ada"), timeout: 30)
 
         // The sidebar switches panes. Clicked by position: XCUITest calls
         // these rows not hittable, and this shows whether the app still
@@ -73,6 +73,11 @@ final class MacUITests: XCTestCase {
 
     private func sidebarRow(_ identifier: String) -> XCUIElement {
         app.outlines.outlineRows.containing(.staticText, identifier: identifier).firstMatch
+    }
+
+    /// A vault row: one stop whose label starts with the name and username.
+    private func row(_ label: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
     }
 
     private func element(_ identifier: String) -> XCUIElement {

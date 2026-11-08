@@ -129,6 +129,26 @@
       "kind": "reportSend"
     },
     {
+      "kind": "plan"
+    },
+    {
+      "kind": "checkout",
+      "plan": "premium"
+    },
+    {
+      "kind": "cancelPlan"
+    },
+    {
+      "kind": "resumePlan"
+    },
+    {
+      "kind": "refundPlan"
+    },
+    {
+      "kind": "deleteAccount",
+      "masterPassword": "correct horse battery"
+    },
+    {
       "kind": "devices"
     },
     {
@@ -268,6 +288,13 @@
     },
     {
       "kind": "dismissBiometricOffer"
+    },
+    {
+      "kind": "browserUnlock"
+    },
+    {
+      "kind": "setBrowserUnlock",
+      "on": true
     }
   ],
   "desktopKinds": [
@@ -293,6 +320,12 @@
     "askApprovalPoll",
     "askApprovalCancel",
     "signInApproved",
+    "plan",
+    "checkout",
+    "cancelPlan",
+    "resumePlan",
+    "refundPlan",
+    "deleteAccount",
     "devices",
     "renameDevice",
     "revokeDevice",
@@ -322,12 +355,18 @@
     "setTouchId",
     "unlockTouchId",
     "biometricOffer",
-    "dismissBiometricOffer"
+    "dismissBiometricOffer",
+    "browserUnlock",
+    "setBrowserUnlock"
   ],
   "replies": {
     "status": [
       {
         "state": "signedOut"
+      },
+      {
+        "state": "signedOut",
+        "ended": "account_deleted"
       },
       {
         "state": "locked",
@@ -367,6 +406,60 @@
         "serverUrl": "https://api.pwm.invalid",
         "autoLockMinutes": 15
       }
+    ],
+    "plan": [
+      {
+        "plan": "premium",
+        "subscription": null,
+        "sells": []
+      },
+      {
+        "plan": "free",
+        "subscription": null,
+        "sells": [
+          "stripe",
+          "app_store",
+          "play"
+        ]
+      },
+      {
+        "plan": "premium",
+        "subscription": {
+          "provider": "stripe",
+          "plan": "premium",
+          "status": "active",
+          "untilMs": 1793000000000,
+          "canceling": true,
+          "priceLockedUntilMs": null,
+          "refundableUntilMs": 1765000000000,
+          "also": [
+            "app_store"
+          ]
+        },
+        "sells": [
+          "stripe"
+        ]
+      },
+      {
+        "plan": "premium",
+        "subscription": {
+          "provider": "play",
+          "plan": "premium",
+          "status": "active",
+          "untilMs": 1793000000000,
+          "canceling": false,
+          "priceLockedUntilMs": 1800000000000,
+          "refundableUntilMs": null,
+          "also": []
+        },
+        "sells": [
+          "stripe",
+          "play"
+        ]
+      }
+    ],
+    "checkout": [
+      "https://checkout.stripe.com/c/pay/cs_test_1"
     ],
     "devices": [
       [
@@ -444,6 +537,9 @@
         "file": "UFdN",
         "name": "PWM export 2026-11-06.pwmx"
       }
+    ],
+    "deleteAccount": [
+      null
     ],
     "importDetect": [
       {
@@ -532,7 +628,13 @@
             "itemId": "00000000-0000-4000-8000-000000000007",
             "title": "Work"
           }
-        ]
+        ],
+        "codesIncluded": true
+      },
+      {
+        "items": [],
+        "folders": [],
+        "codesIncluded": false
       }
     ],
     "item": [
@@ -560,6 +662,7 @@
           "code": "123456",
           "secondsLeft": 17
         },
+        "codeNeedsPlan": false,
         "passkeys": [
           {
             "rpId": "example.com",
@@ -576,6 +679,30 @@
       },
       {
         "vaultId": "00000000-0000-4000-8000-000000000001",
+        "itemId": "00000000-0000-4000-8000-000000000002",
+        "item": {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "v": 1,
+          "type": "login",
+          "title": "Mail",
+          "login": {
+            "username": "a@example.com",
+            "password": "",
+            "totp": ""
+          }
+        },
+        "hidden": [
+          "/login/password",
+          "/login/totp"
+        ],
+        "readOnly": false,
+        "code": null,
+        "codeNeedsPlan": true,
+        "passkeys": [],
+        "passwordHistory": []
+      },
+      {
+        "vaultId": "00000000-0000-4000-8000-000000000001",
         "itemId": "00000000-0000-4000-8000-000000000009",
         "item": {
           "v": 2,
@@ -585,6 +712,7 @@
         "hidden": [],
         "readOnly": true,
         "code": null,
+        "codeNeedsPlan": false,
         "passkeys": [],
         "passwordHistory": []
       }

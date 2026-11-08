@@ -59,6 +59,12 @@ export const REQUESTS: Request[] = [
   { kind: "setPasskeys", on: false },
   { kind: "reportPreview", problem: "nothing_filled" },
   { kind: "reportSend" },
+  { kind: "plan" },
+  { kind: "checkout", plan: "premium" },
+  { kind: "cancelPlan" },
+  { kind: "resumePlan" },
+  { kind: "refundPlan" },
+  { kind: "deleteAccount", masterPassword: "correct horse battery" },
   { kind: "devices" },
   {
     kind: "renameDevice",
@@ -143,6 +149,8 @@ export const REQUESTS: Request[] = [
   { kind: "totpSetup", input: "JBSWY3DPEHPK3PXP", title: "Mail" },
   { kind: "biometricOffer" },
   { kind: "dismissBiometricOffer" },
+  { kind: "browserUnlock" },
+  { kind: "setBrowserUnlock", on: true },
 ];
 
 /** The kinds the desktop backend answers; the rest are `unsupported`. */
@@ -169,6 +177,13 @@ export const DESKTOP_KINDS: Request["kind"][] = [
   "askApprovalPoll",
   "askApprovalCancel",
   "signInApproved",
+  // The plan (M9.1, D6).
+  "plan",
+  "checkout",
+  "cancelPlan",
+  "resumePlan",
+  "refundPlan",
+  "deleteAccount",
   // The manage page (M7.6).
   "devices",
   "renameDevice",
@@ -202,6 +217,9 @@ export const DESKTOP_KINDS: Request["kind"][] = [
   "unlockTouchId",
   "biometricOffer",
   "dismissBiometricOffer",
+  // The browser helper's registration (M7.2, D69).
+  "browserUnlock",
+  "setBrowserUnlock",
 ];
 
 /** Replies the desktop backend builds itself, with every shape of each. */
@@ -210,6 +228,7 @@ export const REPLIES: {
 } = {
   status: [
     { state: "signedOut" },
+    { state: "signedOut", ended: "account_deleted" },
     { state: "locked", email: "a@example.com", touchId: false },
     {
       state: "unlocked",
@@ -240,6 +259,43 @@ export const REPLIES: {
     ],
   ],
   settings: [{ serverUrl: "https://api.pwm.invalid", autoLockMinutes: 15 }],
+  plan: [
+    { plan: "premium", subscription: null, sells: [] },
+    {
+      plan: "free",
+      subscription: null,
+      sells: ["stripe", "app_store", "play"],
+    },
+    {
+      plan: "premium",
+      subscription: {
+        provider: "stripe",
+        plan: "premium",
+        status: "active",
+        untilMs: 1_793_000_000_000,
+        canceling: true,
+        priceLockedUntilMs: null,
+        refundableUntilMs: 1_765_000_000_000,
+        also: ["app_store"],
+      },
+      sells: ["stripe"],
+    },
+    {
+      plan: "premium",
+      subscription: {
+        provider: "play",
+        plan: "premium",
+        status: "active",
+        untilMs: 1_793_000_000_000,
+        canceling: false,
+        priceLockedUntilMs: 1_800_000_000_000,
+        refundableUntilMs: null,
+        also: [],
+      },
+      sells: ["stripe", "play"],
+    },
+  ],
+  checkout: ["https://checkout.stripe.com/c/pay/cs_test_1"],
   devices: [
     [
       {
@@ -312,6 +368,7 @@ export const REPLIES: {
     ],
   ],
   exportVault: [{ file: "UFdN", name: "PWM export 2026-11-06.pwmx" }],
+  deleteAccount: [null],
   importDetect: [
     { format: "bitwarden", needsPassword: true, columns: null },
     { format: null, needsPassword: false, columns: null },
@@ -383,7 +440,10 @@ export const REPLIES: {
           title: "Work",
         },
       ],
+      codesIncluded: true,
     },
+    // On Free (D73 §1): no code to copy.
+    { items: [], folders: [], codesIncluded: false },
   ],
   item: [
     {
@@ -399,10 +459,28 @@ export const REPLIES: {
       hidden: ["/login/password", "/login/totp", "/history/0/login/password"],
       readOnly: false,
       code: { code: "123456", secondsLeft: 17 },
+      codeNeedsPlan: false,
       passkeys: [{ rpId: "example.com", userName: "a", createdAt: 5 }],
       passwordHistory: [
         { savedAt: 1_762_300_000_000, path: "/history/0/login/password" },
       ],
+    },
+    {
+      vaultId: "00000000-0000-4000-8000-000000000001",
+      itemId: "00000000-0000-4000-8000-000000000002",
+      item: {
+        id: "00000000-0000-4000-8000-000000000002",
+        v: 1,
+        type: "login",
+        title: "Mail",
+        login: { username: "a@example.com", password: "", totp: "" },
+      },
+      hidden: ["/login/password", "/login/totp"],
+      readOnly: false,
+      code: null,
+      codeNeedsPlan: true,
+      passkeys: [],
+      passwordHistory: [],
     },
     {
       vaultId: "00000000-0000-4000-8000-000000000001",
@@ -411,6 +489,7 @@ export const REPLIES: {
       hidden: [],
       readOnly: true,
       code: null,
+      codeNeedsPlan: false,
       passkeys: [],
       passwordHistory: [],
     },

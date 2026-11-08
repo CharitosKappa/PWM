@@ -163,6 +163,23 @@ export class FakeCore implements Core {
     return send("/v1/auth/logout");
   }
 
+  /** What deleting the account ends with (D74): deleted, or a wait. */
+  deleteResult: "deleted" | "wait" = "deleted";
+
+  startDeleteAccount(password: string, secretKey: string): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    if (password !== PASSWORD || secretKey !== SECRET_KEY)
+      throw coreError("wrong_password");
+    this.next = () => {
+      if (this.deleteResult === "wait") return wait(1000);
+      this.account = undefined;
+      this.unlocked = false;
+      this.items_.clear();
+      return done("account_deleted");
+    };
+    return send("/v1/account/delete/start");
+  }
+
   startEnsureVault(): CoreStep {
     if (!this.unlocked) throw coreError("locked");
     this.next = () => {
@@ -263,14 +280,21 @@ export class FakeCore implements Core {
     return this.items_.get(vaultId) ?? [];
   }
 
+  /** The plan the last sync brought; null before one (D73 §2). */
+  plan_: string | null = null;
+
+  codesIncluded(): boolean {
+    return this.plan_ !== "free";
+  }
+
   currentCode(vaultId: string, itemId: string): string[] | undefined {
     if (!this.unlocked) throw coreError("locked");
     const item = (this.items_.get(vaultId) ?? []).map(
       (j) => JSON.parse(j) as { id: string; login?: { totp?: string } },
     );
-    return item.find((i) => i.id === itemId)?.login?.totp
-      ? ["287082", "1"]
-      : undefined;
+    if (!item.find((i) => i.id === itemId)?.login?.totp) return undefined;
+    if (!this.codesIncluded()) throw coreError("plan_required");
+    return ["287082", "1"];
   }
 
   setAutofillRules(
@@ -707,6 +731,80 @@ export class FakeCore implements Core {
   breachBodies: [string, string][] = [];
   exportGrant = false;
   authorizations = 0;
+
+  // The plan (D6).
+  billing_: {
+    plan: string;
+    subscription: {
+      provider: string;
+      plan: string;
+      status: string;
+      until_ms: number;
+      canceling: boolean;
+      price_locked_until_ms: number | null;
+      refundable_until_ms: number | null;
+      also: string[];
+    } | null;
+    sells: string[];
+    token: string | null;
+  } = { plan: "free", subscription: null, sells: ["stripe"], token: "tok" };
+  checkoutUrl = "https://checkout.stripe.com/c/pay/cs_test_1";
+  /** A billing error code the next billing call ends with, if any. */
+  billingError: string | null = null;
+
+  private billingStep(path: string, change?: () => void): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    this.next = () => {
+      if (this.billingError !== null) throw coreError(this.billingError);
+      change?.();
+      return done("billing", { billing: JSON.stringify(this.billing_) });
+    };
+    return send(path);
+  }
+
+  startBillingStatus(): CoreStep {
+    return this.billingStep("/v1/billing");
+  }
+
+  startCheckout(plan: string): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    this.next = () => {
+      if (this.billingError !== null) throw coreError(this.billingError);
+      if (plan !== "premium" && plan !== "family") throw coreError("server");
+      return done("checkout_url", { url: this.checkoutUrl });
+    };
+    return send("/v1/billing/stripe/checkout");
+  }
+
+  startCancelSubscription(): CoreStep {
+    return this.billingStep("/v1/billing/stripe/cancel", () => {
+      if (this.billing_.subscription === null)
+        throw coreError("no_subscription");
+      this.billing_.subscription.canceling = true;
+    });
+  }
+
+  startRefund(provider: string): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    if (provider !== "stripe" && provider !== "play")
+      throw coreError("managed_elsewhere");
+    return this.billingStep(`/v1/billing/${provider}/refund`, () => {
+      const sub = this.billing_.subscription;
+      if (sub === null) throw coreError("no_subscription");
+      if (sub.refundable_until_ms === null)
+        throw coreError("refund_window_passed");
+      this.billing_.plan = "free";
+      this.billing_.subscription = null;
+    });
+  }
+
+  startResumeSubscription(): CoreStep {
+    return this.billingStep("/v1/billing/stripe/resume", () => {
+      if (this.billing_.subscription === null)
+        throw coreError("no_subscription");
+      this.billing_.subscription.canceling = false;
+    });
+  }
 
   startListDevices(): CoreStep {
     if (!this.unlocked) throw coreError("locked");

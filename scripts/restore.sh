@@ -1,8 +1,9 @@
 #!/bin/sh
-# Restores a backup from scripts/backup.sh into the compose stack (D70 §3):
+# Restores a backup from scripts/backup.sh into the compose stack (D76 §3):
 # stops the server, recreates the database, restores the file, gives the
-# server a new epoch with `pwm-server mark-restored` (D30) and starts the
-# server again. Run from the repository root (or wherever compose.yaml is):
+# server a new epoch with `pwm-server mark-restored` (D30), which also deletes
+# again the accounts deleted since the backup (D74 §6), and starts the server
+# again. The deletions volume is never touched. Run from the repository root (or wherever compose.yaml is):
 #
 #   sh scripts/restore.sh backups/pwm-2026-11-07.dump
 #

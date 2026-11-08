@@ -93,6 +93,9 @@ pub enum Outcome {
     },
     SignedOut,
     DeviceRevoked,
+    /// The account was deleted, here or from another device (D74): the
+    /// cache is cleared; finish signing out as for `DeviceRevoked`.
+    AccountDeleted,
     /// The account's devices (D43 §6).
     Devices {
         devices: Vec<Device>,
@@ -108,6 +111,43 @@ pub enum Outcome {
     PushTokenSet,
     /// The session is over on the server (D62); call `sign_out` next.
     LoggedOut,
+    /// The account's plan (D6).
+    Billing {
+        billing: BillingInfo,
+    },
+    /// A Stripe Checkout page to open in the browser (D6).
+    CheckoutUrl {
+        url: String,
+    },
+}
+
+/// The account's plan (D6 §7). `sells` names the providers that sell plans
+/// on this server (`stripe`, `app_store`, `play`); empty, every account is
+/// Premium. `token` is the account's billing token for a store purchase
+/// (Apple's `appAccountToken`, Play's `obfuscatedAccountId`), only from
+/// `start_billing_status`.
+#[derive(uniffi::Record)]
+pub struct BillingInfo {
+    pub plan: String,
+    pub subscription: Option<Subscription>,
+    pub sells: Vec<String>,
+    pub token: Option<String>,
+}
+
+/// The subscription that gives the plan. `provider` says where to manage
+/// it; `also` lists other subscriptions that count too, bought by mistake.
+/// Times are Unix ms.
+#[derive(uniffi::Record)]
+pub struct Subscription {
+    pub provider: String,
+    pub plan: String,
+    pub status: String,
+    pub until_ms: i64,
+    pub canceling: bool,
+    pub price_locked_until_ms: Option<i64>,
+    /// Until when `start_refund` works; `None` when it doesn't (D72 §1).
+    pub refundable_until_ms: Option<i64>,
+    pub also: Vec<String>,
 }
 
 /// A request from a new device; `code` once this device accepted it and the
@@ -209,6 +249,7 @@ fn step(step: pwm_client::Step) -> Step {
                 },
                 pwm_client::Outcome::SignedOut => Outcome::SignedOut,
                 pwm_client::Outcome::DeviceRevoked => Outcome::DeviceRevoked,
+                pwm_client::Outcome::AccountDeleted => Outcome::AccountDeleted,
                 pwm_client::Outcome::Devices(devices) => Outcome::Devices {
                     devices: devices
                         .into_iter()
@@ -239,6 +280,24 @@ fn step(step: pwm_client::Step) -> Step {
                 pwm_client::Outcome::ApprovalUpdated => Outcome::ApprovalUpdated,
                 pwm_client::Outcome::PushTokenSet => Outcome::PushTokenSet,
                 pwm_client::Outcome::LoggedOut => Outcome::LoggedOut,
+                pwm_client::Outcome::Billing(b) => Outcome::Billing {
+                    billing: BillingInfo {
+                        plan: b.plan,
+                        subscription: b.subscription.map(|s| Subscription {
+                            provider: s.provider,
+                            plan: s.plan,
+                            status: s.status,
+                            until_ms: s.until_ms,
+                            canceling: s.canceling,
+                            price_locked_until_ms: s.price_locked_until_ms,
+                            refundable_until_ms: s.refundable_until_ms,
+                            also: s.also,
+                        }),
+                        sells: b.sells,
+                        token: b.token,
+                    },
+                },
+                pwm_client::Outcome::CheckoutUrl(url) => Outcome::CheckoutUrl { url },
             },
         },
     }
@@ -617,6 +676,18 @@ impl PwmClient {
         Ok(self.lock_inner().account_id()?)
     }
 
+    /// The plan that counts now (D73 §2): `free`, `premium`, `family` or
+    /// `teams`; `None` until the server has said, treated as Premium.
+    pub fn plan_now(&self, now_ms: i64) -> Result<Option<String>, PwmError> {
+        Ok(self.lock_inner().plan_now(now_ms)?)
+    }
+
+    /// Whether the plan now includes one-time codes (D73 §1); without them,
+    /// `current_code` answers `plan_required` and the secret stays readable.
+    pub fn codes_included(&self, now_ms: i64) -> Result<bool, PwmError> {
+        Ok(self.lock_inner().codes_included(now_ms)?)
+    }
+
     pub fn start_sync(&self) -> Result<Step, PwmError> {
         Ok(step(self.lock_inner().start_sync()?))
     }
@@ -641,6 +712,22 @@ impl PwmClient {
         Ok(step(
             self.lock_inner()
                 .start_push_token(Tokens::new(access, refresh), push)?,
+        ))
+    }
+
+    /// Deletes the account on the server and this device (D74), with the
+    /// master password and Secret Key as at unlock. Ends with
+    /// `AccountDeleted`; then sign out as usual. A wrong password is
+    /// `wrong_password`; a wait means a subscription couldn't be ended and
+    /// nothing was deleted.
+    pub fn start_delete_account(
+        &self,
+        password: String,
+        secret_key: String,
+    ) -> Result<Step, PwmError> {
+        Ok(step(
+            self.lock_inner()
+                .start_delete_account(&password, &secret_key)?,
         ))
     }
 
@@ -691,6 +778,54 @@ impl PwmClient {
     pub fn receive(&self, response: Response, now_ms: i64) -> Result<Step, PwmError> {
         Ok(step(
             self.lock_inner().receive(response_of(response), now_ms)?,
+        ))
+    }
+
+    /// The plan, its subscription, what this server sells and the billing
+    /// token (D6); ends with `Billing`.
+    pub fn start_billing_status(&self) -> Result<Step, PwmError> {
+        Ok(step(self.lock_inner().start_billing_status()?))
+    }
+
+    /// A Stripe Checkout page for `plan`, to open in the browser; ends with
+    /// `CheckoutUrl`.
+    pub fn start_checkout(&self, plan: String) -> Result<Step, PwmError> {
+        Ok(step(self.lock_inner().start_checkout(&plan)?))
+    }
+
+    /// Cancels the Stripe subscription at the end of its period; ends with
+    /// `Billing`.
+    pub fn start_cancel_subscription(&self) -> Result<Step, PwmError> {
+        Ok(step(self.lock_inner().start_cancel_subscription()?))
+    }
+
+    /// Lets a canceling Stripe subscription renew again; ends with `Billing`.
+    pub fn start_resume_subscription(&self) -> Result<Step, PwmError> {
+        Ok(step(self.lock_inner().start_resume_subscription()?))
+    }
+
+    /// Refunds the unused part of the last charge and ends the plan now,
+    /// for a `stripe` or `play` subscription (D72 §1); ends with `Billing`.
+    pub fn start_refund(&self, provider: String) -> Result<Step, PwmError> {
+        Ok(step(self.lock_inner().start_refund(&provider)?))
+    }
+
+    /// Hands a finished App Store purchase to the server; ends with `Billing`.
+    pub fn start_apple_purchase(&self, transaction_id: String) -> Result<Step, PwmError> {
+        Ok(step(
+            self.lock_inner().start_apple_purchase(&transaction_id)?,
+        ))
+    }
+
+    /// Hands a finished Play purchase to the server; ends with `Billing`.
+    pub fn start_play_purchase(
+        &self,
+        product_id: String,
+        purchase_token: String,
+    ) -> Result<Step, PwmError> {
+        Ok(step(
+            self.lock_inner()
+                .start_play_purchase(&product_id, &purchase_token)?,
         ))
     }
 

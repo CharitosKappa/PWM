@@ -17,6 +17,23 @@ public struct Entry: Identifiable, Sendable, Equatable {
     }
 
     public var id: String { item.id ?? "" }
+
+    /// The list row as one VoiceOver stop: "GitHub, alex.k, has a one-time
+    /// code". A card says only its last four digits.
+    public var spokenLabel: String {
+        var parts = [item.title.isEmpty ? "Untitled" : item.title]
+        if let login = item.login {
+            if !login.username.isEmpty { parts.append(login.username) }
+            if let totp = login.totp, !totp.isEmpty { parts.append("has a one-time code") }
+        } else if let card = item.card, !card.lastFour.isEmpty {
+            parts.append("ending in \(card.lastFour)")
+        } else if let identity = item.identity {
+            let name = [identity.firstName, identity.lastName].filter { !$0.isEmpty }.joined(separator: " ")
+            if !name.isEmpty { parts.append(name) }
+        }
+        if item.favorite { parts.append("favorite") }
+        return parts.joined(separator: ", ")
+    }
 }
 
 /// The vault list: sections, search, sync and the actions on items.
@@ -52,12 +69,13 @@ public final class VaultModel {
     let account: any Account
     let pasteboard: any SecretPasteboard
     let capture: ScreenCapture
-    private let onSignedOut: @MainActor () -> Void
+    /// Why the account left: `device_revoked`, `account_deleted`, or nil.
+    private let onSignedOut: @MainActor (String?) -> Void
     private var syncAgain = false
 
     init(
         account: any Account, pasteboard: any SecretPasteboard, capture: ScreenCapture = .shared,
-        onSignedOut: @escaping @MainActor () -> Void
+        onSignedOut: @escaping @MainActor (String?) -> Void
     ) {
         self.account = account
         self.pasteboard = pasteboard
@@ -171,7 +189,12 @@ public final class VaultModel {
             case .deviceRevoked:
                 // The core has cleared the cache; finish signing out.
                 try? await account.signOut()
-                onSignedOut()
+                onSignedOut("device_revoked")
+                return
+            case .accountDeleted:
+                // As for a revoked device (D74 §5).
+                try? await account.signOut()
+                onSignedOut("account_deleted")
                 return
             }
             _ = try await account.purgeTrash()
@@ -187,6 +210,23 @@ public final class VaultModel {
     func defaultVault() async throws -> String {
         guard let vault = try await account.vaultIds().first else { throw PWMError(code: "unknown_vault") }
         return vault
+    }
+
+    /// What a list row copies without opening the item: its VoiceOver actions.
+    public enum RowCopy: Sendable {
+        case password, username, code
+    }
+
+    public func copy(_ field: RowCopy, of entry: Entry) async {
+        let value: String?
+        switch field {
+        case .password: value = entry.item.login?.password
+        case .username: value = entry.item.login?.username
+        case .code: value = try? await account.currentCode(entry.id, in: entry.vaultId)?.code.value
+        }
+        guard let value, !value.isEmpty else { return }
+        pasteboard.copy(Redacted(value), clearAfter: ItemDetailModel.clipboardSeconds)
+        Speech.say(ItemDetailModel.copiedLine)
     }
 
     public func detail(_ entry: Entry) -> ItemDetailModel {
@@ -258,6 +298,9 @@ public final class ItemDetailModel: CaptureListener {
     public private(set) var code: Code?
     /// The login's code is a type this version can't make (HOTP, say).
     public private(set) var codeUnsupported = false
+    /// The plan doesn't include one-time codes (D73 §1); the secret stays
+    /// readable.
+    public private(set) var codeNeedsPlan = false
     /// The field copied last, for its "Copied" label.
     public private(set) var copied: String?
     /// After a screenshot masked what was shown (D49 §3).
@@ -265,6 +308,10 @@ public final class ItemDetailModel: CaptureListener {
 
     /// As for the Secret Key (D42).
     public static let clipboardSeconds: TimeInterval = 30
+    /// Said after every copy, without moving focus.
+    public static let copiedLine = "Copied. The clipboard clears in 30 seconds."
+    /// What VoiceOver says for a hidden value: never the value or the dots.
+    public static let hiddenWord = "hidden"
 
     private let account: any Account
     private let pasteboard: any SecretPasteboard
@@ -313,6 +360,7 @@ public final class ItemDetailModel: CaptureListener {
     public func copy(_ value: String, field: String) {
         pasteboard.copy(Redacted(value), clearAfter: Self.clipboardSeconds)
         copied = field
+        Speech.say(Self.copiedLine)
     }
 
     public func copyCode() {
@@ -328,10 +376,23 @@ public final class ItemDetailModel: CaptureListener {
                 Code(value: $0.code, secondsLeft: $0.secondsLeft)
             }
             codeUnsupported = code == nil
+            codeNeedsPlan = false
+        } catch let failure as PWMError where failure.code == "plan_required" {
+            code = nil
+            codeUnsupported = false
+            codeNeedsPlan = true
         } catch {
             code = nil
             codeUnsupported = true
         }
+    }
+
+    /// A one-time code in two groups ("123 456"), so it is read digit by
+    /// digit with a pause in the middle.
+    public static func grouped(_ code: String) -> String {
+        guard code.count > 4 else { return code }
+        let half = code.count / 2
+        return String(code.prefix(half)) + " " + String(code.dropFirst(half))
     }
 
     /// Display text for a field: `•` for each hidden character, up to 12.

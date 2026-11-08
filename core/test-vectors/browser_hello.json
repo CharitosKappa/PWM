@@ -1,0 +1,19 @@
+{
+  "description": "The extension's key under a Windows Hello signature's key, for the Windows helper v1 (D69)",
+  "format_version": 1,
+  "operation": "browser_hello",
+  "vectors": [
+    {
+      "aad": "2070776d2f62726f777365722d756e6c6f636b2f77696e646f77732d68656c6c6f0100346368726f6d652d657874656e73696f6e3a2f2f6162636465666768696a6b6c6d6e6f706162636465666768696a6b6c6d6e6f702fa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+      "account_id": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "browser_key": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+      "caller": "chrome-extension://abcdefghijklmnopabcdefghijklmnop/",
+      "challenge": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+      "device_id": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+      "envelope": "0134db0a8ac9f6cf10ae19fbc378c04e611bc77c59128cfd2b97771dc502477dcda7d8444c07fd6f97ba5ba25865d848f3dc6b973d851edde71f17a319ec8e6b0397f02bb22c4184ff",
+      "info": "70776d2f62726f777365722d756e6c6f636b2f77696e646f77732d68656c6c6f2f7631",
+      "signature": "fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0dfdedddcdbdad9d8d7d6d5d4d3d2d1d0cfcecdcccbcac9c8c7c6c5c4c3c2c1c0bfbebdbcbbbab9b8b7b6b5b4b3b2b1b0afaeadacabaaa9a8a7a6a5a4a3a2a1a09f9e9d9c9b9a999897969594939291908f8e8d8c8b8a898887868584838281807f7e7d7c7b7a797877767574737271706f6e6d6c6b6a696867666564636261605f5e5d5c5b5a595857565554535251504f4e4d4c4b4a494847464544434241403f3e3d3c3b3a393837363534333231302f2e2d2c2b2a292827262524232221201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100",
+      "wrapping_key": "39746fac8e629109ccb2d324a44b3c0b68ba1ded86c5ceca550fb39c7649b01a"
+    }
+  ]
+}

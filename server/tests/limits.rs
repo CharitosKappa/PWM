@@ -264,6 +264,25 @@ async fn unauthenticated_endpoints_are_limited_per_ip() {
     let reply = post_from(&app, "203.0.113.8", "/v1/auth/login/finish", &[]).await;
     assert_eq!(reply.status, StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(retry_after(&reply), 2);
+    // Proving the password to delete an account has 10 an hour of its own
+    // (D74 §1): logins don't use them up.
+    for n in 0..10 {
+        let path = if n % 2 == 0 {
+            "/v1/account/delete/start"
+        } else {
+            "/v1/account/delete/finish"
+        };
+        assert_eq!(
+            post_from(&app, "203.0.113.8", path, &[]).await.status,
+            StatusCode::UNAUTHORIZED,
+            "{path}"
+        );
+    }
+    let reply = post_from(&app, "203.0.113.8", "/v1/account/delete/start", &[]).await;
+    assert_eq!(reply.status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(retry_after(&reply), 360);
+    let reply = post_from(&app, "198.51.100.2", "/v1/account/delete/start", &[]).await;
+    assert_eq!(reply.status, StatusCode::UNAUTHORIZED, "another address");
 
     // Refresh: 10 a minute.
     for _ in 0..10 {

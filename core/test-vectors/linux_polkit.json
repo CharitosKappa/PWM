@@ -1,0 +1,26 @@
+{
+  "description": "The Linux key holder's answer, and the desktop's and the browser helper's keys under it v1 (D71)",
+  "format_version": 1,
+  "operation": "linux_polkit",
+  "vectors": [
+    {
+      "aad": "1070776d2f6c696e75782d706f6c6b697401a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+      "account_id": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "browser_aad": "1f70776d2f62726f777365722d756e6c6f636b2f6c696e75782d706f6c6b697401000f70776d4070776d2e696e76616c6964a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+      "browser_envelope": "01bc22ef12928785d40f4f4b58f0096bdc106f273f348c63f14c288ca959e6671b3dc54192f337b06ab36d953ee2b1dc38835ab03482508de0c4d2069b393cdf374c9c363506704d8a",
+      "browser_info": "70776d2f62726f777365722d756e6c6f636b2f6c696e75782d706f6c6b69742f7631",
+      "browser_key": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+      "browser_wrapping_key": "a0bddce187c5982d20727e1e7254e5902647864063c34eadf2a43ff68ad8de4d",
+      "caller": "pwm@pwm.invalid",
+      "challenge": "4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c",
+      "device_id": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+      "envelope": "0117304b2a4b862c845329b308154c15651fcf5cade78cd7d5a0a3947f13ec2a4394696e403652292f92d68f9aca7e2c529f930cec4b03a66d43e5f55a07001d3ebf9ed7e6d0caafc6",
+      "info": "70776d2f6c696e75782d706f6c6b69742f7631",
+      "response": "ca4d97e2fa1b6dc14101325219e24e655f50af4b6063f6ff00f44df5d8c4f1f3",
+      "response_info": "70776d2f6c696e75782d706f6c6b69742f726573706f6e73652f7631",
+      "secret": "5353535353535353535353535353535353535353535353535353535353535353",
+      "unlock_key": "7777777777777777777777777777777777777777777777777777777777777777",
+      "wrapping_key": "f09362618c2dbddfeff06ff53e8e0183141f66947796d70a9fb0997a4b439769"
+    }
+  ]
+}

@@ -12,6 +12,8 @@ use pwm_crypto::ServerSecrets;
 use serde::de::DeserializeOwned;
 use sqlx::PgPool;
 
+use crate::billing::Billing;
+use crate::deletion::DeletionLog;
 use crate::limits::{Clock, Limits, RateLimiter, TrustedProxies, system_clock};
 use crate::push::Push;
 
@@ -23,6 +25,10 @@ pub struct AppState {
     pub(crate) trusted_proxies: Arc<TrustedProxies>,
     /// APNs (D50 §3); off unless configured.
     pub(crate) push: Push,
+    /// Plans and billing (D6); off (every account Premium) unless configured.
+    pub(crate) billing: Billing,
+    /// Deleted accounts outside the database (D74 §6); off unless configured.
+    pub(crate) deletions: DeletionLog,
 }
 
 impl AppState {
@@ -34,7 +40,19 @@ impl AppState {
             limiter: Arc::new(RateLimiter::new(Limits::default(), system_clock())),
             trusted_proxies: Arc::new(TrustedProxies::default()),
             push: Push::off(),
+            billing: Billing::off(),
+            deletions: DeletionLog::off(),
         }
+    }
+
+    pub fn with_deletions(mut self, deletions: DeletionLog) -> Self {
+        self.deletions = deletions;
+        self
+    }
+
+    pub fn with_billing(mut self, billing: Billing) -> Self {
+        self.billing = billing;
+        self
     }
 
     pub fn with_push(mut self, push: Push) -> Self {
@@ -64,6 +82,8 @@ pub enum ApiError {
     /// Missing, malformed, expired or ended access or refresh token.
     Unauthorized,
     DeviceRevoked,
+    /// A refresh token of a deleted account's session (D74 §5).
+    AccountDeleted,
     /// A body or blob over its size limit (D29).
     TooLarge,
     /// A vault or item count cap (D29).
@@ -74,9 +94,15 @@ pub enum ApiError {
     ReadOnly,
     /// A write or delete without `If-Match` / `If-None-Match` (D27).
     PreconditionRequired,
-    /// A delta sync from before compacted tombstones (D70 §2): pull from 0.
+    /// A delta sync from before compacted tombstones (D76 §2): pull from 0.
     ResyncRequired,
     Conflict(&'static str),
+    /// 403 with its own code, such as `purchase_not_yours` (D6).
+    Forbidden(&'static str),
+    /// Billing is not set up here, or its provider can't be reached (D6).
+    BillingUnavailable,
+    /// The account's plan doesn't include this (D73 §3).
+    PlanRequired,
     NotFound,
     Internal,
 }
@@ -88,6 +114,7 @@ impl ApiError {
             Self::InvalidCredentials => (StatusCode::UNAUTHORIZED, "invalid_credentials"),
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             Self::DeviceRevoked => (StatusCode::FORBIDDEN, "device_revoked"),
+            Self::AccountDeleted => (StatusCode::FORBIDDEN, "account_deleted"),
             Self::TooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "too_large"),
             Self::LimitReached => (StatusCode::FORBIDDEN, "limit_reached"),
             Self::RateLimited(_) => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
@@ -97,6 +124,9 @@ impl ApiError {
             }
             Self::ResyncRequired => (StatusCode::GONE, "resync_required"),
             Self::Conflict(code) => (StatusCode::CONFLICT, code),
+            Self::Forbidden(code) => (StatusCode::FORBIDDEN, code),
+            Self::BillingUnavailable => (StatusCode::SERVICE_UNAVAILABLE, "billing_unavailable"),
+            Self::PlanRequired => (StatusCode::FORBIDDEN, "plan_required"),
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             Self::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         }

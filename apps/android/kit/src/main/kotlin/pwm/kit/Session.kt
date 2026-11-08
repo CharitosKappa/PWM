@@ -48,6 +48,9 @@ sealed class SyncResult {
 
     /** This device was revoked: its cache is cleared and the session locked. */
     data object DeviceRevoked : SyncResult()
+
+    /** The account was deleted from another device (D74 §5): as for a revoked device. */
+    data object AccountDeleted : SyncResult()
 }
 
 /** Something the app may want to show. */
@@ -261,6 +264,32 @@ class Session(
         }
     }
 
+    /**
+     * Deletes the account on the server and this device (D74), with the
+     * master password and the stored Secret Key. A wrong password is
+     * `wrong_password`; `delete_unavailable` means a plan couldn't be ended
+     * or the server wasn't reached, and nothing was deleted. Afterwards
+     * nothing of the account stays here, as after [signOut].
+     */
+    override suspend fun deleteAccount(password: Redacted<String>) = on {
+        val secretKey = keys.get(KeyName.SECRET_KEY) ?: throw PwmError("signed_out")
+        val outcome = try {
+            run(core { client.startDeleteAccount(password.value, secretKey) })
+        } catch (e: Wait) {
+            throw PwmError("delete_unavailable")
+        }
+        when (outcome) {
+            Outcome.AccountDeleted -> Unit
+            Outcome.DeviceRevoked -> throw PwmError("device_revoked")
+            Outcome.SignedOut -> throw PwmError("signed_out")
+            else -> throw PwmError("protocol")
+        }
+        disableBiometrics()
+        for (name in listOf(KeyName.SECRET_KEY, KeyName.ACCESS_TOKEN, KeyName.REFRESH_TOKEN, KeyName.EMAIL, KeyName.PASSWORD_UNLOCKED_AT)) {
+            keys.delete(name)
+        }
+    }
+
     /** `POST /v1/auth/logout` with the stored tokens, locked or not; a revoked device's sends nothing. */
     private suspend fun endSession() {
         val access = keys.get(KeyName.ACCESS_TOKEN) ?: return
@@ -303,6 +332,7 @@ class Session(
             )
             Outcome.SignedOut -> SyncResult.SignedOut
             Outcome.DeviceRevoked -> SyncResult.DeviceRevoked
+            Outcome.AccountDeleted -> SyncResult.AccountDeleted
             else -> throw PwmError("protocol")
         }
     }
@@ -529,15 +559,36 @@ class Session(
         syncNow()
     }
 
-    /** A conversation that needs the server: offline is `network`, and a refused session says so. */
-    private suspend fun runOnline(first: Step): Outcome {
+    // --- Plan and billing (D6) ---
+
+    override suspend fun billingStatus(): BillingStatus = on {
+        billing(core { client.startBillingStatus() })
+    }
+
+    override suspend fun playPurchase(productId: String, purchaseToken: Redacted<String>): BillingStatus = on {
+        billing(core { client.startPlayPurchase(productId, purchaseToken.value) })
+    }
+
+    override suspend fun refund(provider: String): BillingStatus = on {
+        billing(core { client.startRefund(provider) })
+    }
+
+    /** Offline or a 503 (the server can't reach the provider) both mean try again later. */
+    private suspend fun billing(first: Step): BillingStatus {
+        val outcome = runOnline(first, waited = "billing_unavailable")
+        return BillingStatus.of((outcome as? Outcome.Billing ?: throw PwmError("protocol")).billing)
+    }
+
+    /** A conversation that needs the server: offline is `network` (or [waited]), and a refused session says so. */
+    private suspend fun runOnline(first: Step, waited: String = "network"): Outcome {
         val outcome = try {
             run(first)
         } catch (e: Wait) {
-            throw PwmError("network")
+            throw PwmError(waited)
         }
         return when (outcome) {
             Outcome.DeviceRevoked -> throw PwmError("device_revoked")
+            Outcome.AccountDeleted -> throw PwmError("account_deleted")
             Outcome.SignedOut -> throw PwmError("signed_out")
             else -> outcome
         }
@@ -612,6 +663,7 @@ class Session(
             )
             Outcome.SignedOut -> SyncResult.SignedOut
             Outcome.DeviceRevoked -> SyncResult.DeviceRevoked
+            Outcome.AccountDeleted -> SyncResult.AccountDeleted
             else -> throw PwmError("protocol")
         }
     }

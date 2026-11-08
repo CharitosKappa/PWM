@@ -54,7 +54,8 @@ class VaultModel internal constructor(
     internal val account: Account,
     internal val clipboard: SecretClipboard,
     internal val work: CoroutineDispatcher,
-    private val onSignedOut: () -> Unit,
+    /** Why the account left: `device_revoked` or `account_deleted`. */
+    private val onSignedOut: (String?) -> Unit,
     /** A sync was told the session ended: "Sign in again to sync" (D50 §5). */
     private val onSessionEnded: () -> Unit = {},
 ) {
@@ -138,10 +139,10 @@ class VaultModel internal constructor(
                     onSessionEnded()
                     null
                 }
-                SyncResult.DeviceRevoked -> {
+                SyncResult.DeviceRevoked, SyncResult.AccountDeleted -> {
                     // The core has cleared the cache; finish signing out.
                     runCatching { account.signOut() }
-                    onSignedOut()
+                    onSignedOut(if (result == SyncResult.AccountDeleted) "account_deleted" else "device_revoked")
                     return false
                 }
             }
@@ -159,6 +160,28 @@ class VaultModel internal constructor(
     // --- Moving between screens (D54 §3) ---
 
     fun open(entry: Entry) = push(Route.Detail(ItemDetailModel(entry, account, clipboard)))
+
+    /** What a list row copies without opening the item: its TalkBack actions. */
+    enum class RowCopy { PASSWORD, USERNAME, CODE }
+
+    fun copy(field: RowCopy, entry: Entry) {
+        scope.launch {
+            val value = when (field) {
+                RowCopy.PASSWORD -> entry.item.password
+                RowCopy.USERNAME -> entry.item.username
+                RowCopy.CODE -> try {
+                    account.currentCode(entry.id, entry.vaultId)?.code?.value
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            if (value.isNullOrEmpty()) return@launch
+            clipboard.copy(Redacted(value), SecretKeyModel.CLIPBOARD_MS)
+            Speech.say(Announcement.COPIED)
+        }
+    }
 
     fun edit(entry: Entry) = push(Route.Edit(ItemEditModel(scope, entry, isNew = false, vault = this)))
 
@@ -315,6 +338,8 @@ class ItemDetailModel internal constructor(
         val code: CurrentCode? = null,
         /** The login's code is a kind this version can't make (HOTP, say). */
         val codeUnsupported: Boolean = false,
+        /** The plan doesn't include one-time codes (D73 §1); the secret stays readable. */
+        val codeNeedsPlan: Boolean = false,
         /** The field copied last, for its "Copied" label. */
         val copied: String? = null,
     )
@@ -330,6 +355,7 @@ class ItemDetailModel internal constructor(
     fun copy(value: String, field: String) {
         clipboard.copy(Redacted(value), SecretKeyModel.CLIPBOARD_MS)
         mutable.update { it.copy(copied = field) }
+        Speech.say(Announcement.COPIED)
     }
 
     fun copyCode() {
@@ -340,14 +366,16 @@ class ItemDetailModel internal constructor(
     /** Reads the current one-time code; the screen calls it every second while it shows. */
     suspend fun refreshCode() {
         if (item.totp.isNullOrEmpty()) return
+        var needsPlan = false
         val code = try {
             account.currentCode(entry.id, entry.vaultId)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            needsPlan = PwmError.from(e).code == "plan_required"
             null
         }
-        mutable.update { it.copy(code = code, codeUnsupported = code == null) }
+        mutable.update { it.copy(code = code, codeUnsupported = code == null && !needsPlan, codeNeedsPlan = needsPlan) }
     }
 
     /** Masks everything again, when the screen goes away. */
@@ -356,5 +384,9 @@ class ItemDetailModel internal constructor(
     companion object {
         /** Display text for a hidden value: a `•` for each character, 8 to 12 of them. */
         fun masked(value: String): String = "•".repeat(value.length.coerceIn(8, 12))
+
+        /** A one-time code in two groups ("123 456"), shown and read that way. */
+        fun grouped(code: String): String =
+            if (code.length <= 4) code else code.take(code.length / 2) + " " + code.drop(code.length / 2)
     }
 }

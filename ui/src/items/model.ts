@@ -81,6 +81,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** The value at `path` (object keys and array indexes), or undefined. */
+/**
+ * A one-time code for screen readers: digit by digit, with a pause between
+ * two groups ("1 2 3, 4 5 6"), as the apps read it.
+ */
+export function spokenCode(code: string): string {
+  const half = code.length > 4 ? Math.floor(code.length / 2) : code.length;
+  return [code.slice(0, half), code.slice(half)]
+    .filter((g) => g !== "")
+    .map((g) => g.split("").join(" "))
+    .join(", ");
+}
+
 export function getIn(item: unknown, path: (string | number)[]): unknown {
   let node: unknown = item;
   for (const key of path) {

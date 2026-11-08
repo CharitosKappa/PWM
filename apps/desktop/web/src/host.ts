@@ -23,10 +23,10 @@ export const desktopHost: Host = {
   browser: false,
   inlineUi: false,
   asksServerAccess: false,
-  // Linux unlocks with the master password until polkit or fprintd (D68 §7).
+  // Windows Hello (D68), or Linux login through polkit (D71).
   biometricName: navigator.userAgent.includes("Windows")
     ? "Windows Hello"
-    : null,
+    : "Linux login",
   manage: true,
   vaultWindow: true,
 };

@@ -114,6 +114,7 @@ class GeneratorModel internal constructor(
         val value = mutable.value.value ?: return
         clipboard.copy(value, SecretKeyModel.CLIPBOARD_MS)
         mutable.update { it.copy(copied = true) }
+        Speech.say(Announcement.COPIED)
     }
 
     companion object {
@@ -131,6 +132,8 @@ class SettingsModel internal constructor(
     private val paper: EmergencyKit.Paper,
     private val onLock: () -> Unit,
     private val onSignedOut: () -> Unit,
+    /** The account was deleted from here (D74): back to the first screen, which says so. */
+    private val onAccountDeleted: () -> Unit = onSignedOut,
     private val onHideFromCapture: (Boolean) -> Unit = {},
     private val vault: VaultModel? = null,
     private val work: CoroutineDispatcher? = null,
@@ -140,8 +143,13 @@ class SettingsModel internal constructor(
     /** Push is set up in this build (D60): the notice switch shows. */
     pushAvailable: Boolean = false,
     private val notices: Notices = NoNotices,
+    /** Google Play Billing (D6 §2), for the Plan section. */
+    playBilling: PlayBilling = NoPlayBilling,
 ) {
-    enum class Page { MAIN, NOTICES, DEVICES, APPROVALS, HEALTH, EXPORT, IMPORT }
+    /** The Plan section (D6): read when Settings shows; listens to Play while unlocked. */
+    val plan = PlanModel(scope, account, playBilling)
+
+    enum class Page { MAIN, NOTICES, DEVICES, APPROVALS, HEALTH, EXPORT, IMPORT, DELETE }
 
     data class State(
         val email: String? = null,
@@ -174,6 +182,8 @@ class SettingsModel internal constructor(
         val health: HealthModel? = null,
         val export: ExportModel? = null,
         val importing: ImportModel? = null,
+        /** Deleting the account (D74 §7), made when shown. */
+        val deleting: DeleteAccountModel? = null,
         val error: String? = null,
     )
 
@@ -283,6 +293,14 @@ class SettingsModel internal constructor(
         it.copy(page = Page.IMPORT, importing = ImportModel(scope, account, files, work ?: kotlinx.coroutines.Dispatchers.IO))
     }
 
+    fun showDeleteAccount() {
+        val deleting = DeleteAccountModel(scope, account, onAccountDeleted).also { it.load() }
+        mutable.update { it.copy(page = Page.DELETE, deleting = deleting) }
+    }
+
+    /** "Export first" on the delete page: Export, and Back returns to Settings. */
+    fun exportFirst() = showExport()
+
     /** Back from a page of Settings; false on Settings itself. Leaving a page drops what it held. */
     fun back(): Boolean {
         if (mutable.value.page == Page.MAIN) return false
@@ -294,7 +312,9 @@ class SettingsModel internal constructor(
         val s = mutable.value
         s.export?.done()
         s.importing?.close()
-        mutable.update { it.copy(page = Page.MAIN, devices = null, approvals = null, health = null, export = null, importing = null) }
+        mutable.update {
+            it.copy(page = Page.MAIN, devices = null, approvals = null, health = null, export = null, importing = null, deleting = null)
+        }
     }
 
     fun askSignOut() = mutable.update { it.copy(signOutAsked = true) }
@@ -322,6 +342,7 @@ class SettingsModel internal constructor(
     /** The kit, an export's file and an import's file leave memory when the vault locks. */
     internal fun drop() {
         closePages()
+        plan.stop()
         mutable.update { it.copy(kit = null) }
     }
 }

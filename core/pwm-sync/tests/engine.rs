@@ -4,7 +4,7 @@ mod common;
 
 use common::*;
 use pwm_crypto::{Aad, Envelope, seal};
-use pwm_store::{Store, SyncState};
+use pwm_store::{PlanRecord, Store, SyncState};
 use pwm_sync::{
     BACKOFF_CAP_MS, HttpResponse, Step, SyncEngine, SyncEvent, SyncOutcome, backoff_delay_ms,
 };
@@ -551,6 +551,30 @@ fn a_revoked_device_clears_its_cache() {
     assert!(other.store().vaults().unwrap().is_empty());
 }
 
+/// D74 §5: another device deleted the account. This one finds out when its
+/// access token fails and its refresh token is answered `account_deleted`,
+/// and keeps nothing, not even its unsent changes.
+#[test]
+fn a_deleted_accounts_device_clears_its_cache() {
+    let mut server = FakeServer::new();
+    let account = Account::new();
+    let mut device = account.device(&mut server);
+    let vault = create_vault(&mut device, &mut server);
+    add(&mut device, &vault, "secret", T0);
+    sync(&mut device, &mut server, T0);
+    add(&mut device, &vault, "unsent", T0);
+
+    server.delete_account();
+    let step = device.start_sync().unwrap();
+    assert!(matches!(
+        drive(&mut device, &mut server, step, T0),
+        Ran::Done(SyncOutcome::AccountDeleted)
+    ));
+    assert!(device.store().vaults().unwrap().is_empty());
+    assert!(device.store().pending_items().unwrap().is_empty());
+    assert!(device.store().account().unwrap().is_none());
+}
+
 #[test]
 fn a_crash_between_pages_repeats_only_that_page() {
     let mut server = FakeServer::new();
@@ -830,4 +854,37 @@ fn a_device_behind_compacted_tombstones_drops_what_was_deleted() {
     let report = sync(&mut a, &mut server, T0 + 20);
     assert!(!report.resynced);
     assert_eq!(titles(&a, &vault), ["edited on B", "kept", "new on B"]);
+}
+
+/// The plan from the vault list's headers is kept, and a server that sends
+/// none leaves it as it was (D73 §2).
+#[test]
+fn the_plan_comes_with_every_sync() {
+    let mut server = FakeServer::new();
+    let account = Account::new();
+    let mut phone = account.device(&mut server);
+    sync(&mut phone, &mut server, T0);
+    assert_eq!(phone.store().plan().unwrap(), None);
+
+    server.plan = Some(("premium".to_owned(), Some(1_800_000_000_000)));
+    sync(&mut phone, &mut server, T0);
+    let premium = PlanRecord {
+        plan: "premium".to_owned(),
+        until_ms: Some(1_800_000_000_000),
+    };
+    assert_eq!(phone.store().plan().unwrap(), Some(premium.clone()));
+
+    server.plan = None;
+    sync(&mut phone, &mut server, T0);
+    assert_eq!(phone.store().plan().unwrap(), Some(premium));
+
+    server.plan = Some(("free".to_owned(), None));
+    sync(&mut phone, &mut server, T0);
+    assert_eq!(
+        phone.store().plan().unwrap(),
+        Some(PlanRecord {
+            plan: "free".to_owned(),
+            until_ms: None
+        })
+    );
 }

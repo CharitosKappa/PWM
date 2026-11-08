@@ -84,6 +84,7 @@ public final class GeneratorModel {
         guard let value else { return }
         pasteboard.copy(value, clearAfter: ItemDetailModel.clipboardSeconds)
         copied = true
+        Speech.say(ItemDetailModel.copiedLine)
     }
 }
 
@@ -124,10 +125,14 @@ public final class SettingsModel {
 
     public private(set) var lockTimeout: LockTimeout
 
+    /// The plan section (D6); loads when it shows.
+    public let plan: PlanModel
+
     init(server: URL?, app: AppModel, account: any Account) {
         self.server = server
         self.app = app
         self.account = account
+        plan = PlanModel(account: account, checkout: app.checkout)
         lockTimeout = app.lockTimeout
         breachCheck = app.breachCheckOn
         hidesFromCapture = app.hidesFromCapture
@@ -268,6 +273,12 @@ public final class SettingsModel {
 
     public func makeImport() -> ImportModel {
         ImportModel(account: account, files: app.importFiles)
+    }
+
+    public func makeDeleteAccount() -> DeleteAccountModel {
+        DeleteAccountModel(account: account, plan: plan) { [unowned app] in
+            app.didSignOut(ended: "account_deleted")
+        }
     }
 
     public func makeApprovals() -> ApprovalsModel {

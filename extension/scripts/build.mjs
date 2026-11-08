@@ -138,7 +138,7 @@ async function buildTarget(target, dist) {
     fs.readFileSync(path.join(root, "..", "design", "tokens.json"), "utf8"),
   );
   fs.writeFileSync(path.join(dist, "tokens.css"), tokensCss(tokens));
-  copyFonts(path.join(root, ".."), dist);
+  copyFonts(path.join(root, ".."), dist, tokens);
 
   const manifest = JSON.parse(
     fs.readFileSync(path.join(root, "manifests", `${target}.json`), "utf8"),

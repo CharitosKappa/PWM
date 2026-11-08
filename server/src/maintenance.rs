@@ -1,4 +1,4 @@
-//! Scheduled clean-up (D70): expired rows go, and tombstones older than the
+//! Scheduled clean-up (D76): expired rows go, and tombstones older than the
 //! horizon are compacted. It runs inside the server, at start-up and then
 //! every [`MAINTENANCE_EVERY`]. Every delete is safe to repeat, so several
 //! servers on one database need no coordination.
@@ -13,7 +13,7 @@ use crate::reports::REPORT_RETENTION_DAYS;
 /// How often the clean-up runs.
 pub const MAINTENANCE_EVERY: Duration = Duration::from_secs(60 * 60);
 
-/// Tombstones are kept this long after the delete (D70 §2). A device whose
+/// Tombstones are kept this long after the delete (D76 §2). A device whose
 /// cursor is older pulls its vaults again from 0.
 pub const TOMBSTONE_HORIZON_DAYS: i64 = 180;
 

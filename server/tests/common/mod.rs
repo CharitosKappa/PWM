@@ -6,6 +6,7 @@
 //! failure.
 #![allow(dead_code)]
 
+pub mod driver;
 pub mod flows;
 
 use std::str::FromStr;

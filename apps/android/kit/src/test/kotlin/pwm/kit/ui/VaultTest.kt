@@ -280,6 +280,60 @@ class VaultTest {
         assertNull(detail.state.value.code)
     }
 
+    // --- Screen readers (design/README.md, Accessibility) ---
+
+    @Test
+    fun copiesAndLockingAreAnnouncedWithoutTheValue() = runTest {
+        val said = mutableListOf<Announcement>()
+        Speech.listener = { said += it }
+        try {
+            val h = unlocked(login("1", "GitHub", username = "alex.k").edited { password = "hunter2"; totp = "otpauth://totp/GitHub?secret=JBSWY3DPEHPK3PXP" })
+            val entry = h.vault.state.value.visible.single()
+            h.vault.copy(VaultModel.RowCopy.PASSWORD, entry)
+            h.vault.copy(VaultModel.RowCopy.USERNAME, entry)
+            h.vault.copy(VaultModel.RowCopy.CODE, entry)
+            advanceUntilIdle()
+            assertEquals("a row copies without opening the item", listOf("hunter2", "alex.k", "123456"), h.copied.map { it.value })
+            assertTrue(h.copied.all { it.clearAfterMs == 30_000L })
+            h.vault.open(entry)
+            val detail = (h.vault.state.value.stack.single() as VaultModel.Route.Detail).model
+            detail.copy(detail.item.password, "password")
+            assertEquals(List(4) { Announcement.COPIED }, said)
+            h.home.settings.lockNow()
+            advanceUntilIdle()
+            assertEquals(Announcement.LOCKED, said.last())
+        } finally {
+            Speech.listener = {}
+        }
+    }
+
+    @Test
+    fun codesAreShownAndReadInTwoGroups() {
+        assertEquals("123 456", ItemDetailModel.grouped("123456"))
+        assertEquals("1234 5678", ItemDetailModel.grouped("12345678"))
+        assertEquals("123 4567", ItemDetailModel.grouped("1234567"))
+        assertEquals("1234", ItemDetailModel.grouped("1234"))
+    }
+
+    /** On Free the screen says codes are part of Premium, not that the code is unsupported (D73 §1). */
+    @Test
+    fun onFreeTheCodeNeedsAPlan() = runTest {
+        val h = unlocked(login("1", "Bank").edited { totp = "otpauth://totp/Bank?secret=JBSWY3DPEHPK3PXP" })
+        h.accounts.single().codeNeedsPlan = true
+        h.vault.open(h.vault.state.value.visible.single())
+        val detail = (h.vault.state.value.stack.single() as VaultModel.Route.Detail).model
+        detail.refreshCode()
+        assertNull(detail.state.value.code)
+        assertTrue(detail.state.value.codeNeedsPlan)
+        assertFalse(detail.state.value.codeUnsupported)
+        detail.copyCode()
+        assertTrue(h.copied.isEmpty())
+        h.accounts.single().codeNeedsPlan = false
+        detail.refreshCode()
+        assertFalse(detail.state.value.codeNeedsPlan)
+        assertEquals("123456", detail.state.value.code!!.code.value)
+    }
+
     @Test
     fun theGeneratorsOptions() = runTest {
         val h = unlocked()
@@ -408,5 +462,21 @@ class VaultTest {
         h.vault.refresh()
         advanceUntilIdle()
         assertEquals(AppModel.Screen.Welcome, h.screen)
+        // The welcome screen says why (D74 §5), until the user moves on.
+        assertEquals("This device was signed out from another device.", h.app.state.value.ended)
+        h.app.showSignIn()
+        assertNull(h.app.state.value.ended)
+    }
+
+    /** D74 §5: the account was deleted from another device. */
+    @Test
+    fun aDeletedAccountsDeviceIsWipedAndTheWelcomeScreenSaysSo() = runTest {
+        val h = unlocked()
+        h.accounts.single().syncResult = pwm.kit.SyncResult.AccountDeleted
+        h.vault.refresh()
+        advanceUntilIdle()
+        assertEquals(AppModel.Screen.Welcome, h.screen)
+        assertEquals("This account was deleted.", h.app.state.value.ended)
+        assertFalse(h.accounts.single().isSignedIn())
     }
 }

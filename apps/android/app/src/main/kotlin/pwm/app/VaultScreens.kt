@@ -62,6 +62,20 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.VerbatimTtsAnnotation
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withAnnotation
 import androidx.compose.ui.unit.dp
 import java.text.DateFormat
 import java.util.Date
@@ -211,7 +225,9 @@ private fun VaultList(vault: VaultModel, state: VaultModel.State, signInAgain: p
                     )
                 }
                 LazyColumn(Modifier.fillMaxSize().testTag("itemList")) {
-                    items(state.visible, key = { "${it.vaultId}/${it.id}" }) { entry -> ItemRow(entry) { vault.open(entry) } }
+                    items(state.visible, key = { "${it.vaultId}/${it.id}" }) { entry ->
+                        ItemRow(entry, copy = { field -> vault.copy(field, entry) }) { vault.open(entry) }
+                    }
                 }
             }
         }
@@ -277,9 +293,12 @@ private fun sectionTag(section: Section): String = when (section) {
     is Section.Folder -> "folder"
 }
 
-/** A row: the type's icon, the title and the username or a card's last 4 digits. No website icons (D43 §2). */
+/**
+ * A row: the type's icon, the title and the username or a card's last 4 digits. No website icons (D43 §2).
+ * One TalkBack stop that says the name, the username and "has a one-time code", with the copies as its actions.
+ */
 @Composable
-private fun ItemRow(entry: Entry, onClick: () -> Unit) {
+private fun ItemRow(entry: Entry, copy: (VaultModel.RowCopy) -> Unit, onClick: () -> Unit) {
     val item = entry.item
     val subtitle = when (item.kind) {
         Item.Kind.LOGIN -> item.username
@@ -287,9 +306,30 @@ private fun ItemRow(entry: Entry, onClick: () -> Unit) {
         Item.Kind.IDENTITY -> item.identity?.let { listOf(it.firstName, it.lastName).filter(String::isNotBlank).joinToString(" ") } ?: ""
         else -> ""
     }
+    val hasCode = item.kind == Item.Kind.LOGIN && !item.totp.isNullOrEmpty()
+    val spoken = listOfNotNull(
+        item.title,
+        subtitle.ifEmpty { null },
+        if (hasCode) stringResource(R.string.has_code) else null,
+        if (item.favorite) stringResource(R.string.favorite) else null,
+    ).joinToString(", ")
+    val actions = if (item.kind != Item.Kind.LOGIN || item.trashedAtMs != null) {
+        emptyList()
+    } else {
+        listOfNotNull(
+            if (item.password.isNotEmpty()) RowAction(stringResource(R.string.copy_password)) { copy(VaultModel.RowCopy.PASSWORD) } else null,
+            if (item.username.isNotEmpty()) RowAction(stringResource(R.string.copy_username)) { copy(VaultModel.RowCopy.USERNAME) } else null,
+            if (hasCode) RowAction(stringResource(R.string.copy_code)) { copy(VaultModel.RowCopy.CODE) } else null,
+        )
+    }
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = Tokens.Space.s4.dp, vertical = Tokens.Space.s3.dp)
-            .testTag("item.${item.title}"),
+            .testTag("item.${item.title}")
+            .clearAndSetSemantics {
+                contentDescription = spoken
+                onClick { onClick(); true }
+                customActions = actions.map { it.semantics() }
+            },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s3.dp),
     ) {
@@ -301,6 +341,14 @@ private fun ItemRow(entry: Entry, onClick: () -> Unit) {
         if (item.favorite) Icon(Icons.Filled.Star, contentDescription = stringResource(R.string.favorite), tint = color(Tokens.Color.warning))
     }
     HorizontalDivider(color = color(Tokens.Color.border))
+}
+
+/** One of a row's TalkBack actions. */
+private class RowAction(val label: String, val run: () -> Unit) {
+    fun semantics() = CustomAccessibilityAction(label) {
+        run()
+        true
+    }
 }
 
 private fun kindIcon(kind: Item.Kind?): ImageVector = when (kind) {
@@ -381,37 +429,71 @@ private fun LoginFields(model: ItemDetailModel, state: ItemDetailModel.State) {
     if (item.password.isNotEmpty()) FieldRow(model, state, stringResource(R.string.password), item.password, "password", secret = true, monospace = true)
     if (!item.totp.isNullOrEmpty()) {
         val code = state.code
-        Column(Modifier.fillMaxWidth()) {
-            Label(stringResource(R.string.one_time_code))
+        val codeLabel = stringResource(R.string.one_time_code)
+        val unsupported = stringResource(R.string.code_unsupported)
+        val needsPlan = stringResource(R.string.code_needs_plan)
+        val copyCode = stringResource(R.string.copy_code)
+        Column(
+            Modifier.fillMaxWidth().testTag("codeRow").clearAndSetSemantics {
+                contentDescription = codeLabel
+                when {
+                    code != null -> {
+                        text = AnnotatedString(spokenCode(code.code.value))
+                        customActions = listOf(CustomAccessibilityAction(copyCode) { model.copyCode(); true })
+                    }
+                    state.codeNeedsPlan -> stateDescription = needsPlan
+                    state.codeUnsupported -> stateDescription = unsupported
+                }
+            },
+        ) {
+            Label(codeLabel)
             if (code != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        code.code.value.chunked(3).joinToString(" "), style = Tokens.Text.headline.compose().copy(fontFamily = GeistMono),
+                        ItemDetailModel.grouped(code.code.value), style = Tokens.Text.headline.compose().copy(fontFamily = GeistMono),
                         color = color(Tokens.Color.text), modifier = Modifier.weight(1f).testTag("code"),
                     )
                     Text(stringResource(R.string.code_seconds, code.secondsLeft.toInt()), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))
                     CopyButton(state.copied == "code", "copy.code", model::copyCode)
                 }
+            } else if (state.codeNeedsPlan) {
+                Text(
+                    stringResource(R.string.code_needs_plan), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted),
+                    modifier = Modifier.testTag("code.needsPlan"),
+                )
             } else if (state.codeUnsupported) {
                 Text(stringResource(R.string.code_unsupported), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))
             }
         }
+        // The secret stays the user's, to move elsewhere (D73 §1).
+        if (state.codeNeedsPlan) {
+            FieldRow(model, state, stringResource(R.string.one_time_code_secret), item.totp.orEmpty(), "totp", secret = true, monospace = true)
+        }
     }
+    val websiteLabel = stringResource(R.string.website)
+    val openLabel = stringResource(R.string.open)
     for (url in item.urls) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        val web = url.url.startsWith("https://") || url.url.startsWith("http://")
+        val open = {
+            try {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url.url)))
+            } catch (e: ActivityNotFoundException) {
+                // No browser: nothing to open it with.
+            }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().clearAndSetSemantics {
+                contentDescription = websiteLabel
+                text = AnnotatedString(url.url)
+                if (web) customActions = listOf(CustomAccessibilityAction(openLabel) { open(); true })
+            },
+        ) {
             Column(Modifier.weight(1f)) {
-                Label(stringResource(R.string.website))
+                Label(websiteLabel)
                 Text(url.url, style = Tokens.Text.body.compose(), color = color(Tokens.Color.text))
             }
-            if (url.url.startsWith("https://") || url.url.startsWith("http://")) {
-                TextButton(onClick = {
-                    try {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url.url)))
-                    } catch (e: ActivityNotFoundException) {
-                        // No browser: nothing to open it with.
-                    }
-                }) { Text(stringResource(R.string.open)) }
-            }
+            if (web) TextButton(onClick = open) { Text(openLabel) }
         }
     }
     // Read-only: a passkey's keys never leave the core.
@@ -420,7 +502,10 @@ private fun LoginFields(model: ItemDetailModel, state: ItemDetailModel.State) {
     }
     val history = item.passwordHistory
     if (history.isNotEmpty()) {
-        Label(stringResource(R.string.password_history))
+        Text(
+            stringResource(R.string.password_history), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted),
+            modifier = Modifier.semantics { heading() },
+        )
         history.forEachIndexed { i, previous ->
             val at = previous.replacedAtMs?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)) }
             FieldRow(model, state, at?.let { stringResource(R.string.replaced_on, it) } ?: "", previous.password, "history.$i", secret = true, monospace = true)
@@ -464,13 +549,18 @@ private fun Label(text: String) {
 
 @Composable
 private fun Plain(label: String, value: String?) {
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
         Label(label)
         if (value != null) Text(value, style = Tokens.Text.body.compose(), color = color(Tokens.Color.text))
     }
 }
 
-/** A field with Copy, and Show / Hide for a secret one. */
+/**
+ * A field with Copy, and Show / Hide for a secret one. One TalkBack stop: its
+ * label and value, "hidden" while hidden (never the dots), with the buttons
+ * as its actions. A shown secret is read one character at a time.
+ */
+@OptIn(ExperimentalTextApi::class)
 @Composable
 private fun FieldRow(
     model: ItemDetailModel,
@@ -482,24 +572,48 @@ private fun FieldRow(
     monospace: Boolean = false,
 ) {
     val shown = !secret || key in state.revealed
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+    val hidden = stringResource(R.string.hidden)
+    val show = stringResource(if (shown) R.string.hide else R.string.show)
+    val copy = stringResource(R.string.copy)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().testTag("field.$key").clearAndSetSemantics {
+            contentDescription = label
+            if (shown) {
+                text = if (secret) {
+                    buildAnnotatedString { withAnnotation(VerbatimTtsAnnotation(value)) { append(value) } }
+                } else {
+                    AnnotatedString(value)
+                }
+            } else {
+                stateDescription = hidden
+            }
+            customActions = listOfNotNull(
+                if (secret) CustomAccessibilityAction(show) { model.toggle(key); true } else null,
+                CustomAccessibilityAction(copy) { model.copy(value, key); true },
+            )
+        },
+    ) {
         Column(Modifier.weight(1f)) {
             Label(label)
             Text(
                 if (shown) value else ItemDetailModel.masked(value),
                 style = (if (monospace) Tokens.Text.secret else Tokens.Text.body).compose(),
                 color = color(Tokens.Color.text),
-                modifier = Modifier.testTag("value.$key"),
             )
         }
         if (secret) {
-            TextButton(onClick = { model.toggle(key) }, modifier = Modifier.testTag("reveal.$key")) {
+            TextButton(onClick = { model.toggle(key) }) {
                 Text(stringResource(if (shown) R.string.hide else R.string.show))
             }
         }
         CopyButton(state.copied == key, "copy.$key") { model.copy(value, key) }
     }
 }
+
+/** A code for TalkBack: digit by digit, with a pause between the groups ("1 2 3, 4 5 6"). */
+internal fun spokenCode(code: String): String =
+    ItemDetailModel.grouped(code).split(' ').joinToString(", ") { it.toList().joinToString(" ") }
 
 @Composable
 internal fun CopyButton(copied: Boolean, tag: String, onClick: () -> Unit) {

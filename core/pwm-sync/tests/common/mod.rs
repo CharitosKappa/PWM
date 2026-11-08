@@ -33,7 +33,7 @@ pub struct FakeVault {
     pub wrapped_key: Vec<u8>,
     pub items: BTreeMap<Id, (u64, u64, Vec<u8>)>,
     pub tombstones: BTreeMap<Id, (u64, u64)>,
-    /// The highest compacted tombstone's seq (D70 §2).
+    /// The highest compacted tombstone's seq (D76 §2).
     pub purged_seq: u64,
 }
 
@@ -55,6 +55,8 @@ pub struct FakeServer {
     access: BTreeSet<String>,
     refresh: BTreeSet<String>,
     revoked: BTreeSet<String>,
+    /// Refresh tokens of a deleted account's sessions (D74 §5).
+    deleted: BTreeSet<String>,
     issued: u64,
     /// `(prefix of "METHOD /path", fault)`: the first match fires once.
     faults: Vec<(String, Fault)>,
@@ -62,6 +64,9 @@ pub struct FakeServer {
     pub log: Vec<String>,
     /// Sent as `pwm-epoch` with the vault list (D30).
     pub epoch: Id,
+    /// Sent as `pwm-plan` and `pwm-plan-until` with the list (D73); none
+    /// when `None`, as from a server older than D73.
+    pub plan: Option<(String, Option<i64>)>,
 }
 
 fn json_response(status: u16, body: Value) -> HttpResponse {
@@ -100,7 +105,7 @@ impl FakeServer {
         self.epoch = *ItemId::generate().unwrap().as_bytes();
     }
 
-    /// Tombstone compaction (D70 §2): every tombstone of `vault` goes.
+    /// Tombstone compaction (D76 §2): every tombstone of `vault` goes.
     pub fn compact(&mut self, vault: &Id) {
         let v = self.vaults.get_mut(vault).unwrap();
         if let Some(top) = v.tombstones.values().map(|(_, seq)| *seq).max() {
@@ -127,6 +132,13 @@ impl FakeServer {
     pub fn end_sessions(&mut self) {
         self.access.clear();
         self.refresh.clear();
+    }
+
+    /// Deletes the account: access tokens find nothing, and refresh tokens
+    /// are answered `account_deleted` (D74 §5).
+    pub fn delete_account(&mut self) {
+        self.access.clear();
+        self.deleted.append(&mut self.refresh);
     }
 
     pub fn revoke(&mut self, tokens: &Tokens) {
@@ -193,6 +205,9 @@ impl FakeServer {
             if self.revoked.contains(token) {
                 return error(403, "device_revoked");
             }
+            if self.deleted.contains(token) {
+                return error(403, "account_deleted");
+            }
             if !self.refresh.remove(token) {
                 return error(401, "unauthorized");
             }
@@ -246,6 +261,14 @@ impl FakeServer {
         response
             .headers
             .push(("pwm-epoch".to_owned(), id_string(&self.epoch)));
+        if let Some((plan, until)) = &self.plan {
+            response.headers.push(("pwm-plan".to_owned(), plan.clone()));
+            if let Some(until) = until {
+                response
+                    .headers
+                    .push(("pwm-plan-until".to_owned(), until.to_string()));
+            }
+        }
         response
     }
 

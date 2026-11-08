@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::str::FromStr;
 
 use pwm_crypto::{AccountKeyset, Envelope, Id, SymmetricKey};
-use pwm_store::{Store, SyncState, VaultRecord};
+use pwm_store::{PlanRecord, Store, SyncState, VaultRecord};
 use pwm_vault::{Item, ItemId, decrypt_item, encrypt_item_fitting};
 
 use crate::SyncError;
@@ -45,6 +45,9 @@ pub enum SyncOutcome {
     SignedOut,
     /// This device was revoked; the cache has been cleared.
     DeviceRevoked,
+    /// The account was deleted, from this device or another (D74 §5); the
+    /// cache has been cleared.
+    AccountDeleted,
     /// The account's devices, from [`DeviceTask::List`].
     Devices(Vec<DeviceRecord>),
     /// A [`DeviceTask::Rename`] or [`DeviceTask::Revoke`] was done.
@@ -125,7 +128,7 @@ enum Task {
         /// The server was restored (new epoch): pull every vault from 0.
         resync_all: bool,
         /// This vault is pulled again from 0 because its cursor is older
-        /// than the server's compacted tombstones (D70 §2): what the pull
+        /// than the server's compacted tombstones (D76 §2): what the pull
         /// doesn't return was deleted, so it goes here too.
         drop_unseen: bool,
         /// A change in this vault needs the key (locked sync): its cursor
@@ -248,6 +251,12 @@ impl<S: Store> SyncEngine<S> {
 
     pub fn store(&self) -> &S {
         &self.store
+    }
+
+    /// Keeps the plan a billing reply gave (D73 §2), as a sync would.
+    pub fn set_plan(&mut self, plan: &PlanRecord) -> Result<(), SyncError> {
+        self.store.set_plan(plan)?;
+        Ok(())
     }
 
     pub fn into_store(self) -> S {
@@ -629,6 +638,7 @@ impl<S: Store> SyncEngine<S> {
                 return Ok(Step::Send(self.refresh_request()));
             }
             403 if is_revoked(response) => return self.revoked(),
+            403 if is_deleted(response) => return self.deleted(),
             429 | 500..=599 => {
                 return Ok(self.wait(parse_retry_after(response.header("retry-after"))));
             }
@@ -679,6 +689,7 @@ impl<S: Store> SyncEngine<S> {
                 self.request(run)
             }
             403 if is_revoked(response) => self.revoked(),
+            403 if is_deleted(response) => self.deleted(),
             429 | 500..=599 => Ok(self.wait(parse_retry_after(response.header("retry-after")))),
             _ => Ok(self.done(SyncOutcome::SignedOut)),
         }
@@ -689,6 +700,13 @@ impl<S: Store> SyncEngine<S> {
         self.store.clear()?;
         self.keys.clear();
         Ok(self.done(SyncOutcome::DeviceRevoked))
+    }
+
+    /// The account is gone: nothing of it stays on this device either (D74 §5).
+    fn deleted(&mut self) -> Result<Step, SyncError> {
+        self.store.clear()?;
+        self.keys.clear();
+        Ok(self.done(SyncOutcome::AccountDeleted))
     }
 
     fn on_vault_created(
@@ -758,6 +776,20 @@ impl<S: Store> SyncEngine<S> {
         for vault_id in cached.keys().filter(|id| !listed.contains(id)) {
             self.store.delete_vault(vault_id)?;
             self.keys.remove(vault_id);
+        }
+        // The plan comes with the list (D73 §2). A server without the header
+        // (older than D73) leaves the stored plan as it was.
+        if let Some(plan) = response.header("pwm-plan") {
+            let record = PlanRecord {
+                plan: plan.to_owned(),
+                until_ms: response
+                    .header("pwm-plan-until")
+                    .and_then(|u| u.parse().ok()),
+            };
+            // A name the cache can't hold is ignored, not a failed sync.
+            if self.store.plan()?.as_ref() != Some(&record) {
+                let _ = self.store.set_plan(&record);
+            }
         }
         // A new server epoch means the database was restored from a backup:
         // seqs no longer say what changed, so every vault is pulled from 0
@@ -906,7 +938,7 @@ impl<S: Store> SyncEngine<S> {
             }
         } else if response.status == 410 {
             // The cursor is older than the server's compacted tombstones
-            // (D70 §2), so a delete may be missing: pull the vault again
+            // (D76 §2), so a delete may be missing: pull the vault again
             // from 0. Locked, that waits for the unlocked sync.
             if locked {
                 *hold = true;
@@ -1091,6 +1123,10 @@ impl<S: Store> SyncEngine<S> {
 
 fn is_revoked(response: &HttpResponse) -> bool {
     wire::error_code(&response.body).as_deref() == Some("device_revoked")
+}
+
+fn is_deleted(response: &HttpResponse) -> bool {
+    wire::error_code(&response.body).as_deref() == Some("account_deleted")
 }
 
 /// The server accepted `sent`. The cache moves to `Synced` unless the user

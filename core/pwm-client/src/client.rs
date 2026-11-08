@@ -39,6 +39,10 @@ pub enum Outcome {
     SignedOut,
     /// This device was revoked: its cache is cleared and the client locked.
     DeviceRevoked,
+    /// The account was deleted, here with [`Client::start_delete_account`]
+    /// or from another device (D74): the cache is cleared and the client
+    /// locked. The app wipes the rest, as on sign-out.
+    AccountDeleted,
     /// The account's devices, from [`Client::start_list_devices`].
     Devices(Vec<crate::DeviceInfo>),
     /// A device was renamed or revoked.
@@ -49,6 +53,11 @@ pub enum Outcome {
     ApprovalUpdated,
     /// This device's push token was registered or removed (D50 §3).
     PushTokenSet,
+    /// The account's plan (D6), from the billing calls.
+    Billing(crate::BillingInfo),
+    /// A Stripe Checkout page to open in the browser, from
+    /// [`Client::start_checkout`].
+    CheckoutUrl(String),
     /// The session is over on the server, from [`Client::start_sign_out`]
     /// (D62): the app wipes the device next with [`Client::sign_out`].
     LoggedOut,
@@ -90,10 +99,14 @@ pub(crate) enum Running {
     Devices,
     /// A device approval call (D46).
     Approval(crate::approval::ApprovalCall),
+    /// A billing call (D6).
+    Billing(crate::billing::BillingCall),
     /// Registering or removing the push token, locked or not (D50 §3).
     PushToken,
     /// Ending the session before signing out, locked or not (D62).
     SignOut,
+    /// Deleting the account (D74).
+    DeleteAccount(Box<crate::deletion::Deleting>),
 }
 
 pub struct Client<S: Store> {
@@ -727,7 +740,7 @@ impl<S: Store> Client<S> {
                 self.running = Running::Idle;
                 return Err(ClientError::Server(status));
             }
-            pwm_sync::Step::Done(SyncOutcome::DeviceRevoked)
+            pwm_sync::Step::Done(SyncOutcome::DeviceRevoked | SyncOutcome::AccountDeleted)
                 if matches!(self.running, Running::SignOut) =>
             {
                 // The engine cleared the cache: the session is over too.
@@ -761,6 +774,25 @@ impl<S: Store> Client<S> {
                     status => Err(ClientError::Server(status)),
                 };
             }
+            pwm_sync::Step::Done(SyncOutcome::Answered { status, body })
+                if matches!(self.running, Running::DeleteAccount(_)) =>
+            {
+                let Running::DeleteAccount(deleting) =
+                    std::mem::replace(&mut self.running, Running::Idle)
+                else {
+                    unreachable!("matched above");
+                };
+                return self.deletion_answer(*deleting, status, &body);
+            }
+            pwm_sync::Step::Done(SyncOutcome::Answered { status, body })
+                if matches!(self.running, Running::Billing(_)) =>
+            {
+                let Running::Billing(call) = self.running else {
+                    unreachable!("matched above");
+                };
+                self.running = Running::Idle;
+                return Ok(Step::Done(self.billing_answer(call, status, &body)?));
+            }
             pwm_sync::Step::Done(SyncOutcome::Answered { status, body }) => {
                 let Running::Approval(call) = self.running else {
                     self.running = Running::Idle;
@@ -774,6 +806,13 @@ impl<S: Store> Client<S> {
                 self.running = Running::Idle;
                 self.lock();
                 return Ok(Step::Done(Outcome::DeviceRevoked));
+            }
+            pwm_sync::Step::Done(SyncOutcome::AccountDeleted) => {
+                // As for a revoked device (D74 §5). Also the end of a
+                // deletion whose answer was lost: the retry is told so.
+                self.running = Running::Idle;
+                self.lock();
+                return Ok(Step::Done(Outcome::AccountDeleted));
             }
         };
         self.running = Running::Idle;

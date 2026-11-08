@@ -1,0 +1,32 @@
+[package]
+name = "pwm-browser-helper"
+description = "The browser helper on Windows (D69): D48's protocol, the extension's key kept under a Windows Hello signature's key."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "pwm-browser-helper"
+path = "src/main.rs"
+
+[dependencies]
+pwm-crypto = { path = "../../../core/pwm-crypto" }
+pwm-hello = { path = "../hello" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+[target.'cfg(windows)'.dependencies]
+# The browsers' keys under HKEY_CURRENT_USER (D69 §4).
+windows-registry = "0.6"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
+] }

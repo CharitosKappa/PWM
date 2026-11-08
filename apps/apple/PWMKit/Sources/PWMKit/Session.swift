@@ -10,6 +10,9 @@ public enum SyncResult: Sendable, Equatable {
     case signedOut
     /// This device was revoked: its cache is cleared and the session locked.
     case deviceRevoked
+    /// The account was deleted from another device (D74 §5): as for a
+    /// revoked device.
+    case accountDeleted
 }
 
 /// Something the app may want to show.
@@ -148,6 +151,33 @@ public actor Session {
     public func signOut() async throws {
         await endSession()
         try core { try client.signOut() }
+        suggestions?.clear()
+        try disableBiometricUnlock()
+        for name in [KeyName.secretKey, .accessToken, .refreshToken, .email, .passwordUnlockedAt] {
+            try keys.delete(name)
+        }
+    }
+
+    /// Deletes the account on the server and this device (D74), with the
+    /// master password and the Secret Key from the Keychain. A wrong
+    /// password is `wrong_password`; `delete_unavailable` means a plan
+    /// couldn't be ended or the server wasn't reached, and nothing was
+    /// deleted. Afterwards nothing of the account stays here, as after
+    /// `signOut`.
+    public func deleteAccount(password: Redacted<String>) async throws {
+        guard let secretKey = try keys.get(.secretKey) else { throw PWMError(code: "signed_out") }
+        let outcome: Outcome
+        do {
+            outcome = try await run(try core { try client.startDeleteAccount(password: password.value, secretKey: secretKey) })
+        } catch RunEnd.wait {
+            throw PWMError(code: "delete_unavailable")
+        }
+        switch outcome {
+        case .accountDeleted: break
+        case .deviceRevoked: throw PWMError(code: "device_revoked")
+        case .signedOut: throw PWMError(code: "signed_out")
+        default: throw PWMError(code: "protocol")
+        }
         suggestions?.clear()
         try disableBiometricUnlock()
         for name in [KeyName.secretKey, .accessToken, .refreshToken, .email, .passwordUnlockedAt] {
@@ -317,6 +347,7 @@ public actor Session {
             return .synced(pulled: pulled, pushed: pushed, conflicts: conflicts, failed: failed)
         case .signedOut: return .signedOut
         case .deviceRevoked: return .deviceRevoked
+        case .accountDeleted: return .accountDeleted
         default: throw PWMError(code: "protocol")
         }
     }
@@ -469,6 +500,7 @@ public actor Session {
         }
         switch outcome {
         case .deviceRevoked: throw PWMError(code: "device_revoked")
+        case .accountDeleted: throw PWMError(code: "account_deleted")
         case .signedOut: throw PWMError(code: "signed_out")
         default: return outcome
         }
@@ -555,6 +587,69 @@ public actor Session {
 
     private func expectApproval(_ first: Step) async throws {
         guard case .approvalUpdated = try await runOnline(first) else { throw PWMError(code: "protocol") }
+    }
+
+    // MARK: Plan and billing (D6)
+
+    /// The plan, its subscription, what this server sells and the account's
+    /// billing token for an App Store purchase.
+    public func billing() async throws -> BillingStatus {
+        try await expectBilling(try core { try client.startBillingStatus() })
+    }
+
+    /// A Stripe Checkout page for `plan`, to open in the browser (the Mac
+    /// app, D6 §2). The plan shows once Stripe tells the server it was paid.
+    public func checkoutURL(for plan: Plan) async throws -> URL {
+        guard case let .checkoutUrl(url) = try await runBilling(try core { try client.startCheckout(plan: plan.name) }),
+              let link = URL(string: url)
+        else { throw PWMError(code: "protocol") }
+        return link
+    }
+
+    /// Cancels the Stripe subscription at the end of its period; one in a
+    /// store is `managed_elsewhere`.
+    public func cancelSubscription() async throws -> BillingStatus {
+        try await expectBilling(try core { try client.startCancelSubscription() })
+    }
+
+    /// Lets a canceling Stripe subscription renew again.
+    public func resumeSubscription() async throws -> BillingStatus {
+        try await expectBilling(try core { try client.startResumeSubscription() })
+    }
+
+    /// Refunds the unused part of the last charge and ends the plan now,
+    /// for a Stripe or Google Play subscription (D72 §1). After its 30 days,
+    /// `refund_window_passed`; an App Store one is `managed_elsewhere`.
+    public func refund(provider: BillingProvider) async throws -> BillingStatus {
+        try await expectBilling(try core { try client.startRefund(provider: provider.name) })
+    }
+
+    /// Hands a finished App Store transaction to the server, which reads it
+    /// from Apple (D6 §3). Finish the transaction after this returns.
+    public func applePurchase(transactionId: String) async throws -> BillingStatus {
+        try await expectBilling(try core { try client.startApplePurchase(transactionId: transactionId) })
+    }
+
+    private func expectBilling(_ first: Step) async throws -> BillingStatus {
+        guard case let .billing(info) = try await runBilling(first) else { throw PWMError(code: "protocol") }
+        return BillingStatus(info)
+    }
+
+    /// A billing call: the server or a provider unavailable (a 503, or no
+    /// connection) is `billing_unavailable`, to try again later.
+    private func runBilling(_ first: Step) async throws -> Outcome {
+        let outcome: Outcome
+        do {
+            outcome = try await run(first)
+        } catch RunEnd.wait {
+            throw PWMError(code: "billing_unavailable")
+        }
+        switch outcome {
+        case .deviceRevoked: throw PWMError(code: "device_revoked")
+        case .accountDeleted: throw PWMError(code: "account_deleted")
+        case .signedOut: throw PWMError(code: "signed_out")
+        default: return outcome
+        }
     }
 
     // MARK: Health (D22, D43 §7)

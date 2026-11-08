@@ -225,6 +225,11 @@ struct WelcomeView: View {
 
     var body: some View {
         Page(title: "Welcome", subtitle: "Your passwords, encrypted on your devices before they are synced.") {
+            if let ended = model.ended {
+                Text(verbatim: ended)
+                    .textStyle(Tokens.Text.body)
+                    .accessibilityIdentifier("ended")
+            }
             PrimaryButton(title: "Create account", enabled: true) { model.showCreateAccount() }
                 .accessibilityIdentifier("createAccount")
             Button("Sign in") { model.showSignIn() }

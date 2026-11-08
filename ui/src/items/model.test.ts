@@ -9,9 +9,18 @@ import {
   parseTags,
   removeCustomField,
   setIn,
+  spokenCode,
   textAt,
   visibleRows,
 } from "./model.ts";
+
+group("screen readers", () => {
+  test("a one-time code is read digit by digit in two groups", () => {
+    expect(spokenCode("123456")).toBe("1 2 3, 4 5 6");
+    expect(spokenCode("12345678")).toBe("1 2 3 4, 5 6 7 8");
+    expect(spokenCode("1234")).toBe("1 2 3 4");
+  });
+});
 
 group("editing an item in place (D18)", () => {
   test("fields this version doesn't know are kept", () => {

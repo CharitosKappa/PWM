@@ -243,7 +243,7 @@ pub(crate) fn reupload_missing<S: Store>(
     Ok(())
 }
 
-/// After a full pull caused by compacted tombstones (D70 §2): the server
+/// After a full pull caused by compacted tombstones (D76 §2): the server
 /// wasn't restored, so an item it no longer has was deleted there.
 /// - **Never uploaded** (`Modified` at revision 1): it goes up as usual.
 /// - **An unsent edit:** kept as a new item, as for a tombstone (D28).

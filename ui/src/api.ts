@@ -34,6 +34,9 @@ const MESSAGES: Record<string, string> = {
   account_exists: "There is already an account with this email.",
   server: "The server had a problem. Try again later.",
   device_revoked: "This device was signed out from another device.",
+  account_deleted: "This account was deleted.",
+  delete_unavailable:
+    "Couldn't reach the server or end your plan, so nothing was deleted. Try again later.",
   signed_out: "You were signed out. Sign in again.",
   invalid_server: "Enter an https:// address.",
   empty: "Nothing to copy.",
@@ -58,6 +61,15 @@ const MESSAGES: Record<string, string> = {
   leak_check_off: "Turn on the leak check first.",
   breach_check: "The leak check is not answering. Try again later.",
   this_device: "To leave this device, use Sign out in Settings.",
+  billing_unavailable: "Plans aren't available right now. Try again later.",
+  already_subscribed: "You already have a plan.",
+  refund_window_passed:
+    "Refunds are possible for 30 days after a charge, and that time has passed.",
+  managed_elsewhere: "Change this plan where you bought it.",
+  plan_required: "One-time codes are part of Premium. See Settings › Plan.",
+  no_subscription: "There's no plan to change.",
+  purchase_not_yours: "This purchase belongs to another account.",
+  purchase_pending: "The payment is still waiting. Check again later.",
   invalid_device_name: "Use a shorter name, up to 63 characters.",
   unknown_device: "That device was removed already.",
   weak_export_password: "Choose a stronger export password.",
@@ -91,6 +103,10 @@ const MESSAGES: Record<string, string> = {
     "Touch ID needs the PWM app for Mac, with browser unlock turned on in its Settings.",
   touch_id_off: "Turn on Touch ID in Settings first.",
   touch_id_unavailable: "Touch ID is not set up on this Mac.",
+  browser_helper_missing:
+    "PWM's browser helper is missing next to the app. Install PWM again, then try again.",
+  browser_not_found:
+    "Install Chrome, Chromium, Edge, Brave, Vivaldi or Firefox first. Browsers from Snap or Flatpak can't use it.",
   biometric_cancelled: "Unlock with your master password, or try again.",
   biometric_changed:
     "Touch ID changed. Enter your master password, then turn Touch ID on again.",
@@ -104,8 +120,57 @@ const MESSAGES: Record<string, string> = {
 };
 
 /** Plain words for an error code. */
+/**
+ * The browser unlock texts on Windows (D69 §6): the same codes as Touch ID
+ * through the Mac app, naming Windows Hello and the app for Windows.
+ */
+const WINDOWS_HELLO_MESSAGES: Record<string, string> = {
+  helper_missing:
+    "Windows Hello needs the PWM app for Windows, with browser unlock turned on in its Settings.",
+  touch_id_off: "Turn on Windows Hello in Settings first.",
+  touch_id_unavailable:
+    "Windows Hello isn't set up on this computer. Set it up in Windows Settings, under Accounts, then try again.",
+  biometric_changed:
+    "Windows Hello changed. Enter your master password, then turn Windows Hello on again.",
+};
+
+/**
+ * The texts on Linux (D71 §5): the same codes, naming Linux login, the PWM
+ * app for Linux and what it needs (the .deb or .rpm package, and a desktop
+ * that asks for the password).
+ */
+const LINUX_LOGIN_MESSAGES: Record<string, string> = {
+  helper_missing:
+    "Linux login needs the PWM app for Linux, with browser unlock turned on in its Settings.",
+  touch_id_off: "Turn on Linux login in Settings first.",
+  touch_id_unavailable:
+    "Linux login isn't available here. It needs PWM's .deb or .rpm package and a desktop that asks for your password.",
+  biometric_changed:
+    "Linux login changed. Enter your master password, then turn Linux login on again.",
+  hello_unavailable:
+    "Linux login needs PWM's .deb or .rpm package (not the Flatpak) and a desktop that asks for your password.",
+  hello_off: "Turn on Linux login in Settings first.",
+  hello_changed:
+    "Linux login changed. Enter your master password, then turn Linux login on again in Settings.",
+};
+
+const PLATFORM_MESSAGES: Record<string, Record<string, string>> = {
+  "Windows Hello": WINDOWS_HELLO_MESSAGES,
+  "Linux login": LINUX_LOGIN_MESSAGES,
+};
+
+function biometricName(): string | null {
+  try {
+    return host().biometricName;
+  } catch {
+    return null;
+  }
+}
+
 export function describeCode(code: string): string {
-  return MESSAGES[code] ?? "Something went wrong. Try again.";
+  const name = biometricName();
+  const platform = name === null ? undefined : PLATFORM_MESSAGES[name]?.[code];
+  return platform ?? MESSAGES[code] ?? "Something went wrong. Try again.";
 }
 
 export function describe(error: unknown): string {

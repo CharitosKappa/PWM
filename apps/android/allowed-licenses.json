@@ -12,6 +12,9 @@
     { "moduleLicense": "Android Software Development Kit License", "moduleName": "com.google.android.gms:play-services-cloud-messaging" },
     { "moduleLicense": "Android Software Development Kit License", "moduleName": "com.google.android.gms:play-services-stats" },
     { "moduleLicense": "Android Software Development Kit License", "moduleName": "com.google.firebase:firebase-iid-interop" },
-    { "moduleLicense": "Android Software Development Kit License", "moduleName": "com.google.firebase:firebase-measurement-connector" }
+    { "moduleLicense": "Android Software Development Kit License", "moduleName": "com.google.firebase:firebase-measurement-connector" },
+    { "moduleLicense": "Android Software Development Kit License", "moduleName": "com.android.billingclient:billing" },
+    { "moduleLicense": "Android Software Development Kit License", "moduleName": "com.google.android.gms:play-services-location" },
+    { "moduleLicense": "Android Software Development Kit License", "moduleName": "com.google.android.gms:play-services-places-placereport" }
   ]
 }

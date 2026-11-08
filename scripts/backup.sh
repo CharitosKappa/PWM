@@ -1,5 +1,5 @@
 #!/bin/sh
-# Backs up the compose stack's database (D70 §3) with pg_dump's custom
+# Backs up the compose stack's database (D76 §3) with pg_dump's custom
 # format, through the postgres container. Run from the repository root (or
 # wherever compose.yaml is):
 #

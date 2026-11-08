@@ -88,6 +88,8 @@ export class Background {
   private settings: Settings = DEFAULT_SETTINGS;
   private syncedAt: number | null = null;
   private syncError: string | null = null;
+  /** Why the last account left, for the sign-in screen (D74 §5, §7). */
+  private ended: "account_deleted" | "device_revoked" | null = null;
   private syncing: Promise<Status> | null = null;
   private queue: Promise<unknown> = Promise.resolve();
   /** Filling on user action (D35). */
@@ -377,6 +379,19 @@ export class Background {
       case "activity":
         await this.touch();
         return null;
+      case "plan":
+        return this.manager.plan();
+      case "checkout":
+        return this.manager.checkout(request.plan);
+      case "cancelPlan":
+        return this.manager.cancelPlan();
+      case "resumePlan":
+        return this.manager.resumePlan();
+      case "refundPlan":
+        return this.manager.refundPlan();
+      case "deleteAccount":
+        await this.deleteAccount(request.masterPassword);
+        return null;
       case "devices":
         return this.manager.devices();
       case "renameDevice":
@@ -475,11 +490,19 @@ export class Background {
         return false;
       case "dismissBiometricOffer":
         return null;
+      // The desktop app registers the browser helper (D69 §4).
+      case "browserUnlock":
+      case "setBrowserUnlock":
+        throw new ServiceError("unsupported");
     }
   }
 
   async status(): Promise<Status> {
-    if (this.core.accountId() === undefined) return { state: "signedOut" };
+    if (this.core.accountId() === undefined) {
+      return this.ended === null
+        ? { state: "signedOut" }
+        : { state: "signedOut", ended: this.ended };
+    }
     const email = (await this.platform.disk.get("email")) ?? "";
     if (!this.core.isUnlocked())
       return { state: "locked", email, touchId: await this.touchId.isOn() };
@@ -732,6 +755,32 @@ export class Background {
 
   private async signOut(): Promise<void> {
     await this.endSession();
+    this.ended = null;
+    await this.forget();
+  }
+
+  /**
+   * Deletes the account on the server and here (D74). The core checks the
+   * password first; a wait means a plan couldn't be ended or the server
+   * wasn't reached, and nothing was deleted.
+   */
+  private async deleteAccount(masterPassword: string): Promise<void> {
+    const secretKey = await this.platform.disk.get("secretKey");
+    if (secretKey === undefined) throw new ServiceError("signed_out");
+    const step = await this.run(() =>
+      this.core.startDeleteAccount(masterPassword, secretKey),
+    );
+    if (step.kind === "wait") throw new ServiceError("delete_unavailable");
+    if (step.outcome !== "account_deleted") {
+      await this.handleOutcome(step);
+      throw new ServiceError(step.outcome ?? "internal");
+    }
+    this.ended = "account_deleted";
+    await this.forget();
+  }
+
+  /** Nothing of the account stays on this device. */
+  private async forget(): Promise<void> {
     await this.touchId.turnOff();
     await this.lock();
     await this.platform.disk.remove([
@@ -786,6 +835,7 @@ export class Background {
 
   private items(query: string): ItemSummary[] {
     const needle = query.trim().toLowerCase();
+    const codesIncluded = this.core.codesIncluded(this.platform.now());
     return this.storedItems()
       .filter(
         ({ item }) => item.trashed_at === undefined || item.trashed_at === null,
@@ -798,7 +848,7 @@ export class Background {
         username: loginFields(item).username,
         url: loginFields(item).url,
         hasPassword: loginFields(item).password !== "",
-        hasCode: loginFields(item).totp !== "",
+        hasCode: codesIncluded && loginFields(item).totp !== "",
       }))
       .filter(
         (s) =>
@@ -834,7 +884,11 @@ export class Background {
     return {
       username: loginFields(found.item).username,
       password: loginFields(found.item).password,
-      hasCode: loginFields(found.item).totp !== "",
+      // Without a plan that has codes, autofill offers no code step and
+      // says nothing about it (D73 §1).
+      hasCode:
+        loginFields(found.item).totp !== "" &&
+        this.core.codesIncluded(this.platform.now()),
     };
   }
 
@@ -907,10 +961,13 @@ export class Background {
         this.syncError = "signed_out";
         return;
       case "device_revoked":
-        // The core cleared the cache; nothing of the account stays here.
+      case "account_deleted":
+        // The core cleared the cache; nothing of the account stays here
+        // (D74 §5 for a deleted account).
         await this.platform.session.clear();
         await this.platform.disk.remove(["email", "secretKey", "sealedTokens"]);
-        this.syncError = "device_revoked";
+        this.syncError = step.outcome;
+        this.ended = step.outcome;
         return;
       default:
         this.syncError = "internal";

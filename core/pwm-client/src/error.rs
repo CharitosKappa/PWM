@@ -42,6 +42,10 @@ pub enum ClientError {
     /// secret (D23).
     #[error("not a one-time-code secret")]
     InvalidTotp,
+    /// The account's plan doesn't include this (D73): one-time codes need
+    /// Premium, Family or Teams.
+    #[error("not included in the plan")]
+    PlanRequired,
     /// A device name over 63 bytes or with control characters (D26).
     #[error("the device name is not valid")]
     InvalidDeviceName,
@@ -99,6 +103,12 @@ pub enum ClientError {
     /// A passkey request was refused (D37); the code says why.
     #[error("passkey: {0}")]
     Passkey(pwm_passkey::PasskeyError),
+    /// A billing call was refused (D6 §7); the code says why:
+    /// `billing_unavailable`, `purchase_not_yours`, `purchase_pending`,
+    /// `already_subscribed`, `managed_elsewhere`, `refund_window_passed` or
+    /// `no_subscription`.
+    #[error("billing: {0}")]
+    Billing(&'static str),
     /// The Emergency Kit or a scanned kit code was refused (D42); the code says why.
     #[error("emergency kit: {0}")]
     Kit(pwm_kit::KitError),
@@ -115,7 +125,7 @@ impl ClientError {
             Self::InvalidUrl => "invalid_url",
             Self::InvalidRules => "invalid_rules",
             Self::UnknownVault => "unknown_vault",
-            Self::Import(code) => code,
+            Self::Import(code) | Self::Billing(code) => code,
             Self::InvalidPushToken => "invalid_push_token",
             Self::UnknownItem => "unknown_item",
             Self::ItemDeleted => "item_deleted",
@@ -123,6 +133,7 @@ impl ClientError {
             Self::InvalidItem => "invalid_item",
             Self::ReadOnlyItem => "read_only_item",
             Self::InvalidTotp => "invalid_totp",
+            Self::PlanRequired => "plan_required",
             Self::InvalidDeviceName => "invalid_device_name",
             Self::UnknownDevice => "unknown_device",
             Self::ExportNotAuthorized => "export_not_authorized",

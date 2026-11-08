@@ -12,6 +12,28 @@ pub struct AccountRecord {
     pub sealed_keyset: Envelope,
 }
 
+/// The account's plan as the server last said (D73 §2): `free`, `premium`,
+/// `family` or `teams`, and when it stops counting if nothing renews (Unix
+/// ms); `None` when it has no end.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlanRecord {
+    pub plan: String,
+    pub until_ms: Option<i64>,
+}
+
+impl PlanRecord {
+    /// A plan name is 1 to 32 bytes, as both caches can hold.
+    pub(crate) fn check(&self) -> Result<(), crate::StoreError> {
+        if (1..=32).contains(&self.plan.len()) {
+            Ok(())
+        } else {
+            Err(crate::StoreError::Invalid(
+                "plan name must be 1 to 32 bytes",
+            ))
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VaultRecord {
     pub vault_id: Id,

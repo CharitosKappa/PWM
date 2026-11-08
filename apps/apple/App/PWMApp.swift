@@ -1,4 +1,5 @@
 import BackgroundTasks
+import PWMDesign
 import PWMUI
 import SwiftUI
 import UIKit
@@ -46,12 +47,14 @@ enum BackgroundRefresh {
 /// notice shows while the app is open too.
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    let model = AppModel.live()
+    let model = AppModel.live(checkout: .appStore(AppStorePurchases()))
 
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // Manrope in navigation bars, tab bars and segmented pickers (D1).
+        SystemControls.useAppFonts()
         UNUserNotificationCenter.current().delegate = self
         application.registerForRemoteNotifications()
         return true

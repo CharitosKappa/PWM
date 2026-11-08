@@ -132,7 +132,7 @@ impl FcmConfig {
 }
 
 /// The DER inside a `PRIVATE KEY` PEM block (PKCS#8, as Google writes it).
-fn pem_private_key(pem: &str) -> Option<Vec<u8>> {
+pub(crate) fn pem_private_key(pem: &str) -> Option<Vec<u8>> {
     let start = "-----BEGIN PRIVATE KEY-----";
     let end = "-----END PRIVATE KEY-----";
     let body = pem.split_once(start)?.1.split_once(end)?.0;
@@ -222,8 +222,36 @@ impl PushConfig {
 }
 
 enum Event {
-    VaultChanged { vault_id: Uuid, by_device: Uuid },
-    ApprovalAsked { account_id: Uuid },
+    VaultChanged {
+        vault_id: Uuid,
+        by_device: Uuid,
+    },
+    ApprovalAsked {
+        account_id: Uuid,
+    },
+    /// To a deleted account's devices, read before the delete (D74 §5).
+    AccountDeleted(Vec<Target>),
+}
+
+/// The push tokens of an account's devices but one, read inside the
+/// deleting transaction, before the cascade takes them (D74 §5).
+pub(crate) struct Tokens(Vec<Target>);
+
+pub(crate) async fn account_tokens(
+    conn: &mut sqlx::PgConnection,
+    account_id: Uuid,
+    except: Uuid,
+) -> Result<Tokens, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT p.device_id, p.app, p.token, p.environment FROM push_tokens p \
+         JOIN devices d ON d.id = p.device_id \
+         WHERE d.account_id = $1 AND d.revoked_at IS NULL AND p.device_id <> $2",
+    )
+    .bind(account_id)
+    .bind(except)
+    .fetch_all(conn)
+    .await?;
+    Ok(Tokens(rows.iter().map(target).collect()))
 }
 
 /// The handle the routes use. Off, it does nothing.
@@ -264,6 +292,15 @@ impl Push {
     /// After an approval request for a known account has committed.
     pub(crate) fn approval_asked(&self, account_id: Uuid) {
         self.send(Event::ApprovalAsked { account_id });
+    }
+
+    /// After an account's deletion has committed: the same content-free push
+    /// as a change, so each device syncs, is told `account_deleted` and
+    /// wipes itself (D74 §5).
+    pub(crate) fn account_deleted(&self, tokens: Tokens) {
+        if !tokens.0.is_empty() {
+            self.send(Event::AccountDeleted(tokens.0));
+        }
     }
 
     fn send(&self, event: Event) {
@@ -322,23 +359,29 @@ impl Sender {
 
     async fn run(mut self, mut events: mpsc::Receiver<Event>) {
         while let Some(event) = events.recv().await {
-            let (targets, kind) = match event {
+            let (targets, kind, every) = match event {
                 Event::VaultChanged {
                     vault_id,
                     by_device,
                 } => (
                     self.vault_targets(vault_id, by_device).await,
                     Kind::Background,
+                    false,
                 ),
-                Event::ApprovalAsked { account_id } => {
-                    (self.account_targets(account_id).await, Kind::Approval)
-                }
+                Event::ApprovalAsked { account_id } => (
+                    self.account_targets(account_id).await,
+                    Kind::Approval,
+                    false,
+                ),
+                // Once per device, so never held back by the minute between
+                // background pushes.
+                Event::AccountDeleted(targets) => (Ok(targets), Kind::Background, true),
             };
             let Ok(targets) = targets else {
                 tracing::warn!("push: the device list could not be read");
                 continue;
             };
-            self.send_all(targets, kind).await;
+            self.send_all(targets, kind, every).await;
         }
     }
 
@@ -368,13 +411,14 @@ impl Sender {
         Ok(rows.iter().map(target).collect())
     }
 
-    async fn send_all(&mut self, targets: Vec<Target>, kind: Kind) {
+    /// `every`: send even to a device pushed less than a minute ago.
+    async fn send_all(&mut self, targets: Vec<Target>, kind: Kind, every: bool) {
         let now = Instant::now();
         self.last
             .retain(|_, at| now.duration_since(*at) < PUSH_EVERY);
         let (mut sent, mut failed, mut dropped) = (0, 0, 0);
         for target in targets {
-            if matches!(kind, Kind::Background) {
+            if matches!(kind, Kind::Background) && !every {
                 if self.last.contains_key(&target.device_id) {
                     continue;
                 }
@@ -600,11 +644,29 @@ fn fcm_message(token: &str, kind: Kind) -> serde_json::Value {
 /// The service account's assertion for Google's token endpoint: an RS256
 /// JWT for the messaging scope, valid an hour.
 fn fcm_assertion(config: &FcmConfig, iat: u64) -> Option<String> {
+    google_assertion(
+        &config.key,
+        &config.client_email,
+        FCM_SCOPE,
+        &config.token_url,
+        iat,
+    )
+}
+
+/// A Google service account's RS256 assertion for one scope, valid an hour
+/// (D60 §2; Play's billing API uses it too, D6 §3).
+pub(crate) fn google_assertion(
+    key: &ring::signature::RsaKeyPair,
+    client_email: &str,
+    scope: &str,
+    token_url: &str,
+    iat: u64,
+) -> Option<String> {
     let header = serde_json::json!({ "alg": "RS256", "typ": "JWT" });
     let claims = serde_json::json!({
-        "iss": config.client_email,
-        "scope": FCM_SCOPE,
-        "aud": config.token_url,
+        "iss": client_email,
+        "scope": scope,
+        "aud": token_url,
         "iat": iat,
         "exp": iat + 3600,
     });
@@ -613,16 +675,14 @@ fn fcm_assertion(config: &FcmConfig, iat: u64) -> Option<String> {
         URL_SAFE_NO_PAD.encode(header.to_string()),
         URL_SAFE_NO_PAD.encode(claims.to_string())
     );
-    let mut signature = vec![0; config.key.public().modulus_len()];
-    config
-        .key
-        .sign(
-            &ring::signature::RSA_PKCS1_SHA256,
-            &ring::rand::SystemRandom::new(),
-            signed.as_bytes(),
-            &mut signature,
-        )
-        .ok()?;
+    let mut signature = vec![0; key.public().modulus_len()];
+    key.sign(
+        &ring::signature::RSA_PKCS1_SHA256,
+        &ring::rand::SystemRandom::new(),
+        signed.as_bytes(),
+        &mut signature,
+    )
+    .ok()?;
     Some(format!("{signed}.{}", URL_SAFE_NO_PAD.encode(signature)))
 }
 

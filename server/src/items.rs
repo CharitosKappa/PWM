@@ -387,7 +387,7 @@ struct Changes {
 
 /// `GET ?since=&limit=`: items and tombstones with `seq > since`, in `seq`
 /// order, all read from one snapshot. 410 `resync_required` when `since` is
-/// older than the vault's compacted tombstones (D70 §2).
+/// older than the vault's compacted tombstones (D76 §2).
 async fn changes(
     State(state): State<AppState>,
     auth: Authenticated,
@@ -409,7 +409,7 @@ async fn changes(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(ApiError::NotFound)?;
-    // A delete after `since` may have been compacted away (D70 §2).
+    // A delete after `since` may have been compacted away (D76 §2).
     if since > 0 && since < purged_seq {
         return Err(ApiError::ResyncRequired);
     }

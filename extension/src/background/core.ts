@@ -21,6 +21,14 @@ export interface CoreStep {
   readonly devices?: string;
   /** After `approvals`: JSON array of `{id, platform, created_at, state, code}` (D46). */
   readonly approvals?: string;
+  /**
+   * After `billing`: JSON `{plan, subscription, sells, token}`, where
+   * `subscription` is null or `{provider, plan, status, until_ms, canceling,
+   * price_locked_until_ms, also}` (D6).
+   */
+  readonly billing?: string;
+  /** After `checkout_url`: Stripe's Checkout page (D6). */
+  readonly url?: string;
 }
 
 /** What a new device does next while asking a signed-in one (D46). */
@@ -72,6 +80,12 @@ export interface Core {
   startSync(): CoreStep;
   /** Ends the session on the server before signing out (D62); unlocked only. Ends with `logged_out`. */
   startSignOut(): CoreStep;
+  /**
+   * Deletes the account on the server and here (D74), with the master
+   * password and Secret Key; unlocked only. Ends with `account_deleted`;
+   * a wait means nothing was deleted.
+   */
+  startDeleteAccount(password: string, secretKey: string): CoreStep;
   startEnsureVault(): CoreStep;
   receive(
     status: number,
@@ -109,6 +123,8 @@ export interface Core {
     itemId: string,
     nowMs: number,
   ): string[] | undefined;
+  /** Whether the plan now includes one-time codes (D73 §1). */
+  codesIncluded(nowMs: number): boolean;
   setAutofillRules(
     bytes: Uint8Array,
     nowMs: number,
@@ -204,6 +220,13 @@ export interface Core {
   deleteItem(vaultId: string, itemId: string): void;
   /** Deletes items in the trash for 30 days, at unlock (D19); how many. */
   purgeTrash(nowMs: number): number;
+  /** The plan (D6): end with `billing`, or `checkout_url` for a checkout. */
+  startBillingStatus(): CoreStep;
+  startCheckout(plan: string): CoreStep;
+  startCancelSubscription(): CoreStep;
+  startResumeSubscription(): CoreStep;
+  /** `stripe` or `play` (D72 §1). */
+  startRefund(provider: string): CoreStep;
   /** Devices (D43 §6): end with `devices` or `device_updated`. */
   startListDevices(): CoreStep;
   startRenameDevice(deviceId: string, name: string): CoreStep;

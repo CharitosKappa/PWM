@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Plan section of Settings (D6), in the desktop's words. -->
+<resources>
+    <string name="plan">Plan</string>
+    <string name="plan_free">Free</string>
+    <string name="plan_premium">Premium</string>
+    <string name="plan_family">Family</string>
+    <string name="plan_teams">Teams</string>
+    <string name="plan_loading">Loading…</string>
+    <string name="plan_included">Your server includes every feature.</string>
+    <string name="plan_renews">Renews on %1$s.</string>
+    <string name="plan_ends">Ends on %1$s. You keep everything until then.</string>
+    <string name="plan_past_due">The last payment didn\'t go through.</string>
+    <string name="plan_managed_play">Managed in Google Play.</string>
+    <string name="plan_managed_app_store">Managed in the App Store, on your iPhone or iPad.</string>
+    <string name="plan_managed_web">Managed on the web, from PWM\'s Settings on a computer.</string>
+    <string name="plan_manage">Manage subscription</string>
+    <string name="plan_get_premium">Get Premium</string>
+    <string name="plan_get_premium_hint">Paid through Google Play. Cancel any time in Google Play.</string>
+    <string name="plan_pending">Waiting for Google Play to confirm the payment.</string>
+    <string name="plan_also_play">in Google Play</string>
+    <string name="plan_also_app_store">in the App Store, on your iPhone or iPad</string>
+    <string name="plan_also_web">on the web, from PWM\'s Settings on a computer</string>
+    <string name="plan_also">You also pay for PWM %1$s. Cancel it there so you\'re not charged twice.</string>
+    <string name="plan_open_play">Open Google Play subscriptions</string>
+    <string name="plan_retry">Try again</string>
+    <string name="plan_refund">Request a refund</string>
+    <string name="plan_refund_hint">Ends your plan now and pays back the days you haven\'t used. Until %1$s.</string>
+    <string name="plan_refund_apple">Refunds for App Store purchases are asked of Apple, on its Report a Problem page.</string>
+    <string name="plan_refunded">Your plan ended. The refund is on its way.</string>
+</resources>

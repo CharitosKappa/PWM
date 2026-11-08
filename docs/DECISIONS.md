@@ -20,16 +20,26 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **Android:** they are in `res/font` (`manrope`, `geist_mono`). The theme uses Manrope for every Material text style and Geist Mono for secrets.
     - **Copies:** `scripts/fonts.mjs` keeps the Apple and Android copies the same as `design/fonts`, and `just check` fails when they differ.
     - **Notices:** `just notices` writes `THIRD_PARTY_NOTICES/fonts.md` (the notice and both OFL texts), which the Apple and Android notice screens show.
-  - **Not done yet:**
-    - **Font names still hard-coded:** the family names are written in `AppFonts` (Swift), `Theme.kt` and `FONT_FILES` (`extension/scripts/tokens.mjs`) rather than generated from `tokens.json`. The extension's test checks that `tokens.json` and `FONT_FILES` agree.
-    - **System controls:** on Apple, navigation titles and other system controls keep the system font.
+  - **Font names from the tokens** · done 2026-11-07. Each `font.family` token carries its file, the weights the variable font covers and its licence text in `$extensions["pwm.font"]`. Everything else reads them:
+    - **Generated:** `Tokens.FontFamily` (Swift and Kotlin) and the Android app's `FontResources.kt` (`R.font` ids), by `scripts/tokens-swift.mjs` and `tokens-kotlin.mjs`. `AppFonts` and `Theme.kt` use them.
+    - **Scripts:** the extension and desktop builds (`fontFiles(tokens)` in `extension/scripts/tokens.mjs`) and `scripts/fonts.mjs` (the Apple and Android copies, and the notices).
+  - **System controls on iOS** · done 2026-11-07. `SystemControls.useAppFonts()` sets Manrope, scaled with Dynamic Type, in navigation bar titles and buttons, tab bar labels and segmented pickers. The app calls it at launch and the AutoFill extension when its view loads.
+    - **Still the system font:** alerts, menus and the keyboard, which can't be changed. On macOS, window titles and toolbars also keep it, as in every Mac app.
+  - **Screen readers** · gap logged 2026-11-08, built 2026-11-08. The rules in `design/README.md` are now in the apps; the screen reader checklist in `QUALITY.md` still has to be run by hand on devices before the beta.
+    - **Apple:** vault rows and item fields are one VoiceOver stop each. Copy password, Copy username and Copy code are a row's actions; Show, Copy and Open website are a field's. A hidden value says "hidden", a shown secret is spelled out, and the one-time code is read in two digit groups with the time left as extra content, not every second. Copies ("Copied. The clipboard clears in 30 seconds.") and locking ("Vault locked") are announced without moving focus (`Speech` in `Platform.swift`). Section titles are headers.
+    - **Android:** the same with Compose semantics: each row and field is one TalkBack stop (`clearAndSetSemantics`) with custom actions, "hidden" as its state, a shown secret as verbatim text, and page and section titles as headings. Copies and locking go through `Speech` in the kit to `announceForAccessibility`. That call is deprecated on Android 16; it still speaks, but check it on an Android 16 phone in the checklist and move to a live region if it stops.
+    - **Desktop app and extension (the shared screens):** the dots are hidden from screen readers and "hidden" is read in their place. Show and Copy buttons name their field. The one-time code is read in digit groups, without the countdown. "Delete forever?" takes focus, closes with Escape and gives focus back. The other confirmations are the browser's own.
+    - **Tests:** model tests (Swift, Kotlin, `ui`) check what is said and announced; the UI tests find rows and fields by what they say (XCUITest) and run the field's actions (Compose).
 - **D4 — Launch segment**: consumers first (this plan) vs SMB self-hosted first.
 - **D5 — Company jurisdiction and hosting region**: EU (Greece/Switzerland/Germany hosting) is a selling point.
-- **D6 — Entitlements/billing**: RevenueCat vs own entitlement service on Stripe + store receipts.
 - **D7 — Bundled extras**: email aliases (planned Phase 3) yes; VPN no.
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D32 — Transactional email provider** · open · founder. Needed for M10.7: email verification at sign-up (so registration stops revealing which emails have accounts) and account notices. To choose: provider and region (EU hosting fits D5), and its licence and data-processing terms.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
+- **D75 — List words that contain the separator** · proposed 2026-11-08 · Claude Code. Four words in the EFF list hold a hyphen (`drop-down`, `felt-tip`, `t-shirt`, `yo-yo`), and `-` is the default separator (D21 §3), so about 1 default phrase in 390 splits into six parts. Tests that split on `-` failed in CI for this reason; PR #94 made them count words another way. Is it a product problem?
+  - **Strength: no.** The generator picks list entries, not characters, so the entropy is still 12.9 bits per word. No two word sequences give the same text: `drop`, `felt`, `tip`, `t` and `yo` are not list words, so each hyphenated word can be read only one way. An attacker gains nothing from the hyphens.
+  - **Display: minor.** Someone may read `yo-yo-camera-…` as six words, and a hyphenated word can't be told apart from two words when read aloud. No app counts words from the text: the entropy and strength shown come from the core.
+  - **Proposal: keep the list unmodified**, and add a rule: nothing (code, tests or UI) counts words by splitting the text; the word count comes from the options or the entropy. Alternative: drop the four words from the compiled list (7,772 words, 12.92 bits each). That changes the published EFF list, so `NOTICE.md` stops saying "unmodified" and the attribution says it was modified, and every entropy constant in the tests changes. Not worth it for a display quirk.
 
 ## Settled
 
@@ -3348,14 +3358,723 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   - **The host** names it with `biometricName` instead of the `touchId` flag. The extension says "Touch ID" on a Mac. The desktop says "Windows Hello" on Windows, and none on Linux.
   - **Blocking calls:** the WinRT calls wait for their answer on the request's thread, while the backend is locked anyway. A Windows Hello prompt holds other requests until it closes.
   - **Not run anywhere yet:** a real Windows Hello prompt, which needs a person at the computer. This computer reports Windows Hello as set up, and the offer showed. The tests drive the rest through a fake key.
-- **D70 — Server operations: clean-up, tombstone compaction, backups and restore** · settled 2026-11-07 · founder (approved as proposed, horizon 180 days). M10.8 asks for three things. Open: when the clean-up runs and what it deletes, how long tombstones are kept, how a device behind that horizon finds out, and what the restore script does.
+- **D69 — Browser unlock on Windows and Linux: the helper, Windows Hello from a browser, the manifests, and Linux** · settled 2026-11-06 · founder (approved as proposed).
+  M7.2 asks for "a native-messaging host for browser unlock on Windows/Linux (D48's protocol, a second binary in the desktop workspace)". D48 §5 settled how it works on a Mac:
+  - The extension keeps a blob (the keyset sealed under a random key K) in its own storage.
+  - A helper the browser starts keeps K behind Touch ID.
+  - The protocol: `enroll`, `unlock` and `forget`, with `"v": 1`, the native-messaging framing, and the helper checking the caller's origin.
+  - The app doesn't need to be signed in or running.
+
+  Three things don't carry over:
+  - **Windows Hello keys only sign** (D68). The Secure Enclave wraps K under a biometric; Windows has no such call for apps.
+  - **Chrome gives a window to the host only when a page calls it.** It passes `--parent-window` with the calling window's handle, but 0 when the caller is a service worker, which is where the extension calls the helper. A Windows Hello prompt needs a window to come up in front of.
+  - **Linux has no biometric unlock yet** (D68 §7: polkit or fprintd, later).
+
+  Open:
+  - where the helper lives and how it's built
+  - how K is kept on Windows
+  - which window the Windows Hello prompt belongs to
+  - the manifests: where, and who writes them
+  - Linux
+  - what the extension shows
+  - tests
+
+  Proposal:
+  1. **The helper:** a second crate in the desktop workspace, `pwm-browser-helper`, building `pwm-browser-helper.exe` next to the app.
+     - **Small:** no Tauri and no WebView. It reads one framed message, answers, and exits, as the browser expects.
+     - **D48's protocol unchanged:** `enroll {account_id, device_id, key}`, `unlock {account_id, device_id}`, `forget {account_id, device_id}`, `"v": 1`, and the same replies (`ok`, `key`, `error`). The same errors: `refused`, `invalid`, `unknown`, `cancelled`, `changed`, `unavailable`. So the extension's `TouchIdUnlock` code works unchanged.
+     - **Who may call:** the origin Chrome, Edge, Brave and Opera pass as the first argument, or the extension id Firefox passes, against the same list of our extension ids as the Mac helper (placeholders until M10). Anything else is `refused`.
+     - **Limits:** a message over 64 KiB is `invalid`; the helper never reads more.
+     - **The protocol handler** is plain Rust behind a trait for the key and the store, so it's tested on every OS.
+     - **No new crates:** `serde_json`, `pwm-crypto` and the `windows` crate the app already uses, with two more features (`Win32_System_Registry`, `Win32_Security_Cryptography` for DPAPI).
+  2. **Keeping K on Windows: D68's construction, with its own label.**
+     - **Enrolling:** the helper makes a Windows Hello key credential for this enrolment, named "PWM browser" and a hash of the caller, account and device. It makes a random 32-byte challenge, asks Windows Hello to sign it twice, and compares, as D68 §2 does. The core derives a wrapping key from the signature and seals K under it.
+     - **Its own label:** HKDF info `pwm/browser-unlock/windows-hello/v1` and AAD `pwm/browser-unlock/windows-hello`, so a desktop unlock key and a browser enrolment's key can never stand in for each other. A new pair in `pwm-crypto` with test vectors, next to D68's.
+     - **What's kept:** the challenge and the sealed K, in a file per enrolment under `%LOCALAPPDATA%\PWM\browser-unlock\`, protected with DPAPI for the user. Never the signature, never K or the wrapping key.
+     - **Unlocking:** Windows Hello signs the same challenge (one prompt), the core opens K, and the helper sends K to the extension, which opens its blob. The KDF never runs.
+     - **Nothing is re-made:** K doesn't change while the blob stays, so there's no D68 §4 step here.
+     - **When it can't open:** a key Windows reports gone, or a signature that doesn't open K, deletes the enrolment and answers `changed`. The extension then turns it off and asks for the master password, as D48 does.
+     - **The PIN counts,** as D68 §3 explains; the screens say "Windows Hello".
+     - **Forget** deletes the key credential and the file.
+  3. **The prompt's window.**
+     - **The plan:** the helper opens a small window of its own ("Unlock PWM in your browser"), brings it to the front, and asks for the signature with it in front. The user has just clicked Unlock in the popup, so the browser is in front and hands focus on.
+     - **Checked first:** whether the Windows Hello prompt shows in front this way in Chrome, Edge and Firefox. It's the first step of M7.2: a test build the founder runs on a real computer, since the prompt needs a person.
+     - **If it doesn't:** the helper asks the desktop app to show the prompt, over a named pipe only this user can open, and the app must be running. That would be logged here and in Settings' text ("Keep the PWM app running").
+     - **Not the popup:** the popup could call the helper with its own window handle, but K would then reach a screen, which the protocol forbids: the screens never receive keys.
+  4. **The manifests: written by the desktop app, for this user only.**
+     - **A switch in the desktop's Settings:** "Allow browser extensions to unlock with Windows Hello", as D48's on the Mac. Off by default.
+     - **On:** the app writes two manifests under `%LOCALAPPDATA%\PWM\NativeMessagingHosts\`, one for Chromium browsers (`allowed_origins`) and one for Firefox (`allowed_extensions`), naming the helper by its full path. It registers them under `HKEY_CURRENT_USER\Software\`:
+       - `Google\Chrome\NativeMessagingHosts\<name>` (Chrome, and Brave and Opera, which read Chrome's key; checked on a real computer)
+       - `Microsoft\Edge\NativeMessagingHosts\<name>`
+       - `Mozilla\NativeMessagingHosts\<name>`
+     - **No administrator rights:** `HKEY_CURRENT_USER` only.
+     - **Off:** removes the keys and the manifests, and deletes every enrolment the helper keeps, since no extension can reach it any more.
+     - **The name** stays the extension's `NATIVE_HOST`, a placeholder until the stores give real ids (M10).
+     - **The installers (M7.3)** remove the keys on uninstall.
+  5. **Linux waits for its own biometric unlock.**
+     - **Why:** the helper would have nothing to ask the user for. K in the Secret Service with no prompt is readable by any process of this user, so it would only skip the master password.
+     - **When:** with the desktop's polkit or fprintd unlock (D68 §7), after M7.3, since polkit needs an action file the package installs.
+     - **For M7.2:** the protocol handler builds and is tested on Linux. The binary answers `unavailable`, and the app writes no manifests there.
+     - **Logged as a parity gap**, with a new task, M7.8 "Browser unlock on Linux (polkit or fprintd)", after M7.3.
+  6. **The extension:**
+     - **`biometricName`:** "Windows Hello" on Windows, "Touch ID" on a Mac, none elsewhere.
+     - **The same requests and code:** `touchId`, `setTouchId` and `unlockTouchId`, and `TouchIdUnlock`.
+     - **Its wording** names the app per platform: "Windows Hello needs the PWM app for Windows, with browser unlock turned on in its Settings." The codes `touch_id_off` and `touch_id_unavailable` get texts built from the name.
+     - **D45 and D48's rules stay:** the master password every 14 days and after signing in, no offer after unlocking in the popup, and turning it off or signing out forgets the enrolment.
+  7. **Tests:**
+     - **Rust:**
+       - the handler with a fake key and store: enroll, unlock, forget, a refused caller, cancel, changed, malformed and oversized messages, two enrolments kept apart
+       - the framing
+       - the manifest writer against a temporary folder and a fake registry
+     - **The core:** vectors for the new seal, checked in Rust and in `verify.mjs`.
+     - **Vitest:** the Windows wording and `biometricName`.
+     - **CI:** the `desktop-windows` job builds the helper and runs its tests.
+     - **Manual, in `QUALITY.md`:** on a Windows computer with Windows Hello, in Chrome, Edge and Firefox: turn on the app's switch, turn on unlock in the extension, lock, unlock with Windows Hello, cancel, then turn the switch off.
+
+  Alternatives:
+  - **Always go through the running desktop app:** its window makes the prompt simple, but the app must be running, unlike D48. Kept as the fallback in point 3.
+  - **`UserConsentVerifier` with K under DPAPI:** an easier prompt that can take a window, but it only checks presence. K would sit where any process of this user could read it without a prompt. D68 chose signatures for this reason.
+  - **The popup calls the helper:** it has a window handle, but K would reach a screen.
+  - **Linux with K in the Secret Service and no prompt:** no user presence at all.
+  - **Machine-wide registration (`HKEY_LOCAL_MACHINE`) by the installer:** needs administrator rights, and would offer the helper to every user of the computer.
+
+  Implementation notes (M7.2):
+  - **Three crates in the desktop workspace now:**
+    - **`pwm-hello`:** D68's Windows Hello key and the DPAPI calls, moved out of the app so the helper uses the same code.
+    - **`pwm-browser-helper`:** the protocol handler, the framing, the enrolment store, the manifests and the registry keys in a library; the binary reads one message, answers and exits.
+    - **`pwm-desktop`:** the Settings switch (`browserUnlock`, `setBrowserUnlock`), in `browser_hosts.rs`.
+  - **The core:** `seal_browser_hello` and `open_browser_hello` in `pwm-crypto`, next to D68's. The AAD `pwm/browser-unlock/windows-hello` carries the version, the caller (`len:u16 || bytes`, at most 1,024), the account and the device. Vectors in `browser_hello.json`, checked in Rust and by `verify.mjs`.
+  - **The enrolment's name:** 32 hex digits from HKDF over the caller, account and device, so the key credential ("PWM browser" and the name) and the file (`<name>.bin`) show none of them. The file holds a version byte, the challenge and the envelope, sealed with DPAPI with the name as entropy.
+  - **The window:** "PWM: confirm with Windows Hello to unlock your browser", in front for each prompt (making the key, the two signatures, each unlock). The Windows Hello call waits on another thread while the window keeps answering.
+  - **Registry keys:** the default value of each key under `HKEY_CURRENT_USER` names the manifest. Turning it off removes only keys that still name our manifests.
+  - **Turning it on** needs Windows Hello set up (`hello_unavailable` otherwise) and the helper next to the app (`browser_helper_missing`).
+  - **`windows-registry`:** Microsoft's registry crate (MIT or Apache-2.0), already in the tree through `tauri-plugin-autostart`, so the registry code has no `unsafe`.
+  - **The extension:** `biometricName` is "Windows Hello" on Windows. The helper's error codes keep Touch ID's names; their texts name Windows Hello and the app for Windows there.
+  - **Not run anywhere yet:** a browser starting the helper and a real Windows Hello prompt, which need a person at the computer. Whether the prompt shows in front (§3) is the first thing that check answers (`QUALITY.md`, desktop step 13).
+  - **Not checked here:** the Linux build, since this computer has no Linux target; CI's `desktop` job builds it.
+- **D70 — Desktop installers for Windows and Linux: the formats, signing, the browser helper, uninstalling, and tests** · settled 2026-11-07 · founder (approved as proposed).
+  M7.3 asks for "signed installers (MSIX/EXE, AppImage, .deb, .rpm, Flatpak)". D69 §4 adds two duties: install `pwm-browser-helper.exe` next to the app, and remove the browser helper's registry keys on uninstall. D66 kept the Tauri CLI out until now ("it comes only with the installers").
+
+  Open:
+  - which formats, since some of the listed ones break D69 or carry licence duties
+  - who signs, with what, and when
+  - how the helper gets into the package
+  - what uninstalling removes
+  - updates
+  - tests, and what runs on this computer versus CI
+
+  Proposal:
+  1. **Windows: one per-user `.exe` installer (NSIS), built by Tauri's bundler.**
+     - **Per user, no administrator rights:** it installs under `%LOCALAPPDATA%\Programs\PWM`, the same scope as D69's `HKEY_CURRENT_USER` keys and D66's data folder.
+     - **Not MSIX for now:** an MSIX app's writes to `HKEY_CURRENT_USER` and `%LOCALAPPDATA%` are redirected into the package's own copy, so Chrome, Edge and Firefox would never see the manifests D69 writes. MSIX comes back only with the Microsoft Store, with its own decision.
+     - **Not MSI:** WiX installs per machine and needs administrator rights.
+     - **Compression:** zlib. NSIS itself is zlib/libpng, on the S6 list. Its LZMA and bzip2 modules carry their own terms, so they stay out of the stub. Tauri's `nsis_tauri_utils` plugin is MIT or Apache-2.0.
+  2. **Linux: `.deb`, `.rpm` and a Flatpak now. AppImage waits.**
+     - **`.deb` and `.rpm`** from Tauri's bundler, built on Ubuntu 22.04 (the WebKitGTK floor, D66 §9). WebKitGTK, GTK and GLib come from the system as dependencies, linked dynamically, as D3 allows.
+     - **The Flatpak** runs on the GNOME runtime, which carries WebKitGTK, so we ship none of it. The Secret Service works through the Secret portal (`oo7`, D66). It packages our release build. Publishing it (Flathub, or our own repository) comes at release (M10).
+     - **AppImage waits:** it would bundle WebKitGTK, GTK and their LGPL libraries inside our file. That's allowed, but each release would then owe the exact sources of those libraries beside it. Logged as a gap until the founder wants that duty.
+     - **No browser helper on Linux yet** (M7.8). Polkit's action file joins the `.deb`, `.rpm` and Flatpak with M7.8.
+  3. **Signing: wired now, the founder's identity at release, as D48 §3 did for the Mac.**
+     - **Windows:** Authenticode on `pwm-desktop.exe`, `pwm-browser-helper.exe` and the installer, through Tauri's `signCommand`, which runs one command per file.
+       - **Recommended:** Microsoft's Artifact Signing (Trusted Signing). The keys stay in Microsoft's HSMs, with no token to keep, for about US$10 a month. It needs the founder's Azure account and an identity check of the company (open to EU organisations).
+       - **Alternative:** an OV certificate from a CA on its cloud HSM, about €300 or more a year. EV no longer earns SmartScreen trust faster (since 2024), so it isn't worth its price.
+     - **Linux:** a release GPG key, its primary key kept offline by the founder and a signing subkey in CI's secrets.
+       - **`.rpm`:** signed inside the package (`rpmsign`).
+       - **`.deb`:** signed through the repository, as Debian does, once there is one (M10.1).
+       - **Every file:** a `SHA256SUMS` with a detached signature.
+       - **Flatpak:** its repository is GPG-signed when it's published.
+     - **Before release:** CI signs with a throwaway certificate and a throwaway GPG key it makes on each run, then verifies. So the signing path is tested on every run, and the real identity only changes the secrets. Release builds stay unsigned until the secrets exist.
+  4. **The helper in the package.**
+     - **Windows:** Tauri's `externalBin` copies `pwm-browser-helper.exe` next to `pwm-desktop.exe`, where the app looks for it (`current_exe().with_file_name`, D69).
+     - **Only on Windows:** set in `tauri.windows.conf.json`, merged over the shared config.
+     - **The build order:** a `just desktop-installer` recipe builds the helper in release, copies it in under the name Tauri expects (with the target triple), then runs `tauri build`.
+  5. **Uninstalling.**
+     - **The helper cleans up after itself:** the uninstaller first runs `pwm-browser-helper.exe --uninstall`. It does what the Settings switch does when turned off (D69 §4):
+       - removes the three keys, only where they still name our manifests
+       - removes the manifests
+       - deletes every enrolment and its Windows Hello key, which needs no prompt
+     - **One place for that code:** the cleanup moves from the app's `browser_hosts.rs` into the helper's library, so the switch and the uninstaller run the same code.
+     - **A browser can't trigger it:** browsers pass an origin or a manifest path, never `--uninstall`.
+     - **The app's own data stays** unless the user ticks Tauri's "Delete the application data" box, which removes `%LOCALAPPDATA%\invalid.pwm.desktop`. D68's Windows Hello key is useless without that data.
+     - **A running app** is asked to close first (Tauri's check).
+  6. **Updates:** none in M7.3. A new version installs over the old one and keeps the data. Automatic updates need their own signing key and the release channels, so they come with M10.1.
+  7. **The Tauri CLI:** `@tauri-apps/cli` (MIT or Apache-2.0), pinned as a dev dependency of `@pwm/desktop`. As dev tooling it's outside D9's npm check, but its licence is on the list anyway.
+  8. **Names:** "PWM" and `invalid.pwm.desktop` stay placeholders until D1, as everywhere else. The installer's publisher field reads "PWM".
+  9. **Tests, all in CI:**
+     - **Rust:** `--uninstall` against a fake registry and store: our keys and files go, while another program's key with our name stays. The switch's existing tests keep passing on the moved code.
+     - **A new `desktop-installers` job on Windows:**
+       - Build the installer, sign it with the throwaway certificate, and verify all three signatures.
+       - Install it silently for the user, and check the app and the helper are side by side.
+       - Write the three keys as the switch would, uninstall silently, and check the keys, the manifests and the install folder are gone.
+     - **On Ubuntu 22.04:**
+       - Build the `.deb` and `.rpm`. Sign the `.rpm` with the throwaway key and check it (`rpm -K`).
+       - Install the `.deb` with `apt`, and check its dependencies resolve and the app starts under Xvfb.
+       - Build the Flatpak with `flatpak-builder` and start it.
+     - **When it runs:** on pull requests that touch the desktop app (the `desktop-changes` filter), like the other desktop jobs.
+     - **The artifacts:** each run keeps the installers for 7 days, for a manual check on a real computer.
+     - **Manual, in `QUALITY.md`:** on a real Windows computer, install, turn on browser unlock, uninstall, and check the browsers no longer find the helper. On Ubuntu and Fedora, install the package and use the app.
+  10. **Downloads:**
+      - **This computer:** `@tauri-apps/cli` from npm. Installers are built and tested only in CI, so this computer doesn't download NSIS or install anything.
+      - **CI:** Tauri's bundler fetches NSIS and its plugin from Tauri's releases on GitHub. The Linux job gets `rpm`, `flatpak-builder` and the GNOME runtime from Ubuntu and Flathub.
+
+  Alternatives:
+  - **MSIX:** redirection breaks D69's manifests and keys. For the Store, later.
+  - **MSI:** per machine, needs administrator rights.
+  - **AppImage now:** it bundles LGPL libraries, and each release then owes their sources.
+  - **Signing only at release, nothing before:** the first real signing would also be the first test of the signing path.
+  - **Deleting the keys in the uninstaller's own NSIS script:** a second copy of D69's rules in another language, and NSIS can't delete Windows Hello keys.
+
+  Implementation notes (M7.3):
+  - **`just desktop-installer`** (`apps/desktop/web/scripts/installer.mjs`): builds the page, then on Windows the helper in release, copied in as `src-tauri/binaries/pwm-browser-helper-<target triple>.exe`, then `tauri build` with `installer.conf.json` (and `installer.windows.conf.json` on Windows). Extra arguments go to `tauri build`, such as `--config sign.json`.
+  - **The settings stay out of `tauri.conf.json`:** `tauri-build` checks `externalBin` on every `cargo build`, so only the installer build passes them.
+  - **The install folder is `%LOCALAPPDATA%\PWM`,** Tauri's per-user default, not `%LOCALAPPDATA%\Programs\PWM` as §1 said. The template has no setting for it. That's also where D69 keeps the manifests and enrolments. The uninstaller removes only the files it installed, then the folder if it's empty, and `--uninstall` has emptied its subfolders by then.
+  - **Replacing a version keeps browser unlock:** Tauri's updater passes `/UPDATE`, and an installer of another version runs the old uninstaller in place, from the install folder. The hook (`installer-hooks.nsh`) runs `--uninstall` only when neither is the case. Uninstalling from Windows' Settings runs a copy from the temporary folder.
+  - **The cleanup moved:** `BrowserHosts` is now in `pwm-browser-helper` (`hosts.rs`), with the registry and `for_this_user`; `browser_hosts.rs` in the app maps its errors to the screens' codes. Turning it off also removes the manifests' folder, and `--uninstall` the enrolments' folder, once each is empty.
+  - **The Flatpak** (`apps/desktop/flatpak/`) takes the release build from the `.deb`, on GNOME 50. Permissions: network, Wayland or X11, the GPU, Downloads (the Emergency Kit), and logind on the system bus (locking).
+  - **No tray in the Flatpak:** the GNOME runtime has no appindicator library, and Tauri's tray panics when it's missing, which CI's first Flatpak run caught. The app now treats that as no tray, as on GNOME. Bundling the library would bring LGPL code into our package (§2). The `.deb` depends on it.
+  - **CI:** `desktop-installer-windows` and `desktop-installer-linux`, on the `desktop-changes` filter, keep the installers for 7 days.
+  - **Not run on this computer:** the installers themselves, by §10. Building with the CLI (`--no-bundle`) checked the settings and the helper's copy.
+- **D71 — Unlock on Linux with polkit, for the desktop app and the browser extensions: a root key holder, the construction, packaging, and tests** · settled 2026-11-07 · founder (approved as proposed).
+  M7.8 asks for "browser unlock on Linux (D69 §5): the helper asks polkit or fprintd, with the desktop's own unlock (D68 §7)". D69 §5 explains why it waited: on Linux a key the helper keeps in the Secret Service or a file is readable by any process of this user without a prompt, so it would only skip the master password. The platforms so far rest on a key the user's processes can't read: the Secure Enclave (D45, D48) and the TPM behind Windows Hello (D68, D69).
+
+  What Linux offers:
+  - **polkit** asks the user to confirm with their login password, or a fingerprint where PAM is set up for it (`pam_fprintd`), in the desktop's own dialog (GNOME, KDE and the others ship an agent). It answers yes or no and holds no secret.
+  - **fprintd** checks a finger and also holds no secret, and it isn't on every computer. polkit already uses it where it's set up.
+  - **The boundary between users:** a file only root can read is out of reach of this user's processes.
+
+  Open:
+  - how a key gets a gesture in front of it
+  - the construction, and whether D68 and D69 carry over
+  - which computers, browsers and packages
+  - the screens' wording
+  - packaging and uninstalling
+  - tests
+
+  Proposal:
+  1. **A root key holder behind polkit: `pwm-keyholder`.** A small binary installed at `/usr/libexec/pwm/pwm-keyholder`, run only through `pkexec`.
+     - **A polkit action, `invalid.pwm.unlock`** (a placeholder until D1): `auth_self` for the active session, with no remembered answer, so each call shows the dialog ("Confirm it's you to unlock PWM"). Inactive and remote sessions are refused.
+     - **What it keeps:** for each name, a random 32-byte secret S in `/var/lib/pwm/keys/<uid>/`, readable only by root, the user taken from `PKEXEC_UID`. It never returns S.
+     - **Two commands:**
+       - `create <name>` makes or replaces S.
+       - `sign <name>` reads a 32-byte challenge on stdin and answers `HKDF-SHA256(ikm = S, salt = challenge, info = "pwm/linux-polkit/response/v1")`.
+     - **So it works like a Windows Hello key:** a gesture, then a fixed answer for a fixed challenge, from a secret the user's processes can't read. The answer is computed in `pwm-crypto` (a new `linux_polkit_response`), so no crypto lives in the app.
+     - **No delete command:** turning it off deletes what the user's side keeps (the challenge and the sealed key), after which S opens nothing. The packages remove `/var/lib/pwm` on purge. That saves a prompt on every sign-out.
+     - **Checks:** it runs only as root with `PKEXEC_UID` set. A name is 32 hex digits. The folder is made 0700 and the files 0600, written atomically. Nothing is logged.
+  2. **D68 and D69 carry over unchanged, with Linux's own labels.**
+     - **The desktop's unlock (D68):** a `PolkitKey` implements the `HelloKey` trait through `pkexec`. Turning it on makes S and signs twice (three dialogs, as on Windows), and each unlock signs once.
+     - **The browser helper (D69):** the same handler and protocol, with `PolkitKey` instead of Windows Hello.
+     - **Its own labels,** so no key can stand in for another platform's: info `pwm/linux-polkit/v1` with AAD `pwm/linux-polkit`, and info `pwm/browser-unlock/linux-polkit/v1` with AAD `pwm/browser-unlock/linux-polkit`. The core's D68 and D69 functions take the platform as a parameter. Windows' labels and vectors don't change, and Linux gets new vectors.
+     - **"Changed":** an answer that doesn't open the sealed key (S lost, say after a purge) deletes the enrolment and asks for the master password, as D68 and D69 do.
+     - **D45's rules stay:** the master password every 14 days and at each sign-in.
+  3. **What it guards against, written into `SECURITY.md`:**
+     - **Guarded:** this user's processes can't read S. A copied home folder or browser profile holds only the challenge and the sealed key. Every unlock shows polkit's dialog.
+     - **Not guarded:**
+       - root
+       - a disk image of a computer without full-disk encryption, which holds both halves
+       - malware running as the user that makes the call, which still needs the user's gesture in the dialog (as D48 says for the Mac)
+     - **No enrolment check:** polkit can't tell a new fingerprint was added, unlike `.biometryCurrentSet`.
+     - **Weaker than the TPM, said plainly in the docs.** A TPM-sealed variant can come later where a TPM exists, with its own decision.
+  4. **Where it works:**
+     - **Packages:** the `.deb` and `.rpm` (D70), which install the key holder and the action.
+     - **Not in the Flatpak:** a sandbox can't run `pkexec`. The switch doesn't show there, and the gap is logged.
+     - **Browsers that are packages too:** Chrome, Chromium, Edge, Brave, Vivaldi and Firefox. The switch writes each one's manifest under the user's home, only for browsers whose profile folder exists:
+       - `~/.config/google-chrome/`, `chromium/`, `microsoft-edge/`, `BraveSoftware/Brave-Browser/` and `vivaldi/`, each with `NativeMessagingHosts/`
+       - `~/.mozilla/native-messaging-hosts/`
+       - Opera's folder gets checked on a real computer.
+     - **Not Snap or Flatpak browsers:** they can't start a helper on the computer. Firefox's portal for this is too young. Logged as a gap.
+     - **Without a polkit agent** (a bare window manager), `pkexec` fails: the switch says "unavailable" and the master password stays.
+  5. **The screens:**
+     - **The name:** `biometricName` is "Linux login" on Linux (the desktop, and the extension when the user agent says Linux and not Android). Labels read "Unlock with Linux login".
+     - **Linux's texts:** like Windows' (D69 §6), naming the PWM app for Linux. "Linux login" is the founder's to change.
+     - **The desktop's switch:** "Allow browser extensions to unlock with Linux login", as on Windows.
+  6. **Packaging (D70):**
+     - **The `.deb` and `.rpm` add three files:**
+       - `/usr/libexec/pwm/pwm-keyholder`
+       - `/usr/share/polkit-1/actions/invalid.pwm.unlock.policy`
+       - `pwm-browser-helper` next to the app in `/usr/bin`
+     - **Removing** (`.deb` purge, `.rpm` erase) deletes `/var/lib/pwm`.
+     - **Left behind:** the manifests in each home folder, which name a helper that's gone, so the extension says it needs the app.
+  7. **No new crates:** `hkdf` and `getrandom` through `pwm-crypto`, and `std`. The key holder finds its user from `PKEXEC_UID` and checks it's root from `/proc/self`'s owner, so no `unsafe` and no `libc`.
+  8. **Tests:**
+     - **Core:** `linux_polkit_response` and the Linux labels, with new vectors in Rust and `verify.mjs`.
+     - **`pwm-keyholder`:** over a temporary folder, with the root check injected: names, determinism, users kept apart, and replacing on `create`.
+     - **`PolkitKey`:** with a fake `pkexec`.
+     - **The Linux manifests:** written and removed against a temporary home.
+     - **The extension and the screens:** the wording.
+     - **CI (`desktop-linux`):**
+       - Install the key holder and the action, plus a polkit rule that allows the runner without a dialog (a `.pkla` file, since Ubuntu 22.04 has polkit 0.105).
+       - Through the real `pkexec`: create, sign twice and compare, then a browser enrolment and unlock through the helper's framing.
+     - **CI (`desktop-installer-linux`):** the `.deb` has the three files, and removing it with purge deletes `/var/lib/pwm`.
+     - **Manual, in `QUALITY.md`:** on Ubuntu (GNOME) and Fedora (KDE), with a password and with a fingerprint: the desktop's unlock and browser unlock in Chrome and Firefox, a cancelled dialog, and turning it off.
+
+  Alternatives:
+  - **The key in the Secret Service or a file, behind a polkit check in our own process:** any process of the user reads it without the dialog (D69 §5).
+  - **fprintd directly:** no secret, not on every computer, and polkit already uses it.
+  - **A system D-Bus service checking polkit itself:** the peer's user comes straight from the bus, but it needs a service file and a systemd unit. `pkexec` is enough for a few calls a day.
+  - **TPM 2.0 sealing:** hardware-backed, but not on every computer, with no gesture of its own, and much more code. Kept for later.
+  - **The same labels as Windows:** fewer core changes, but the names would lie about where a key came from.
+
+  Implementation notes (M7.8):
+  - **The core:** `Signer` (`WindowsHello`, `LinuxPolkit`) picks the labels for D68's and D69's constructions: `seal_signed_unlock`, `open_signed_unlock`, `seal_signed_browser` and `open_signed_browser`, with Windows' functions kept as wrappers and their vectors unchanged. A Linux answer is exactly 32 bytes. `linux_polkit_secret` and `linux_polkit_response` serve the key holder. Vectors: `linux_polkit.json`, checked in Rust and by `verify.mjs`. `pwm-client`'s `export_windows_hello` and `unlock_windows_hello` take the `Signer`.
+  - **`pwm-keyholder`** (`apps/desktop/keyholder`): `create` and `sign`. Exit codes: 2 for no secret (the app's "changed"), 3 for a bad request or a run without `pkexec`, 4 for storage. A secret's file is a version byte, then S.
+  - **Names differ from §1:** the key holder takes 1 to 64 of `a-z`, `0-9` and `-`, not 32 hex digits, because the app's key names carry the account id ("PWM <account>" becomes `pwm-<account>`). They are plain file names either way.
+  - **`PolkitKey`** (`pwm-hello`'s `polkit` module) implements `HelloKey` through `/usr/bin/pkexec`. `HelloKey` gained `signer()`. It's supported when the key holder and `pkexec` are installed and `/.flatpak-info` is absent. A dismissed dialog (exit code 126) is `cancelled`; a refusal (127) is `unavailable`.
+  - **The helper on Linux:** the same `Handler` with `PolkitKey`. Records go to `$XDG_DATA_HOME/pwm/browser-unlock/` (or `~/.local/share`), as 0600 files.
+  - **The switch on Linux:** `ManifestHosts` writes `invalid.pwm.browser.json` into each installed browser's folder. It's on when one of them names our helper. With no browser installed, the new code `browser_not_found` says to install one. Windows' `BrowserHosts` and `ManifestHosts` share a `Hosts` trait.
+  - **The screens:** "Linux login" on the desktop for Linux, and in the extension when the user agent says Linux and not Android. The Linux texts name the PWM app for Linux and the `.deb` or `.rpm` package.
+  - **Packaging:** `installer.linux.conf.json` adds the helper (`externalBin`, in `/usr/bin`), the key holder and the action file to both packages, plus `linux/postrm.sh`, which deletes `/var/lib/pwm` on `purge` (`.deb`) or `0` (`.rpm`).
+  - **CI:** `desktop-linux` installs the key holder, the action and a `.pkla` rule for the runner, then runs the real `pkexec` through `PolkitKey` and the helper. It checks the folder is root's with mode 700 and that the key holder refuses to run without `pkexec`. `desktop-installer-linux` checks the three files in the packages and that purging deletes `/var/lib/pwm`.
+  - **Not run anywhere yet:** polkit's real dialog with a password and a fingerprint, in GNOME and KDE, and a real browser starting the helper (`QUALITY.md`, desktop step 15).
+- **D6 — Entitlements and billing: our own service on Stripe and the stores' server APIs, the server as the one source of the plan, and how each `PRICING.md` commitment holds per store** · settled 2026-11-07 · founder (approved as proposed, with the Play Billing Library download, its licence exception once confirmed, and the first charge counting for refunds).
+  M9.1 asks for an "entitlements service (decision D6); Stripe web checkout; App Store / Play Billing". `PRICING.md` names the choice: RevenueCat or our own service. What's already in place:
+  - **The `subscriptions` table** (migration 0001), provider-neutral: plan, status, provider (`stripe`, `app_store`, `play`), the provider's reference, price and currency, `current_period_end`, `price_locked_until`, `cancel_at_period_end`. One row per account.
+  - **`GET /v1/account`** already answers `plan`: `free` without a live subscription, and a canceled one lasts to the end of the paid period.
+  - **The server already talks to Apple and Google:** HTTP/2 over rustls, ES256 tokens for APNs (D50) and RS256 for Google's OAuth (D60).
+  - **Where each app is sold from:** the iOS app through the App Store, Android through Google Play. The Mac app is Developer ID outside the Mac App Store (D48 §3), so StoreKit isn't available there. Windows, Linux and the browser extensions have no store with payments.
+
+  Open:
+  - RevenueCat or our own service
+  - where each platform buys, and how a plan bought on one shows on the others
+  - how the server learns about a purchase and trusts it
+  - how each commitment in `PRICING.md` holds when a store, not us, runs the subscription
+  - the API, the data kept, dependencies, licences and tests
+
+  Proposal:
+  1. **Our own entitlement service in `pwm-server`, not RevenueCat.**
+     - **Privacy:** RevenueCat's SDK would run in our apps and call its servers, and RevenueCat would hold every paying user's id and purchase history. For a zero-knowledge product that's one more party in the data path, outside the EU (D5), to explain in the privacy policy.
+     - **The commitments are ours either way:** the price hold, the reminders, one-click cancel and the refund window (`PRICING.md`) aren't something RevenueCat enforces. The table, the reminder schedule and the refund rules have to be built here regardless.
+     - **What RevenueCat would save is reading receipts,** and §3 makes that small: we ask each provider's own API over TLS instead of checking signed receipts ourselves.
+     - **No lock-in and no share of revenue,** and no move off it later with every subscriber's history inside.
+  2. **Where each platform buys:**
+     - **iOS: the App Store,** with StoreKit 2. Apple requires in-app purchase for a digital subscription bought inside the app.
+     - **Android: Google Play Billing.**
+     - **The Mac, Windows, Linux and the extensions: Stripe Checkout,** opened in the browser from the app. The Mac app can't use StoreKit outside the Mac App Store (D48 §3).
+     - **A plan is the account's, not the device's:** bought anywhere, it shows everywhere. Where the plan was bought elsewhere, the screen says where to manage it ("Managed in the App Store", "Managed on the web") rather than offering to buy again. The iOS app shows no web prices or links to buy outside the App Store.
+     - **Two subscriptions at once** (say Apple and Stripe, by mistake) are allowed. The account gets the better plan, and the screens point out the second one with where to cancel it.
+  3. **How the server learns about a purchase: every message is a hint, and the truth comes from the provider's API.**
+     - **Linking a purchase to an account without trusting the device:** each account gets a random `billing_token` (a UUID, not the account id). The apps pass it at purchase: Apple's `appAccountToken`, Play's `obfuscatedAccountId`, and Stripe's `client_reference_id`. The server only accepts a purchase whose token is the caller's.
+     - **Right after a purchase,** the app sends the transaction id (Apple) or the purchase token (Play). Stripe's Checkout returns to a page that says to go back to the app.
+     - **The providers' notifications** (App Store Server Notifications V2, Play's real-time notifications through a Pub/Sub push, Stripe's webhooks) only say "look at this subscription".
+     - **The server then reads the subscription from the provider over TLS:** Apple's App Store Server API (with an ES256 token, as for APNs), Play's `purchases.subscriptionsv2` (with D60's RS256 OAuth token and a second service-account scope), and Stripe's API with its secret key. What it stores comes only from those answers.
+     - **So nothing parses or trusts Apple's signed JWS chains:** a forged notification can only make the server ask again. Stripe's webhook signature is still checked (HMAC-SHA256, through `pwm-crypto`), and Play's push URL carries a secret, so strangers can't make the server ask at will. Both are also rate-limited.
+     - **Play purchases are acknowledged** by the server after it stores them, as Google requires within three days.
+     - **A daily pass** re-reads every subscription that isn't expired, which catches a lost notification.
+  4. **The plan the account gets:**
+     - **Premium (or Family, Teams)** while a subscription is `active`, `canceled` with its period not yet over, or `past_due` within the provider's grace period (`grace_until`, new; today `past_due` has no end). After that it's Free.
+     - **Free keeps everything:** nothing is deleted on a downgrade (`PRICING.md` §7). What Free can still do with paid items is M9.3's to decide.
+     - **The clients cache the plan** with the account, so offline the last known plan holds, for at most the paid period it knew about.
+     - **Gates checked on the server** (share links per day, attachment storage) read the same function. Gates only a client can check (TOTP, since the server never sees items) are checked there, as M9.3 says.
+  5. **Each commitment, per provider.** With Stripe we run the subscription, so each holds in full. With the stores it holds as far as the store allows, and the gap is written into `PRICING.md`:
+     - **§1 Price hold (12 months):**
+       - **Stripe:** `price_locked_until` per subscription. A new price applies to a subscription only after that date, and the code refuses to move a locked subscription.
+       - **App Store and Play:** a price change keeps existing subscribers on their price (Apple's "preserve current price", Play's legacy price cohort), moved only after 12 months. That's done in the store's console, so the runbook says it, and the server checks each renewal's price against `price_locked_until`, alerting on a mismatch.
+     - **§2 Notice:** the server schedules a reminder 14 days before every renewal and a notice 60 days before a price change, for every provider, in an outbox table. Sending them needs the email provider (D32, M10.7). Until then they wait in the outbox, and M9.2's tests check the schedule.
+     - **§3 Same intro and renewal price:** no introductory offers, cheaper trials or first-term coupons in Stripe, App Store Connect or the Play Console. The server refuses a Stripe price with a different first term, and the runbook says it for the stores.
+     - **§4 One-click cancel:**
+       - **Stripe:** one button in every app and on the web. It sets `cancel_at_period_end`, and access lasts to the end of the period. Resuming is one button too.
+       - **App Store and Play:** we can't cancel for the user. The button opens the store's own page (`showManageSubscriptions` on iOS, Play's subscription link on Android, and elsewhere instructions with Apple's or Google's web page). That gap is logged.
+     - **§5 Refunds (pro-rata, within 30 days of a renewal charge):**
+       - **Stripe:** one button. Within 30 days of the last charge, the server refunds the unused days and ends the subscription at once. After 30 days it says plainly the window has passed. Proposal: the first charge counts too, not only renewals.
+       - **App Store:** only Apple refunds. The button opens Apple's request sheet (`beginRefundRequest`), and the answer arrives as a notification. If Apple declines, we can't refund. Logged.
+       - **Play:** Google lets the developer refund, but its API refunds only in full. Proposal: refund in full through the API within the 30 days, which is more than pro-rata. Logged as different, in the user's favour.
+     - **§7 Export after a lapse:** nothing here touches export.
+  6. **Deleting the account:** a Stripe subscription is ended with a pro-rata refund. A store subscription can't be ended by us, so the delete screen says so first, with the link to cancel it, as Apple asks apps to do.
+  7. **The API (JSON, under the usual session):**
+     - `GET /v1/account`: `plan` stays, and a new `subscription` object adds where it was bought, until when, whether it's canceling, `price_locked_until`, and the second subscription if there is one.
+     - `GET /v1/billing/token`: the account's `billing_token`, for a store purchase.
+     - `POST /v1/billing/stripe/checkout` `{plan}` → `{url}`; `POST /v1/billing/stripe/cancel`, `/resume` and `/refund`.
+     - `POST /v1/billing/apple/transactions` `{transaction_id}`; `POST /v1/billing/play/purchases` `{product_id, purchase_token}`.
+     - **The providers' webhooks,** with no session: `POST /v1/billing/apple/notifications`, `/play/notifications/<secret>` and `/stripe/webhook`.
+     - **New error codes:** `billing_unavailable` (the provider can't be reached, or billing isn't set up on this server), `purchase_not_yours` (another account's token), `refund_window_passed`, `managed_elsewhere` (cancel or refund on another provider's subscription).
+     - **Self-hosted servers** (M11) run with no billing settings: every account is Premium there, and the billing routes answer `billing_unavailable`.
+  8. **Data kept, migration 0008:**
+     - `subscriptions` keyed by `(provider, provider_ref)`, so an account can hold more than one, with `grace_until` and `last_charge_at` (for the refund window) added. A migration test carries today's rows over unchanged.
+     - `accounts.billing_token` (UUID, unique), filled for existing accounts, and Stripe's customer id per account.
+     - `billing_events`: each notification's provider, id and time, to drop repeats. Not the body.
+     - `billing_outbox`: the reminders and notices of §5, with the account and the date to send.
+     - **Nothing else:** no card data (Stripe's page takes it) and no item data. The email the user types into Stripe's page stays at Stripe, which sends its own receipts to it.
+     - **Never logged:** Play's purchase tokens, Stripe's keys and webhook secret, Apple's private key, Google's service-account key. The settings load them as `Secret`, and `DEPLOYMENT.md` lists them.
+  9. **Plans and prices live in the server's settings,** not in code: each plan's Stripe price id, Apple product id and Play product id. The prices stay with D8.
+  10. **Dependencies and licences:**
+      - **Server: no new crates.** HTTP through the existing hyper and rustls, ES256 with `p256` as for APNs, RS256 with `ring` as D60. Stripe needs only a few calls, written over hyper rather than pulling in a Stripe crate. HMAC-SHA256 comes through `pwm-crypto` (`hmac` is already in the build under `hkdf`), as a new `webhook_signature_valid` with a constant-time compare. The rule in `CLAUDE.md` about `ring` then reads "the server's RS256 tokens to Google (FCM and Play)".
+      - **iOS: StoreKit 2,** part of the system.
+      - **Android: the Play Billing Library** (`com.android.billingclient:billing`, the latest when built). Its Maven files are expected to name the Android SDK licence, as Play services' did. Proposal: add it by name to D60's exception in `allowed-licenses.json` once the licence check confirms it. The first build downloads it, and the founder approves that here.
+      - **Stripe Checkout** is Stripe's hosted page in the browser, so nothing of Stripe's ships in the apps.
+  11. **Taxes:** with Stripe Tax computing VAT on the web, we are the seller and register for the EU's VAT OSS. The stores handle VAT themselves. A merchant of record (Paddle, say) would take VAT off our hands for a higher fee; that's a business choice, listed in the alternatives.
+  12. **Tests:**
+      - **Server, against fake providers:** a small local HTTP server answers as Apple, Google and Stripe do, from hand-written synthetic JSON. Covered:
+        - linking by token, and refusing another account's
+        - repeated and out-of-order notifications, and a forged one changing nothing
+        - the plan rule over every status and the grace period, and two subscriptions at once
+        - the 30-day refund window and the pro-rata amount, cancel and resume
+        - the price hold refusing a move, and reminders scheduled 14 days ahead
+        - deleting the account, and a server without billing settings
+      - **The migration:** 0008 over a database holding 0001's rows.
+      - **The core:** `webhook_signature_valid` against Stripe's documented example.
+      - **Apple apps:** StoreKit Testing with a `.storekit` file in the `apple` CI job: buy, send the transaction, cancel, without App Store Connect.
+      - **Android:** the billing flow behind an interface, tested with a fake. The real Play flow with license testers is manual.
+      - **Manual, in `QUALITY.md`:** Stripe test mode end to end, a sandbox Apple purchase and refund request on a device, and a Play license tester's purchase.
+      - **No real provider in CI:** no keys, and no calls to Apple, Google or Stripe.
+  13. **Order of work:**
+      - **M9.1:** §1 to §4 and §7 to §10, Stripe first, then Apple, then Play.
+      - **M9.2:** the commitments of §5, §6 and the outbox.
+      - **M9.3:** the gates.
+      - **At M10, as for the store accounts:** the founder's Stripe account, the App Store Connect and Play Console products, and Apple's and Google's keys.
+
+  Alternatives:
+  - **RevenueCat:** less code for receipts, and good dashboards. But a third party holds every purchaser's history, its SDK sits in the apps, it takes a share of revenue, and the commitments are still built here (§1).
+  - **Checking the stores' signed receipts ourselves** (Apple's JWS chain to its root, Google's push tokens): no API call per event, but X.509 chain checks and more crypto on the server for little gain, since the API answers anyway.
+  - **Stripe on iOS and Android too** (link-outs where the law allows, as in the US and the EU): a lower fee, but the rules differ by country and keep changing, and the review risk lands on launch. It can come later as its own decision.
+  - **A merchant of record (Paddle, Lemon Squeezy) instead of Stripe on the web:** they handle VAT and invoices, for a higher fee and less control over the cancel and refund screens the commitments rely on.
+
+  Implementation notes (M9.1):
+  - **The server** (`server/src/billing/`): `Billing` in the app state, off without any provider's settings (`DEPLOYMENT.md` lists them). One HTTPS client (HTTP/1.1 or 2) for all three providers.
+    - **Stripe** pins API version `2025-03-31.basil` and reads the period end from the subscription's item. Customers carry only the billing token. Checkout returns to the server's own `/billing/done` and `/billing/canceled` pages.
+    - **Apple:** "Get All Subscription Statuses" answers for any transaction id, so the purchase call and the notifications use it alone. Production is asked first, then the sandbox, and the row remembers which (`sandbox`).
+    - **Play:** `subscriptionsv2` for the state, then the v1 `:acknowledge` call while the read says it's pending. A `linkedPurchaseToken` expires the purchase it replaced.
+    - **The plan rule** (§4) is one SQL condition (`ENTITLED`): `active` counts with three days' slack after its period end, so a lost notice doesn't cut anyone off before the daily pass runs; Stripe's `past_due` rows have no `grace_until`, so Stripe's retry schedule bounds them (set it to end in cancellation).
+    - **Notifications** are recorded only once handled, so a failed read is retried by the provider. At most 300 reads per minute come from notifications.
+    - **Status and token in one call:** `GET /v1/billing` answers the summary and the billing token, in place of §7's `GET /v1/billing/token`. `GET /v1/account` carries the same summary, as `plan`, `subscription` and `billing` (the providers that sell here).
+    - **Our checkout sells no second plan:** `already_subscribed` when the account has one.
+  - **Left for M9.2:** the refund button (§5), the account-deletion rules (§6, there is no deletion route yet), the outbox with its reminders and notices, and the price-hold checks. Only cancel and resume are in M9.1, since a plan can't be sold without a way to stop it (PRICING.md §4).
+  - **Shared code:** Google's RS256 assertion is shared by FCM and Play (`push::google_assertion`). The rule in `CLAUDE.md` about `ring` now reads "the server's RS256 tokens to Google only: FCM and Play".
+  - **The app API:** `pwm-client` gains `start_billing_status`, `start_checkout`, `start_cancel_subscription`, `start_resume_subscription`, `start_apple_purchase` and `start_play_purchase`, with `Outcome::Billing` and `Outcome::CheckoutUrl`, through the FFI and WASM. Errors keep the server's codes (`ClientError::Billing`), plus `no_subscription` for a 404.
+  - **The desktop and the extensions:** a Plan section in Settings (`ui/src/Plan.tsx`), shown while unlocked. Get Premium opens Checkout with `window.open`, which the desktop sends to the default browser. Cancel plan and Keep my plan are one click each. A store plan says where to manage it, and a second subscription is pointed out.
+  - **Tests:**
+    - **Server:** 8 tests against a fake provider server, plus the 0008 migration test, and 14 unit tests for the providers' parsing, tokens and signatures.
+    - **The app API:** end to end through the server.
+    - **The core:** RFC 4231 vectors for the HMAC check.
+    - **Extension and desktop:** the extension's background against its fake core, and the desktop's protocol samples and its server test.
+  - **The Apple apps:** a Plan section in Settings (`PWMUI/Plan.swift`, `PlanViews.swift`).
+    - **iOS** buys with StoreKit 2 in the app target (`App/AppStorePurchases.swift`), since the package also builds for the AutoFill extension and Linux. The purchase carries the billing token as `appAccountToken`, goes to the server, and is finished only once the server accepted it. Unfinished transactions and `Transaction.updates` are sent while the vault is unlocked. Manage subscription opens Apple's sheet.
+    - **The Mac** opens Stripe's Checkout in the browser, and has one-click cancel and resume.
+    - **Gap: a Stripe plan on iOS** can be canceled there but not resumed, since resuming means paying outside the App Store. iOS says to resume it on a computer.
+    - **Not done:** the StoreKit Testing test (§12) needs a host app, which `swift test` doesn't give. It comes with an Xcode scheme or the iOS UI test. The product id is the placeholder `invalid.pwm.premium.yearly` until D1 and D8, so iOS shows "Premium isn't available in the App Store right now".
+  - **The Android app:** a Plan section in Settings (`kit/ui/Plan.kt`, `app/PlanSection.kt`).
+    - **Buying** goes through Play Billing 9.1.0 (`app/PlayStoreBilling.kt`) with `setObfuscatedAccountId(billingToken)`. The server acknowledges purchases; the app never does. Purchases that finish later reach the server through the listener and `queryPurchasesAsync` at each unlock. A pending payment says so. Manage subscription opens Play's page.
+    - **The product id** is the placeholder `premium_yearly`.
+    - **Two more libraries in D60's exception,** approved by the founder on 2026-11-07: Play Billing 9.1.0 brings `com.google.android.gms:play-services-location` 19.0.0 and `play-services-places-placereport` 17.0.0, both under the Android SDK licence (versions 8.0 to 9.0 bring them too). They're allowed by name with `com.android.billingclient:billing`. The app asks for no location permission; its manifest gains only `com.android.vending.BILLING`.
+  - **Messages:** the server's billing codes are in `design/messages.json` for both apps. Each app keeps only its store's own codes.
+- **D72 — The pricing commitments in code (M9.2): refunds, price changes and the hold, the reminders' outbox, export after a lapse, and where account deletion goes** · settled 2026-11-07 · founder (approved as proposed).
+  M9.2 asks to "implement every commitment in `PRICING.md` with tests (price lock, reminders, cancel, refunds, export after lapse)". D6 §5 and §8 set the direction, and M9.1 built cancel and resume. What's still open:
+  - **The refund:** the exact rule and amount, and how it's made safe to retry.
+  - **Play:** Play's API can refund pro-rata after all (`purchases.subscriptionsv2.revoke` with `proratedRefund`), which closes one of D6's gaps.
+  - **Price changes:** how one is entered, when it reaches existing subscribers, and how the hold is kept.
+  - **The reminders:** what the outbox holds, and what happens while there's no email provider (D32).
+  - **Account deletion:** D6 §6 has rules for it, but the server has no deletion at all, and Apple requires one in the app (App Review guideline 5.1.1(v)).
+
+  Proposal:
+  1. **Refunds (commitment 5): one button, within 30 days of the last charge, the first one included (D6).**
+     - **Stripe:** `POST /v1/billing/stripe/refund`.
+       - **The amount:** what the last invoice charged, times the unused part of the period: `floor(amount_paid × (period_end − now) / (period_end − period_start))`.
+       - **The calls:** the server reads the invoice's payment (`GET /v1/invoices/{id}?expand[]=payments`), refunds that PaymentIntent (`POST /v1/refunds` with `payment_intent` and `amount`), then ends the subscription at once (`DELETE /v1/subscriptions/{id}`).
+       - **Safe to retry:** the refund carries an idempotency key made from the invoice id, so a retry never refunds twice. It refunds before canceling: a failure in between leaves the user paid back and still subscribed, never canceled without the money.
+     - **Play:** `POST /v1/billing/play/refund` calls `subscriptionsv2 …:revoke` with `proratedRefund`. Google works out the amount, and the purchase then reads as expired.
+       - **The window:** Play doesn't say when it last charged, so the server records `last_charge_at` when it first sees a new expiry time. That's a renewal, and a notification brings it within minutes.
+     - **The App Store:** only Apple refunds.
+       - **iOS:** "Request a refund" opens Apple's sheet (`Transaction.beginRefundRequest`). A granted refund arrives as Apple's notification and ends the plan, which M9.1 already handles.
+       - **Elsewhere:** the screen points to Apple's page for problem reports.
+     - **After the window,** `refund_window_passed`. The summary gains `refundable_until`, so the screens show the button only while it applies.
+     - **A refund ends the plan now:** the account is Free and keeps all its data.
+  2. **Price changes and the hold (commitments 1 and 2): an operator command, applied only after a notice was delivered.**
+     - **Entering one:** `pwm-server price-change <stripe|app_store|play> <plan> <new price id> <new amount> <currency>` records it in a new `price_changes` table.
+       - **New subscribers** pay the new price as soon as the operator changes the setting (`PWM_STRIPE_PRICES`, or the store's console).
+       - **Subscribers already paying** get `price_locked_until` = now + 12 months, unless they already have a later date.
+     - **The notices:** each affected subscription gets a price-change notice at once, and a reminder 60 days before `price_locked_until`. Both go through the outbox (§3).
+     - **Applying it (Stripe):** the daily pass moves a subscription to the new price only when all three hold:
+       - `price_locked_until` has passed,
+       - its 60-day reminder was actually sent,
+       - and that was at least 60 days ago.
+
+       The move takes effect at the next renewal (`proration_behavior=none`). The function that moves a subscription refuses a locked one, and a test holds it to that.
+     - **Until email can be sent (D32), no price change ever applies.** Notices that can't be delivered block the move.
+     - **The stores:** the change is made in the store's console, choosing to keep existing subscribers' price, as `PRICING.md` says. On each read, a renewal at a price other than the stored one before `price_locked_until` logs a warning for the operator, with the provider and a count only.
+  3. **The reminders' outbox (commitment 2).** A new table `billing_outbox`.
+     - **Each row:** an account, a kind (`renewal_reminder`, `price_change`, `price_change_reminder`), the subscription it's about, the dates and amounts the message needs, `send_after` and `sent_at`. No email: it's looked up when sending.
+     - **Renewal reminders:** the daily pass adds one 14 days before every renewal, for every provider, unless the subscription is canceling. A unique key on the subscription and its period end means each charge gets exactly one.
+     - **Sending:** a `Mailer` trait, with none configured until D32. The daily pass logs how many rows are due and unsent. The wording comes with D32.
+  4. **Export after a lapse, and nothing deleted on a downgrade (commitment 7).**
+     - **Export already works without a plan:** it happens on the device, from the device's own copy (D24), and nothing checks a plan.
+     - **M9.2 adds tests that keep it that way:**
+       - an account whose subscription expired syncs, reads, edits and exports through the app API
+       - expiring or refunding a subscription leaves every item and vault in place
+     - **A rule for M9.3:** plan gates never stop exporting, reading, editing or deleting existing items.
+  5. **Account deletion becomes its own task, M9.4, not part of M9.2.** It's a feature of its own: proving the master password again (an OPAQUE login made only for it), deleting on the server, wiping each device, and screens on every platform, with export offered first.
+     - **D6 §6's rules go with it:** a Stripe subscription ends with a pro-rata refund, whatever the 30 days. A store subscription can't be ended by us, so the screen warns first, with the link to cancel it.
+     - **Its own decision,** proposed when M9.4 starts. It must land before launch, since Apple requires it.
+  6. **The app API and the screens:**
+     - **The app API:** `pwm-client` gains `start_refund` (Stripe or Play, by the subscription's provider), ending with `Billing`. The summary gains `refundable_until`.
+     - **The screens:** "Request a refund" in the Plan section while it applies: one click for Stripe and Play, Apple's sheet on iOS, Apple's page elsewhere for an App Store plan. The result says the plan ended and the refund is on its way.
+     - **New error codes:** `refund_window_passed`, and `managed_elsewhere` when the subscription's store isn't this one.
+  7. **No new dependencies.** Migration 0009 adds `price_changes`, `billing_outbox` and `subscriptions.period_start`, which the refund amount needs.
+  8. **Tests:**
+     - **Server, against the fake providers:**
+       - the refund's amount, window and idempotency key, and refund before cancel
+       - Play's revoke with `proratedRefund`
+       - the price-change command, the hold set and kept, no move without a delivered notice, a move 60 days after one, and a locked subscription refused
+       - reminders scheduled once per charge, for every provider, and none for a canceling subscription
+       - a store renewal at another price logged
+       - data kept after expiry and refund
+     - **The migration:** 0009.
+     - **The app API:** a lapsed account exports, end to end.
+     - **The screens:** the refund button and its window on each platform, with fakes.
+
+  Alternatives:
+  - **Refund in full instead of pro-rata:** simpler and kinder, but it's not what `PRICING.md` says, and it invites buying a year and refunding it in month eleven.
+  - **Let the stores' and Stripe's own reminder emails count:** Apple only reminds for some subscriptions and Stripe's emails aren't ours to word. The commitment is ours.
+  - **Account deletion inside M9.2:** one PR fewer, but it doubles M9.2 and mixes a security-sensitive feature into billing.
+
+  Implementation notes (M9.2):
+  - **Refunds** (`server/src/billing/routes.rs`):
+    - **Stripe:** reads the last invoice (expanded on the subscription) for when it was paid, what it paid and the period, then its PaymentIntent (`GET /v1/invoices/{id}?expand[]=payments`). It refunds with the idempotency key `pwm-refund-<invoice>`, then `DELETE`s the subscription. A test checks the refund comes before the end.
+    - **Play:** revokes with `proratedRefund`. Its window comes from `last_charge_at`, which the server sets when a purchase is first stored or a new expiry shows.
+    - **Where the button shows:** the summary's `refundable_until` is set only for Stripe and Play, so the screens show the button only then.
+  - **A plan may list more than one price** (`premium=price_new,premium=price_old`): the first is sold, and the others still read as the plan. A price change would otherwise make held subscriptions unreadable. `PRICING.md` gains "Changing a price".
+  - **The outbox and the mailer** (`server/src/billing/commitments.rs`):
+    - **`Mailer`** is a trait with no implementation until D32. A message carries the account's email, read at send time, so the outbox itself holds none.
+    - **A reminder that no longer applies** (canceled, or a new period) isn't sent, and unsent messages about a past date are dropped.
+    - **The daily pass** schedules, delivers and then moves, in that order.
+  - **Moving a held price:** `may_move` requires the hold over and the reminder delivered 60 days before. The move uses `proration_behavior=none` from the next renewal.
+  - **The apps:**
+    - **The desktop and the extensions** show Request a refund, with the date it's possible until. An App Store plan points to Apple's Report a Problem page.
+    - **iOS** opens Apple's refund sheet. **Android** refunds Play and Stripe plans.
+    - **The message** `refund_window_passed` is in `design/messages.json`.
+- **D73 — Plan gates (M9.3): what Free can do with one-time codes, where the client learns its plan, and the server's limits for share links and attachments** · settled 2026-11-07 · founder (approved as proposed).
+  M9.3 asks for "plan gates in core (TOTP, attachments, share links) checked client-side and server-side". Several rules are already set:
+  - **D6 §4:** the server is the one source of the plan. Clients cache it, so offline the last known plan holds, for at most the paid period it knew about.
+  - **D72 §4:** a gate never stops exporting, reading, editing or deleting existing items.
+  - **D23 §7:** the core generator doesn't check plans; the gate comes here.
+
+  What's still open:
+  - **What exists:** attachments (M14) and share links (M13) aren't built yet. Only TOTP has something to gate.
+  - **What a Free account can do** with a login that has a TOTP secret.
+  - **How a client learns its plan:** today the plan comes only with sign-in (`GET /v1/account`) and the Plan screen (`GET /v1/billing`), and nothing on the device keeps it.
+
+  Proposal:
+  1. **One-time codes need Premium; the secret stays free.**
+     - **Free still can:** store, see, copy, edit, remove, import and export a login's TOTP secret (the `otpauth://` URI). That's D72's rule, and it means a lapsed user can move their codes to another authenticator at any time.
+     - **Premium (or Family, Teams) is needed for:** the current code, whether shown, copied or filled.
+     - **Where it's checked:** `Client::current_code` returns the new error `plan_required` on Free. Every platform gets its codes from that one function: the extension's background and its fill, the desktop, iOS and its AutoFill extension, Android and its autofill service. So one check covers them all.
+     - **The screens:**
+       - **An item's code:** instead of the code, "One-time codes are part of Premium" with a link to Settings › Plan.
+       - **Editing:** the secret field works the same, with the same caption.
+       - **Autofill:** the code step isn't offered at all. There's no prompt and no message during autofill (CLAUDE.md: no nag prompts during autofill).
+     - **Not chosen:**
+       - **Blocking new secrets on Free:** that would stop editing.
+       - **Keeping codes for secrets added while Premium:** it needs a per-item flag, and importing would get around it.
+     - **Commitment 6** ("nothing moves from free to paid"): codes have never been free in a release, since nothing has launched, so no notice is due.
+  2. **The plan on the device.**
+     - **What the server sends:** two headers on the vault list that every sync starts with (`GET /v1/vaults`), like `pwm-epoch` (D30):
+       - `pwm-plan`: `free`, `premium`, `family` or `teams`
+       - `pwm-plan-until`: Unix ms when the plan stops counting if nothing renews, or absent when it has no end
+     - **`pwm-plan-until` for each status:** it follows D6's `ENTITLED` rule.
+       - **active:** the period end + 3 days
+       - **canceled:** the period end
+       - **past_due:** `grace_until`, or the period end + 3 days while Play hasn't given one
+       - **Free, and a server without billing (every account Premium):** absent
+     - **`GET /v1/account` and `GET /v1/billing`** carry the same two values, as `plan` and `plan_until`. So sign-in and every Plan screen action refresh them too.
+     - **What the client keeps:** `plan` and `plan_until_ms` in the account record.
+       - **SQLite:** migration v3 adds them as nullable columns.
+       - **The extension:** the in-memory snapshot goes to version 2. A version-1 snapshot reads with no plan.
+       - Each has a migration test.
+     - **The rule** (`Client::plan_now(now_ms)`, also given to the apps):
+       - the stored plan while `plan_until_ms` is absent or in the future
+       - Free after that, until a sync says otherwise
+       - **Unknown** (an account signed in before this version, or an old server without the headers): treated as Premium until the first sync, so an update never takes codes away from anyone.
+     - **This gate is a courtesy, not protection:** the secret is the user's own, and a modified client could compute codes. The point is to be honest about what Premium includes, not DRM.
+  3. **The server's limits, ready for M13 and M14.**
+     - **One table in `server/src/billing/`,** read through the same function as the plan (D6 §4):
+       - **Free:** 1 share link a day, 0 bytes of attachments
+       - **Premium, Family, Teams:** unlimited share links, 1 GiB of attachments per person
+       - **A server without billing:** like Premium
+     - **`GET /v1/account` and `GET /v1/billing`** carry them as `limits: { share_links_per_day, attachment_bytes }`. A null value means unlimited.
+     - **`ApiError::PlanRequired`:** 403 `{"error":"plan_required"}`, for the share and attachment routes when they come. It joins `design/messages.json`.
+     - **M13 and M14 check the limits in their routes,** with their own tests. M9.3 tests the table, the summary and the error.
+  4. **Tests:**
+     - **Core:**
+       - `current_code` gives a code on Premium, on an unknown plan and with no end date
+       - it refuses on Free and after `plan_until_ms`
+       - the v3 store migration and the v2 snapshot
+       - the sync engine storing the two headers, and keeping the old values when they're missing
+     - **Server:** the headers, `plan_until` for each status, a server without billing, and the limits table.
+     - **The apps:** the extension's background, the desktop's samples, the Apple and Android view-model tests for the item screen on Free, and an autofill test that the code step is skipped.
+  5. **Docs:**
+     - **`PRICING.md`:** a section "What Free does with paid items".
+     - **`SECURITY.md`:** the two headers carry only the plan and a date.
+     - **The ROADMAP entry for M9.3:** attachments and share links done as limits only, with the route checks moving to M13 and M14.
+
+  Alternatives:
+  - **Read `GET /v1/billing` on each sync:** one more request per sync. The headers cost nothing.
+  - **Gate only in the screens:** each of six platforms would need its own check, and an autofill path could miss it.
+
+  Implementation notes (M9.3):
+  - **The server** (`server/src/billing/mod.rs`, `vaults.rs`):
+    - `plan_until` comes from `ENTITLED_UNTIL`, which follows `ENTITLED` row by row.
+    - **A past-due row without `grace_until`:** Stripe's retries count with no end date, so it gets three days from now (or from its period end, if later), and the next sync moves it on.
+    - **Two subscriptions:** the later end wins.
+    - `GET /v1/vaults` sends `pwm-plan` always, and `pwm-plan-until` when there's an end.
+    - `Limits::of(plan)` is the table, and `ApiError::PlanRequired` answers 403 `plan_required`.
+  - **The core:**
+    - **Storage:** `PlanRecord` in `pwm-store` (`plan()`, `set_plan()`; the name must be 1 to 32 bytes). It's a table of its own in SQLite v3, and a section after the epoch in snapshot v2. `clear()` drops it. Frozen fixtures `store_v3.sql` and `snapshot_v2.hex`.
+    - **What fills it:** the sync engine stores the headers when a sync starts; a server without them leaves the old value. Billing replies (`BillingInfo.plan_until_ms`) store the plan too.
+    - **Sign-in doesn't store it:** the first sync right after does, and until then the plan is unknown, which counts as Premium.
+    - **The API:** `Client::plan_now(now_ms)` and `codes_included(now_ms)`, in the FFI and WASM as `plan_now` / `planNow` and `codes_included` / `codesIncluded`. `current_code` checks only items that have a secret, so items without one still answer `None`.
+  - **The screens:**
+    - **The extensions and the desktop:**
+      - `ItemView.codeNeedsPlan` shows the line and a "One-time code secret" row, using the existing Show and Copy of hidden values.
+      - `VaultView.codesIncluded` drives the editor's caption.
+      - `hasCode` in lists and suggestions now means "a code can be copied now".
+      - The extension's fill skips the code step, and a code-only page answers `no_form`, as for a login without a code.
+    - **Apple and Android:** the item screen shows the line and the secret.
+      - **Android's autofill** fills without the code.
+      - **iOS's AutoFill** already ignored a failed code.
+      - **Not done yet:** the editor's caption, which needs the plan in the editors' models. The item screen says it, so nothing is hidden. It's logged here under the platform-parity rule.
+    - **Settings › Plan** is named in the text rather than linked: the item screens have no route to Settings on every platform.
+  - **Messages:** `plan_required` in `design/messages.json` and the screens' `api.ts`.
+- **D74 — Account deletion (M9.4): proving the master password, deleting at once, subscriptions, wiping every device, and restores** · settled 2026-11-08 · founder (approved as proposed).
+  M9.4 asks for "account deletion in every app (D72 §5): the master password proven again, everything deleted on the server, each device wiped, export offered first, and D6 §6's subscription rules". Apple requires it before launch (App Review guideline 5.1.1(v)). What exists:
+  - **The schema:** deleting the `accounts` row already cascades to everything the account owns: devices, sessions, vaults (`owner_id`), vault keys, items, tombstones, shares, subscriptions, approvals, push tokens and the reminders' outbox (D25 §3).
+  - **No deletion route.** The server never deletes an account today.
+  - **Other devices:** when a session's row is gone, its tokens are answered 401 `unauthorized`. The device then looks signed out but keeps its cache. Only a revoked device (403 `device_revoked`) clears its cache (D28).
+  - **Subscriptions:** D6 §6 says a Stripe subscription ends with a pro-rata refund and a store subscription can't be ended by us. D72 then found that Play's API refunds pro-rata (`revoke_prorated`), so only the App Store is left out.
+  - **Backups:** restoring one would bring a deleted account back. `mark-restored` (D30 §5) knows nothing about deletions.
+
+  Open: how the password is proven, whether deletion waits, what stays, what happens when a provider fails, how the other devices learn of it, restores, and the screens.
+
+  Proposal:
+  1. **Proving the master password: an OPAQUE login made only for deleting.**
+     - **The server can't check a password itself,** and the unlocked session, Face ID, Touch ID, Windows Hello and the fingerprint don't count, as for export (D24 §2).
+     - **Two calls under the device's session:**
+       - `POST /v1/account/delete/start` `{ke1}` → `{attempt, ke2}`
+       - `POST /v1/account/delete/finish` `{attempt, ke3}` → 200 when the account is gone
+     - They reuse the login's OPAQUE steps and `login_attempts` (60 s, single use), but for the session's own account only: the request names no email.
+     - **A wrong password** answers 401 `invalid_credentials` and nothing changes. Both calls count toward the login rate limit (D29), so they can't be used to guess.
+     - **Finish deletes in the same request:** no deletion token to store, expire or leak. If deletion fails after the password checked out, the user starts again.
+  2. **Deleting at once, with no waiting period.**
+     - Everything is deleted when finish answers, and nothing can bring it back. The screens say so plainly before the password step and offer export first (§7).
+     - **Why not a waiting period** (say 7 days to undo): the server would keep the vault and need a "deleting" state that every route checks. Undoing needs only an export, which the screens offer first.
+     - **The email is free at once** for a new registration.
+  3. **What's deleted, and what stays.**
+     - **Deleted:** the `accounts` row, and with it everything in the cascade above.
+     - **The Stripe customer** is deleted at Stripe after its subscription ends (`DELETE /v1/customers/{id}`), which removes the saved card. Stripe keeps its own records of charges and invoices, as the law requires of it. The App Store and Play keep theirs.
+     - **Stays on our server:**
+       - the anonymous autofill reports (D38) and the providers' event ids (30 days); neither names an account
+       - the two small lists in §5 and §6: random ids and token hashes only, never an email
+     - **Backups** keep the deleted data until they age out. `DEPLOYMENT.md` says so and recommends keeping backups at most 30 days, and the privacy text (M10) says the same.
+  4. **Subscriptions: end them first, and delete only after that worked.**
+     - **Stripe:** the subscription ends now with a pro-rata refund of the unused days, whatever the 30 days (D6 §6), through D72's refund and `end_now`. Then the customer is deleted.
+     - **Play:** the same, through `revoke_prorated` (D72 §1). This closes D6 §6's gap for Play.
+     - **App Store:** only Apple can end it. The screen says so before anything else, with the button to Apple's page (`showManageSubscriptions` on iOS, the web page elsewhere). Deleting isn't blocked: it's the user's choice. Apple's later notifications about the purchase find no account and are dropped, as for any unknown token.
+     - **When Stripe or Play can't be reached,** finish answers 503 `billing_unavailable` and deletes nothing, so nobody is charged for an account that's gone. The screen says to try again later.
+     - **A subscription that's already canceled or expired** has nothing to end.
+     - **Two subscriptions** (D6 §8): each is ended by its own rule, before the delete.
+     - **A server without billing** (self-hosted, M11) skips this step.
+  5. **The other devices: told, and wiped.**
+     - **A new code, 403 `account_deleted`.** The sync engine handles it as `device_revoked`: it clears the cache, and the core locks. Each app then finishes signing out, as it does for a revoked device, and shows "This account was deleted."
+     - **How a device gets it:** the deleting request copies the refresh-token hashes of the account's other sessions into a table `deleted_sessions (refresh_hash, expires_at)`, inside the same transaction.
+       - Each hash is kept until its refresh token would have expired (90 days unused, D26).
+       - An access token lasts 15 minutes and finds no session after the delete, so the device refreshes. A refresh token found in `deleted_sessions` gets `account_deleted` instead of `unauthorized`.
+       - The table holds no account id, email or device name.
+     - **Waking them now:** after the commit, the server sends the account's devices the existing content-free "your vault changed" push (D50, D60). Each syncs, gets `account_deleted` and wipes. A device that's off or offline wipes on its next sync.
+     - **What isn't covered:** a device that never comes online again keeps its encrypted cache, as after an offline sign-out. It still needs the master password and the Secret Key to open it.
+  6. **Restores: deleted accounts stay deleted.**
+     - **A table `deleted_accounts (account_id, deleted_at)`**, holding only the random account id, is kept 60 days: twice the recommended backup age.
+     - **`pwm-server mark-restored`** deletes again every listed account that the restored backup brought back, before clients come back. `DEPLOYMENT.md` says so, and the restore test covers it.
+     - The daily pass purges both tables when their rows expire.
+  7. **The screens, in every app** (iOS, macOS, Android, the desktop on Windows and Linux, the extensions):
+     - **Where:** Settings › Account › Delete account.
+     - **The steps:**
+       1. **What will happen:** "Your vaults and items will be deleted from every device and from our server. This can't be undone." A button **Export first**, which opens the existing export, and **Continue**.
+       2. **The subscription,** only when there is one:
+          - Stripe and Play: "Your Premium plan ends now, and you'll get back the unused days."
+          - App Store: "Apple bills this plan. Cancel it in your Apple account, or Apple will keep charging you." With the button to Apple's page.
+       3. **The master password,** and the button **Delete account**.
+       4. **Done:** the device is wiped as on sign-out, and the app shows the sign-in screen with "Your account was deleted."
+     - **No shortcuts and no extra friction:** no typed confirmation word, no countdown, no "are you sure" after the password. The password step is the confirmation.
+  8. **The core and the app API:**
+     - **`pwm-client`:** `start_delete_account(master password, Secret Key, now)` runs §1's two calls through the usual step machine and ends with `AccountDeleted`. The core then clears the store, as `sign_out` does. The master password and Secret Key are handled as at unlock and wiped after.
+     - **`account_deleted`** joins `SyncOutcome` and `Outcome` next to `DeviceRevoked`, and the codes in `design/messages.json`.
+     - **The bindings:** `pwm-ffi` and `pwm-wasm` get the same call.
+  9. **Shared vaults and families** (M13): today vaults have no other members, so §3's cascade loses nobody's data. **For M13:** an owner's vaults are deleted with the account, and the screen first lists the vaults that have members. Handing a vault to another member comes with M13.
+  10. **Not in M9.4:**
+      - **A confirmation email** after the deletion: when an email provider is chosen (D32).
+      - **Deleting from the web** without an app: there's no web vault. Every app can delete, and `PRODUCT.md`'s support text says where.
+  11. **Tests:**
+      - **Server** (Postgres):
+        - a wrong password changes nothing
+        - the right one deletes every row the account owned, and touches no other account
+        - `deleted_sessions` and `deleted_accounts` are filled
+        - another device's refresh token gets `account_deleted`
+        - an unreachable Stripe or Play deletes nothing
+        - an App Store subscription doesn't block
+        - `mark-restored` deletes a restored account again
+        - the rate limit holds
+        - the purge removes expired rows
+      - **Core:** the step machine against the fake server, the store cleared after it, and `account_deleted` clearing another client's cache.
+      - **The apps:** the view-model tests for each step on Apple, Android, the extension and the desktop, including the App Store step and `billing_unavailable`.
+  12. **The PRs:** one for the server, the core and the bindings, and one for the screens on every platform, as M5.3 was split (D43). No new dependencies, and migration 0010 adds the two tables.
+
+  Alternatives:
+  - **A waiting period with undo** (7 or 30 days): it protects someone who deletes by mistake, but the server keeps the vault meanwhile and every route needs a "deleting" state. With export offered first, the gain is small.
+  - **A deletion token from the login** (OPAQUE login, then `DELETE /v1/account` with the token): one more secret to store and expire, for the same result as deleting inside finish.
+  - **Leaving the other devices on 401:** no new table, but each would keep its cache until its user signs out by hand, which breaks "each device wiped".
+  - **Keeping every account id forever** instead of 60 days: covers very old backups, but keeps a trace of every account for good. Backups older than 30 days aren't supported.
+
+  Implementation notes (M9.4, part 1: the server, the core and the bindings):
+  - **§6 changed before building, with the founder's approval:** the database's list alone doesn't survive a restore, since it goes back in time with the backup. So each deletion is also appended to a file outside the database (`PWM_DELETIONS_FILE`, one line `<id> <unix seconds>`, on its own volume), and `mark-restored` deletes again what either lists.
+    - **Order:** the line is written after the commit, so a failed delete never lists a live account. A failed write is logged, and the table still has it.
+    - **The file:** one server writes it. The daily pass prunes lines older than 60 days (written to a new file and renamed over), and a line cut short is skipped. `compose.yaml` adds the `deletions` volume, and the image makes `/var/lib/pwm` the server's.
+  - **The server** (`server/src/deletion.rs`):
+    - The calls use the login's field names: start `{credential_request}` → `{login_id, credential_response}`, finish `{login_id, credential_finalization}` → 204.
+    - `auth.rs`'s OPAQUE steps became `begin_login` and `verify_login`, shared with login. `verify_login` refuses an attempt for another account.
+    - **A failed proof is 403 `invalid_credentials`, not 401:** under a session, 401 means the access token, and the sync engine would refresh and retry.
+    - **Every session's refresh hash** goes to `deleted_sessions`, this device's too, so a retry after a lost answer is told `account_deleted`.
+    - **The push** reuses the content-free background push, read inside the transaction before the cascade, sent after the commit, and not held back by the minute between background pushes.
+  - **Billing** (`end_for_deletion` in `billing/routes.rs`):
+    - Each Stripe and Play subscription that counts (D6's `ENTITLED`) is ended. Stripe refunds the last charge's unused days with D72's idempotency key, so a retry refunds once, then ends the subscription. Play uses `revoke_prorated`.
+    - **What counts as already over:** 404 from a provider. Any other failure is `billing_unavailable`.
+    - **The Stripe customer** is deleted after. If Stripe was turned off on the server since, it's left, with a warning: nothing of it can renew from here.
+  - **The core:**
+    - `pwm-sync`: `SyncOutcome::AccountDeleted` clears the store and keys, like `DeviceRevoked`.
+    - `pwm-client`: `start_delete_account(password, secret_key)` (`deletion.rs`).
+      - It derives the keys as at login. A wrong password or Secret Key fails on the device, as `wrong_password`.
+      - It ends with `Outcome::AccountDeleted` after `sign_out` clears the store.
+      - A 503 is the engine's usual wait: the apps say nothing was deleted, try again later.
+  - **The apps:** each handles `account_deleted` as `device_revoked` (wipe and sign out), and the message joins `design/messages.json`.
+    - Apple and Android: a new `SyncResult` case.
+    - The desktop and the extension: their outcome switches.
+  - **Tests:**
+    - **Server:** 7 in `tests/deletion.rs`, 3 for billing, 1 for push, the rate limit, and the 0010 migration and snapshot.
+    - **Elsewhere:** 1 sync engine test, 1 end-to-end client test against the server, and the extension's background.
+
+  Implementation notes (M9.4, part 2: the screens):
+  - **Where it is:**
+    - **The extensions and the desktop:** Settings has a "Delete account" link that opens the manage page at its new Account tab. Its "Export first" switches to the Export tab.
+    - **Apple:** a page pushed from Settings, whose "Export first" pushes Export.
+    - **Android:** a page of Settings, whose "Export first" opens Export. Back returns to Settings.
+  - **The plan step** shows only with a subscription, reading the plan the Plan section reads.
+    - **Stripe or Play:** "Your plan ends now, and you'll get back the unused days." The shared screens and Apple name the plan; Android keeps one sentence.
+    - **App Store:** "Apple bills this plan." The extensions give the path as plain text, since they ship no remote URLs (D40). iOS opens the App Store's subscription sheet. The Mac and Android give the page or the path.
+    - **A second subscription** (D6 §8) is covered by the same lines.
+  - **The Secret Key never reaches the screens.** The request carries only the master password (`deleteAccount` in the protocol), and each host adds the stored Secret Key, as for export.
+  - **When nothing was deleted:** a wait (the server's 503, or no connection) becomes `delete_unavailable`: "Couldn't reach the server or end your plan, so nothing was deleted. Try again later." It joins `design/messages.json`.
+  - **Why the account left:**
+    - The extension's background and the desktop's backend keep it in memory, and `Status` gains an optional `ended` (`account_deleted` or `device_revoked`) on `signedOut`.
+    - **Shown on:** the sign-in screen, and the manage page's signed-out view, which on the desktop gets a "Go to sign in" button.
+    - **Apple and Android:** the welcome screen shows the message until the user moves on.
+    - **A revoked device** now says why too, which it didn't before; the desktop's end-to-end test expects it.
+    - **A restart forgets it:** a stopped service worker or a relaunched app shows the plain sign-in screen.
+  - **The desktop** deletes the account's Windows Hello key by the name it had before the account was gone, since the name comes from the account id.
+  - **Apple's `VaultModel` and Android's** pass the reason to the app's sign-out callback.
+  - **Rate limit, changed in part 2:** the delete calls had counted with the login limit (30 a minute per IP, §1), but Apple's server tests use nearly all of it in a few seconds, and the delete calls pushed them over. They now have a limit of their own, 10 an hour per IP, which is stricter against guessing and leaves logins alone.
+- **D76 — Server operations: clean-up, tombstone compaction, backups and restore** · settled 2026-11-07 · founder (approved as proposed, horizon 180 days). M10.8 asks for three things. Open: when the clean-up runs and what it deletes, how long tombstones are kept, how a device behind that horizon finds out, and what the restore script does.
   Proposal:
   1. **Scheduled clean-up:** a task inside the server, at start-up and then every hour. Every delete is safe to repeat, so several servers on one database need no coordination. It deletes:
      - **Sessions whose refresh token has expired** (90 days, `refresh_expires_at <= now()`). That includes revoked devices' sessions. They aren't deleted at revocation: the device's next refresh needs the row to be told `device_revoked` and clear its cache (D28), where a missing row would give a plain 401.
      - **Login attempts, device approvals and autofill reports past their lifetime.** Today these go only when the next login, approval request or report arrives, so a quiet server keeps them longer.
   2. **Tombstone compaction:**
      - **Horizon: 180 days after the delete.** That is twice the refresh token's lifetime, so only a device unused for half a year pays for it. Paying means one full pull, at most 50,000 items per vault (D29).
-     - **How:** the same hourly task, per vault, in batches. One transaction deletes the vault's tombstones older than the horizon and raises a new `vaults.purged_seq` to the highest `seq` it deleted. Migration 0008 adds that column (default 0) and an index on `tombstones (deleted_at)`.
+     - **How:** the same hourly task, per vault, in batches. One transaction deletes the vault's tombstones older than the horizon and raises a new `vaults.purged_seq` to the highest `seq` it deleted. Migration 0011 adds that column (default 0) and an index on `tombstones (deleted_at)`.
      - **The signal:** `GET /v1/vaults/{id}/items?since=c` with `0 < c < purged_seq` answers 410 `resync_required`, because the device may have missed a delete that no longer exists. `since=0` always works.
      - **The client (`pwm-sync`):** on 410 it pulls the vault again from 0, like the "server behind" case (D28 §9). The end differs:
        - **Synced items the pull didn't return are deleted locally,** not uploaded again. No restore happened, so a delete is the only way the server lost them.
@@ -3373,3 +4092,4 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
   4. **Tests:**
      - **Server tests on Postgres:** each clean-up rule at its boundary; compaction raising `purged_seq`; 410 just below `purged_seq` but not at or above it; compaction running alongside writes.
      - **`pwm-sync` tests for the 410 path:** unseen items dropped, unsent edits kept as new items, a locked sync holding.
+  - **Number:** first written as D70 in PR #82. D70 went to the desktop installers first, so this is D76, and the migration is 0011.

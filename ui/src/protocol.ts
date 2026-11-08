@@ -99,6 +99,14 @@ export type Request =
   | { kind: "health" }
   | { kind: "checkLeaks" }
   | { kind: "setLeakCheck"; on: boolean }
+  // The plan (D6): Stripe on the desktop and in the extensions.
+  | { kind: "plan" }
+  | { kind: "checkout"; plan: string }
+  | { kind: "cancelPlan" }
+  | { kind: "resumePlan" }
+  | { kind: "refundPlan" }
+  // Deleting the account (D74); the host adds the Secret Key.
+  | { kind: "deleteAccount"; masterPassword: string }
   // Asking a signed-in device (D46), from the popup while signed out.
   | { kind: "askApproval"; email: string }
   | { kind: "askApprovalPoll" }
@@ -145,7 +153,10 @@ export type Request =
   | { kind: "totpSetup"; input: string; title: string }
   /** Whether to make the one offer after a master password unlock (D45 §3). */
   | { kind: "biometricOffer" }
-  | { kind: "dismissBiometricOffer" };
+  | { kind: "dismissBiometricOffer" }
+  /** The desktop registering its browser helper (D69 §4); Windows only. */
+  | { kind: "browserUnlock" }
+  | { kind: "setBrowserUnlock"; on: boolean };
 
 /**
  * An item's decrypted D18 JSON, as the editor changes it. Fields this
@@ -168,6 +179,7 @@ export interface VaultRow {
   folderId: string | null;
   trashed: boolean;
   hasPassword: boolean;
+  /** A one-time code can be copied now: a secret, and a plan with codes. */
   hasCode: boolean;
 }
 
@@ -180,6 +192,8 @@ export interface FolderView {
 export interface VaultView {
   items: VaultRow[];
   folders: FolderView[];
+  /** The plan now includes one-time codes (D73 §1). */
+  codesIncluded: boolean;
 }
 
 /** An item to show (D67 §1): every hidden value left out, by its place. */
@@ -194,6 +208,9 @@ export interface ItemView {
   readOnly: boolean;
   /** The one-time code now, never its secret. */
   code: { code: string; secondsLeft: number } | null;
+  /** It has a one-time code secret, and the plan doesn't include codes
+   * (D73 §1): the secret stays in `hidden`, to show, copy or edit. */
+  codeNeedsPlan: boolean;
   passkeys: { rpId: string; userName: string; createdAt: number }[];
   /** Previous passwords, newest first, each to Show by its place. */
   passwordHistory: { savedAt: number; path: string }[];
@@ -257,6 +274,31 @@ export interface ApprovalView {
   code: string | null;
 }
 
+/** Where a plan was bought (D6 §2). */
+export type PlanProvider = "stripe" | "app_store" | "play";
+
+/** The account's plan (D6 §7); times are Unix ms. */
+export interface PlanView {
+  /** `free`, `premium`, `family` or `teams`. */
+  plan: string;
+  subscription: {
+    provider: PlanProvider;
+    plan: string;
+    status: string;
+    /** The end of the paid period. */
+    untilMs: number;
+    /** It ends at `untilMs` instead of renewing. */
+    canceling: boolean;
+    priceLockedUntilMs: number | null;
+    /** Until when a refund can be asked for here (Stripe and Play, D72); null when it can't. */
+    refundableUntilMs: number | null;
+    /** Other subscriptions that count too, bought by mistake. */
+    also: PlanProvider[];
+  } | null;
+  /** The providers that sell plans on this server; empty: no billing, every account Premium. */
+  sells: PlanProvider[];
+}
+
 /** One of the account's devices; times are Unix ms. */
 export interface DeviceView {
   id: string;
@@ -308,7 +350,12 @@ export interface ReportPreview {
 }
 
 export type Status =
-  | { state: "signedOut" }
+  | {
+      state: "signedOut";
+      /** Why the last account left this device, when it wasn't signed out
+       * here: `account_deleted` (D74) or `device_revoked`. */
+      ended?: "account_deleted" | "device_revoked";
+    }
   | {
       state: "locked";
       email: string;
@@ -331,6 +378,7 @@ export interface ItemSummary {
   username: string;
   url: string;
   hasPassword: boolean;
+  /** A one-time code can be copied now: a secret, and a plan with codes. */
   hasCode: boolean;
 }
 
@@ -377,6 +425,14 @@ export interface Replies {
   setPasskeys: boolean;
   reportPreview: ReportPreview;
   reportSend: null;
+  plan: PlanView;
+  /** Stripe's Checkout page, for the screen to open in the browser. */
+  checkout: string;
+  cancelPlan: PlanView;
+  resumePlan: PlanView;
+  refundPlan: PlanView;
+  /** The account is gone and this device wiped (D74). */
+  deleteAccount: null;
   devices: DeviceView[];
   renameDevice: DeviceView[];
   revokeDevice: DeviceView[];
@@ -405,6 +461,8 @@ export interface Replies {
   totpSetup: string;
   biometricOffer: boolean;
   dismissBiometricOffer: null;
+  browserUnlock: boolean;
+  setBrowserUnlock: boolean;
   askApproval: AskView;
   askApprovalPoll: AskView;
   askApprovalCancel: null;
@@ -472,6 +530,8 @@ export const REQUEST_KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "totpSetup",
   "biometricOffer",
   "dismissBiometricOffer",
+  "browserUnlock",
+  "setBrowserUnlock",
   "askApproval",
   "askApprovalPoll",
   "askApprovalCancel",
@@ -480,4 +540,10 @@ export const REQUEST_KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "acceptApproval",
   "completeApproval",
   "denyApproval",
+  "plan",
+  "checkout",
+  "cancelPlan",
+  "resumePlan",
+  "refundPlan",
+  "deleteAccount",
 ]);

@@ -38,6 +38,8 @@
     <string name="one_time_code">One-time code</string>
     <string name="code_seconds">%1$d s</string>
     <string name="code_unsupported">This code type isn\'t supported yet.</string>
+    <string name="code_needs_plan">One-time codes are part of Premium. See Settings › Plan.</string>
+    <string name="one_time_code_secret">One-time code secret</string>
     <string name="websites">Websites</string>
     <string name="passkey_for">Passkey for %1$s</string>
     <string name="password_history">Password history</string>
@@ -202,4 +204,13 @@
     <string name="approval_notices_refused">Notifications are off for PWM. Turn them on in Android’s settings, under Apps, PWM, Notifications.</string>
     <string name="approval_notice">A new device wants to sign in. Open PWM to compare the code.</string>
     <string name="notice_channel">New devices</string>
+
+    <!-- Screen readers (design/README.md, Accessibility): what TalkBack says -->
+    <string name="hidden">hidden</string>
+    <string name="has_code">has a one-time code</string>
+    <string name="copy_password">Copy password</string>
+    <string name="copy_username">Copy username</string>
+    <string name="copy_code">Copy code</string>
+    <string name="announce_copied">Copied. The clipboard clears in 30 seconds.</string>
+    <string name="announce_locked">Vault locked</string>
 </resources>

@@ -8,12 +8,15 @@
 mod approval;
 mod auth;
 mod autofill;
+mod billing;
 mod biometric;
 mod client;
+mod deletion;
 mod error;
 mod import;
 mod kit;
 mod passkey;
+mod plan;
 mod save;
 mod session;
 mod tools;
@@ -22,6 +25,7 @@ mod totp;
 pub use approval::{ApprovalAsk, ApprovalRequest, AskStep, POLL_EVERY_MS};
 pub use auth::id_text;
 pub use autofill::AutofillMatch;
+pub use billing::{BillingInfo, SubscriptionInfo};
 pub use biometric::{BiometricUnlock, BrowserUnlock, WindowsHelloUnlock, windows_hello_challenge};
 pub use client::{Client, Outcome, PushToken, Step, new_id};
 pub use error::ClientError;
@@ -32,6 +36,8 @@ pub use passkey::{
     PasskeyCreateCheck, asset_links_includes, passkey_asset_links_url,
 };
 pub use pwm_autofill::{AppLinkError, app_link};
+/// Which platform key answers the desktop's unlock challenge (D68, D71).
+pub use pwm_crypto::Signer;
 pub use pwm_crypto::{KdfParams, Secret};
 pub use pwm_generator::{
     PassphraseOptions, PasswordOptions, Strength, generate_passphrase, generate_password, strength,

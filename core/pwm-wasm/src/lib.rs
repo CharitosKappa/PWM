@@ -48,6 +48,8 @@ pub struct WasmStep {
     report: Vec<f64>,
     devices: Option<String>,
     approvals: Option<String>,
+    billing: Option<String>,
+    url: Option<String>,
 }
 
 #[wasm_bindgen]
@@ -84,7 +86,9 @@ impl WasmStep {
     }
 
     /// `signed_up`, `logged_in`, `vault_created`, `synced`, `signed_out`,
-    /// `device_revoked`, `devices` or `device_updated`.
+    /// `device_revoked`, `devices`, `device_updated`, `approvals`,
+    /// `approval_updated`, `push_token_set`, `logged_out`, `billing` or
+    /// `checkout_url`.
     #[wasm_bindgen(getter)]
     pub fn outcome(&self) -> Option<String> {
         self.outcome.map(str::to_owned)
@@ -122,6 +126,21 @@ impl WasmStep {
     pub fn approvals(&self) -> Option<String> {
         self.approvals.clone()
     }
+
+    /// After `billing`: JSON `{plan, subscription, sells, token}`, where
+    /// `subscription` is null or `{provider, plan, status, until_ms,
+    /// canceling, price_locked_until_ms, refundable_until_ms, also}` (D6 §7,
+    /// D72).
+    #[wasm_bindgen(getter)]
+    pub fn billing(&self) -> Option<String> {
+        self.billing.clone()
+    }
+
+    /// After `checkout_url`: the Stripe Checkout page to open (D6).
+    #[wasm_bindgen(getter)]
+    pub fn url(&self) -> Option<String> {
+        self.url.clone()
+    }
 }
 
 fn step(step: Step) -> WasmStep {
@@ -138,6 +157,8 @@ fn step(step: Step) -> WasmStep {
         report: Vec::new(),
         devices: None,
         approvals: None,
+        billing: None,
+        url: None,
     };
     match step {
         Step::Send(request) => {
@@ -178,6 +199,7 @@ fn step(step: Step) -> WasmStep {
                 }
                 Outcome::SignedOut => "signed_out",
                 Outcome::DeviceRevoked => "device_revoked",
+                Outcome::AccountDeleted => "account_deleted",
                 Outcome::Devices(devices) => {
                     let list: Vec<serde_json::Value> = devices
                         .into_iter()
@@ -209,6 +231,28 @@ fn step(step: Step) -> WasmStep {
                 Outcome::ApprovalUpdated => "approval_updated",
                 Outcome::PushTokenSet => "push_token_set",
                 Outcome::LoggedOut => "logged_out",
+                Outcome::Billing(b) => {
+                    let subscription = b.subscription.map(|s| {
+                        serde_json::json!({
+                            "provider": s.provider, "plan": s.plan, "status": s.status,
+                            "until_ms": s.until_ms, "canceling": s.canceling,
+                            "price_locked_until_ms": s.price_locked_until_ms,
+                            "refundable_until_ms": s.refundable_until_ms, "also": s.also,
+                        })
+                    });
+                    out.billing = Some(
+                        serde_json::json!({
+                            "plan": b.plan, "subscription": subscription,
+                            "sells": b.sells, "token": b.token,
+                        })
+                        .to_string(),
+                    );
+                    "billing"
+                }
+                Outcome::CheckoutUrl(url) => {
+                    out.url = Some(url);
+                    "checkout_url"
+                }
             });
         }
     }
@@ -285,6 +329,51 @@ impl WasmClient {
                 platform,
                 device_name,
             )
+            .map(step)
+            .map_err(js_error)
+    }
+
+    /// The plan, its subscription and what this server sells (D6); ends
+    /// with `billing`.
+    #[wasm_bindgen(js_name = startBillingStatus)]
+    pub fn start_billing_status(&mut self) -> Result<WasmStep, JsValue> {
+        self.inner
+            .start_billing_status()
+            .map(step)
+            .map_err(js_error)
+    }
+
+    /// A Stripe Checkout page for `plan`; ends with `checkout_url`.
+    #[wasm_bindgen(js_name = startCheckout)]
+    pub fn start_checkout(&mut self, plan: &str) -> Result<WasmStep, JsValue> {
+        self.inner.start_checkout(plan).map(step).map_err(js_error)
+    }
+
+    /// Cancels the Stripe subscription at the end of its period; ends with
+    /// `billing`.
+    #[wasm_bindgen(js_name = startCancelSubscription)]
+    pub fn start_cancel_subscription(&mut self) -> Result<WasmStep, JsValue> {
+        self.inner
+            .start_cancel_subscription()
+            .map(step)
+            .map_err(js_error)
+    }
+
+    /// Refunds the unused part of the last charge and ends the plan now, for
+    /// a `stripe` or `play` subscription (D72 §1); ends with `billing`.
+    #[wasm_bindgen(js_name = startRefund)]
+    pub fn start_refund(&mut self, provider: &str) -> Result<WasmStep, JsValue> {
+        self.inner
+            .start_refund(provider)
+            .map(step)
+            .map_err(js_error)
+    }
+
+    /// Lets a canceling Stripe subscription renew again; ends with `billing`.
+    #[wasm_bindgen(js_name = startResumeSubscription)]
+    pub fn start_resume_subscription(&mut self) -> Result<WasmStep, JsValue> {
+        self.inner
+            .start_resume_subscription()
             .map(step)
             .map_err(js_error)
     }
@@ -483,6 +572,22 @@ impl WasmClient {
     #[wasm_bindgen(js_name = startSync)]
     pub fn start_sync(&mut self) -> Result<WasmStep, JsValue> {
         self.inner.start_sync().map(step).map_err(js_error)
+    }
+
+    /// Deletes the account on the server and this device (D74), with the
+    /// master password and Secret Key as at unlock. Ends with
+    /// `account_deleted`; a wrong password is `wrong_password`, and a wait
+    /// means a subscription couldn't be ended and nothing was deleted.
+    #[wasm_bindgen(js_name = startDeleteAccount)]
+    pub fn start_delete_account(
+        &mut self,
+        password: &str,
+        secret_key: &str,
+    ) -> Result<WasmStep, JsValue> {
+        self.inner
+            .start_delete_account(password, secret_key)
+            .map(step)
+            .map_err(js_error)
     }
 
     /// Ends this device's session on the server before signing out (D62),
@@ -767,6 +872,19 @@ impl WasmClient {
             .current_code(vault_id, item_id, ms(now_ms))
             .map_err(js_error)?
             .map(|(code, left)| vec![code.expose_secret().clone(), left.to_string()]))
+    }
+
+    /// The plan that counts now (D73 §2); `undefined` until the server has
+    /// said, treated as Premium.
+    #[wasm_bindgen(js_name = planNow)]
+    pub fn plan_now(&self, now_ms: f64) -> Result<Option<String>, JsValue> {
+        self.inner.plan_now(ms(now_ms)).map_err(js_error)
+    }
+
+    /// Whether the plan now includes one-time codes (D73 §1).
+    #[wasm_bindgen(js_name = codesIncluded)]
+    pub fn codes_included(&self, now_ms: f64) -> Result<bool, JsValue> {
+        self.inner.codes_included(ms(now_ms)).map_err(js_error)
     }
 
     /// Sync, then create a vault only if the account has none.

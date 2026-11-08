@@ -46,6 +46,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -97,7 +98,7 @@ internal fun Page(title: String, subtitle: String?, tag: String, content: @Compo
             .testTag(tag),
         verticalArrangement = Arrangement.spacedBy(Tokens.Space.s3.dp),
     ) {
-        Text(title, style = Tokens.Text.display.compose(), color = color(Tokens.Color.text))
+        Text(title, style = Tokens.Text.display.compose(), color = color(Tokens.Color.text), modifier = Modifier.semantics { heading() })
         if (subtitle != null) Text(subtitle, style = Tokens.Text.body.compose(), color = color(Tokens.Color.textMuted))
         Spacer(Modifier.height(Tokens.Space.s2.dp))
         content()
@@ -149,6 +150,8 @@ internal fun Secondary(title: String, tag: String, enabled: Boolean = true, onCl
 @Composable
 private fun Welcome(app: AppModel, state: AppModel.State) {
     Page(stringResource(R.string.welcome_title), stringResource(R.string.welcome_subtitle), tag = "welcome") {
+        // Why the last account left this device (D74 §5, §7).
+        state.ended?.let { Text(it, style = Tokens.Text.body.compose(), color = color(Tokens.Color.text), modifier = Modifier.testTag("ended")) }
         Primary(stringResource(R.string.create_account), enabled = true, tag = "createAccount") { app.showCreateAccount() }
         Secondary(stringResource(R.string.sign_in), tag = "signIn") { app.showSignIn() }
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {

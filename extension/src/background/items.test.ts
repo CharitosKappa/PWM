@@ -220,6 +220,32 @@ describe("the vault and an item", () => {
     ]);
   });
 
+  it("on Free, shows the secret but no code (D73 §1)", async () => {
+    const { background, core } = await unlocked();
+    core().plan_ = "free";
+    const view = await background.handle({
+      kind: "item",
+      vaultId: VAULT,
+      itemId: "item-1",
+    });
+    expect(view.code).toBeNull();
+    expect(view.codeNeedsPlan).toBe(true);
+    expect(view.hidden).toContain("/login/totp");
+    const vault = await background.handle({ kind: "vault" });
+    expect(vault.codesIncluded).toBe(false);
+    expect(vault.items.find((i) => i.itemId === "item-1")?.hasCode).toBe(false);
+    core().plan_ = "premium";
+    const paid = await background.handle({
+      kind: "item",
+      vaultId: VAULT,
+      itemId: "item-1",
+    });
+    expect(paid.codeNeedsPlan).toBe(false);
+    expect((await background.handle({ kind: "vault" })).codesIncluded).toBe(
+      true,
+    );
+  });
+
   it("shows an item with its hidden values left out", async () => {
     const { background } = await unlocked();
     const view = await background.handle({

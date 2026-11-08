@@ -174,7 +174,12 @@ async fn signed_out_it_answers_what_needs_no_account() {
     let phrase = r
         .ok(json!({"kind": "generate", "mode": "passphrase"}))
         .await;
-    assert_eq!(phrase.as_str().unwrap().split('-').count(), 5);
+    // Five words and one digit, joined by "-". A few list words contain "-"
+    // themselves ("t-shirt"), so a phrase can split into up to ten parts.
+    let phrase = phrase.as_str().unwrap();
+    let parts = phrase.split('-').count();
+    assert!((5..=10).contains(&parts), "{parts} parts");
+    assert_eq!(phrase.chars().filter(char::is_ascii_digit).count(), 1);
     let weak = r
         .ok(json!({"kind": "score", "password": "password", "email": "a@example.com"}))
         .await;
@@ -287,6 +292,13 @@ async fn sign_up_lock_and_unlock(server: &str, secure: bool) -> (Rig, String, St
         assert_eq!(status["syncError"], Value::Null, "{status}");
         assert_eq!(r.ok(json!({"kind": "items", "query": ""})).await, json!([]));
 
+        // The plan (D6): the test server sells none, so every account is
+        // Premium and there is nothing to buy or cancel.
+        assert_eq!(
+            r.ok(json!({"kind": "plan"})).await,
+            json!({"plan": "premium", "subscription": null, "sells": []})
+        );
+
         // The kit, and the Secret Key copied.
         let kit = r.ok(json!({"kind": "emergencyKit"})).await;
         let pdf = base64_decode(kit["pdf"].as_str().unwrap());
@@ -388,6 +400,39 @@ async fn sign_in_on_another_computer_and_sign_out(server: &str, email: &str, sec
         .await;
     let again = second.keys.get(name::DEVICE_ID).await.unwrap().unwrap();
     assert_eq!(again.expose_secret(), new_id.expose_secret());
+
+    // Deleting that account (D74): the password first, then everything
+    // goes, and the sign-in screen says why.
+    assert_eq!(
+        second
+            .ask(json!({"kind": "deleteAccount", "masterPassword": "not it at all"}))
+            .await,
+        Err("wrong_password".to_owned())
+    );
+    assert_eq!(
+        second.ok(json!({"kind": "status"})).await["state"],
+        "unlocked"
+    );
+    assert_eq!(
+        second
+            .ok(json!({"kind": "deleteAccount", "masterPassword": PASSWORD}))
+            .await,
+        Value::Null
+    );
+    assert_eq!(
+        second.ok(json!({"kind": "status"})).await,
+        json!({"state": "signedOut", "ended": "account_deleted"})
+    );
+    for key in [name::EMAIL, name::SECRET_KEY, name::TOKENS] {
+        assert!(second.keys.get(key).await.unwrap().is_none(), "{key}");
+    }
+    // It's gone on the server too.
+    assert_eq!(
+        second
+            .ask(json!({"kind": "signIn", "email": other, "password": PASSWORD, "secretKey": reply["secretKey"]}))
+            .await,
+        Err("invalid_credentials".to_owned())
+    );
 }
 
 fn base64_decode(text: &str) -> Vec<u8> {
@@ -554,9 +599,14 @@ async fn devices_and_approving_a_new_one(server: &str, first: &mut Rig, email: &
             .any(|d| d["id"] == other && d["revokedAt"].is_number())
     );
 
-    // The revoked computer finds out at its next sync and keeps nothing.
+    // The revoked computer finds out at its next sync, keeps nothing, and
+    // the sign-in screen says why.
     let status = second.ok(json!({"kind": "sync"})).await;
-    assert_eq!(status, json!({"state": "signedOut"}), "{status}");
+    assert_eq!(
+        status,
+        json!({"state": "signedOut", "ended": "device_revoked"}),
+        "{status}"
+    );
     assert!(second.keys.get(name::SECRET_KEY).await.unwrap().is_none());
 }
 
@@ -799,4 +849,122 @@ async fn windows_hello(r: &mut Rig) {
         assert!(r.keys.get(key).await.unwrap().is_none(), "{key}");
     }
     assert!(r.hello.0.state.lock().unwrap().keys.is_empty());
+}
+
+/// The registry under `HKEY_CURRENT_USER`, in memory.
+#[derive(Clone, Default)]
+struct Registry(Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>);
+
+impl pwm_desktop::browser_hosts::Registry for Registry {
+    fn get(&self, path: &str) -> Option<String> {
+        self.0.lock().unwrap().get(path).cloned()
+    }
+    fn set(
+        &self,
+        path: &str,
+        value: &str,
+    ) -> Result<(), pwm_desktop::browser_hosts::RegistryError> {
+        self.0
+            .lock()
+            .unwrap()
+            .insert(path.to_owned(), value.to_owned());
+        Ok(())
+    }
+    fn remove(&self, path: &str) {
+        self.0.lock().unwrap().remove(path);
+    }
+}
+
+/// The browser helper's enrolments, in memory.
+#[derive(Clone, Default)]
+struct Enrolments(Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>>);
+
+impl pwm_browser_helper::Store for Enrolments {
+    fn get(&self, id: &str) -> Option<Vec<u8>> {
+        self.0.lock().unwrap().get(id).cloned()
+    }
+    fn set(&self, id: &str, record: &[u8]) -> Result<(), pwm_browser_helper::StoreError> {
+        self.0
+            .lock()
+            .unwrap()
+            .insert(id.to_owned(), record.to_vec());
+        Ok(())
+    }
+    fn delete(&self, id: &str) {
+        self.0.lock().unwrap().remove(id);
+    }
+    fn ids(&self) -> Vec<String> {
+        self.0.lock().unwrap().keys().cloned().collect()
+    }
+}
+
+#[tokio::test]
+async fn the_browser_unlock_switch_registers_the_helper() {
+    // Linux: no helper, so it stays off.
+    let mut r = rig(true);
+    assert_eq!(r.ok(json!({"kind": "browserUnlock"})).await, json!(false));
+    assert_eq!(
+        r.ask(json!({"kind": "setBrowserUnlock", "on": true}))
+            .await
+            .unwrap_err(),
+        "unsupported"
+    );
+
+    // Windows: the helper next to the app, keys in the registry.
+    let dir = std::env::temp_dir().join(format!("pwm-backend-hosts-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("pwm-browser-helper.exe"), b"").unwrap();
+    let (registry, enrolments) = (Registry::default(), Enrolments::default());
+    let Rig {
+        backend,
+        keys,
+        board,
+        clocks,
+        hello,
+    } = r;
+    let mut r = Rig {
+        backend: backend.with_browser_hosts(pwm_desktop::browser_hosts::BrowserHosts::new(
+            dir.join("NativeMessagingHosts"),
+            dir.join("pwm-browser-helper.exe"),
+            Box::new(registry.clone()),
+            Box::new(enrolments.clone()),
+        )),
+        keys,
+        board,
+        clocks,
+        hello,
+    };
+
+    // Not without Windows Hello set up.
+    r.hello.0.state.lock().unwrap().unsupported = true;
+    assert_eq!(
+        r.ask(json!({"kind": "setBrowserUnlock", "on": true}))
+            .await
+            .unwrap_err(),
+        "hello_unavailable"
+    );
+    r.hello.0.state.lock().unwrap().unsupported = false;
+
+    assert_eq!(
+        r.ok(json!({"kind": "setBrowserUnlock", "on": true})).await,
+        json!(true)
+    );
+    assert_eq!(r.ok(json!({"kind": "browserUnlock"})).await, json!(true));
+    assert_eq!(registry.0.lock().unwrap().len(), 3);
+
+    // Off forgets what the helper kept, with its Windows Hello key.
+    let id = "0123456789abcdef0123456789abcdef";
+    pwm_browser_helper::Store::set(&enrolments, id, b"record").unwrap();
+    r.hello
+        .create(&pwm_browser_helper::credential_name(id))
+        .unwrap();
+    assert_eq!(
+        r.ok(json!({"kind": "setBrowserUnlock", "on": false})).await,
+        json!(false)
+    );
+    assert!(registry.0.lock().unwrap().is_empty());
+    assert!(enrolments.0.lock().unwrap().is_empty());
+    assert!(r.hello.0.state.lock().unwrap().keys.is_empty());
+    std::fs::remove_dir_all(&dir).unwrap();
 }

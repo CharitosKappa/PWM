@@ -196,6 +196,8 @@ pub struct Backend<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> {
     pub(crate) settings_file: Option<SettingsFile>,
     synced_at: Option<i64>,
     sync_error: Option<String>,
+    /// Why the last account left, for the sign-in screen (D74 §5, §7).
+    ended: Option<String>,
     asking: Option<Asking>,
     auto_lock: AutoLock,
     clear_clipboard_at: Option<u64>,
@@ -206,8 +208,10 @@ pub struct Backend<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> {
     pub(crate) leaked: Option<std::collections::HashMap<String, u64>>,
     /// New devices asking to sign in, read after each sync (D46 §5).
     pub(crate) pending_approvals: u32,
-    /// Windows Hello's key (D68); none on Linux.
+    /// Windows Hello's key (D68), or Linux's key holder behind polkit (D71).
     pub(crate) hello: Box<dyn crate::hello::HelloKey>,
+    /// The browser helper's registration (D69, D71).
+    pub(crate) browser_hosts: Option<Box<dyn crate::browser_hosts::Hosts>>,
 }
 
 impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
@@ -237,6 +241,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             settings_file,
             synced_at: None,
             sync_error: None,
+            ended: None,
             asking: None,
             auto_lock: AutoLock::default(),
             clear_clipboard_at: None,
@@ -245,7 +250,16 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             leaked: None,
             pending_approvals: 0,
             hello: Box::new(crate::hello::NoHello),
+            browser_hosts: None,
         }
+    }
+
+    /// Lets browser extensions unlock with Windows Hello (D69) or Linux
+    /// login (D71).
+    #[must_use]
+    pub fn with_browser_hosts(mut self, hosts: impl crate::browser_hosts::Hosts + 'static) -> Self {
+        self.browser_hosts = Some(Box::new(hosts));
+        self
     }
 
     /// Unlocks with Windows Hello where the computer has it (D68).
@@ -360,6 +374,15 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
                 self.asking = None;
                 null()
             }
+            Request::Plan => Ok(json!(self.plan().await?)),
+            Request::Checkout { plan } => Ok(json!(self.checkout(&plan).await?)),
+            Request::CancelPlan => Ok(json!(self.set_plan_canceling(true).await?)),
+            Request::ResumePlan => Ok(json!(self.set_plan_canceling(false).await?)),
+            Request::RefundPlan => Ok(json!(self.refund_plan().await?)),
+            Request::DeleteAccount { master_password } => {
+                self.delete_account(&master_password).await?;
+                null()
+            }
             Request::Devices => Ok(json!(self.devices().await?)),
             Request::RenameDevice { device_id, name } => {
                 Ok(json!(self.rename_device(&device_id, &name).await?))
@@ -459,6 +482,26 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
                 self.dismiss_hello_offer().await?;
                 null()
             }
+            Request::BrowserUnlock => Ok(json!(
+                self.browser_hosts
+                    .as_ref()
+                    .is_some_and(|hosts| hosts.is_on())
+            )),
+            Request::SetBrowserUnlock { on } => {
+                let hosts = self
+                    .browser_hosts
+                    .as_ref()
+                    .ok_or_else(|| Failure::code("unsupported"))?;
+                if on {
+                    if !self.hello.supported() {
+                        return Err(Failure::code("hello_unavailable"));
+                    }
+                    hosts.turn_on()?;
+                } else {
+                    hosts.turn_off(self.hello.as_ref());
+                }
+                Ok(json!(hosts.is_on()))
+            }
             Request::Unsupported => Err(Failure::code("unsupported")),
         }
     }
@@ -467,7 +510,9 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
 
     pub async fn status(&mut self) -> Result<Status> {
         if self.client.account_id()?.is_none() {
-            return Ok(Status::SignedOut);
+            return Ok(Status::SignedOut {
+                ended: self.ended.clone(),
+            });
         }
         let email = self
             .keys
@@ -588,6 +633,13 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
                 // The core cleared the cache; nothing of the account stays here.
                 self.forget_account().await?;
                 self.sync_error = Some("device_revoked".to_owned());
+                self.ended = Some("device_revoked".to_owned());
+            }
+            Step::Done(Outcome::AccountDeleted) => {
+                // As for a revoked device (D74 §5).
+                self.forget_account().await?;
+                self.sync_error = Some("account_deleted".to_owned());
+                self.ended = Some("account_deleted".to_owned());
             }
             _ => self.sync_error = Some("internal".to_owned()),
         }
@@ -760,6 +812,47 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
         }
         self.forget_hello().await?;
         self.client.sign_out()?;
+        self.ended = None;
+        self.wipe().await
+    }
+
+    /// Deletes the account on the server and this computer (D74). The core
+    /// checks the password first; a wait means a plan couldn't be ended or
+    /// the server wasn't reached, and nothing was deleted.
+    pub(crate) async fn delete_account(&mut self, master_password: &Secret<String>) -> Result<()> {
+        let secret_key = self
+            .keys
+            .get(name::SECRET_KEY)
+            .await?
+            .ok_or_else(|| Failure::code("signed_out"))?;
+        // Its name comes from the account, which is gone afterwards.
+        let hello = self.hello_name().ok();
+        let start = self
+            .client
+            .start_delete_account(master_password.expose_secret(), secret_key.expose_secret());
+        match self.run(start).await? {
+            Step::Done(Outcome::AccountDeleted) => {
+                if let Some(name) = hello {
+                    self.hello.delete(&name);
+                }
+                self.forget_hello().await?;
+                self.ended = Some("account_deleted".to_owned());
+                self.wipe().await
+            }
+            Step::Wait { .. } => Err(Failure::code("delete_unavailable")),
+            step => {
+                self.ended(&step).await?;
+                Err(Failure::code(match step {
+                    Step::Done(Outcome::SignedOut) => "signed_out",
+                    Step::Done(Outcome::DeviceRevoked) => "device_revoked",
+                    _ => "internal",
+                }))
+            }
+        }
+    }
+
+    /// Nothing of the account stays on this computer but its device id.
+    async fn wipe(&mut self) -> Result<()> {
         self.forget_account().await?;
         self.lock();
         self.synced_at = None;
@@ -831,6 +924,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
 
     fn items(&self, query: &str) -> Result<Vec<ItemSummary>> {
         let needle = query.trim().to_lowercase();
+        let codes_included = self.client.codes_included(self.clock.now_ms())?;
         let mut list: Vec<ItemSummary> = self
             .stored_items()?
             .into_iter()
@@ -844,7 +938,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
                     username: login.username,
                     url: login.url,
                     has_password: !login.password.expose_secret().is_empty(),
-                    has_code: login.totp,
+                    has_code: codes_included && login.totp,
                 }
             })
             .filter(|s| {

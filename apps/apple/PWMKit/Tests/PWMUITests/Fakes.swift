@@ -16,6 +16,8 @@ actor FakeAccount: Account {
     var syncResult: SyncResult = .synced(pulled: 0, pushed: 0, conflicts: 0, failed: 0)
     var code: (code: Redacted<String>, secondsLeft: UInt64)?
     var codeFails = false
+    /// The plan doesn't include one-time codes (D73 §1).
+    var codeNeedsPlan = false
     var nextId = 0
     let nowMs: Int64 = 1_767_225_600_000
 
@@ -35,6 +37,10 @@ actor FakeAccount: Account {
     func setCode(_ value: String?, secondsLeft: UInt64 = 20, fails: Bool = false) {
         code = value.map { (code: Redacted($0), secondsLeft: secondsLeft) }
         codeFails = fails
+    }
+
+    func setCodeNeedsPlan(_ value: Bool) {
+        codeNeedsPlan = value
     }
 
     func put(_ item: Item, in vault: String = "vault-1") {
@@ -75,6 +81,16 @@ actor FakeAccount: Account {
 
     func signOut() {
         calls.append("signOut")
+        signedIn = false
+        storedEmail = nil
+        stored = [:]
+    }
+
+    /// Deleting the account (D74): a wrong password, a failure, or gone.
+    func deleteAccount(password: Redacted<String>) throws {
+        guard password.value == unlockPassword else { throw PWMError(code: "wrong_password") }
+        try check()
+        calls.append("deleteAccount")
         signedIn = false
         storedEmail = nil
         stored = [:]
@@ -156,6 +172,7 @@ actor FakeAccount: Account {
     }
 
     func currentCode(_ itemId: String, in vaultId: String) throws -> (code: Redacted<String>, secondsLeft: UInt64)? {
+        if codeNeedsPlan { throw PWMError(code: "plan_required") }
         if codeFails { throw PWMError(code: "invalid_item") }
         return code
     }
@@ -351,6 +368,177 @@ actor FakeAccount: Account {
         importPrepared = false
         calls.append("cancelImport")
     }
+
+    // Plan and billing (D6): a free account on a server that sells in the
+    // App Store and on the web, unless a test sets otherwise.
+    var billingStatus = BillingStatus(plan: .free, subscription: nil, sells: [.appStore, .stripe], token: Redacted(billingToken))
+    var billingFailure: PWMError?
+
+    func setBilling(_ status: BillingStatus, failure: String? = nil) {
+        billingStatus = status
+        billingFailure = failure.map(PWMError.init(code:))
+    }
+
+    func failBilling(with code: String?) {
+        billingFailure = code.map(PWMError.init(code:))
+    }
+
+    private func checkBilling() throws {
+        if let billingFailure { throw billingFailure }
+    }
+
+    /// Only the status call carries the token, as on the server.
+    private var answer: BillingStatus {
+        BillingStatus(plan: billingStatus.plan, subscription: billingStatus.subscription, sells: billingStatus.sells, token: nil)
+    }
+
+    func billing() throws -> BillingStatus {
+        calls.append("billing")
+        try checkBilling()
+        return billingStatus
+    }
+
+    func checkoutURL(for plan: Plan) throws -> URL {
+        calls.append("checkout \(plan.name)")
+        try checkBilling()
+        return checkoutPage
+    }
+
+    func cancelSubscription() throws -> BillingStatus {
+        calls.append("cancel")
+        try checkBilling()
+        try setCanceling(true)
+        return answer
+    }
+
+    func resumeSubscription() throws -> BillingStatus {
+        calls.append("resume")
+        try checkBilling()
+        try setCanceling(false)
+        return answer
+    }
+
+    /// As the server: Stripe or Play only, within the window; the plan ends
+    /// now.
+    func refund(provider: BillingProvider) throws -> BillingStatus {
+        calls.append("refund \(provider.name)")
+        try checkBilling()
+        guard let s = billingStatus.subscription else { throw PWMError(code: "no_subscription") }
+        guard s.provider == provider, provider == .stripe || provider == .play else {
+            throw PWMError(code: "managed_elsewhere")
+        }
+        guard s.refundableUntil != nil else { throw PWMError(code: "refund_window_passed") }
+        billingStatus = BillingStatus(plan: .free, subscription: nil, sells: billingStatus.sells, token: billingStatus.token)
+        return answer
+    }
+
+    private func setCanceling(_ canceling: Bool) throws {
+        guard let s = billingStatus.subscription else { throw PWMError(code: "no_subscription") }
+        let stripe = s.provider == .stripe ? s : nil
+        guard stripe != nil || s.also.contains(.stripe) else { throw PWMError(code: "managed_elsewhere") }
+        let changed = SubscriptionEntry(
+            provider: s.provider, plan: s.plan, status: s.status, until: s.until,
+            canceling: stripe == nil ? s.canceling : canceling, priceLockedUntil: s.priceLockedUntil,
+            refundableUntil: s.refundableUntil,
+            also: stripe == nil && canceling ? s.also.filter { $0 != .stripe } : s.also
+        )
+        billingStatus = BillingStatus(plan: billingStatus.plan, subscription: changed, sells: billingStatus.sells, token: billingStatus.token)
+    }
+
+    func applePurchase(transactionId: String) throws -> BillingStatus {
+        calls.append("applePurchase \(transactionId)")
+        try checkBilling()
+        let bought = SubscriptionEntry(
+            provider: .appStore, plan: .premium, status: "active", until: periodEnd, canceling: false,
+            priceLockedUntil: periodEnd, also: []
+        )
+        billingStatus = BillingStatus(plan: .premium, subscription: bought, sells: billingStatus.sells, token: billingStatus.token)
+        return answer
+    }
+}
+
+let billingToken = "6f1c0b52-5d0e-4c55-9a43-2f1e7b8f0a11"
+let checkoutPage = URL(string: "https://checkout.stripe.com/c/pay/cs_test_a1")!
+let periodEnd = Date(timeIntervalSince1970: 1_798_761_600)
+
+/// A subscription for tests.
+func subscription(
+    _ provider: BillingProvider, canceling: Bool = false, status: String = "active",
+    refundableUntil: Date? = nil, also: [BillingProvider] = []
+) -> SubscriptionEntry {
+    SubscriptionEntry(
+        provider: provider, plan: .premium, status: status, until: periodEnd, canceling: canceling,
+        priceLockedUntil: periodEnd, refundableUntil: refundableUntil, also: also
+    )
+}
+
+/// The end of a refund window, 30 days after a charge (D72 §1).
+let refundEnd = Date(timeIntervalSince1970: 1_796_083_200)
+
+/// The App Store with no StoreKit: records purchases and finishes, and
+/// hands out `queued` transactions as if they finished while away.
+actor FakeStore: StorePurchases {
+    enum Outcome {
+        case purchased(String), pending, cancelled
+        case fails(String)
+    }
+
+    var price: String? = "€29.99 a year"
+    var outcome: Outcome = .purchased("2000000123")
+    /// "<product> <token>" for each purchase.
+    var purchases: [String] = []
+    var finished: [String] = []
+    var managed = 0
+    /// The product of each time Apple's refund sheet opened.
+    var refundRequests: [String] = []
+    /// What Apple's refund sheet ends with: sent, closed, or a failure code.
+    var refundOutcome: Result<Bool, PWMError> = .success(true)
+    nonisolated let queued: [String]
+
+    init(queued: [String] = []) {
+        self.queued = queued
+    }
+
+    func set(price: String?) { self.price = price }
+    func set(outcome: Outcome) { self.outcome = outcome }
+    func set(refundOutcome: Result<Bool, PWMError>) { self.refundOutcome = refundOutcome }
+
+    func priceText(of productId: String) -> String? { price }
+
+    func purchase(_ productId: String, accountToken: UUID) throws -> StorePurchase {
+        purchases.append("\(productId) \(accountToken.uuidString.lowercased())")
+        switch outcome {
+        case let .purchased(id): return .purchased(transaction(id))
+        case .pending: return .pending
+        case .cancelled: return .cancelled
+        case let .fails(code): throw PWMError(code: code)
+        }
+    }
+
+    nonisolated func transactions() -> AsyncStream<StoreTransaction> {
+        let list = queued.map { transaction($0) }
+        return AsyncStream { continuation in
+            for item in list { continuation.yield(item) }
+            continuation.finish()
+        }
+    }
+
+    func showManageSubscriptions() {
+        managed += 1
+    }
+
+    func requestRefund(productId: String) throws -> Bool {
+        refundRequests.append(productId)
+        return try refundOutcome.get()
+    }
+
+    private nonisolated func transaction(_ id: String) -> StoreTransaction {
+        StoreTransaction(id: id) { await self.markFinished(id) }
+    }
+
+    private func markFinished(_ id: String) {
+        finished.append(id)
+    }
 }
 
 /// Files the import screen reads and deletes, in memory.
@@ -368,6 +556,16 @@ final class FakeImportFiles: ImportFiles, @unchecked Sendable {
     func delete(_ url: URL) throws {
         guard files.removeValue(forKey: url) != nil else { throw PWMError(code: "delete_failed") }
         deleted.append(url)
+    }
+}
+
+/// What would have been said to VoiceOver.
+@MainActor
+final class FakeAnnouncer: Announcer {
+    var said: [String] = []
+
+    func say(_ line: String) {
+        said.append(line)
     }
 }
 

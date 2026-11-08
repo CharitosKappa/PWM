@@ -53,6 +53,9 @@ pub struct Limits {
     pub approval_ask: Rate,
     /// A new device polling its approval request, per IP.
     pub approval_poll: Rate,
+    /// Proving the password to delete an account (D74 §1), per IP: 10 an
+    /// hour, a budget of its own so it can't be used to guess.
+    pub delete: Rate,
 }
 
 impl Default for Limits {
@@ -65,6 +68,7 @@ impl Default for Limits {
             report: Rate::new(10, HOUR),
             approval_ask: Rate::new(5, Duration::from_secs(600)),
             approval_poll: Rate::new(120, MINUTE),
+            delete: Rate::new(10, HOUR),
         }
     }
 }
@@ -81,6 +85,7 @@ impl Limits {
             report: rate,
             approval_ask: rate,
             approval_poll: rate,
+            delete: rate,
         }
     }
 }
@@ -128,6 +133,7 @@ pub(crate) enum Class {
     Report,
     ApprovalAsk,
     ApprovalPoll,
+    Delete,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -168,6 +174,7 @@ impl RateLimiter {
             Class::Report => self.limits.report,
             Class::ApprovalAsk => self.limits.approval_ask,
             Class::ApprovalPoll => self.limits.approval_poll,
+            Class::Delete => self.limits.delete,
         }
     }
 
@@ -297,6 +304,7 @@ fn class_of(method: &Method, path: &str) -> Option<Class> {
         "/v1/auth/prelogin" | "/v1/auth/login/start" | "/v1/auth/login/finish" => {
             Some(Class::Login)
         }
+        "/v1/account/delete/start" | "/v1/account/delete/finish" => Some(Class::Delete),
         "/v1/auth/refresh" => Some(Class::Refresh),
         "/v1/reports/autofill" => Some(Class::Report),
         _ => None,

@@ -42,6 +42,13 @@ interface Account {
 
     suspend fun signOut()
 
+    /**
+     * Deletes the account everywhere and wipes this device (D74). A wrong
+     * password is `wrong_password`; `delete_unavailable` means nothing was
+     * deleted.
+     */
+    suspend fun deleteAccount(password: Redacted<String>)
+
     // --- Fingerprint and face unlock (D45, D55) ---
 
     fun biometricState(): BiometricState
@@ -84,6 +91,25 @@ interface Account {
 
     /** After a refused refresh token (D50 §5): the master password only. */
     suspend fun signInAgain(password: Redacted<String>): SyncResult
+
+    // --- Plan and billing (D6) ---
+
+    /** The plan, where it was bought, who sells on this server, and the billing token. */
+    suspend fun billingStatus(): BillingStatus
+
+    /**
+     * Hands a purchase Play Billing finished to the server, which reads it
+     * from Google and acknowledges it; the app never does. The answer has
+     * no billing token.
+     */
+    suspend fun playPurchase(productId: String, purchaseToken: Redacted<String>): BillingStatus
+
+    /**
+     * Refunds the unused part of the last charge and ends the plan now
+     * (D72 §1), for a `stripe` or `play` subscription within 30 days of the
+     * charge. The answer is the plan after it: Free, with no billing token.
+     */
+    suspend fun refund(provider: String): BillingStatus
 
     // --- Health, export and import (D59 §5-7) ---
 

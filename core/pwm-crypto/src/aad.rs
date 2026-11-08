@@ -1,7 +1,7 @@
 //! Associated data that binds every envelope to its context (decision D11,
 //! `docs/SECURITY.md` "Encodings").
 
-use crate::{CryptoError, KdfParams};
+use crate::{CryptoError, KdfParams, Signer};
 
 /// A 16-byte random identifier (UUIDv4) for accounts, vaults and items.
 pub type Id = [u8; 16];
@@ -140,11 +140,62 @@ impl Aad {
     /// The biometric unlock key on Windows, under a key derived from a
     /// Windows Hello signature (decision D68).
     pub fn windows_hello(version: u8, account_id: &Id, device_id: &Id) -> Self {
-        let mut aad = Self::labelled("pwm/windows-hello");
+        Self::signed_unlock(Signer::WindowsHello, version, account_id, device_id)
+    }
+
+    /// The desktop's unlock key under a key derived from a platform key's
+    /// answer: Windows Hello (`pwm/windows-hello`, D68) or the Linux key
+    /// holder behind polkit (`pwm/linux-polkit`, D71).
+    pub fn signed_unlock(signer: Signer, version: u8, account_id: &Id, device_id: &Id) -> Self {
+        let mut aad = Self::labelled(match signer {
+            Signer::WindowsHello => "pwm/windows-hello",
+            Signer::LinuxPolkit => "pwm/linux-polkit",
+        });
         aad.0.push(version);
         aad.0.extend_from_slice(account_id);
         aad.0.extend_from_slice(device_id);
         aad
+    }
+
+    /// The browser extension's key K, kept by the Windows helper under a key
+    /// derived from a Windows Hello signature (decision D69). Bound to the
+    /// calling extension (its origin, or Firefox's add-on id), the account
+    /// and the device: `caller` is `len:u16 || bytes`, at most 1,024 bytes.
+    pub fn browser_hello(
+        version: u8,
+        caller: &str,
+        account_id: &Id,
+        device_id: &Id,
+    ) -> Result<Self, CryptoError> {
+        Self::signed_browser(Signer::WindowsHello, version, caller, account_id, device_id)
+    }
+
+    /// The browser extension's key K under a key derived from a platform
+    /// key's answer, for the browser helper: Windows Hello
+    /// (`pwm/browser-unlock/windows-hello`, D69) or the Linux key holder
+    /// (`pwm/browser-unlock/linux-polkit`, D71). The fields as
+    /// [`Aad::browser_hello`].
+    pub fn signed_browser(
+        signer: Signer,
+        version: u8,
+        caller: &str,
+        account_id: &Id,
+        device_id: &Id,
+    ) -> Result<Self, CryptoError> {
+        let len = u16::try_from(caller.len()).map_err(|_| CryptoError::InvalidMessage)?;
+        if caller.is_empty() || len > 1024 {
+            return Err(CryptoError::InvalidMessage);
+        }
+        let mut aad = Self::labelled(match signer {
+            Signer::WindowsHello => "pwm/browser-unlock/windows-hello",
+            Signer::LinuxPolkit => "pwm/browser-unlock/linux-polkit",
+        });
+        aad.0.push(version);
+        aad.0.extend_from_slice(&len.to_be_bytes());
+        aad.0.extend_from_slice(caller.as_bytes());
+        aad.0.extend_from_slice(account_id);
+        aad.0.extend_from_slice(device_id);
+        Ok(aad)
     }
 
     /// A secret the device keeps on disk (the refresh token), under the

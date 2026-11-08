@@ -127,4 +127,13 @@ class FillTest {
         assertTrue(done)
         assertNull(filled)
     }
+
+    @Test
+    fun onFreeTheLoginFillsWithoutItsCode() = runTest {
+        val h = signedIn(unlock = true, login("1", "Bank", "https://bank.example").edited { totp = "otpauth://totp/Bank?secret=JBSWY3DPEHPK3PXP" })
+        h.accounts.single().codeNeedsPlan = true
+        val values = h.app.fillValues(h.app.autofillPlan(bankSite, "[]")!!.suggested.single())!!
+        assertEquals("pw-1", values.password.value)
+        assertNull("no code, and nothing said about it (D73 §1)", values.code)
+    }
 }
