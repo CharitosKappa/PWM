@@ -1,6 +1,6 @@
 /**
  * The manage page (D44): password health, devices, import (D51) and export,
- * in a tab of its own. In the extension, also the vault with editing
+ * and deleting the account (D74), in a tab of its own. In the extension, also the vault with editing
  * (M4.14, D67): the desktop's window, at #items. Like the popup it only sends messages to the background; it
  * receives an export only when the user asks for one with the master
  * password, and drops it once the download starts.
@@ -17,6 +17,7 @@ import type {
   ImportField,
   ImportMapping,
   ImportPreviewView,
+  PlanView,
   Status,
 } from "./protocol.ts";
 import { fromBase64, toBase64 } from "./bytes.ts";
@@ -24,12 +25,13 @@ import { RequestError, describe, describeCode, send } from "./api.ts";
 import { Unlock } from "./App.tsx";
 import { VaultWindow } from "./vault-window/VaultWindow.tsx";
 import { host } from "./host.ts";
+import { planName } from "./Plan.tsx";
 import { Field, Notice } from "./ui.tsx";
 
 /** The leak check's origin, asked for from a click (D44 §2). */
 const LEAK_CHECK_ORIGIN = "https://api.pwnedpasswords.com/*";
 
-type Tab = "items" | "health" | "devices" | "import" | "export";
+type Tab = "items" | "health" | "devices" | "import" | "export" | "account";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "items", label: "Items" },
@@ -37,6 +39,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "devices", label: "Devices" },
   { id: "import", label: "Import" },
   { id: "export", label: "Export" },
+  { id: "account", label: "Account" },
 ];
 
 export function Manage(): JSX.Element {
@@ -65,11 +68,23 @@ export function Manage(): JSX.Element {
     return (
       <main class="stack">
         <h1>PWM</h1>
+        {status.ended && (
+          <Notice kind="info">{describeCode(status.ended)}</Notice>
+        )}
         <p>
           {host().browser
             ? "Sign in from the extension's toolbar button first."
             : "Sign in first."}
         </p>
+        {host().closeManage && (
+          <button
+            onClick={() => {
+              host().closeManage?.();
+            }}
+          >
+            Go to sign in
+          </button>
+        )}
       </main>
     );
   }
@@ -127,6 +142,15 @@ export function Manage(): JSX.Element {
         )}
         {tab === "import" && <Import onLocked={refresh} />}
         {tab === "export" && <Export onLocked={refresh} />}
+        {tab === "account" && (
+          <DeleteAccount
+            onLocked={refresh}
+            onExport={() => {
+              choose("export");
+            }}
+            onDeleted={refresh}
+          />
+        )}
       </section>
     </main>
   );
@@ -986,6 +1010,128 @@ function Export({ onLocked }: { onLocked: () => void }): JSX.Element {
         {busy ? "Exporting…" : "Export"}
       </button>
       <p class="caption muted">Export works on every plan.</p>
+    </form>
+  );
+}
+
+// --- Deleting the account ---
+
+/** Where to cancel a plan Apple bills; plain text, as the extensions ship no remote URLs (D40). */
+const APPLE_CANCEL =
+  "Cancel it in your Apple account, or Apple will keep charging you: on an iPhone or iPad in Settings › your name › Subscriptions, or at apps.apple.com/account/subscriptions.";
+
+/**
+ * Deleting the account (D74 §7): what will happen, with export offered
+ * first; the plan, when there is one; then the master password. No typed
+ * word, no countdown: the password is the confirmation.
+ */
+function DeleteAccount({
+  onLocked,
+  onExport,
+  onDeleted,
+}: {
+  onLocked: () => void;
+  onExport: () => void;
+  onDeleted: () => void;
+}): JSX.Element {
+  const [step, setStep] = useState<"intro" | "plan" | "password">("intro");
+  const [plan, setPlan] = useState<PlanView | null>(null);
+  const [password, setPassword] = useState("");
+  const { error, busy, run } = useRequest(onLocked);
+
+  useEffect(() => {
+    // Without the plan, the plan step is skipped; the server still ends
+    // a Stripe or Play plan first.
+    send({ kind: "plan" })
+      .then(setPlan)
+      .catch(() => {
+        setPlan(null);
+      });
+  }, []);
+
+  const sub = plan?.subscription ?? null;
+  const billedBy = sub === null ? [] : [sub.provider, ...sub.also];
+
+  const submit = async (event: Event): Promise<void> => {
+    event.preventDefault();
+    const done = await run(() =>
+      send({ kind: "deleteAccount", masterPassword: password }),
+    );
+    setPassword("");
+    if (done !== undefined) onDeleted();
+  };
+
+  if (step === "intro") {
+    return (
+      <section class="stack" id="delete-account">
+        <h2>Delete account</h2>
+        <p>
+          Your vaults and items will be deleted from every device and from our
+          server. This can't be undone.
+        </p>
+        <div class="row">
+          <button id="delete-export-first" onClick={onExport}>
+            Export first
+          </button>
+          <button
+            id="delete-continue"
+            onClick={() => {
+              setStep(sub === null ? "password" : "plan");
+            }}
+          >
+            Continue
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (step === "plan" && sub !== null) {
+    return (
+      <section class="stack" id="delete-plan">
+        <h2>Your plan</h2>
+        {billedBy.some((p) => p === "stripe" || p === "play") && (
+          <p>
+            Your {planName(sub.plan)} plan ends now, and you'll get back the
+            unused days.
+          </p>
+        )}
+        {billedBy.includes("app_store") && (
+          <>
+            <p>Apple bills this plan.</p>
+            <p class="caption muted">{APPLE_CANCEL}</p>
+          </>
+        )}
+        <button
+          id="delete-plan-continue"
+          onClick={() => {
+            setStep("password");
+          }}
+        >
+          Continue
+        </button>
+      </section>
+    );
+  }
+
+  return (
+    <form class="stack" id="delete-password" onSubmit={(e) => void submit(e)}>
+      <h2>Delete account</h2>
+      <Field
+        label="Master password"
+        type="password"
+        value={password}
+        onInput={setPassword}
+        autoComplete="current-password"
+      />
+      <div class="slot">{error && <Notice kind="danger">{error}</Notice>}</div>
+      <button
+        class="danger"
+        id="delete-account-confirm"
+        disabled={busy || password === ""}
+      >
+        {busy ? "Deleting…" : "Delete account"}
+      </button>
     </form>
   );
 }

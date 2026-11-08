@@ -105,6 +105,8 @@ export type Request =
   | { kind: "cancelPlan" }
   | { kind: "resumePlan" }
   | { kind: "refundPlan" }
+  // Deleting the account (D74); the host adds the Secret Key.
+  | { kind: "deleteAccount"; masterPassword: string }
   // Asking a signed-in device (D46), from the popup while signed out.
   | { kind: "askApproval"; email: string }
   | { kind: "askApprovalPoll" }
@@ -348,7 +350,12 @@ export interface ReportPreview {
 }
 
 export type Status =
-  | { state: "signedOut" }
+  | {
+      state: "signedOut";
+      /** Why the last account left this device, when it wasn't signed out
+       * here: `account_deleted` (D74) or `device_revoked`. */
+      ended?: "account_deleted" | "device_revoked";
+    }
   | {
       state: "locked";
       email: string;
@@ -424,6 +431,8 @@ export interface Replies {
   cancelPlan: PlanView;
   resumePlan: PlanView;
   refundPlan: PlanView;
+  /** The account is gone and this device wiped (D74). */
+  deleteAccount: null;
   devices: DeviceView[];
   renameDevice: DeviceView[];
   revokeDevice: DeviceView[];
@@ -536,4 +545,5 @@ export const REQUEST_KINDS: ReadonlySet<string> = new Set<Request["kind"]>([
   "cancelPlan",
   "resumePlan",
   "refundPlan",
+  "deleteAccount",
 ]);

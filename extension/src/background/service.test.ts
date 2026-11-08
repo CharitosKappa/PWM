@@ -495,7 +495,11 @@ describe("sync", () => {
         return done(outcome);
       };
       await background.handle({ kind: "sync" });
-      expect(await background.status()).toEqual({ state: "signedOut" });
+      // The sign-in screen says why (D74 §5).
+      expect(await background.status()).toEqual({
+        state: "signedOut",
+        ended: outcome,
+      });
       expect(platform.disk.values.has("secretKey")).toBe(false);
       expect(platform.disk.values.has("sealedTokens")).toBe(false);
       expect(platform.sessionBytes.value).toBeUndefined();

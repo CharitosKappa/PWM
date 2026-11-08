@@ -145,6 +145,10 @@
       "kind": "refundPlan"
     },
     {
+      "kind": "deleteAccount",
+      "masterPassword": "correct horse battery"
+    },
+    {
       "kind": "devices"
     },
     {
@@ -321,6 +325,7 @@
     "cancelPlan",
     "resumePlan",
     "refundPlan",
+    "deleteAccount",
     "devices",
     "renameDevice",
     "revokeDevice",
@@ -358,6 +363,10 @@
     "status": [
       {
         "state": "signedOut"
+      },
+      {
+        "state": "signedOut",
+        "ended": "account_deleted"
       },
       {
         "state": "locked",
@@ -528,6 +537,9 @@
         "file": "UFdN",
         "name": "PWM export 2026-11-06.pwmx"
       }
+    ],
+    "deleteAccount": [
+      null
     ],
     "importDetect": [
       {

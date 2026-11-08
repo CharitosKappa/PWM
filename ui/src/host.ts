@@ -28,7 +28,7 @@ export interface Host {
    * Opens the manage page (D44), at a section when one is given; `items`
    * is the extension's vault with editing (M4.14).
    */
-  openManage(section?: "devices" | "items"): void;
+  openManage(section?: "devices" | "items" | "account"): void;
   /**
    * Back from the manage page to the vault, where both share one window
    * (the desktop app); null where the manage page has a tab of its own.

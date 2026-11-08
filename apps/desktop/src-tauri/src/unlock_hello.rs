@@ -30,7 +30,7 @@ fn b64() -> base64::engine::GeneralPurpose {
 
 impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
     /// The key credential's name: one per account on this computer.
-    fn hello_name(&self) -> Result<String> {
+    pub(crate) fn hello_name(&self) -> Result<String> {
         let account = self
             .client
             .account_id()?

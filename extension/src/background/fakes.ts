@@ -163,6 +163,23 @@ export class FakeCore implements Core {
     return send("/v1/auth/logout");
   }
 
+  /** What deleting the account ends with (D74): deleted, or a wait. */
+  deleteResult: "deleted" | "wait" = "deleted";
+
+  startDeleteAccount(password: string, secretKey: string): CoreStep {
+    if (!this.unlocked) throw coreError("locked");
+    if (password !== PASSWORD || secretKey !== SECRET_KEY)
+      throw coreError("wrong_password");
+    this.next = () => {
+      if (this.deleteResult === "wait") return wait(1000);
+      this.account = undefined;
+      this.unlocked = false;
+      this.items_.clear();
+      return done("account_deleted");
+    };
+    return send("/v1/account/delete/start");
+  }
+
   startEnsureVault(): CoreStep {
     if (!this.unlocked) throw coreError("locked");
     this.next = () => {

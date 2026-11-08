@@ -58,7 +58,7 @@ export function App({
     case "signedOut":
       return (
         <>
-          <SignedOut onDone={refresh} />
+          <SignedOut onDone={refresh} ended={status.ended} />
           <footer class="row">
             <button
               class="link"

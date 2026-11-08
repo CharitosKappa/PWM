@@ -183,6 +183,18 @@ export function Settings({
           Sign out of this device
         </button>
       )}
+
+      {!signedOut && host().manage && (
+        <button
+          class="link"
+          id="open-delete-account"
+          onClick={() => {
+            host().openManage("account");
+          }}
+        >
+          Delete account
+        </button>
+      )}
     </main>
   );
 }

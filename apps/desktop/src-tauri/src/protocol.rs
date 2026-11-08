@@ -114,6 +114,11 @@ pub enum Request {
     CancelPlan,
     ResumePlan,
     RefundPlan,
+    /// Deleting the account (D74); the backend adds the Secret Key.
+    DeleteAccount {
+        #[serde(deserialize_with = "secret")]
+        master_password: Secret<String>,
+    },
     // The manage page (D44, D46, D51; M7.6).
     Devices,
     RenameDevice {
@@ -377,7 +382,12 @@ pub struct ImportPreviewView {
     rename_all_fields = "camelCase"
 )]
 pub enum Status {
-    SignedOut,
+    SignedOut {
+        /// Why the last account left this computer, when it wasn't signed
+        /// out here: `account_deleted` (D74) or `device_revoked`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ended: Option<String>,
+    },
     Locked {
         email: String,
         touch_id: bool,
