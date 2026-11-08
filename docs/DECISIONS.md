@@ -37,6 +37,71 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D32 — Transactional email provider** · open · founder. Needed for M10.7: email verification at sign-up (so registration stops revealing which emails have accounts) and account notices. To choose: provider and region (EU hosting fits D5), and its licence and data-processing terms.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
+- **D78 — Making the repository private: where CI runs, cutting its minutes, and where the dashboard goes** · proposed 2026-11-09 · Claude Code. S6 says the repository is private, but `CharitosKappa/PWM` is public today, and the founder has said it will become private. Being public gives us unlimited free GitHub Actions minutes and free GitHub Pages (D77 §3). Being private gives us neither. On the other hand, a private repository makes our own runners safe, because strangers can't open pull requests that run code on them.
+  - **Measured over 30 days** (10 Oct – 9 Nov 2026, 306 runs, job minutes rounded up per job):
+
+    | Runner | Minutes | Biggest jobs |
+    | --- | --- | --- |
+    | Linux | ~16,760 | `fuzz` 8,761 · `autofill-harness` 1,500 · `image` 1,153 · `android` 932 · `bindings` 636 |
+    | macOS | ~2,009 | `apple` |
+    | Windows | ~752 | `desktop-windows`, `desktop-installer-windows` |
+
+    - **By event:** pull requests ~12,800, pushes to `main` ~5,000, nightly ~1,200 and manual runs ~500.
+    - **The plan's allowance:** GitHub's free plan includes about 2,000 minutes a month for private repositories. This was a busy month, but the gap is still roughly ten times over.
+  - **Open:** what to trim, where the jobs run, what the runner may hold, where the dashboard goes, and the order of the switch.
+
+  Proposal:
+  1. **Trim CI first.** These need no hardware and help wherever the jobs run.
+     - **Fuzzing (half of all minutes):** today each of the 16 targets is its own job and builds the fuzz crate from scratch, on every pull request and every push.
+       - **Pull requests and pushes:** fuzz only when `core/` changes, using the same "changes" job the apple, android and desktop jobs already use. The targets run one after another in one job, so the crate is built once, and each still runs for 60 s.
+       - **Nightly:** unchanged, 10 minutes per target as a matrix.
+     - **Pushes to `main`:** branch protection requires a branch to be up to date before merging, so a pull request's run has already tested what lands on `main` (a founder setting under Settings › Branches). After the merge, a push runs only `audit` and the jobs whose "changes" step says their files changed. The full set runs nightly anyway.
+     - **Expected effect:** about half of today's minutes. It will be measured again a month after it lands, and the number goes here.
+  2. **Linux jobs run on our own machine.** That is about 85% of the minutes after §1.
+     - **The machine:**
+       - **What:** a rented dedicated server in the EU (fits D5, about €40–60 a month for 8+ cores, 64 GB and NVMe), or a machine the founder already owns. The founder chooses.
+       - **Never the production server,** and never a machine that holds production secrets or backups. CI runs code from hundreds of npm and cargo packages. It also loads every core (fuzzing, Playwright), which would slow the sync server for users.
+     - **Each job in a throwaway virtual machine,** made from one image and destroyed after the job (the runner's `--ephemeral` mode). Nothing carries over from one job to the next except a read-only cache.
+       - **Why not containers:** they can't run the `image` job's Docker, the `android` job's emulator, or the `desktop-installer-linux` job's polkit test (D71).
+       - **The image:** Ubuntu 22.04 with what today's jobs install, so the two `ubuntu-22.04` jobs keep their system.
+     - **Registration:** the runner is registered to this repository only, in a runner group limited to it, with the label `pwm-linux`.
+     - **One switch back:**
+       - **The setting:** jobs say `runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}`.
+       - **If the machine is down:** clearing that one repository variable sends every Linux job back to GitHub's runners. Nobody has to edit the workflow.
+     - **Upkeep:**
+       - automatic security updates
+       - a weekly clean-up of the cache disk
+       - the runner updates itself
+       - a short "CI runner" section in `docs/DEVELOPMENT.md`, covering how to rebuild the image, register the runner, and switch back
+  3. **What the runner may hold.**
+     - **Today:** `ci.yml` uses no secrets (checked: no `secrets.` anywhere), so the runner holds nothing worth stealing today.
+     - **Later:** release signing (Apple, Windows, the stores, D70) will not run on this machine. Release jobs will run on GitHub's runners behind a protected environment, and the release pipeline's own decision will settle the details.
+     - **The dashboard token:** the only secret this proposal adds is in §5.
+  4. **Windows and macOS stay on GitHub's runners.** They already run only when their files change. The founder watches the bill:
+     - **macOS:** it is the costly line. If it stays above about €60 a month for two months running, a Mac mini (about €700, once) pays for itself within a year. That would be the founder's call then.
+     - **Windows:** about 750 minutes a month isn't worth its own machine.
+  5. **The dashboard moves to Cloudflare Pages.** Today it is on GitHub Pages (D77 §3).
+     - **Why not GitHub Pages:** on a private repository it needs a paid GitHub plan.
+     - **Why Cloudflare Pages:** it is free for private repositories, and only the deploy step changes. The build, the page and the history stay as they are.
+     - **How it deploys:** one `curl` call to Cloudflare's direct-upload API, so no new dependency. The API token is limited to that one Pages project and kept as a repository secret, and only the `autofill-dashboard` job reads it.
+     - **History:** the job downloads `history.json` from the new address. On the night of the move, the old file is copied across once, so no nights are lost.
+     - **The address:** `<project>.pages.dev` until D1 gives a domain, then `autofill.<domain>`. The status page (M10.3) will probably go to the same host. Its own decision settles that.
+     - **Founder step:** create the Cloudflare account and the token.
+     - **Alternative:** a paid GitHub plan (Team), which keeps Pages and adds minutes, at a monthly cost per user.
+  6. **The order of the switch.** Each step lands while the repository is still public, so nothing breaks on the day it turns private:
+     - §1 (trimming)
+     - §2 (the runner)
+     - §5 (the dashboard on Cloudflare, with GitHub Pages turned off)
+     - then the founder changes the visibility under Settings › General.
+  7. **What making it private doesn't undo.**
+     - **The code stays out:** everything pushed while the repository was public may already exist elsewhere.
+       - **What we know:** there are no forks or stars.
+       - **What we can't know:** GitHub's clone count is mostly our own CI, so it can't say whether anyone else copied the code.
+     - **What helps:** the crypto design is meant to hold with the code known (`SECURITY.md`), and S6's audits and bug bounty don't depend on the code staying secret.
+     - **What must be checked:** nothing secret has ever been committed. The founder runs a secret scan of the full history before the switch.
+  - **Alternatives:**
+    - **A paid GitHub plan for everything.** No machine to look after, but it costs roughly $150–250 a month at last month's volume.
+    - **Leaving GitHub for our own git and CI** (Gitea, GitLab CE, Woodpecker). Full control, but every job is rewritten and we would host the code as well.
 
 ## Settled
 
