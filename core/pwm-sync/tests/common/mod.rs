@@ -53,6 +53,8 @@ pub struct FakeServer {
     access: BTreeSet<String>,
     refresh: BTreeSet<String>,
     revoked: BTreeSet<String>,
+    /// Refresh tokens of a deleted account's sessions (D74 §5).
+    deleted: BTreeSet<String>,
     issued: u64,
     /// `(prefix of "METHOD /path", fault)`: the first match fires once.
     faults: Vec<(String, Fault)>,
@@ -121,6 +123,13 @@ impl FakeServer {
         self.refresh.clear();
     }
 
+    /// Deletes the account: access tokens find nothing, and refresh tokens
+    /// are answered `account_deleted` (D74 §5).
+    pub fn delete_account(&mut self) {
+        self.access.clear();
+        self.deleted.append(&mut self.refresh);
+    }
+
     pub fn revoke(&mut self, tokens: &Tokens) {
         self.revoked.insert(tokens.access().to_owned());
         self.revoked.insert(tokens.refresh().to_owned());
@@ -184,6 +193,9 @@ impl FakeServer {
             };
             if self.revoked.contains(token) {
                 return error(403, "device_revoked");
+            }
+            if self.deleted.contains(token) {
+                return error(403, "account_deleted");
             }
             if !self.refresh.remove(token) {
                 return error(401, "unauthorized");

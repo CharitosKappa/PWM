@@ -93,6 +93,9 @@ pub enum Outcome {
     },
     SignedOut,
     DeviceRevoked,
+    /// The account was deleted, here or from another device (D74): the
+    /// cache is cleared; finish signing out as for `DeviceRevoked`.
+    AccountDeleted,
     /// The account's devices (D43 §6).
     Devices {
         devices: Vec<Device>,
@@ -246,6 +249,7 @@ fn step(step: pwm_client::Step) -> Step {
                 },
                 pwm_client::Outcome::SignedOut => Outcome::SignedOut,
                 pwm_client::Outcome::DeviceRevoked => Outcome::DeviceRevoked,
+                pwm_client::Outcome::AccountDeleted => Outcome::AccountDeleted,
                 pwm_client::Outcome::Devices(devices) => Outcome::Devices {
                     devices: devices
                         .into_iter()
@@ -708,6 +712,22 @@ impl PwmClient {
         Ok(step(
             self.lock_inner()
                 .start_push_token(Tokens::new(access, refresh), push)?,
+        ))
+    }
+
+    /// Deletes the account on the server and this device (D74), with the
+    /// master password and Secret Key as at unlock. Ends with
+    /// `AccountDeleted`; then sign out as usual. A wrong password is
+    /// `wrong_password`; a wait means a subscription couldn't be ended and
+    /// nothing was deleted.
+    pub fn start_delete_account(
+        &self,
+        password: String,
+        secret_key: String,
+    ) -> Result<Step, PwmError> {
+        Ok(step(
+            self.lock_inner()
+                .start_delete_account(&password, &secret_key)?,
         ))
     }
 

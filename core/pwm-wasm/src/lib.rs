@@ -199,6 +199,7 @@ fn step(step: Step) -> WasmStep {
                 }
                 Outcome::SignedOut => "signed_out",
                 Outcome::DeviceRevoked => "device_revoked",
+                Outcome::AccountDeleted => "account_deleted",
                 Outcome::Devices(devices) => {
                     let list: Vec<serde_json::Value> = devices
                         .into_iter()
@@ -571,6 +572,22 @@ impl WasmClient {
     #[wasm_bindgen(js_name = startSync)]
     pub fn start_sync(&mut self) -> Result<WasmStep, JsValue> {
         self.inner.start_sync().map(step).map_err(js_error)
+    }
+
+    /// Deletes the account on the server and this device (D74), with the
+    /// master password and Secret Key as at unlock. Ends with
+    /// `account_deleted`; a wrong password is `wrong_password`, and a wait
+    /// means a subscription couldn't be ended and nothing was deleted.
+    #[wasm_bindgen(js_name = startDeleteAccount)]
+    pub fn start_delete_account(
+        &mut self,
+        password: &str,
+        secret_key: &str,
+    ) -> Result<WasmStep, JsValue> {
+        self.inner
+            .start_delete_account(password, secret_key)
+            .map(step)
+            .map_err(js_error)
     }
 
     /// Ends this device's session on the server before signing out (D62),
