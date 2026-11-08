@@ -8,8 +8,9 @@
 //!   `keygen --env <file>` writes them as `PWM_SERVER_SECRETS=...` to a new
 //!   file (and leaves an existing one alone). Keep them in a secret manager
 //!   with a backup: losing them locks every account out.
-//! - `mark-restored` gives the server a new epoch; run it once after
-//!   restoring the database from a backup (D30).
+//! - `mark-restored` deletes again the accounts deleted after the backup
+//!   (D74 §6) and gives the server a new epoch; run it once after restoring
+//!   the database from a backup (D30).
 //! - `healthcheck` exits 0 if the server on `PWM_LISTEN` answers
 //!   `/healthz` (the container health check).
 //! - `reports export [--since YYYY-MM-DD]` writes the autofill failure
@@ -27,8 +28,8 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use pwm_server::{
-    AppState, Billing, Config, DEFAULT_LISTEN, LogFormat, Push, ServerError, app, connect,
-    generate_server_secrets, install_panic_hook, log_subscriber, migrate,
+    AppState, Billing, Config, DEFAULT_LISTEN, DeletionLog, LogFormat, Push, ServerError, app,
+    connect, generate_server_secrets, install_panic_hook, log_subscriber, migrate,
 };
 use tokio::net::TcpListener;
 
@@ -209,6 +210,10 @@ async fn mark_restored() -> Result<(), ServerError> {
     let config = Config::from_env()?;
     let pool = connect(config.database_url.expose_secret())?;
     migrate(&pool).await?;
+    // Before clients come back: accounts deleted since the backup stay deleted (D74 §6).
+    let log = deletion_log(config.deletions_file);
+    let again = pwm_server::redelete(&pool, &log).await?;
+    tracing::info!("{again} accounts deleted after the backup were deleted again");
     let epoch = pwm_server::mark_restored(&pool).await?;
     tracing::info!(%epoch, "new server epoch: every client will pull again and upload what the backup lost");
     pool.close().await;
@@ -236,10 +241,13 @@ async fn run() -> Result<(), ServerError> {
     let push = Push::start(pool.clone(), config.push, config.fcm);
     let billing = Billing::new(config.billing)?;
     billing.start_daily(pool.clone());
+    let deletions = deletion_log(config.deletions_file);
+    deletions.start_daily(pool.clone());
     let state = AppState::new(pool.clone(), config.server_secrets)
         .with_trusted_proxies(config.trusted_proxies)
         .with_push(push)
-        .with_billing(billing);
+        .with_billing(billing)
+        .with_deletions(deletions);
     // The peer address is needed for per-IP rate limits.
     axum::serve(
         listener,
@@ -250,6 +258,20 @@ async fn run() -> Result<(), ServerError> {
     pool.close().await;
     tracing::info!("stopped");
     Ok(())
+}
+
+/// The deletions file, or a warning that a restore could bring back accounts
+/// deleted after its backup (D74 §6).
+fn deletion_log(path: Option<std::path::PathBuf>) -> DeletionLog {
+    match path {
+        Some(path) => DeletionLog::at(path),
+        None => {
+            tracing::warn!(
+                "PWM_DELETIONS_FILE is not set: restoring a backup could bring back accounts deleted after it"
+            );
+            DeletionLog::off()
+        }
+    }
 }
 
 async fn shutdown() {

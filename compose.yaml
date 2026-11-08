@@ -25,6 +25,11 @@ services:
     environment:
       # The private compose network; remote databases use sslmode=verify-full.
       PWM_DATABASE_URL: postgres://pwm:pwm@postgres:5432/pwm
+      # Deleted accounts, outside the database (D74 §6): never restore this
+      # volume together with a database backup.
+      PWM_DELETIONS_FILE: /var/lib/pwm/deletions
+    volumes:
+      - deletions:/var/lib/pwm
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,3 +42,4 @@ services:
 
 volumes:
   pgdata:
+  deletions:

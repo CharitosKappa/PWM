@@ -283,18 +283,30 @@ async fn login_start(
     State(state): State<AppState>,
     ApiJson(req): ApiJson<LoginStartRequest>,
 ) -> Result<Json<LoginStartResponse>, ApiError> {
+    let (login_id, credential_response) =
+        begin_login(&state, req.account_id, &req.credential_request).await?;
+    Ok(Json(LoginStartResponse {
+        login_id,
+        credential_response,
+    }))
+}
+
+/// The first OPAQUE step for `account_id`, also used to prove the master
+/// password before deleting an account (D74 §1): the attempt's id and the
+/// credential response. The state is kept 60 seconds.
+pub(crate) async fn begin_login(
+    state: &AppState,
+    account_id: Uuid,
+    credential_request: &[u8],
+) -> Result<(Uuid, Vec<u8>), ApiError> {
     let record: Option<Vec<u8>> =
         sqlx::query_scalar("SELECT opaque_record FROM accounts WHERE id = $1")
-            .bind(req.account_id)
+            .bind(account_id)
             .fetch_optional(&state.pool)
             .await?;
     let (login_state, credential_response) = state
         .secrets
-        .login_respond(
-            record.as_deref(),
-            req.account_id.as_bytes(),
-            &req.credential_request,
-        )
+        .login_respond(record.as_deref(), account_id.as_bytes(), credential_request)
         .map_err(|_| ApiError::InvalidRequest)?;
     sqlx::query("DELETE FROM login_attempts WHERE expires_at <= now()")
         .execute(&state.pool)
@@ -303,15 +315,41 @@ async fn login_start(
         "INSERT INTO login_attempts (account_id, state, expires_at) \
          VALUES ($1, $2, now() + make_interval(secs => $3)) RETURNING id",
     )
-    .bind(req.account_id)
+    .bind(account_id)
     .bind(&login_state)
     .bind(LOGIN_ATTEMPT_TTL_SECS)
     .fetch_one(&state.pool)
     .await?;
-    Ok(Json(LoginStartResponse {
-        login_id,
-        credential_response,
-    }))
+    Ok((login_id, credential_response))
+}
+
+/// The last OPAQUE step: the account whose password was proven. The attempt
+/// is used up whether it succeeds or not, and with `only` set, an attempt
+/// for another account fails too. Every failure is `invalid_credentials`.
+pub(crate) async fn verify_login(
+    state: &AppState,
+    login_id: Uuid,
+    credential_finalization: &[u8],
+    only: Option<Uuid>,
+) -> Result<Uuid, ApiError> {
+    let attempt = sqlx::query(
+        "DELETE FROM login_attempts WHERE id = $1 AND expires_at > now() \
+         RETURNING account_id, state",
+    )
+    .bind(login_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(ApiError::InvalidCredentials)?;
+    let account_id: Uuid = attempt.get(0);
+    let login_state: Vec<u8> = attempt.get(1);
+    if only.is_some_and(|only| only != account_id) {
+        return Err(ApiError::InvalidCredentials);
+    }
+    state
+        .secrets
+        .login_finish(&login_state, credential_finalization, account_id.as_bytes())
+        .map_err(|_| ApiError::InvalidCredentials)?;
+    Ok(account_id)
 }
 
 #[derive(Deserialize)]
@@ -331,24 +369,7 @@ async fn login_finish(
 ) -> Result<Json<Tokens>, ApiError> {
     req.device.validate()?;
     // Single use: the attempt is gone whether the login succeeds or not.
-    let attempt = sqlx::query(
-        "DELETE FROM login_attempts WHERE id = $1 AND expires_at > now() \
-         RETURNING account_id, state",
-    )
-    .bind(req.login_id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(ApiError::InvalidCredentials)?;
-    let account_id: Uuid = attempt.get(0);
-    let login_state: Vec<u8> = attempt.get(1);
-    state
-        .secrets
-        .login_finish(
-            &login_state,
-            &req.credential_finalization,
-            account_id.as_bytes(),
-        )
-        .map_err(|_| ApiError::InvalidCredentials)?;
+    let account_id = verify_login(&state, req.login_id, &req.credential_finalization, None).await?;
 
     let mut tx = state.pool.begin().await?;
     let existing = sqlx::query(

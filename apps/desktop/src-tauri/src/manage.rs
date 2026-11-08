@@ -116,6 +116,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             Step::Wait { .. } => "network",
             Step::Done(Outcome::SignedOut) => "signed_out",
             Step::Done(Outcome::DeviceRevoked) => "device_revoked",
+            Step::Done(Outcome::AccountDeleted) => "account_deleted",
             _ => "internal",
         }))
     }

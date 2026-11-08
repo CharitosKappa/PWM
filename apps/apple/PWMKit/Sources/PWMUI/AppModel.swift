@@ -290,7 +290,7 @@ public final class AppModel {
                     SignInAgainModel.sessionEnded(in: defaults)
                 }
                 return .noData
-            case .deviceRevoked:
+            case .deviceRevoked, .accountDeleted:
                 // The core has cleared the cache; finish signing out.
                 try? await account.signOut()
                 didSignOut()

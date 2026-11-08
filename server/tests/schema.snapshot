@@ -103,6 +103,21 @@ table billing_outbox
   index CREATE UNIQUE INDEX billing_outbox_kind_provider_provider_ref_about_key ON public.billing_outbox USING btree (kind, provider, provider_ref, about)
   index CREATE UNIQUE INDEX billing_outbox_pkey ON public.billing_outbox USING btree (id)
 
+table deleted_accounts
+  column account_id uuid not null
+  column deleted_at timestamp with time zone not null default now()
+  constraint deleted_accounts_pkey: PRIMARY KEY (account_id)
+  index CREATE INDEX deleted_accounts_deleted_at ON public.deleted_accounts USING btree (deleted_at)
+  index CREATE UNIQUE INDEX deleted_accounts_pkey ON public.deleted_accounts USING btree (account_id)
+
+table deleted_sessions
+  column refresh_hash bytea not null
+  column expires_at timestamp with time zone not null
+  constraint deleted_sessions_pkey: PRIMARY KEY (refresh_hash)
+  constraint deleted_sessions_refresh_hash_check: CHECK ((octet_length(refresh_hash) = 32))
+  index CREATE INDEX deleted_sessions_expires_at ON public.deleted_sessions USING btree (expires_at)
+  index CREATE UNIQUE INDEX deleted_sessions_pkey ON public.deleted_sessions USING btree (refresh_hash)
+
 table devices
   column id uuid not null
   column account_id uuid not null

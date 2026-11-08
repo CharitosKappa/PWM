@@ -11,13 +11,16 @@ COPY . .
 RUN cargo build --release --locked -p pwm-server \
     && cp target/release/pwm-server /pwm-server \
     && echo "pwm:x:10001:10001:pwm:/:/nonexistent" > /passwd \
-    && echo "pwm:x:10001:" > /group
+    && echo "pwm:x:10001:" > /group \
+    && mkdir -p /var-lib-pwm
 
 FROM scratch
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /passwd /etc/passwd
 COPY --from=build /group /etc/group
 COPY --from=build /pwm-server /pwm-server
+# The deletions file's volume (D74 §6), writable by the server.
+COPY --from=build --chown=10001:10001 /var-lib-pwm /var/lib/pwm
 USER 10001:10001
 ENV PWM_LISTEN=0.0.0.0:8080 \
     PWM_LOG_FORMAT=json \

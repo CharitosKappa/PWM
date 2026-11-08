@@ -485,19 +485,22 @@ describe("sync", () => {
     expect(syncs() - before).toBe(1);
   });
 
-  it("forgets the account on this device when it was revoked", async () => {
-    const { background, platform, core } = await signedUp();
-    core().syncResult = () => {
-      core().account = undefined;
-      core().unlocked = false;
-      return done("device_revoked");
-    };
-    await background.handle({ kind: "sync" });
-    expect(await background.status()).toEqual({ state: "signedOut" });
-    expect(platform.disk.values.has("secretKey")).toBe(false);
-    expect(platform.disk.values.has("sealedTokens")).toBe(false);
-    expect(platform.sessionBytes.value).toBeUndefined();
-  });
+  it.each(["device_revoked", "account_deleted"])(
+    "forgets the account on this device on %s",
+    async (outcome) => {
+      const { background, platform, core } = await signedUp();
+      core().syncResult = () => {
+        core().account = undefined;
+        core().unlocked = false;
+        return done(outcome);
+      };
+      await background.handle({ kind: "sync" });
+      expect(await background.status()).toEqual({ state: "signedOut" });
+      expect(platform.disk.values.has("secretKey")).toBe(false);
+      expect(platform.disk.values.has("sealedTokens")).toBe(false);
+      expect(platform.sessionBytes.value).toBeUndefined();
+    },
+  );
 
   it("reports a server error without throwing", async () => {
     const { background, platform } = await signedUp();

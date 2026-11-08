@@ -43,6 +43,9 @@ pub enum SyncOutcome {
     SignedOut,
     /// This device was revoked; the cache has been cleared.
     DeviceRevoked,
+    /// The account was deleted, from this device or another (D74 §5); the
+    /// cache has been cleared.
+    AccountDeleted,
     /// The account's devices, from [`DeviceTask::List`].
     Devices(Vec<DeviceRecord>),
     /// A [`DeviceTask::Rename`] or [`DeviceTask::Revoke`] was done.
@@ -629,6 +632,7 @@ impl<S: Store> SyncEngine<S> {
                 return Ok(Step::Send(self.refresh_request()));
             }
             403 if is_revoked(response) => return self.revoked(),
+            403 if is_deleted(response) => return self.deleted(),
             429 | 500..=599 => {
                 return Ok(self.wait(parse_retry_after(response.header("retry-after"))));
             }
@@ -679,6 +683,7 @@ impl<S: Store> SyncEngine<S> {
                 self.request(run)
             }
             403 if is_revoked(response) => self.revoked(),
+            403 if is_deleted(response) => self.deleted(),
             429 | 500..=599 => Ok(self.wait(parse_retry_after(response.header("retry-after")))),
             _ => Ok(self.done(SyncOutcome::SignedOut)),
         }
@@ -689,6 +694,13 @@ impl<S: Store> SyncEngine<S> {
         self.store.clear()?;
         self.keys.clear();
         Ok(self.done(SyncOutcome::DeviceRevoked))
+    }
+
+    /// The account is gone: nothing of it stays on this device either (D74 §5).
+    fn deleted(&mut self) -> Result<Step, SyncError> {
+        self.store.clear()?;
+        self.keys.clear();
+        Ok(self.done(SyncOutcome::AccountDeleted))
     }
 
     fn on_vault_created(
@@ -1082,6 +1094,10 @@ impl<S: Store> SyncEngine<S> {
 
 fn is_revoked(response: &HttpResponse) -> bool {
     wire::error_code(&response.body).as_deref() == Some("device_revoked")
+}
+
+fn is_deleted(response: &HttpResponse) -> bool {
+    wire::error_code(&response.body).as_deref() == Some("account_deleted")
 }
 
 /// The server accepted `sent`. The cache moves to `Synced` unless the user

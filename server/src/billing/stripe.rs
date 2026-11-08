@@ -313,6 +313,27 @@ pub(crate) async fn refund(
     .map(|_| ())
 }
 
+/// Deletes a customer and its saved payment methods (D74 §3). Stripe keeps
+/// its own records of the charges and invoices.
+pub(crate) async fn delete_customer(
+    config: &StripeConfig,
+    http: &Http,
+    id: &str,
+) -> Result<(), BillingError> {
+    if !plain_id(id, "cus_") {
+        return Err(BillingError::NotFound);
+    }
+    call(
+        config,
+        http,
+        hyper::Method::DELETE,
+        &format!("/v1/customers/{id}"),
+        None,
+    )
+    .await
+    .map(|_| ())
+}
+
 /// Ends a subscription now, without another invoice.
 pub(crate) async fn end_now(
     config: &StripeConfig,
