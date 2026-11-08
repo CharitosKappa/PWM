@@ -460,7 +460,7 @@ jobs:
         env:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
-          if git diff --name-only "$BASE" HEAD | grep -qE '^(apps/desktop/|ui/|core/|Cargo\.(toml|lock)$|design/|pnpm-lock\.yaml$)'; then
+          if git diff --name-only "$BASE" HEAD | grep -qE '^(apps/desktop/|ui/|core/|Cargo\.(toml|lock)$|design/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
