@@ -114,6 +114,7 @@ class GeneratorModel internal constructor(
         val value = mutable.value.value ?: return
         clipboard.copy(value, SecretKeyModel.CLIPBOARD_MS)
         mutable.update { it.copy(copied = true) }
+        Speech.say(Announcement.COPIED)
     }
 
     companion object {

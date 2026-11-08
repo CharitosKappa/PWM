@@ -4,12 +4,18 @@
  * clipboard. The one-time code shows with its countdown, never its secret.
  * Read-only items (a newer schema or type) have no Edit.
  */
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import { describe, send } from "../api.ts";
 import type { FolderView, ItemView } from "../protocol.ts";
-import { Notice } from "../ui.tsx";
-import { FIELD_KINDS, customFields, getIn, textAt } from "./model.ts";
+import { Masked, Notice } from "../ui.tsx";
+import {
+  FIELD_KINDS,
+  customFields,
+  getIn,
+  spokenCode,
+  textAt,
+} from "./model.ts";
 
 interface Props {
   vaultId: string;
@@ -36,6 +42,19 @@ export function ItemDetail({
   /** Values shown with Show, by their place; gone with the item. */
   const [shown, setShown] = useState<Record<string, string>>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // The question takes focus and gives it back to the button that asked it.
+  const deleteButton = useRef<HTMLButtonElement>(null);
+  const keepButton = useRef<HTMLButtonElement>(null);
+  const asked = useRef(false);
+  useEffect(() => {
+    if (confirmDelete) {
+      asked.current = true;
+      keepButton.current?.focus();
+    } else if (asked.current) {
+      asked.current = false;
+      deleteButton.current?.focus();
+    }
+  }, [confirmDelete]);
 
   const load = (): void => {
     send({ kind: "item", vaultId, itemId })
@@ -113,16 +132,20 @@ export function ItemDetail({
       .split("/")
       .slice(1)
       .map((p) => (/^\d+$/.test(p) ? Number(p) : p));
-    const value = hidden ? (shown[pointer] ?? MASK) : textAt(item, path);
+    const value = hidden ? shown[pointer] : textAt(item, path);
     if (!hidden && value === "") return null;
+    const name = label.toLowerCase();
     return (
       <div class="detail-row" key={pointer}>
         <span class="label">{label}</span>
-        <span class={mono || hidden ? "value mono" : "value"}>{value}</span>
+        <span class={mono || hidden ? "value mono" : "value"}>
+          {value ?? <Masked dots={MASK} />}
+        </span>
         <span class="row">
           {hidden && (
             <button
               class="link"
+              aria-label={`${pointer in shown ? "Hide" : "Show"} ${name}`}
               onClick={() => {
                 toggle(pointer);
               }}
@@ -132,6 +155,7 @@ export function ItemDetail({
           )}
           <button
             class="link"
+            aria-label={`Copy ${name}`}
             onClick={() => {
               copy(pointer);
             }}
@@ -201,13 +225,20 @@ export function ItemDetail({
           {view.code && (
             <div class="detail-row">
               <span class="label">One-time code</span>
+              {/* Read in digit groups; the countdown isn't read out. */}
               <span class="value mono">
-                {view.code.code}{" "}
-                <span class="caption muted">{view.code.secondsLeft}s</span>
+                <span aria-hidden="true">
+                  {view.code.code}{" "}
+                  <span class="caption muted">{view.code.secondsLeft}s</span>
+                </span>
+                <span class="visually-hidden">
+                  {spokenCode(view.code.code)}
+                </span>
               </span>
               <span class="row">
                 <button
                   class="link"
+                  aria-label="Copy one-time code"
                   onClick={() => {
                     send({ kind: "copy", vaultId, itemId, field: "code" })
                       .then(() => {
@@ -313,10 +344,13 @@ export function ItemDetail({
               <span class="caption muted">
                 {new Date(past.savedAt).toLocaleString()}
               </span>
-              <span class="value mono">{shown[past.path] ?? MASK}</span>
+              <span class="value mono">
+                {shown[past.path] ?? <Masked dots={MASK} />}
+              </span>
               <span class="row">
                 <button
                   class="link"
+                  aria-label={`${past.path in shown ? "Hide" : "Show"} previous password`}
                   onClick={() => {
                     toggle(past.path);
                   }}
@@ -357,6 +391,7 @@ export function ItemDetail({
         {trashed && !confirmDelete && (
           <button
             class="danger"
+            ref={deleteButton}
             onClick={() => {
               setConfirmDelete(true);
             }}
@@ -366,7 +401,13 @@ export function ItemDetail({
         )}
       </div>
       {confirmDelete && (
-        <div class="notice warning stack" role="alert">
+        <div
+          class="notice warning stack"
+          role="alert"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setConfirmDelete(false);
+          }}
+        >
           <span>Delete this item forever? It can't be brought back.</span>
           <div class="row">
             <button
@@ -378,6 +419,7 @@ export function ItemDetail({
               Delete forever
             </button>
             <button
+              ref={keepButton}
               onClick={() => {
                 setConfirmDelete(false);
               }}

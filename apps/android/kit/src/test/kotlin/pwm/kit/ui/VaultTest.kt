@@ -280,6 +280,41 @@ class VaultTest {
         assertNull(detail.state.value.code)
     }
 
+    // --- Screen readers (design/README.md, Accessibility) ---
+
+    @Test
+    fun copiesAndLockingAreAnnouncedWithoutTheValue() = runTest {
+        val said = mutableListOf<Announcement>()
+        Speech.listener = { said += it }
+        try {
+            val h = unlocked(login("1", "GitHub", username = "alex.k").edited { password = "hunter2"; totp = "otpauth://totp/GitHub?secret=JBSWY3DPEHPK3PXP" })
+            val entry = h.vault.state.value.visible.single()
+            h.vault.copy(VaultModel.RowCopy.PASSWORD, entry)
+            h.vault.copy(VaultModel.RowCopy.USERNAME, entry)
+            h.vault.copy(VaultModel.RowCopy.CODE, entry)
+            advanceUntilIdle()
+            assertEquals("a row copies without opening the item", listOf("hunter2", "alex.k", "123456"), h.copied.map { it.value })
+            assertTrue(h.copied.all { it.clearAfterMs == 30_000L })
+            h.vault.open(entry)
+            val detail = (h.vault.state.value.stack.single() as VaultModel.Route.Detail).model
+            detail.copy(detail.item.password, "password")
+            assertEquals(List(4) { Announcement.COPIED }, said)
+            h.home.settings.lockNow()
+            advanceUntilIdle()
+            assertEquals(Announcement.LOCKED, said.last())
+        } finally {
+            Speech.listener = {}
+        }
+    }
+
+    @Test
+    fun codesAreShownAndReadInTwoGroups() {
+        assertEquals("123 456", ItemDetailModel.grouped("123456"))
+        assertEquals("1234 5678", ItemDetailModel.grouped("12345678"))
+        assertEquals("123 4567", ItemDetailModel.grouped("1234567"))
+        assertEquals("1234", ItemDetailModel.grouped("1234"))
+    }
+
     /** On Free the screen says codes are part of Premium, not that the code is unsupported (D73 §1). */
     @Test
     fun onFreeTheCodeNeedsAPlan() = runTest {

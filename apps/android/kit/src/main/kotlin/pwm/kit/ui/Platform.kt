@@ -127,6 +127,20 @@ object NoBackgroundScheduler : BackgroundScheduler {
 /** What a background run found, for the job's result. */
 enum class BackgroundResult { NEW_DATA, NO_DATA, FAILED }
 
+/**
+ * What is said to TalkBack without moving focus: copies and locking
+ * (design/README.md, Accessibility). The screen has the words; never a secret.
+ */
+enum class Announcement { COPIED, LOCKED }
+
+/** Where the models' announcements go: the activity says them, tests listen. */
+object Speech {
+    @Volatile
+    var listener: (Announcement) -> Unit = {}
+
+    fun say(announcement: Announcement) = listener(announcement)
+}
+
 /** A copy that is hidden from the clipboard preview and cleared after a while. */
 fun interface SecretClipboard {
     fun copy(value: Redacted<String>, clearAfterMs: Long)

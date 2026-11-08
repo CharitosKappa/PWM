@@ -63,6 +63,26 @@ extension Item.Kind {
 
 extension ItemEditModel: Identifiable {}
 
+/// The smallest touch target (design/README.md): 44 pt on iOS, 24 on the Mac.
+#if os(macOS)
+let minimumTarget: CGFloat = 24
+#else
+let minimumTarget: CGFloat = 44
+#endif
+
+/// A section title VoiceOver can jump to.
+struct SectionHeader: View {
+    let title: LocalizedStringKey
+
+    init(_ title: LocalizedStringKey) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title).accessibilityAddTraits(.isHeader)
+    }
+}
+
 // MARK: The vault
 
 struct VaultView: View {
@@ -112,10 +132,12 @@ struct SectionList: View {
                 Label(kind.sectionLabel, systemImage: kind.symbol).tag(VaultModel.Section.kind(kind))
             }
             if !model.folders.isEmpty {
-                Section("Folders") {
+                Section {
                     ForEach(model.folders) { folder in
                         Label(folder.item.title, systemImage: "folder").tag(VaultModel.Section.folder(folder.id))
                     }
+                } header: {
+                    SectionHeader("Folders")
                 }
             }
             Label("Trash", systemImage: "trash").tag(VaultModel.Section.trash)
@@ -150,7 +172,9 @@ struct ItemList: View {
 
     var body: some View {
         List(model.visible, selection: $selection) { entry in
-            ItemRow(entry: entry)
+            ItemRow(entry: entry) { field in
+                Task { await model.copy(field, of: entry) }
+            }
                 .swipeActions {
                     if entry.item.trashedAtMs == nil {
                         Button("Delete", role: .destructive) { Task { await model.trash(entry) } }
@@ -276,8 +300,11 @@ struct SignInAgainView: View {
     }
 }
 
+/// One VoiceOver stop: name, username and "has a one-time code", with the
+/// copies as its actions.
 struct ItemRow: View {
     let entry: Entry
+    var copy: ((VaultModel.RowCopy) -> Void)?
 
     private var subtitle: String {
         if let login = entry.item.login { return login.username }
@@ -308,6 +335,22 @@ struct ItemRow: View {
                 Image(systemName: "star.fill")
                     .foregroundStyle(Tokens.Color.warning.color)
                     .accessibilityLabel("Favorite")
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: entry.spokenLabel))
+        .accessibilityIdentifier("item")
+        .accessibilityActions {
+            if let copy, let login = entry.item.login, entry.item.trashedAtMs == nil {
+                if !login.password.isEmpty {
+                    Button("Copy password") { copy(.password) }
+                }
+                if !login.username.isEmpty {
+                    Button("Copy username") { copy(.username) }
+                }
+                if let totp = login.totp, !totp.isEmpty {
+                    Button("Copy code") { copy(.code) }
+                }
             }
         }
     }
@@ -364,18 +407,22 @@ struct ItemDetailView: View {
             case .note, .folder, nil: EmptyView()
             }
             if !item.notes.isEmpty {
-                Section("Notes") {
+                Section {
                     Text(verbatim: item.notes).textSelection(.enabled)
+                } header: {
+                    SectionHeader("Notes")
                 }
             }
             if !item.customFields.isEmpty {
-                Section("Other fields") {
+                Section {
                     ForEach(Array(item.customFields.enumerated()), id: \.offset) { index, field in
                         FieldRow(
                             label: field.name, value: field.value, key: "field.\(index)",
                             hidden: field.kind == .hidden || field.kind == nil, model: model
                         )
                     }
+                } header: {
+                    SectionHeader("Other fields")
                 }
             }
             Section {
@@ -418,6 +465,12 @@ struct ItemDetailView: View {
         }
     }
 
+    /// Only web addresses open in the browser.
+    static func webLink(_ text: String) -> URL? {
+        guard let link = URL(string: text), ["https", "http"].contains(link.scheme?.lowercased()) else { return nil }
+        return link
+    }
+
     static func date(_ ms: Int64) -> Date {
         Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
     }
@@ -446,34 +499,36 @@ struct ItemDetailView: View {
                 }
             }
             if !login.urls.isEmpty {
-                Section("Websites") {
+                Section {
                     ForEach(Array(login.urls.enumerated()), id: \.offset) { index, url in
-                        HStack {
-                            FieldRow(label: String(localized: "Website"), value: url.url, key: "url.\(index)", model: model)
-                            if let link = URL(string: url.url), ["https", "http"].contains(link.scheme?.lowercased()) {
-                                Link(destination: link) { Image(systemName: "arrow.up.right.square") }
-                                    .buttonStyle(.borderless)
-                                    .accessibilityLabel("Open website")
-                            }
-                        }
+                        FieldRow(
+                            label: String(localized: "Website"), value: url.url, key: "url.\(index)",
+                            link: Self.webLink(url.url), model: model
+                        )
                     }
+                } header: {
+                    SectionHeader("Websites")
                 }
             }
             if !login.passkeySites.isEmpty {
-                Section("Passkeys") {
+                Section {
                     ForEach(Array(login.passkeySites.enumerated()), id: \.offset) { _, site in
                         Label { Text("Passkey for \(site)") } icon: { Image(systemName: "person.badge.key") }
                     }
+                } header: {
+                    SectionHeader("Passkeys")
                 }
             }
             if !item.passwordHistory.isEmpty {
-                Section("Previous passwords") {
+                Section {
                     ForEach(Array(item.passwordHistory.enumerated()), id: \.offset) { index, previous in
                         FieldRow(
                             label: previous.replacedAtMs.map { Self.date($0).formatted(date: .abbreviated, time: .shortened) } ?? "",
                             value: previous.password, key: "history.\(index)", hidden: true, monospaced: true, model: model
                         )
                     }
+                } header: {
+                    SectionHeader("Previous passwords")
                 }
             }
         }
@@ -524,14 +579,18 @@ struct ItemDetailView: View {
     }
 }
 
-/// A field with Copy, and Show for hidden values.
+/// A field with Copy, and Show for hidden values. One VoiceOver stop: its
+/// label and value ("hidden" while hidden), with the buttons as its actions.
 struct FieldRow: View {
     let label: String
     let value: String
     let key: String
     var hidden = false
     var monospaced = false
+    /// A website's address, for Open website.
+    var link: URL?
     let model: ItemDetailModel
+    @Environment(\.openURL) var openURL
 
     var body: some View {
         let shown = !hidden || model.isRevealed(key)
@@ -544,7 +603,6 @@ struct FieldRow: View {
                 Text(verbatim: captured ? ScreenCapture.hiddenLine : shown ? value : ItemDetailModel.masked(value))
                     .font(monospaced ? .secret(.body) : .app(.body))
                     .textSelection(.enabled)
-                    .accessibilityIdentifier("value.\(key)")
             }
             Spacer()
             if hidden {
@@ -552,25 +610,59 @@ struct FieldRow: View {
                     model.toggle(key)
                 } label: {
                     Image(systemName: shown ? "eye.slash" : "eye")
+                        .frame(minWidth: minimumTarget, minHeight: minimumTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .disabled(captured)
                 .accessibilityLabel(shown ? "Hide" : "Show")
-                .accessibilityIdentifier("show.\(key)")
             }
             Button {
                 model.copy(value, field: key)
             } label: {
                 Image(systemName: model.copied == key ? "checkmark" : "doc.on.doc")
+                    .frame(minWidth: minimumTarget, minHeight: minimumTarget)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .accessibilityLabel(model.copied == key ? "Copied" : "Copy")
-            .accessibilityIdentifier("copy.\(key)")
+            if let link {
+                Link(destination: link) {
+                    Image(systemName: "arrow.up.right.square")
+                        .frame(minWidth: minimumTarget, minHeight: minimumTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Open website")
+            }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: label))
+        .accessibilityValue(spokenValue(shown: shown, captured: captured))
+        .accessibilityIdentifier("field.\(key)")
+        .accessibilityActions {
+            if hidden && !captured {
+                Button(shown ? "Hide" : "Show") { model.toggle(key) }
+            }
+            Button("Copy") { model.copy(value, field: key) }
+            if let link {
+                Button("Open website") { openURL(link) }
+            }
+        }
+    }
+
+    /// Hidden values are never spoken, not even as dots; a shown secret is
+    /// read one character at a time.
+    private func spokenValue(shown: Bool, captured: Bool) -> Text {
+        if captured { return Text(verbatim: ScreenCapture.hiddenLine) }
+        if !shown { return Text(verbatim: ItemDetailModel.hiddenWord) }
+        return hidden ? Text(verbatim: value).speechSpellsOutCharacters() : Text(verbatim: value)
     }
 }
 
-/// The one-time code and how long it stays valid.
+/// The one-time code and how long it stays valid. One VoiceOver stop, read
+/// in digit groups; the countdown is extra content, so it isn't read out
+/// every second.
 struct CodeRow: View {
     let model: ItemDetailModel
 
@@ -583,7 +675,6 @@ struct CodeRow: View {
                 if model.codeNeedsPlan {
                     Text("One-time codes are part of Premium. See Settings › Plan.")
                         .foregroundStyle(Tokens.Color.textMuted.color)
-                        .accessibilityIdentifier("code.needsPlan")
                 } else if model.codeUnsupported {
                     Text("Unsupported code type").foregroundStyle(Tokens.Color.textMuted.color)
                 } else if model.hiddenByCapture, model.code != nil {
@@ -592,7 +683,6 @@ struct CodeRow: View {
                 } else if let code = model.code {
                     Text(verbatim: code.value.value)
                         .font(.secret(.title3))
-                        .accessibilityIdentifier("code")
                 } else {
                     Text(verbatim: " ")
                 }
@@ -607,11 +697,31 @@ struct CodeRow: View {
                     model.copyCode()
                 } label: {
                     Image(systemName: model.copied == "code" ? "checkmark" : "doc.on.doc")
+                        .frame(minWidth: minimumTarget, minHeight: minimumTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Copy one-time code")
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("One-time code")
+        .accessibilityValue(spokenValue)
+        .accessibilityIdentifier("code")
+        .accessibilityCustomContent(AccessibilityCustomContentKey("Time left"), model.code.map { Text("\($0.secondsLeft) seconds") })
+        .accessibilityActions {
+            if model.code != nil {
+                Button("Copy code") { model.copyCode() }
+            }
+        }
+    }
+
+    private var spokenValue: Text {
+        if model.codeNeedsPlan { return Text("One-time codes are part of Premium. See Settings › Plan.") }
+        if model.codeUnsupported { return Text("Unsupported code type") }
+        guard let code = model.code else { return Text(verbatim: "") }
+        if model.hiddenByCapture { return Text(verbatim: ScreenCapture.hiddenLine) }
+        return Text(verbatim: ItemDetailModel.grouped(code.value.value)).speechSpellsOutCharacters()
     }
 }
 #endif

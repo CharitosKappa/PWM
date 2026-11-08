@@ -10,7 +10,7 @@ import { describe, describeCode, send } from "./api.ts";
 import { host } from "./host.ts";
 import { SaveOffer } from "./Offer.tsx";
 import { ReportLink } from "./Report.tsx";
-import { Field, Notice } from "./ui.tsx";
+import { Field, Masked, Notice } from "./ui.tsx";
 
 export type Unlocked = Extract<Status, { state: "unlocked" }>;
 
@@ -400,7 +400,10 @@ function Detail({
       )}
       {item.hasPassword && (
         <div class="row">
-          <span class="grow mono">••••••••••</span>
+          <span class="grow mono">
+            <span class="visually-hidden">Password, </span>
+            <Masked dots="••••••••••" />
+          </span>
           <button
             onClick={() => {
               onCopy("password");

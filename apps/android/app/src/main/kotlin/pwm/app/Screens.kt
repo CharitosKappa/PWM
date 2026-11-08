@@ -46,6 +46,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -97,7 +98,7 @@ internal fun Page(title: String, subtitle: String?, tag: String, content: @Compo
             .testTag(tag),
         verticalArrangement = Arrangement.spacedBy(Tokens.Space.s3.dp),
     ) {
-        Text(title, style = Tokens.Text.display.compose(), color = color(Tokens.Color.text))
+        Text(title, style = Tokens.Text.display.compose(), color = color(Tokens.Color.text), modifier = Modifier.semantics { heading() })
         if (subtitle != null) Text(subtitle, style = Tokens.Text.body.compose(), color = color(Tokens.Color.textMuted))
         Spacer(Modifier.height(Tokens.Space.s2.dp))
         content()

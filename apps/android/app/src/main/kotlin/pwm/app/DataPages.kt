@@ -32,6 +32,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import java.text.NumberFormat
 import kotlinx.coroutines.Dispatchers
@@ -92,7 +94,7 @@ internal fun HealthPage(settings: SettingsModel, model: HealthModel) {
 
 @Composable
 private fun Group(title: String, hint: String?) {
-    Text(title, style = Tokens.Text.title.compose(), color = color(Tokens.Color.text))
+    Text(title, style = Tokens.Text.title.compose(), color = color(Tokens.Color.text), modifier = Modifier.semantics { heading() })
     if (hint != null) Text(hint, style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))
 }
 
@@ -214,7 +216,10 @@ internal fun ImportPage(app: AppModel, settings: SettingsModel, model: ImportMod
                 )
             }
             state.columns?.takeIf { state.format == "csv" }?.let { columns ->
-                Text(stringResource(R.string.import_columns), style = Tokens.Text.title.compose(), color = color(Tokens.Color.text))
+                Text(
+                    stringResource(R.string.import_columns), style = Tokens.Text.title.compose(), color = color(Tokens.Color.text),
+                    modifier = Modifier.semantics { heading() },
+                )
                 val none = stringResource(R.string.import_column_none)
                 val headers = columns.headers.mapIndexed { i, h -> h.ifBlank { stringResource(R.string.import_column_n, i + 1) } }
                 for ((field, label) in COLUMN_FIELDS) {

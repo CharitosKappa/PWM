@@ -160,6 +160,28 @@ class VaultModel internal constructor(
 
     fun open(entry: Entry) = push(Route.Detail(ItemDetailModel(entry, account, clipboard)))
 
+    /** What a list row copies without opening the item: its TalkBack actions. */
+    enum class RowCopy { PASSWORD, USERNAME, CODE }
+
+    fun copy(field: RowCopy, entry: Entry) {
+        scope.launch {
+            val value = when (field) {
+                RowCopy.PASSWORD -> entry.item.password
+                RowCopy.USERNAME -> entry.item.username
+                RowCopy.CODE -> try {
+                    account.currentCode(entry.id, entry.vaultId)?.code?.value
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            if (value.isNullOrEmpty()) return@launch
+            clipboard.copy(Redacted(value), SecretKeyModel.CLIPBOARD_MS)
+            Speech.say(Announcement.COPIED)
+        }
+    }
+
     fun edit(entry: Entry) = push(Route.Edit(ItemEditModel(scope, entry, isNew = false, vault = this)))
 
     /**
@@ -332,6 +354,7 @@ class ItemDetailModel internal constructor(
     fun copy(value: String, field: String) {
         clipboard.copy(Redacted(value), SecretKeyModel.CLIPBOARD_MS)
         mutable.update { it.copy(copied = field) }
+        Speech.say(Announcement.COPIED)
     }
 
     fun copyCode() {
@@ -360,5 +383,9 @@ class ItemDetailModel internal constructor(
     companion object {
         /** Display text for a hidden value: a `•` for each character, 8 to 12 of them. */
         fun masked(value: String): String = "•".repeat(value.length.coerceIn(8, 12))
+
+        /** A one-time code in two groups ("123 456"), shown and read that way. */
+        fun grouped(code: String): String =
+            if (code.length <= 4) code else code.take(code.length / 2) + " " + code.drop(code.length / 2)
     }
 }

@@ -62,16 +62,22 @@ final class OnboardingUITests: XCTestCase {
         }
         tap(search)
         search.typeText("bank")
-        tap(app.staticTexts["Bank"].firstMatch)
-        tap(app.buttons["show.password"])
-        let revealed = app.staticTexts["value.password"]
-        expect(revealed)
-        XCTAssertEqual(revealed.label.count, 20, "the generator's default length")
+        tap(row("Bank, ada"))
+        // One stop per field; a hidden password says "hidden", never dots.
+        let secret = field("password")
+        expect(secret, value: "hidden")
+        // Show is the stop's action for VoiceOver. XCUITest can't run
+        // actions, so tap the eye: the 44-pt button left of Copy.
+        secret.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
+            .withOffset(CGVector(dx: -(44 + 8 + 22), dy: 0)).tap()
+        let revealed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value != 'hidden'"), object: secret)
+        XCTAssertEqual(XCTWaiter().wait(for: [revealed], timeout: 10), .completed, screen())
+        XCTAssertEqual((secret.value as? String)?.count, 20, "the generator's default length")
         tap(app.buttons["edit"])
         tap(app.textFields["username"])
         app.textFields["username"].typeText("2")
         tap(app.buttons["save"], once: .enabled)
-        expect(app.staticTexts["ada2"].firstMatch)
+        expect(field("username"), value: "ada2")
 
         // Trash it, then restore it.
         tap(app.buttons["trash"])
@@ -122,7 +128,7 @@ final class OnboardingUITests: XCTestCase {
         tap(scrolledTo(app.buttons["lockNow"]))
         paste(password, into: app.secureTextFields["password"])
         tap(app.buttons["unlock"], once: .enabled)
-        expect(app.staticTexts["Bank"].firstMatch, timeout: 30)
+        expect(row("Bank, ada"), timeout: 30)
         signOut()
         expect(app.buttons["createAccount"], timeout: 10)
     }
@@ -137,6 +143,16 @@ final class OnboardingUITests: XCTestCase {
         } else {
             tap(app.sheets.buttons["Sign out"])
         }
+    }
+
+    /// A vault row: one stop whose label starts with the name and username.
+    private func row(_ label: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
+    }
+
+    /// An item's field: one stop with its label and value.
+    private func field(_ key: String) -> XCUIElement {
+        app.descendants(matching: .any)["field.\(key)"].firstMatch
     }
 
     /// Swipes Settings up until `element` is there: rows off screen are not

@@ -8,12 +8,19 @@ import XCTest
 final class VaultTests: XCTestCase {
     var account: FakeAccount!
     var pasteboard: FakePasteboard!
+    var announcer: FakeAnnouncer!
     var signedOut = 0
 
     override func setUp() async throws {
         account = FakeAccount()
         pasteboard = FakePasteboard()
+        announcer = FakeAnnouncer()
+        Speech.announcer = announcer
         signedOut = 0
+    }
+
+    override func tearDown() async throws {
+        Speech.announcer = SystemAnnouncer()
     }
 
     func vault() async -> VaultModel {
@@ -197,6 +204,57 @@ final class VaultTests: XCTestCase {
         await detail.refreshCode()
         XCTAssertTrue(detail.codeUnsupported)
         XCTAssertEqual(ItemDetailModel.masked("hunter2"), "••••••••")
+    }
+
+    // MARK: Screen readers (design/README.md, Accessibility)
+
+    func testCopiesAreAnnouncedAndHiddenValuesAreNeverSpoken() async throws {
+        let vault = await vault()
+        await account.put(loginItem("1", "Example", password: "hunter2"))
+        await vault.load()
+        let detail = vault.detail(try XCTUnwrap(vault.entry("1")))
+        detail.copy("hunter2", field: "password")
+        XCTAssertEqual(announcer.said, ["Copied. The clipboard clears in 30 seconds."])
+        XCTAssertFalse(announcer.said.joined().contains("hunter2"))
+        XCTAssertEqual(ItemDetailModel.hiddenWord, "hidden")
+        XCTAssertFalse(ItemDetailModel.hiddenWord.contains("•"))
+    }
+
+    func testARowSaysItsNameUsernameAndCode() {
+        var login = loginItem("1", "GitHub", username: "alex.k", password: "pw")
+        login.login?.totp = "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP"
+        XCTAssertEqual(Entry(vaultId: "v", item: login).spokenLabel, "GitHub, alex.k, has a one-time code")
+
+        var card = Item(kind: .card, title: "Visa", id: "2", nowMs: 1)
+        var fields = Card()
+        fields.number = "4111 1111 1111 4242"
+        card.card = fields
+        card.favorite = true
+        let spoken = Entry(vaultId: "v", item: card).spokenLabel
+        XCTAssertEqual(spoken, "Visa, ending in 4242, favorite")
+        XCTAssertFalse(spoken.contains("4111"))
+    }
+
+    func testARowCopiesWithoutOpeningTheItem() async throws {
+        var item = loginItem("1", "GitHub", username: "alex.k", password: "hunter2")
+        item.login?.totp = "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP"
+        await account.put(item)
+        await account.setCode("123456")
+        let vault = await vault()
+        let entry = try XCTUnwrap(vault.entry("1"))
+        await vault.copy(.password, of: entry)
+        await vault.copy(.username, of: entry)
+        await vault.copy(.code, of: entry)
+        XCTAssertEqual(pasteboard.copied.map(\.0), ["hunter2", "alex.k", "123456"])
+        XCTAssertEqual(pasteboard.copied.map(\.1), [30, 30, 30])
+        XCTAssertEqual(announcer.said.count, 3)
+    }
+
+    func testCodesAreReadInTwoGroups() {
+        XCTAssertEqual(ItemDetailModel.grouped("123456"), "123 456")
+        XCTAssertEqual(ItemDetailModel.grouped("12345678"), "1234 5678")
+        XCTAssertEqual(ItemDetailModel.grouped("1234567"), "123 4567")
+        XCTAssertEqual(ItemDetailModel.grouped("1234"), "1234")
     }
 
     /// On Free the screen says codes are part of Premium, not that the code
@@ -448,10 +506,14 @@ final class LockTimeoutTests: XCTestCase {
     func testLockingTheDeviceLocksTheVault() async throws {
         let app = try await unlocked()
         app.lockTimeout = .eightHours
+        let announcer = FakeAnnouncer()
+        Speech.announcer = announcer
+        defer { Speech.announcer = SystemAnnouncer() }
         await app.deviceWillLock()
         XCTAssertEqual(app.screen, .unlock)
         let calls = await account.calls
         XCTAssertEqual(calls.suffix(1), ["lock"])
+        XCTAssertEqual(announcer.said, ["Vault locked"])
     }
 
     func testAnUnknownSavedValueFallsBackToTheDefault() {

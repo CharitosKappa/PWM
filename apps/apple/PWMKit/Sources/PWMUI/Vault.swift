@@ -17,6 +17,23 @@ public struct Entry: Identifiable, Sendable, Equatable {
     }
 
     public var id: String { item.id ?? "" }
+
+    /// The list row as one VoiceOver stop: "GitHub, alex.k, has a one-time
+    /// code". A card says only its last four digits.
+    public var spokenLabel: String {
+        var parts = [item.title.isEmpty ? "Untitled" : item.title]
+        if let login = item.login {
+            if !login.username.isEmpty { parts.append(login.username) }
+            if let totp = login.totp, !totp.isEmpty { parts.append("has a one-time code") }
+        } else if let card = item.card, !card.lastFour.isEmpty {
+            parts.append("ending in \(card.lastFour)")
+        } else if let identity = item.identity {
+            let name = [identity.firstName, identity.lastName].filter { !$0.isEmpty }.joined(separator: " ")
+            if !name.isEmpty { parts.append(name) }
+        }
+        if item.favorite { parts.append("favorite") }
+        return parts.joined(separator: ", ")
+    }
 }
 
 /// The vault list: sections, search, sync and the actions on items.
@@ -189,6 +206,23 @@ public final class VaultModel {
         return vault
     }
 
+    /// What a list row copies without opening the item: its VoiceOver actions.
+    public enum RowCopy: Sendable {
+        case password, username, code
+    }
+
+    public func copy(_ field: RowCopy, of entry: Entry) async {
+        let value: String?
+        switch field {
+        case .password: value = entry.item.login?.password
+        case .username: value = entry.item.login?.username
+        case .code: value = try? await account.currentCode(entry.id, in: entry.vaultId)?.code.value
+        }
+        guard let value, !value.isEmpty else { return }
+        pasteboard.copy(Redacted(value), clearAfter: ItemDetailModel.clipboardSeconds)
+        Speech.say(ItemDetailModel.copiedLine)
+    }
+
     public func detail(_ entry: Entry) -> ItemDetailModel {
         ItemDetailModel(entry: entry, account: account, pasteboard: pasteboard, capture: capture)
     }
@@ -268,6 +302,10 @@ public final class ItemDetailModel: CaptureListener {
 
     /// As for the Secret Key (D42).
     public static let clipboardSeconds: TimeInterval = 30
+    /// Said after every copy, without moving focus.
+    public static let copiedLine = "Copied. The clipboard clears in 30 seconds."
+    /// What VoiceOver says for a hidden value: never the value or the dots.
+    public static let hiddenWord = "hidden"
 
     private let account: any Account
     private let pasteboard: any SecretPasteboard
@@ -316,6 +354,7 @@ public final class ItemDetailModel: CaptureListener {
     public func copy(_ value: String, field: String) {
         pasteboard.copy(Redacted(value), clearAfter: Self.clipboardSeconds)
         copied = field
+        Speech.say(Self.copiedLine)
     }
 
     public func copyCode() {
@@ -340,6 +379,14 @@ public final class ItemDetailModel: CaptureListener {
             code = nil
             codeUnsupported = true
         }
+    }
+
+    /// A one-time code in two groups ("123 456"), so it is read digit by
+    /// digit with a pause in the middle.
+    public static func grouped(_ code: String) -> String {
+        guard code.count > 4 else { return code }
+        let half = code.count / 2
+        return String(code.prefix(half)) + " " + String(code.dropFirst(half))
     }
 
     /// Display text for a field: `•` for each hidden character, up to 12.

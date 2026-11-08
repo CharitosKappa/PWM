@@ -302,6 +302,7 @@ class AppModel(
         showUnlock(account)
         forgetCredentials()
         scope.launch { account.lock() }
+        Speech.say(Announcement.LOCKED)
     }
 
     // --- Autofill (D58) ---

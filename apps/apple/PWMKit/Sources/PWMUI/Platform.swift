@@ -45,6 +45,40 @@ public struct SystemPasteboard: SecretPasteboard {
 }
 #endif
 
+/// Says a short line to VoiceOver without moving focus: copies and locking
+/// (design/README.md, Accessibility). Never a secret.
+public protocol Announcer: Sendable {
+    @MainActor func say(_ line: String)
+}
+
+public struct SystemAnnouncer: Announcer {
+    public init() {}
+
+    @MainActor public func say(_ line: String) {
+        #if canImport(UIKit)
+        // Queued, so it follows what VoiceOver is saying instead of cutting it off.
+        let queued = NSAttributedString(string: line, attributes: [.accessibilitySpeechQueueAnnouncement: true])
+        UIAccessibility.post(notification: .announcement, argument: queued)
+        #elseif canImport(AppKit)
+        guard let app = NSApp else { return }
+        NSAccessibility.post(
+            element: app, notification: .announcementRequested,
+            userInfo: [.announcement: line, .priority: NSAccessibilityPriorityLevel.high.rawValue]
+        )
+        #endif
+    }
+}
+
+/// Where the models' announcements go; tests swap in their own.
+@MainActor
+public enum Speech {
+    public static var announcer: any Announcer = SystemAnnouncer()
+
+    public static func say(_ line: String) {
+        announcer.say(line)
+    }
+}
+
 /// The name a new device sends at sign-in. iOS gives apps only the model
 /// ("iPhone", "iPad") without an entitlement; rename comes in M5.3.
 @MainActor

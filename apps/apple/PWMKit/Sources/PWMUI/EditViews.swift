@@ -34,9 +34,11 @@ struct ItemEditView: View {
             case .identity: identityFields
             case .note, .folder, nil: EmptyView()
             }
-            Section("Notes") {
+            Section {
                 TextField("Notes", text: $model.notes, axis: .vertical)
                     .lineLimit(3...12)
+            } header: {
+                SectionHeader("Notes")
             }
             customFields
             Section {
@@ -142,7 +144,7 @@ struct ItemEditView: View {
                 }
             }
         }
-        Section("Websites") {
+        Section {
             ForEach($model.urls) { $row in
                 HStack {
                     TextField("https://example.com", text: $row.value.url)
@@ -155,6 +157,8 @@ struct ItemEditView: View {
             .onDelete { model.urls.remove(atOffsets: $0) }
             Button("Add website") { model.addURL() }
                 .accessibilityIdentifier("addURL")
+        } header: {
+            SectionHeader("Websites")
         }
     }
 
@@ -186,18 +190,20 @@ struct ItemEditView: View {
             TextField("Phone", text: $model.identity.phone)
             TextField("Company", text: $model.identity.company)
         }
-        Section("Address") {
+        Section {
             TextField("Street address", text: $model.address, axis: .vertical)
                 .lineLimit(1...4)
             TextField("City", text: $model.identity.city)
             TextField("Region", text: $model.identity.region)
             TextField("Postal code", text: $model.identity.postalCode)
             TextField("Country", text: $model.identity.country)
+        } header: {
+            SectionHeader("Address")
         }
     }
 
     @ViewBuilder private var customFields: some View {
-        Section("Other fields") {
+        Section {
             ForEach($model.customFields) { $row in
                 VStack(alignment: .leading) {
                     TextField("Name", text: $row.value.name)
@@ -223,6 +229,8 @@ struct ItemEditView: View {
                 Button("Website") { model.addField(.url) }
                 Button("Date") { model.addField(.date) }
             }
+        } header: {
+            SectionHeader("Other fields")
         }
     }
 }
@@ -403,7 +411,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("Account") {
+            Section {
                 LabeledContent("Email") { Text(verbatim: model.email ?? "") }
                 LabeledContent("Server") {
                     if let server = model.server {
@@ -412,6 +420,8 @@ struct SettingsView: View {
                         Text("Hosted by us")
                     }
                 }
+            } header: {
+                SectionHeader("Account")
             }
             PlanSection(model: model.plan)
             if model.autofillOn == false {
@@ -424,7 +434,7 @@ struct SettingsView: View {
                     Button("Open AutoFill settings") { Task { await model.openAutoFillSettings() } }
                         .accessibilityIdentifier("openAutoFill")
                 } header: {
-                    Text("AutoFill")
+                    SectionHeader("AutoFill")
                 }
             }
             BiometricSetting(model: model)
@@ -572,7 +582,7 @@ struct BiometricSetting: View {
                     .foregroundStyle(Tokens.Color.textMuted.color)
                     .accessibilityIdentifier("biometricUnavailable")
             } header: {
-                Text("Face ID and Touch ID")
+                SectionHeader("Face ID and Touch ID")
             }
         case nil:
             EmptyView()
