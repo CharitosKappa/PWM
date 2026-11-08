@@ -222,8 +222,36 @@ impl PushConfig {
 }
 
 enum Event {
-    VaultChanged { vault_id: Uuid, by_device: Uuid },
-    ApprovalAsked { account_id: Uuid },
+    VaultChanged {
+        vault_id: Uuid,
+        by_device: Uuid,
+    },
+    ApprovalAsked {
+        account_id: Uuid,
+    },
+    /// To a deleted account's devices, read before the delete (D74 §5).
+    AccountDeleted(Vec<Target>),
+}
+
+/// The push tokens of an account's devices but one, read inside the
+/// deleting transaction, before the cascade takes them (D74 §5).
+pub(crate) struct Tokens(Vec<Target>);
+
+pub(crate) async fn account_tokens(
+    conn: &mut sqlx::PgConnection,
+    account_id: Uuid,
+    except: Uuid,
+) -> Result<Tokens, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT p.device_id, p.app, p.token, p.environment FROM push_tokens p \
+         JOIN devices d ON d.id = p.device_id \
+         WHERE d.account_id = $1 AND d.revoked_at IS NULL AND p.device_id <> $2",
+    )
+    .bind(account_id)
+    .bind(except)
+    .fetch_all(conn)
+    .await?;
+    Ok(Tokens(rows.iter().map(target).collect()))
 }
 
 /// The handle the routes use. Off, it does nothing.
@@ -264,6 +292,15 @@ impl Push {
     /// After an approval request for a known account has committed.
     pub(crate) fn approval_asked(&self, account_id: Uuid) {
         self.send(Event::ApprovalAsked { account_id });
+    }
+
+    /// After an account's deletion has committed: the same content-free push
+    /// as a change, so each device syncs, is told `account_deleted` and
+    /// wipes itself (D74 §5).
+    pub(crate) fn account_deleted(&self, tokens: Tokens) {
+        if !tokens.0.is_empty() {
+            self.send(Event::AccountDeleted(tokens.0));
+        }
     }
 
     fn send(&self, event: Event) {
@@ -322,23 +359,29 @@ impl Sender {
 
     async fn run(mut self, mut events: mpsc::Receiver<Event>) {
         while let Some(event) = events.recv().await {
-            let (targets, kind) = match event {
+            let (targets, kind, every) = match event {
                 Event::VaultChanged {
                     vault_id,
                     by_device,
                 } => (
                     self.vault_targets(vault_id, by_device).await,
                     Kind::Background,
+                    false,
                 ),
-                Event::ApprovalAsked { account_id } => {
-                    (self.account_targets(account_id).await, Kind::Approval)
-                }
+                Event::ApprovalAsked { account_id } => (
+                    self.account_targets(account_id).await,
+                    Kind::Approval,
+                    false,
+                ),
+                // Once per device, so never held back by the minute between
+                // background pushes.
+                Event::AccountDeleted(targets) => (Ok(targets), Kind::Background, true),
             };
             let Ok(targets) = targets else {
                 tracing::warn!("push: the device list could not be read");
                 continue;
             };
-            self.send_all(targets, kind).await;
+            self.send_all(targets, kind, every).await;
         }
     }
 
@@ -368,13 +411,14 @@ impl Sender {
         Ok(rows.iter().map(target).collect())
     }
 
-    async fn send_all(&mut self, targets: Vec<Target>, kind: Kind) {
+    /// `every`: send even to a device pushed less than a minute ago.
+    async fn send_all(&mut self, targets: Vec<Target>, kind: Kind, every: bool) {
         let now = Instant::now();
         self.last
             .retain(|_, at| now.duration_since(*at) < PUSH_EVERY);
         let (mut sent, mut failed, mut dropped) = (0, 0, 0);
         for target in targets {
-            if matches!(kind, Kind::Background) {
+            if matches!(kind, Kind::Background) && !every {
                 if self.last.contains_key(&target.device_id) {
                     continue;
                 }
