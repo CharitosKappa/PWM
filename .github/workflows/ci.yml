@@ -617,6 +617,60 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Tauri downloads its NSIS toolchain from GitHub Releases while
+      # bundling, with no retry, and skips that when %LOCALAPPDATA%\tauri\NSIS
+      # already holds it. So fetch it here, with retries and a mirror, and
+      # cache it per Tauri CLI version. The URLs and SHA-1s are the ones in
+      # the CLI's bundler (crates/tauri-bundler/src/bundle/windows/nsis/mod.rs
+      # at the tauri-cli tag); update them when a CLI bump changes them, or
+      # Tauri replaces the folder with its own download.
+      - name: The Tauri CLI version, for the NSIS cache key
+        id: tauri
+        shell: bash
+        run: echo "cli=$(node -p "require('./apps/desktop/web/package.json').devDependencies['@tauri-apps/cli']")" >> "$GITHUB_OUTPUT"
+      - name: Restore the NSIS toolchain
+        id: nsis
+        uses: actions/cache/restore@v4
+        with:
+          path: ~\AppData\Local\tauri\NSIS
+          key: tauri-nsis-${{ steps.tauri.outputs.cli }}
+      - name: Fetch the NSIS toolchain where Tauri looks for it
+        if: steps.nsis.outputs.cache-hit != 'true'
+        run: |
+          $ErrorActionPreference = "Stop"
+          function Fetch($urls, $sha1, $out) {
+            foreach ($url in $urls) {
+              curl.exe -fsSL --retry 8 --retry-all-errors --retry-delay 10 --connect-timeout 30 --max-time 300 -o $out $url
+              if ($LASTEXITCODE -eq 0 -and (Get-FileHash -Algorithm SHA1 $out).Hash -eq $sha1) { return }
+              Write-Warning "no good copy from $url"
+            }
+            throw "could not fetch $out"
+          }
+          $tools = Join-Path $env:LOCALAPPDATA "tauri"
+          $nsis = Join-Path $tools "NSIS"
+          if (Test-Path $nsis) { Remove-Item -Recurse -Force $nsis }
+          New-Item -ItemType Directory -Force $tools | Out-Null
+          $zip = Join-Path $env:RUNNER_TEMP "nsis-3.13.zip"
+          Fetch @(
+            "https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.13/nsis-3.13.zip",
+            "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip"
+          ) "DB14F8AF2EA346B786C6AE19343F61AAF5E09B8E" $zip
+          Expand-Archive $zip -DestinationPath $tools
+          Rename-Item (Join-Path $tools "nsis-3.13") "NSIS"
+          $additional = Join-Path $nsis "Plugins\x86-unicode\additional"
+          New-Item -ItemType Directory -Force $additional | Out-Null
+          Fetch @(
+            "https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll"
+          ) "75197FEE3C6A814FE035788D1C34EAD39349B860" (Join-Path $additional "nsis_tauri_utils.dll")
+          if ((Get-FileHash -Algorithm SHA1 (Join-Path $nsis "NSIS.exe")).Hash -ne "6D45D4E8CCF18FE1FDAC9164058F356102A2ECF2") {
+            throw "NSIS.exe is not the one Tauri expects"
+          }
+      - name: Save the NSIS toolchain
+        if: steps.nsis.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~\AppData\Local\tauri\NSIS
+          key: tauri-nsis-${{ steps.tauri.outputs.cli }}
       - name: A throwaway code-signing certificate, trusted on this runner only
         run: |
           $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=PWM CI throwaway" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(1)
