@@ -135,7 +135,12 @@ final class SessionTests: XCTestCase {
         let password = try Generator.password()
         XCTAssertEqual(password.value.value.count, 20)
         XCTAssertGreaterThan(password.entropyBits, 100)
-        XCTAssertEqual(try Generator.passphrase().value.value.split(separator: "-").count, 5)
+        // Four list words hold a hyphen (`t-shirt`), so count words with a
+        // separator no word can contain, and check the default by its entropy.
+        XCTAssertEqual(try Generator.passphrase(separator: ".").value.value.split(separator: ".").count, 5)
+        let passphrase = try Generator.passphrase()
+        XCTAssertTrue(passphrase.value.value.contains("-"))
+        XCTAssertEqual(passphrase.entropyBits, 5 * log2(7_776), accuracy: 0.001)
         XCTAssertLessThanOrEqual(Generator.strength(of: Redacted("password")).score, 1)
         XCTAssertThrowsError(try Generator.password(length: 3))
     }

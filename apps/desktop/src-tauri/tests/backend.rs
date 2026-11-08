@@ -145,6 +145,40 @@ fn request(json: Value) -> Request {
     serde_json::from_value(json).unwrap()
 }
 
+/// Whether a `-`-separated phrase with one added digit splits into exactly
+/// `words` list words. Splitting on `-` alone would miscount: four list words
+/// hold a hyphen (`t-shirt`).
+fn is_words(phrase: &str, words: usize) -> bool {
+    if phrase.chars().filter(char::is_ascii_digit).count() != 1 {
+        return false;
+    }
+    let plain: String = phrase.chars().filter(|c| !c.is_ascii_digit()).collect();
+    let parts: Vec<&str> = plain.split('-').collect();
+    let list = pwm_generator::wordlist();
+    // counts[i]: the word counts the first i parts can split into.
+    let mut counts = vec![Vec::<usize>::new(); parts.len() + 1];
+    counts[0].push(0);
+    for end in 1..=parts.len() {
+        for start in end.saturating_sub(2)..end {
+            if list.contains(&parts[start..end].join("-").as_str()) {
+                let next: Vec<usize> = counts[start].iter().map(|n| n + 1).collect();
+                counts[end].extend(next);
+            }
+        }
+    }
+    counts[parts.len()].contains(&words)
+}
+
+#[test]
+fn hyphenated_list_words_count_once() {
+    assert!(is_words("t-shirt-yo-yo-abacus-felt-tip-drop-down7", 5));
+    assert!(is_words("drop-down-felt-tip-abacus2", 3));
+    assert!(!is_words("drop-down-felt-tip-abacus2", 5));
+    assert!(!is_words("abacus-abdomen-abacus4", 5));
+    assert!(!is_words("abacus-abdomen-abacus-abdomen-abacus", 5));
+    assert!(!is_words("abacus-tip-abacus-abdomen-abacus1", 5));
+}
+
 impl Rig {
     async fn ask(&mut self, json: Value) -> Result<Value, String> {
         self.backend.handle(request(json)).await.0.map_err(|f| f.0)
@@ -174,7 +208,7 @@ async fn signed_out_it_answers_what_needs_no_account() {
     let phrase = r
         .ok(json!({"kind": "generate", "mode": "passphrase"}))
         .await;
-    assert_eq!(phrase.as_str().unwrap().split('-').count(), 5);
+    assert!(is_words(phrase.as_str().unwrap(), 5), "not five list words");
     let weak = r
         .ok(json!({"kind": "score", "password": "password", "email": "a@example.com"}))
         .await;

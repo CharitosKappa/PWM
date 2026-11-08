@@ -3911,6 +3911,7 @@ dependencies = [
  "open",
  "pwm-browser-helper",
  "pwm-client",
+ "pwm-generator",
  "pwm-hello",
  "pwm-store",
  "reqwest",

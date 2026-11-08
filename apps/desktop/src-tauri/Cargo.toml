@@ -61,4 +61,5 @@ futures-util = { version = "0.3", default-features = false }
 
 [dev-dependencies]
 base64 = "0.22"
+pwm-generator = { path = "../../../core/pwm-generator" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }

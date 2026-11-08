@@ -226,17 +226,33 @@ describe("the WASM core", () => {
   });
 
   it("generates and scores with the core", async () => {
-    const background = await Background.start(fns, fakePlatform());
+    const asked: number[] = [];
+    const background = await Background.start(
+      {
+        ...fns,
+        generatePassphrase: (words) => {
+          asked.push(words);
+          return fns.generatePassphrase(words);
+        },
+      },
+      fakePlatform(),
+    );
     const password = await background.handle({
       kind: "generate",
       mode: "password",
     });
     expect(password).toHaveLength(20);
+    // Four list words hold a hyphen (`t-shirt`), so splitting the `-` phrase
+    // would miscount: check the words asked for, and count with a `.` instead.
     const passphrase = await background.handle({
       kind: "generate",
       mode: "passphrase",
     });
-    expect(passphrase.split("-")).toHaveLength(5);
+    expect(asked).toEqual([5]);
+    expect(passphrase).toMatch(/^[a-z-]*[0-9][a-z-]*$/);
+    expect(
+      wasm.generatePassphrase(5, ".", false, true).split("."),
+    ).toHaveLength(5);
     expect(
       await background.handle({
         kind: "score",

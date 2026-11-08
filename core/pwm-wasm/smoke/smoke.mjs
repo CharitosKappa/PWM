@@ -32,7 +32,7 @@ check(core.newId() !== id, 'ids are random');
 
 const password = core.generatePassword(20, true, true, true, true, false);
 check(password.length === 20, 'a 20-character password');
-check(core.generatePassphrase(5, '-', false, false).split('-').length === 5, 'a 5-word passphrase');
+check(core.generatePassphrase(5, '.', false, false).split('.').length === 5, 'a 5-word passphrase');
 check(core.passwordScore('password', []) <= 1, 'a weak password scores low');
 check(core.passwordScore(password, []) >= 3, 'a generated password scores high');
 check(code(() => core.generatePassword(3, true, true, true, true, false)) === 'invalid_item', 'a too-short length is refused');
