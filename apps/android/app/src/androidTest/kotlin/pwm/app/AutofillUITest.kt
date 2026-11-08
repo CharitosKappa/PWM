@@ -35,6 +35,10 @@ class AutofillUITest {
     fun signedInWithABankLogin() {
         val server = InstrumentationRegistry.getArguments().getString("server").orEmpty()
         assumeTrue("needs a server: -Pandroid.testInstrumentationRunnerArguments.server=…", server.isNotEmpty())
+        // Play services pushes autofill flags a few minutes after the emulator
+        // boots; Android then chooses the service again and drops any fill in
+        // progress, so a pick returns nothing. No pushes while the test runs.
+        shell("device_config set_sync_disabled_for_tests until_reboot")
         shell("settings put secure autofill_service invalid.pwm.app/pwm.app.PwmAutofillService")
         // Keyboards' inline chips can't be read by UiAutomator: the dropdown can.
         testPrefs().edit().putBoolean(PwmAutofillService.DROPDOWN_ONLY, true).commit()
@@ -77,6 +81,7 @@ class AutofillUITest {
     @After
     fun tidyUp() {
         shell("settings delete secure autofill_service")
+        shell("device_config set_sync_disabled_for_tests none")
         testPrefs().edit().clear().commit()
         // The test app's and PWM's fill screens leave the front, so the next test's taps reach PWM.
         repeat(3) { device.pressBack() }
@@ -98,8 +103,7 @@ class AutofillUITest {
         val search = device.wait(Until.findObject(By.res("fillSearch")), 10_000) ?: error("no fill screen")
         search.click()
         search.text = "Bank"
-        click(By.res("result.Bank"))
-        assertFilled()
+        pickOnFillScreen(By.res("result.Bank"))
 
         // Linked: suggested by name on the next visit.
         pickUntilFilled(By.text("Bank"))
@@ -112,8 +116,7 @@ class AutofillUITest {
         field.click()
         field.text = password
         click(By.res("unlock"))
-        click(By.res("fill.Bank"), 30_000)
-        assertFilled()
+        pickOnFillScreen(By.res("fill.Bank"), 30_000)
         device.pressBack()
     }
 
@@ -188,6 +191,29 @@ class AutofillUITest {
 
     private fun assertFilled() = waitFor("the fields filled", { onScreen() }) { filled() }
 
+    /** Whether [condition] holds within [ms]. */
+    private fun within(ms: Long, condition: () -> Boolean): Boolean {
+        val until = System.currentTimeMillis() + ms
+        while (System.currentTimeMillis() < until) {
+            if (condition()) return true
+            Thread.sleep(100)
+        }
+        return false
+    }
+
+    /**
+     * Picks [entry] on PWM's fill screen until the fields fill. Android can
+     * recreate the screen under the tap; the new one keeps the search and
+     * waits for a pick, so the entry is tapped again, at most three times.
+     */
+    private fun pickOnFillScreen(entry: BySelector, timeout: Long = 10_000) {
+        repeat(3) {
+            runCatching { device.wait(Until.findObject(entry), timeout)?.click() }
+            if (within(15_000) { filled() }) return
+        }
+        assertFilled()
+    }
+
     /**
      * Opens the test app's login screen and picks [entry] from PWM's list.
      * On a slow emulator a tap can land while the list is still being laid
@@ -198,11 +224,7 @@ class AutofillUITest {
             open(LoginTestActivity::class.java)
             tapField("username")
             click(entry)
-            val until = System.currentTimeMillis() + 15_000
-            while (System.currentTimeMillis() < until) {
-                if (filled()) return
-                Thread.sleep(100)
-            }
+            if (within(15_000) { filled() }) return
             if (attempt == 2) assertFilled()
         }
     }
