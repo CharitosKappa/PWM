@@ -226,7 +226,10 @@ private fun VaultList(vault: VaultModel, state: VaultModel.State, signInAgain: p
                 }
                 LazyColumn(Modifier.fillMaxSize().testTag("itemList")) {
                     items(state.visible, key = { "${it.vaultId}/${it.id}" }) { entry ->
-                        ItemRow(entry, copy = { field -> vault.copy(field, entry) }) { vault.open(entry) }
+                        ItemRow(
+                            entry, code = vault.rowCode(entry), copies = vault.copies(entry),
+                            copy = { field -> vault.copy(field, entry) },
+                        ) { vault.open(entry) }
                     }
                 }
             }
@@ -296,9 +299,16 @@ private fun sectionTag(section: Section): String = when (section) {
 /**
  * A row: the type's icon, the title and the username or a card's last 4 digits. No website icons (D43 §2).
  * One TalkBack stop that says the name, the username and "has a one-time code", with the copies as its actions.
+ * On Free it says the code is part of Premium and offers no "Copy code" (D73 §1).
  */
 @Composable
-private fun ItemRow(entry: Entry, copy: (VaultModel.RowCopy) -> Unit, onClick: () -> Unit) {
+private fun ItemRow(
+    entry: Entry,
+    code: VaultModel.RowCode,
+    copies: List<VaultModel.RowCopy>,
+    copy: (VaultModel.RowCopy) -> Unit,
+    onClick: () -> Unit,
+) {
     val item = entry.item
     val subtitle = when (item.kind) {
         Item.Kind.LOGIN -> item.username
@@ -306,21 +316,23 @@ private fun ItemRow(entry: Entry, copy: (VaultModel.RowCopy) -> Unit, onClick: (
         Item.Kind.IDENTITY -> item.identity?.let { listOf(it.firstName, it.lastName).filter(String::isNotBlank).joinToString(" ") } ?: ""
         else -> ""
     }
-    val hasCode = item.kind == Item.Kind.LOGIN && !item.totp.isNullOrEmpty()
     val spoken = listOfNotNull(
         item.title,
         subtitle.ifEmpty { null },
-        if (hasCode) stringResource(R.string.has_code) else null,
+        when (code) {
+            VaultModel.RowCode.NONE -> null
+            VaultModel.RowCode.HAS_CODE -> stringResource(R.string.has_code)
+            VaultModel.RowCode.NEEDS_PLAN -> stringResource(R.string.code_part_of_premium)
+        },
         if (item.favorite) stringResource(R.string.favorite) else null,
     ).joinToString(", ")
-    val actions = if (item.kind != Item.Kind.LOGIN || item.trashedAtMs != null) {
-        emptyList()
-    } else {
-        listOfNotNull(
-            if (item.password.isNotEmpty()) RowAction(stringResource(R.string.copy_password)) { copy(VaultModel.RowCopy.PASSWORD) } else null,
-            if (item.username.isNotEmpty()) RowAction(stringResource(R.string.copy_username)) { copy(VaultModel.RowCopy.USERNAME) } else null,
-            if (hasCode) RowAction(stringResource(R.string.copy_code)) { copy(VaultModel.RowCopy.CODE) } else null,
-        )
+    val actions = copies.map { field ->
+        val label = when (field) {
+            VaultModel.RowCopy.PASSWORD -> R.string.copy_password
+            VaultModel.RowCopy.USERNAME -> R.string.copy_username
+            VaultModel.RowCopy.CODE -> R.string.copy_code
+        }
+        RowAction(stringResource(label)) { copy(field) }
     }
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = Tokens.Space.s4.dp, vertical = Tokens.Space.s3.dp)

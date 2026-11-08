@@ -172,7 +172,7 @@ struct ItemList: View {
 
     var body: some View {
         List(model.visible, selection: $selection) { entry in
-            ItemRow(entry: entry) { field in
+            ItemRow(entry: entry, spokenLabel: model.spokenLabel(for: entry), copies: model.copies(for: entry)) { field in
                 Task { await model.copy(field, of: entry) }
             }
                 .swipeActions {
@@ -301,9 +301,12 @@ struct SignInAgainView: View {
 }
 
 /// One VoiceOver stop: name, username and "has a one-time code", with the
-/// copies as its actions.
+/// copies as its actions. On Free the row says the code is part of Premium
+/// and offers no "Copy code" (D73 §1).
 struct ItemRow: View {
     let entry: Entry
+    var spokenLabel: String?
+    var copies: [VaultModel.RowCopy] = []
     var copy: ((VaultModel.RowCopy) -> Void)?
 
     private var subtitle: String {
@@ -338,18 +341,16 @@ struct ItemRow: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: entry.spokenLabel))
+        .accessibilityLabel(Text(verbatim: spokenLabel ?? entry.spokenLabel))
         .accessibilityIdentifier("item")
         .accessibilityActions {
-            if let copy, let login = entry.item.login, entry.item.trashedAtMs == nil {
-                if !login.password.isEmpty {
-                    Button("Copy password") { copy(.password) }
-                }
-                if !login.username.isEmpty {
-                    Button("Copy username") { copy(.username) }
-                }
-                if let totp = login.totp, !totp.isEmpty {
-                    Button("Copy code") { copy(.code) }
+            if let copy {
+                ForEach(copies, id: \.self) { field in
+                    switch field {
+                    case .password: Button("Copy password") { copy(.password) }
+                    case .username: Button("Copy username") { copy(.username) }
+                    case .code: Button("Copy code") { copy(.code) }
+                    }
                 }
             }
         }

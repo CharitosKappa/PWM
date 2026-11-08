@@ -24,6 +24,9 @@ import pwm.kit.SyncResult
 class Entry(val vaultId: String, val item: Item) {
     val id: String get() = item.id ?: ""
 
+    /** The login has a one-time code set up. */
+    val hasCode: Boolean get() = item.kind == Item.Kind.LOGIN && !item.totp.isNullOrEmpty()
+
     override fun toString(): String = "Entry(<redacted>)"
 }
 
@@ -81,6 +84,11 @@ class VaultModel internal constructor(
         val stack: List<Route> = emptyList(),
         /** Back was pressed on an edit with changes: ask before discarding. */
         val discardAsked: Boolean = false,
+        /**
+         * The plan doesn't include one-time codes (D73 §1), as the core said when asked for one.
+         * Rows then offer no "Copy code" and say the code is part of Premium.
+         */
+        val codeNeedsPlan: Boolean = false,
     )
 
     private val mutable = MutableStateFlow(State())
@@ -104,6 +112,21 @@ class VaultModel internal constructor(
             throw e
         } catch (e: Exception) {
             mutable.update { it.copy(error = message(e)) }
+        }
+        checkCodePlan()
+    }
+
+    /** Asks the core for one code, so the rows know whether the plan includes them; the code itself is dropped. */
+    private suspend fun checkCodePlan() {
+        val entry = mutable.value.entries.firstOrNull { it.hasCode && it.item.trashedAtMs == null } ?: return
+        try {
+            account.currentCode(entry.id, entry.vaultId)
+            mutable.update { it.copy(codeNeedsPlan = false) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Another failure (an unsupported kind, say) says nothing about the plan.
+            if (PwmError.from(e).code == "plan_required") mutable.update { it.copy(codeNeedsPlan = true) }
         }
     }
 
@@ -164,6 +187,27 @@ class VaultModel internal constructor(
     /** What a list row copies without opening the item: its TalkBack actions. */
     enum class RowCopy { PASSWORD, USERNAME, CODE }
 
+    /** What a row says after its name and username about its code. */
+    enum class RowCode { NONE, HAS_CODE, NEEDS_PLAN }
+
+    /** The copies a row offers: none in the trash, and no code on Free. */
+    fun copies(entry: Entry): List<RowCopy> {
+        val item = entry.item
+        if (item.kind != Item.Kind.LOGIN || item.trashedAtMs != null) return emptyList()
+        return listOfNotNull(
+            if (item.password.isNotEmpty()) RowCopy.PASSWORD else null,
+            if (item.username.isNotEmpty()) RowCopy.USERNAME else null,
+            if (entry.hasCode && !mutable.value.codeNeedsPlan) RowCopy.CODE else null,
+        )
+    }
+
+    /** The row's code phrase, as the plan allows. */
+    fun rowCode(entry: Entry): RowCode = when {
+        !entry.hasCode -> RowCode.NONE
+        mutable.value.codeNeedsPlan -> RowCode.NEEDS_PLAN
+        else -> RowCode.HAS_CODE
+    }
+
     fun copy(field: RowCopy, entry: Entry) {
         scope.launch {
             val value = when (field) {
@@ -174,6 +218,7 @@ class VaultModel internal constructor(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    if (PwmError.from(e).code == "plan_required") mutable.update { it.copy(codeNeedsPlan = true) }
                     null
                 }
             }
