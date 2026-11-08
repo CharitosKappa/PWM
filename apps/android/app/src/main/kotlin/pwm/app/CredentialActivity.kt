@@ -19,12 +19,32 @@ import androidx.credentials.exceptions.CreateCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.provider.PendingIntentHandler
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import pwm.kit.PasskeyOffer
 import pwm.kit.Redacted
+import pwm.kit.ui.CredentialModel
 import pwm.kit.ui.CredentialResult
 import pwm.kit.ui.CredentialTask
+
+/**
+ * The request outlives its screen, as the fill does (FillHolder): a screen
+ * Android recreates (a rotation, a configuration it changed) carries on with
+ * the same unlock, confirmation or save, and returns a result reached while
+ * the old one was closing, instead of starting again and losing it.
+ */
+internal class CredentialHolder : ViewModel() {
+    var task: CredentialTask? = null
+    var model: CredentialModel? = null
+    val done = MutableStateFlow<Done?>(null)
+
+    class Done(val result: CredentialResult?)
+}
 
 /**
  * What a Credential Manager entry opens (D61 §5-7): unlock, confirm a
@@ -38,11 +58,16 @@ class CredentialActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         // Vault content: never in screenshots or the app switcher (D56).
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        val holder = ViewModelProvider(this)[CredentialHolder::class.java]
         lifecycleScope.launch {
-            val task = task() ?: return@launch cancel()
-            val model = (application as PwmApplication).model.credentialModel(task) { result -> finishWith(task, result) }
+            val task = holder.task ?: task()?.also { holder.task = it } ?: return@launch cancel()
+            val model = holder.model
+                ?: (application as PwmApplication).model.credentialModel(task) { result ->
+                    holder.done.value = CredentialHolder.Done(result)
+                }?.also { holder.model = it }
                 ?: return@launch cancel()
             setContent { PwmTheme { CredentialScreen(model) } }
+            finishWith(task, holder.done.filterNotNull().first().result)
         }
     }
 
