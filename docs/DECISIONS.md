@@ -4060,3 +4060,4 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - **A restart forgets it:** a stopped service worker or a relaunched app shows the plain sign-in screen.
   - **The desktop** deletes the account's Windows Hello key by the name it had before the account was gone, since the name comes from the account id.
   - **Apple's `VaultModel` and Android's** pass the reason to the app's sign-out callback.
+  - **Rate limit, changed in part 2:** the delete calls had counted with the login limit (30 a minute per IP, §1), but Apple's server tests use nearly all of it in a few seconds, and the delete calls pushed them over. They now have a limit of their own, 10 an hour per IP, which is stricter against guessing and leaves logins alone.
