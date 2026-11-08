@@ -240,7 +240,17 @@ class ServerTest {
         val other = Session(cachePath = null, server = server, transport = JdkTransport(), keys = keys)
         other.signUp("kotlin-${UUID.randomUUID()}@example.com", password, "Android tablet")
         assertTrue("a new device for the new account", keys.get(KeyName.DEVICE_ID) != device)
-        other.signOut()
+
+        // Deleting that account (D74): the password first, then nothing of
+        // it stays, here or on the server, whose refresh answer says why.
+        val wrong = runCatching { other.deleteAccount(Redacted("not the password at all")) }.exceptionOrNull()
+        assertEquals("wrong_password", (wrong as PwmError).code)
+        assertTrue(other.isUnlocked())
+        val gone = keys.get(KeyName.REFRESH_TOKEN)!!
+        other.deleteAccount(password)
+        assertTrue(!other.isSignedIn())
+        assertTrue(keys.get(KeyName.SECRET_KEY) == null)
+        assertEquals(403, refresh(gone))
     }
 }
 

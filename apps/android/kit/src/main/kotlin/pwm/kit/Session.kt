@@ -264,6 +264,32 @@ class Session(
         }
     }
 
+    /**
+     * Deletes the account on the server and this device (D74), with the
+     * master password and the stored Secret Key. A wrong password is
+     * `wrong_password`; `delete_unavailable` means a plan couldn't be ended
+     * or the server wasn't reached, and nothing was deleted. Afterwards
+     * nothing of the account stays here, as after [signOut].
+     */
+    override suspend fun deleteAccount(password: Redacted<String>) = on {
+        val secretKey = keys.get(KeyName.SECRET_KEY) ?: throw PwmError("signed_out")
+        val outcome = try {
+            run(core { client.startDeleteAccount(password.value, secretKey) })
+        } catch (e: Wait) {
+            throw PwmError("delete_unavailable")
+        }
+        when (outcome) {
+            Outcome.AccountDeleted -> Unit
+            Outcome.DeviceRevoked -> throw PwmError("device_revoked")
+            Outcome.SignedOut -> throw PwmError("signed_out")
+            else -> throw PwmError("protocol")
+        }
+        disableBiometrics()
+        for (name in listOf(KeyName.SECRET_KEY, KeyName.ACCESS_TOKEN, KeyName.REFRESH_TOKEN, KeyName.EMAIL, KeyName.PASSWORD_UNLOCKED_AT)) {
+            keys.delete(name)
+        }
+    }
+
     /** `POST /v1/auth/logout` with the stored tokens, locked or not; a revoked device's sends nothing. */
     private suspend fun endSession() {
         val access = keys.get(KeyName.ACCESS_TOKEN) ?: return

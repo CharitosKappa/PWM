@@ -54,7 +54,8 @@ class VaultModel internal constructor(
     internal val account: Account,
     internal val clipboard: SecretClipboard,
     internal val work: CoroutineDispatcher,
-    private val onSignedOut: () -> Unit,
+    /** Why the account left: `device_revoked` or `account_deleted`. */
+    private val onSignedOut: (String?) -> Unit,
     /** A sync was told the session ended: "Sign in again to sync" (D50 §5). */
     private val onSessionEnded: () -> Unit = {},
 ) {
@@ -141,7 +142,7 @@ class VaultModel internal constructor(
                 SyncResult.DeviceRevoked, SyncResult.AccountDeleted -> {
                     // The core has cleared the cache; finish signing out.
                     runCatching { account.signOut() }
-                    onSignedOut()
+                    onSignedOut(if (result == SyncResult.AccountDeleted) "account_deleted" else "device_revoked")
                     return false
                 }
             }

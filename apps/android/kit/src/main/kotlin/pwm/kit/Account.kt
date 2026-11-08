@@ -42,6 +42,13 @@ interface Account {
 
     suspend fun signOut()
 
+    /**
+     * Deletes the account everywhere and wipes this device (D74). A wrong
+     * password is `wrong_password`; `delete_unavailable` means nothing was
+     * deleted.
+     */
+    suspend fun deleteAccount(password: Redacted<String>)
+
     // --- Fingerprint and face unlock (D45, D55) ---
 
     fun biometricState(): BiometricState

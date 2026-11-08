@@ -128,6 +128,16 @@ class FakeAccount(override val server: URL = Server.HOSTED, signedIn: Boolean = 
         biometricOn = false
     }
 
+    /** What deleting the account fails with (D74), after the password check; null deletes. */
+    var deleteError: PwmError? = null
+
+    override suspend fun deleteAccount(password: Redacted<String>) {
+        if (password.value != PASSWORD) throw PwmError("wrong_password")
+        deleteError?.let { throw it }
+        calls += "deleteAccount"
+        signOut()
+    }
+
     // Fingerprint and face unlock: [biometricResult] is what the prompt does.
     /** Off unless a test turns it on, so other tests don't meet the offer. */
     var biometricAvailable = false
