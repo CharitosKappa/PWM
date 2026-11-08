@@ -51,3 +51,16 @@ export function Notice({
     </p>
   );
 }
+
+/**
+ * A hidden value: the dots are drawn but never read; screen readers say
+ * "hidden" (design/README.md, Accessibility).
+ */
+export function Masked({ dots }: { dots: string }): JSX.Element {
+  return (
+    <>
+      <span aria-hidden="true">{dots}</span>
+      <span class="visually-hidden">hidden</span>
+    </>
+  );
+}

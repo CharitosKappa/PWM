@@ -37,6 +37,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -258,7 +260,10 @@ internal fun SettingsTab(app: AppModel, model: SettingsModel) {
 
 @Composable
 private fun Heading(text: String) {
-    Text(text, style = Tokens.Text.title.compose(), color = color(Tokens.Color.text), modifier = Modifier.padding(top = Tokens.Space.s3.dp))
+    Text(
+        text, style = Tokens.Text.title.compose(), color = color(Tokens.Color.text),
+        modifier = Modifier.padding(top = Tokens.Space.s3.dp).semantics { heading() },
+    )
 }
 
 /**
@@ -274,7 +279,7 @@ private fun Notices(model: SettingsModel) {
     Column(Modifier.fillMaxSize().testTag("noticesScreen")) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(Tokens.Space.s3.dp)) {
             TextButton(onClick = { if (open != null) open = null else model.back() }) { Text(stringResource(R.string.back)) }
-            Text(stringResource(R.string.notices), style = Tokens.Text.title.compose(), color = color(Tokens.Color.text))
+            Text(stringResource(R.string.notices), style = Tokens.Text.title.compose(), color = color(Tokens.Color.text), modifier = Modifier.semantics { heading() })
         }
         val file = open
         when {

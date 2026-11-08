@@ -202,4 +202,13 @@
     <string name="approval_notices_refused">Notifications are off for PWM. Turn them on in Android’s settings, under Apps, PWM, Notifications.</string>
     <string name="approval_notice">A new device wants to sign in. Open PWM to compare the code.</string>
     <string name="notice_channel">New devices</string>
+
+    <!-- Screen readers (design/README.md, Accessibility): what TalkBack says -->
+    <string name="hidden">hidden</string>
+    <string name="has_code">has a one-time code</string>
+    <string name="copy_password">Copy password</string>
+    <string name="copy_username">Copy username</string>
+    <string name="copy_code">Copy code</string>
+    <string name="announce_copied">Copied. The clipboard clears in 30 seconds.</string>
+    <string name="announce_locked">Vault locked</string>
 </resources>

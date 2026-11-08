@@ -542,6 +542,16 @@ final class FakeImportFiles: ImportFiles, @unchecked Sendable {
     }
 }
 
+/// What would have been said to VoiceOver.
+@MainActor
+final class FakeAnnouncer: Announcer {
+    var said: [String] = []
+
+    func say(_ line: String) {
+        said.append(line)
+    }
+}
+
 @MainActor
 final class FakePasteboard: SecretPasteboard {
     var copied: [(String, TimeInterval)] = []

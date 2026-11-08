@@ -343,7 +343,11 @@ public final class AppModel {
         await account.lock()
         dropVault()
         await showUnlock()
+        Speech.say(Self.lockedLine)
     }
+
+    /// Said when the vault locks, from the button or the timeout.
+    public static let lockedLine = "Vault locked"
 
     /// The app left the screen.
     public func didEnterBackground() async {

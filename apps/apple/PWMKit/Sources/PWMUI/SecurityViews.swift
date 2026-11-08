@@ -72,7 +72,7 @@ struct HealthView: View {
                         HealthRow(entry: leaked.entry, detail: leakText(leaked.count)) { editing = model.edit(leaked.entry) }
                     }
                 } header: {
-                    Text("Leaked")
+                    SectionHeader("Leaked")
                 } footer: {
                     Text("These passwords appear in known data breaches. Change them first.")
                 }
@@ -83,7 +83,7 @@ struct HealthView: View {
                         HealthRow(entry: entry, detail: String(localized: "Easy to guess")) { editing = model.edit(entry) }
                     }
                 } header: {
-                    Text("Weak")
+                    SectionHeader("Weak")
                 }
             }
             if !model.reused.isEmpty {
@@ -96,7 +96,7 @@ struct HealthView: View {
                         }
                     }
                 } header: {
-                    Text("Reused")
+                    SectionHeader("Reused")
                 } footer: {
                     Text("A leak on one site would open the others. Give each its own password.")
                 }
@@ -390,12 +390,14 @@ struct ExportView: View {
             }
             switch model.choice {
             case .encrypted:
-                Section("Export password") {
+                Section {
                     SecureField("Export password", text: $model.exportPassword)
                         .accessibilityIdentifier("exportPassword")
                     StrengthMeter(strength: model.strength)
                     SecureField("Export password again", text: $model.confirm)
                         .accessibilityIdentifier("exportConfirm")
+                } header: {
+                    SectionHeader("Export password")
                 }
             case .json, .csv:
                 Section {

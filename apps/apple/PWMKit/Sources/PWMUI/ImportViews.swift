@@ -62,7 +62,7 @@ struct ImportView: View {
                     }
                 }
                 if model.format == "csv", let columns = model.columns {
-                    Section("Which column holds what") {
+                    Section {
                         ForEach(ImportModel.mappedFields, id: \.label) { field in
                             Picker(field.label, selection: Binding(
                                 get: { model.columnMap[keyPath: field.keyPath] ?? -1 },
@@ -74,6 +74,8 @@ struct ImportView: View {
                                 }
                             }
                         }
+                    } header: {
+                        SectionHeader("Which column holds what")
                     }
                 }
                 Section {

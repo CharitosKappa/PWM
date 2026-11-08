@@ -127,6 +127,7 @@ public final class SecretKeyModel {
     public func copy() {
         pasteboard.copy(secretKey, clearAfter: Self.clipboardSeconds)
         copied = true
+        Speech.say(ItemDetailModel.copiedLine)
     }
 
     public func done() {

@@ -84,6 +84,7 @@ public final class GeneratorModel {
         guard let value else { return }
         pasteboard.copy(value, clearAfter: ItemDetailModel.clipboardSeconds)
         copied = true
+        Speech.say(ItemDetailModel.copiedLine)
     }
 }
 

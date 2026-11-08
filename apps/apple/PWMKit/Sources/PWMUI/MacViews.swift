@@ -31,18 +31,22 @@ struct MacMainView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: sidebar) {
-                Section("Vault") {
+                Section {
                     Label("All items", systemImage: "tray.full").tag(Row.section(.all))
                     Label("Favorites", systemImage: "star").tag(Row.section(.favorites))
                     ForEach(VaultModel.kinds, id: \.self) { kind in
                         Label(kind.sectionLabel, systemImage: kind.symbol).tag(Row.section(.kind(kind)))
                     }
+                } header: {
+                    SectionHeader("Vault")
                 }
                 if !vault.folders.isEmpty {
-                    Section("Folders") {
+                    Section {
                         ForEach(vault.folders) { folder in
                             Label(folder.item.title, systemImage: "folder").tag(Row.section(.folder(folder.id)))
                         }
+                    } header: {
+                        SectionHeader("Folders")
                     }
                 }
                 Label("Trash", systemImage: "trash").tag(Row.section(.trash))

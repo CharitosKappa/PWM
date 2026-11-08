@@ -143,6 +143,7 @@ class SecretKeyModel internal constructor(
     fun copy() {
         clipboard.copy(secretKey, CLIPBOARD_MS)
         mutable.update { it.copy(copied = true) }
+        Speech.say(Announcement.COPIED)
     }
 
     fun done() {

@@ -72,7 +72,7 @@ struct PlanSection: View {
                     .accessibilityIdentifier("planError")
             }
         } header: {
-            Text("Plan")
+            SectionHeader("Plan")
         } footer: {
             footer
         }

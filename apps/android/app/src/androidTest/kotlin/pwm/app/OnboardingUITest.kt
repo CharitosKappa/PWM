@@ -2,6 +2,7 @@ package pwm.app
 
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -107,14 +108,20 @@ class OnboardingUITest {
 
         // Found by search, edited, its password copied.
         type("search", "ban")
+        // Screen readers (design/README.md): the row is one stop, its copies are its actions.
+        check(description("item.Bank") == "Bank, ada") { "the row says ${description("item.Bank")}" }
+        check(actions("item.Bank") == listOf(string(R.string.copy_password), string(R.string.copy_username))) { "the row's actions" }
         tap("item.Bank")
         tap("edit")
         replace("username", "grace")
         tap("save")
-        compose.waitUntil(30_000) { exists("detailScreen") && text("value.username") == "grace" }
-        tap("reveal.password")
-        check(text("value.password").length == 20) { "the generated password wasn't saved" }
-        tap("copy.password")
+        compose.waitUntil(30_000) { exists("detailScreen") && exists("field.username") && text("field.username") == "grace" }
+        // A hidden password says "hidden", never the dots; Show and Copy are the field's actions.
+        check(node("field.password").getOrNull(SemanticsProperties.StateDescription) == string(R.string.hidden)) { "the hidden password isn't hidden" }
+        check(node("field.password").getOrNull(SemanticsProperties.Text) == null) { "the hidden password is read out" }
+        act("field.password", string(R.string.show))
+        check(text("field.password").length == 20) { "the generated password wasn't saved" }
+        act("field.password", string(R.string.copy))
 
         // Trashed and restored.
         tap("trash")
@@ -301,4 +308,21 @@ class OnboardingUITest {
 
     private fun text(tag: String): String =
         compose.onNodeWithTag(tag).fetchSemanticsNode().config[SemanticsProperties.Text].joinToString("") { it.text }
+
+    private fun node(tag: String) = compose.onNodeWithTag(tag).fetchSemanticsNode().config
+
+    private fun string(id: Int) = InstrumentationRegistry.getInstrumentation().targetContext.getString(id)
+
+    /** What TalkBack says for a stop's name. */
+    private fun description(tag: String) = node(tag)[SemanticsProperties.ContentDescription].joinToString()
+
+    /** A stop's TalkBack actions, by name. */
+    private fun actions(tag: String) = node(tag).getOrNull(SemanticsActions.CustomActions).orEmpty().map { it.label }
+
+    /** Runs one of a stop's TalkBack actions, as a TalkBack user would from its actions menu. */
+    private fun act(tag: String, label: String) {
+        val action = node(tag)[SemanticsActions.CustomActions].first { it.label == label }
+        compose.runOnUiThread { action.action() }
+        compose.waitForIdle()
+    }
 }
