@@ -28,8 +28,8 @@ env:
 
 jobs:
   fmt-lint:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -47,8 +47,8 @@ jobs:
       - run: just check
 
   core-test:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -71,8 +71,8 @@ jobs:
   # Server integration tests against a real Postgres (D25). PWM_REQUIRE_DB
   # turns a missing database into a failure instead of a skip.
   server-test:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     services:
       postgres:
         image: postgres:17-alpine
@@ -106,8 +106,8 @@ jobs:
   # The core in the browser (D31, D34): WASM build, the Node smoke test, the
   # extension's tests over the real core, and the extension build and its checks.
   wasm:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -143,8 +143,8 @@ jobs:
   # The core for the apps (D31): UniFFI bindings, compiled and run on Linux,
   # then the Swift package (D41) tested against them and a sync server.
   bindings:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     services:
       postgres:
         image: postgres:17-alpine
@@ -213,7 +213,7 @@ jobs:
   # or the core, so other PRs spend no macOS minutes (D41 §6).
   apple-changes:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     outputs:
       run: ${{ steps.diff.outputs.run }}
     steps:
@@ -347,7 +347,7 @@ jobs:
   # app, the core or the shared design files (D52 §8).
   android-changes:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     outputs:
       run: ${{ steps.diff.outputs.run }}
     steps:
@@ -370,7 +370,7 @@ jobs:
   android:
     needs: android-changes
     if: needs.android-changes.outputs.run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 50
     services:
       postgres:
@@ -456,7 +456,7 @@ jobs:
   # screens, the core or the design tokens.
   desktop-changes:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     outputs:
       run: ${{ steps.diff.outputs.run }}
     steps:
@@ -479,7 +479,7 @@ jobs:
   desktop-linux:
     needs: desktop-changes
     if: needs.desktop-changes.outputs.run == 'true'
-    runs-on: ubuntu-22.04
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-22.04' }}
     timeout-minutes: 45
     services:
       postgres:
@@ -763,7 +763,7 @@ jobs:
   desktop-installer-linux:
     needs: desktop-changes
     if: needs.desktop-changes.outputs.run == 'true'
-    runs-on: ubuntu-22.04
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-22.04' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
@@ -841,8 +841,8 @@ jobs:
           retention-days: 7
 
   image:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -878,8 +878,8 @@ jobs:
   # Filling in a real browser (D35): the extension's test build in
   # Chromium against fixture pages, with the sync server from compose.
   autofill-harness:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -920,7 +920,7 @@ jobs:
   # release workflow (M10) gates on it with runner/compare.ts.
   autofill-top-sites:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
@@ -957,7 +957,7 @@ jobs:
   autofill-dashboard:
     needs: autofill-top-sites
     if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -993,8 +993,8 @@ jobs:
         uses: actions/deploy-pages@v4
 
   extension-test:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v6
@@ -1006,7 +1006,7 @@ jobs:
       - run: pnpm test
 
   audit:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v5
       - uses: taiki-e/install-action@v2
@@ -1023,8 +1023,10 @@ jobs:
       - run: pnpm license-check
       - run: pnpm audit --audit-level high
 
+  # Nightly: every target for 10 minutes, one job each (D78 §1).
   fuzz:
-    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -1054,15 +1056,77 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-fuzz
-      - name: Fuzz ${{ matrix.target }} (60 s on PRs, 10 min nightly)
+      - name: Fuzz ${{ matrix.target }} for 10 minutes
         working-directory: core/pwm-crypto/fuzz
         # The prebuilt cargo-fuzz is a musl binary and would default to the musl
         # target, which the address sanitizer does not support.
         run: >
           cargo +nightly fuzz run --target x86_64-unknown-linux-gnu ${{ matrix.target }} --
-          -max_total_time=${{ github.event_name == 'schedule' && 600 || 60 }}
+          -max_total_time=600
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz-crash-${{ matrix.target }}
+          path: core/pwm-crypto/fuzz/artifacts/
+
+  # Pull requests and pushes fuzz only when the core changed, every target
+  # for 60 s in one job, so the fuzz crate is built once (D78 §1).
+  core-changes:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
+    outputs:
+      run: ${{ steps.diff.outputs.run }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if git diff --name-only "$BASE" HEAD | grep -qE '^(core/|Cargo\.(toml|lock)$|\.github/workflows/ci\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  fuzz-quick:
+    needs: core-changes
+    if: needs.core-changes.outputs.run == 'true'
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/pwm-crypto/fuzz
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - name: Every target is in the nightly matrix
+        working-directory: core/pwm-crypto/fuzz
+        run: |
+          for t in $(cargo +nightly fuzz list); do
+            grep -qxF "          - $t" ../../../.github/workflows/ci.yml || { echo "::error::$t is missing from the nightly fuzz matrix"; exit 1; }
+          done
+      - name: Fuzz every target for 60 s
+        working-directory: core/pwm-crypto/fuzz
+        # The prebuilt cargo-fuzz is a musl binary and would default to the musl
+        # target, which the address sanitizer does not support.
+        run: |
+          failed=""
+          for t in $(cargo +nightly fuzz list); do
+            echo "::group::$t"
+            cargo +nightly fuzz run --target x86_64-unknown-linux-gnu "$t" -- -max_total_time=60 || failed="$failed $t"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::Crashes in:$failed"
+            exit 1
+          fi
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
           path: core/pwm-crypto/fuzz/artifacts/
