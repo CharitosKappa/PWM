@@ -11,6 +11,8 @@ public protocol Account: AnyObject, Sendable {
     func unlock(password: Redacted<String>) async throws
     func lock() async
     func signOut() async throws
+    /// Deletes the account everywhere and wipes this device (D74).
+    func deleteAccount(password: Redacted<String>) async throws
     func emergencyKit(paper: EmergencyKit.Paper) async throws -> Redacted<Data>
 
     // The vault (D43).

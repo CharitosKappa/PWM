@@ -462,5 +462,21 @@ class VaultTest {
         h.vault.refresh()
         advanceUntilIdle()
         assertEquals(AppModel.Screen.Welcome, h.screen)
+        // The welcome screen says why (D74 §5), until the user moves on.
+        assertEquals("This device was signed out from another device.", h.app.state.value.ended)
+        h.app.showSignIn()
+        assertNull(h.app.state.value.ended)
+    }
+
+    /** D74 §5: the account was deleted from another device. */
+    @Test
+    fun aDeletedAccountsDeviceIsWipedAndTheWelcomeScreenSaysSo() = runTest {
+        val h = unlocked()
+        h.accounts.single().syncResult = pwm.kit.SyncResult.AccountDeleted
+        h.vault.refresh()
+        advanceUntilIdle()
+        assertEquals(AppModel.Screen.Welcome, h.screen)
+        assertEquals("This account was deleted.", h.app.state.value.ended)
+        assertFalse(h.accounts.single().isSignedIn())
     }
 }

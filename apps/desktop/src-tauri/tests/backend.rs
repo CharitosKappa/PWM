@@ -400,6 +400,39 @@ async fn sign_in_on_another_computer_and_sign_out(server: &str, email: &str, sec
         .await;
     let again = second.keys.get(name::DEVICE_ID).await.unwrap().unwrap();
     assert_eq!(again.expose_secret(), new_id.expose_secret());
+
+    // Deleting that account (D74): the password first, then everything
+    // goes, and the sign-in screen says why.
+    assert_eq!(
+        second
+            .ask(json!({"kind": "deleteAccount", "masterPassword": "not it at all"}))
+            .await,
+        Err("wrong_password".to_owned())
+    );
+    assert_eq!(
+        second.ok(json!({"kind": "status"})).await["state"],
+        "unlocked"
+    );
+    assert_eq!(
+        second
+            .ok(json!({"kind": "deleteAccount", "masterPassword": PASSWORD}))
+            .await,
+        Value::Null
+    );
+    assert_eq!(
+        second.ok(json!({"kind": "status"})).await,
+        json!({"state": "signedOut", "ended": "account_deleted"})
+    );
+    for key in [name::EMAIL, name::SECRET_KEY, name::TOKENS] {
+        assert!(second.keys.get(key).await.unwrap().is_none(), "{key}");
+    }
+    // It's gone on the server too.
+    assert_eq!(
+        second
+            .ask(json!({"kind": "signIn", "email": other, "password": PASSWORD, "secretKey": reply["secretKey"]}))
+            .await,
+        Err("invalid_credentials".to_owned())
+    );
 }
 
 fn base64_decode(text: &str) -> Vec<u8> {
@@ -566,9 +599,14 @@ async fn devices_and_approving_a_new_one(server: &str, first: &mut Rig, email: &
             .any(|d| d["id"] == other && d["revokedAt"].is_number())
     );
 
-    // The revoked computer finds out at its next sync and keeps nothing.
+    // The revoked computer finds out at its next sync, keeps nothing, and
+    // the sign-in screen says why.
     let status = second.ok(json!({"kind": "sync"})).await;
-    assert_eq!(status, json!({"state": "signedOut"}), "{status}");
+    assert_eq!(
+        status,
+        json!({"state": "signedOut", "ended": "device_revoked"}),
+        "{status}"
+    );
     assert!(second.keys.get(name::SECRET_KEY).await.unwrap().is_none());
 }
 

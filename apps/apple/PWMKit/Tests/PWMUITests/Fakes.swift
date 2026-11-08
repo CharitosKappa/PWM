@@ -86,6 +86,16 @@ actor FakeAccount: Account {
         stored = [:]
     }
 
+    /// Deleting the account (D74): a wrong password, a failure, or gone.
+    func deleteAccount(password: Redacted<String>) throws {
+        guard password.value == unlockPassword else { throw PWMError(code: "wrong_password") }
+        try check()
+        calls.append("deleteAccount")
+        signedIn = false
+        storedEmail = nil
+        stored = [:]
+    }
+
     func emergencyKit(paper: EmergencyKit.Paper) throws -> Redacted<Data> {
         try check()
         calls.append("kit \(paper)")

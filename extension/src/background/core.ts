@@ -80,6 +80,12 @@ export interface Core {
   startSync(): CoreStep;
   /** Ends the session on the server before signing out (D62); unlocked only. Ends with `logged_out`. */
   startSignOut(): CoreStep;
+  /**
+   * Deletes the account on the server and here (D74), with the master
+   * password and Secret Key; unlocked only. Ends with `account_deleted`;
+   * a wait means nothing was deleted.
+   */
+  startDeleteAccount(password: string, secretKey: string): CoreStep;
   startEnsureVault(): CoreStep;
   receive(
     status: number,

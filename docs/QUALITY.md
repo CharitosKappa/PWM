@@ -249,6 +249,10 @@ With a server whose `PWM_STRIPE_*`, `PWM_APPLE_*` and `PWM_PLAY_*` settings use 
 7. **Refunds (D72):** within 30 days of a Stripe test charge, Request a refund: Stripe's dashboard shows a refund for the unused days and the subscription canceled, and the app shows Free. The same with a Play license tester (Google refunds pro-rata). On the iPhone, Request a refund opens Apple's sheet. After 30 days the button is gone.
 8. **A price change (D72):** create a new Stripe test price, list it first in `PWM_STRIPE_PRICES`, and run `pwm-server price-change stripe premium <price> <amount> <currency>`: the existing subscription shows its price held for 12 months and the outbox has its notice and reminder. Without an email provider nothing moves.
 9. **Plan gates (D73):** on a test account with a login that has a one-time code, let the subscription lapse (or refund it). After the next sync, every app shows "One-time codes are part of Premium" and the secret instead of the code, autofill fills the username and password with no code step and no message, and export still includes the secret. Subscribe again: the code is back after the next sync.
+10. **Account deletion (D74):** on a test account signed in on two devices, with a test subscription, delete the account from Settings on one.
+    - **On the deleting device:** Export first opens Export. The plan step says what happens to the plan, and an App Store plan offers its subscription page. A wrong password changes nothing; the right one deletes. The first screen then says "This account was deleted."
+    - **On the other device:** within a minute, or at its next sync, it shows the same and keeps nothing.
+    - **On the server and at the provider:** the account can't sign in again. The Stripe or Play subscription is refunded and over, and Stripe has no customer for it.
 
 ## Success metrics
 

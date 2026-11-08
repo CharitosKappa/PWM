@@ -16,6 +16,7 @@ import pwm.kit.CredentialCaller
 import pwm.kit.PasskeyCaller
 import pwm.kit.PasskeyCheck
 import pwm.kit.PasskeyOffer
+import pwm.kit.PwmError
 import pwm.kit.EmergencyKit
 import pwm.kit.Redacted
 import pwm.kit.Server
@@ -74,6 +75,8 @@ class AppModel(
         val usesOtherServer: Boolean = false,
         val otherServer: String = "",
         val error: String? = null,
+        /** Why the last account left this device, on the welcome screen: deleted (D74) or signed out elsewhere. */
+        val ended: String? = null,
         /** The Settings switch (D56 §2). */
         val hideFromCapture: Boolean = true,
     ) {
@@ -182,7 +185,9 @@ class AppModel(
         else -> false
     }
 
-    private fun show(screen: Screen) = mutable.update { it.copy(screen = screen, error = null) }
+    private fun show(screen: Screen) = mutable.update {
+        it.copy(screen = screen, error = null, ended = if (screen is Screen.Welcome) it.ended else null)
+    }
 
     private fun showSecretKey(account: Account, key: Redacted<String>) {
         val model = SecretKeyModel(scope, key, account, clipboard, paper, onDone = {
@@ -215,7 +220,8 @@ class AppModel(
             vault = vault,
             generator = GeneratorModel(scope, work, clipboard).also { it.regenerate() },
             settings = SettingsModel(
-                scope, account, prefs, paper, onLock = { lock(account) }, onSignedOut = ::didSignOut,
+                scope, account, prefs, paper, onLock = { lock(account) }, onSignedOut = { didSignOut() },
+                onAccountDeleted = { didSignOut("account_deleted") },
                 onHideFromCapture = ::setHideFromCapture,
                 vault = vault, work = work, files = importFiles,
                 pushAvailable = push.available, notices = notices,
@@ -431,7 +437,7 @@ class AppModel(
                 SyncResult.DeviceRevoked, SyncResult.AccountDeleted -> {
                     // The core has cleared the cache; finish signing out.
                     runCatching { account.signOut() }
-                    didSignOut()
+                    didSignOut(if (result == SyncResult.AccountDeleted) "account_deleted" else "device_revoked")
                     BackgroundResult.NO_DATA
                 }
             }
@@ -477,7 +483,8 @@ class AppModel(
         if (mutable.value.screen is Screen.Vault) account?.let(::lock)
     }
 
-    private fun didSignOut() {
+    /** Back to welcome once the account is gone from this device; [ended] says why when it wasn't signed out here. */
+    private fun didSignOut(ended: String? = null) {
         (mutable.value.screen as? Screen.Vault)?.model?.settings?.plan?.stop()
         forgetCredentials()
         background.cancel()
@@ -486,6 +493,7 @@ class AppModel(
         prefs.signInAgain = false
         prefs.kitPending = false
         backgroundedAt = null
+        mutable.update { it.copy(ended = ended?.let { code -> PwmError(code).userMessage }) }
         showWelcome()
     }
 

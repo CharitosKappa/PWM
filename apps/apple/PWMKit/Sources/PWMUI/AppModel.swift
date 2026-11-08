@@ -14,6 +14,9 @@ public final class AppModel {
 
     public private(set) var screen: Screen = .loading
     public private(set) var error: String?
+    /// Why the last account left this device, on the welcome screen: it
+    /// was deleted (D74) or this device was signed out elsewhere.
+    public private(set) var ended: String?
 
     /// The server choice on the welcome screen: the hosted service, or a
     /// self-hosted address.
@@ -125,6 +128,7 @@ public final class AppModel {
 
     public func showCreateAccount() {
         error = nil
+        ended = nil
         createAccount = CreateAccountModel(deviceName: deviceName, account: { [unowned self] in try self.chosenAccount() }) {
             [unowned self] account, key in
             self.createAccount = nil
@@ -140,6 +144,7 @@ public final class AppModel {
 
     public func showSignIn() {
         error = nil
+        ended = nil
         signIn = SignInModel(
             deviceName: deviceName,
             account: { [unowned self] in try self.chosenAccount() },
@@ -178,7 +183,9 @@ public final class AppModel {
 
     private func showVault() {
         guard let account else { return }
-        let vault = VaultModel(account: account, pasteboard: pasteboard) { [unowned self] in self.didSignOut() }
+        let vault = VaultModel(account: account, pasteboard: pasteboard) { [unowned self] ended in
+            self.didSignOut(ended: ended)
+        }
         // Signing in again already synced; the server needs the push token again.
         let again = SignInAgainModel(account: account, defaults: defaults) { [weak self, weak vault] in
             await vault?.load()
@@ -209,8 +216,11 @@ public final class AppModel {
         }
     }
 
-    /// Back to welcome once the account is gone from this device.
-    func didSignOut() {
+    /// Back to welcome once the account is gone from this device; `ended`
+    /// says why when it wasn't signed out here (`account_deleted`,
+    /// `device_revoked`).
+    func didSignOut(ended code: String? = nil) {
+        ended = code.map { PWMError(code: $0).message }
         dropVault()
         unlock = nil
         SignInAgainModel.clear(in: defaults)
@@ -290,10 +300,15 @@ public final class AppModel {
                     SignInAgainModel.sessionEnded(in: defaults)
                 }
                 return .noData
-            case .deviceRevoked, .accountDeleted:
+            case .deviceRevoked:
                 // The core has cleared the cache; finish signing out.
                 try? await account.signOut()
-                didSignOut()
+                didSignOut(ended: "device_revoked")
+                return .noData
+            case .accountDeleted:
+                // As for a revoked device (D74 §5).
+                try? await account.signOut()
+                didSignOut(ended: "account_deleted")
                 return .noData
             }
         } catch {

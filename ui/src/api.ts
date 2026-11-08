@@ -35,6 +35,8 @@ const MESSAGES: Record<string, string> = {
   server: "The server had a problem. Try again later.",
   device_revoked: "This device was signed out from another device.",
   account_deleted: "This account was deleted.",
+  delete_unavailable:
+    "Couldn't reach the server or end your plan, so nothing was deleted. Try again later.",
   signed_out: "You were signed out. Sign in again.",
   invalid_server: "Enter an https:// address.",
   empty: "Nothing to copy.",

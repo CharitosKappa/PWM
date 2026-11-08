@@ -64,6 +64,7 @@ export const REQUESTS: Request[] = [
   { kind: "cancelPlan" },
   { kind: "resumePlan" },
   { kind: "refundPlan" },
+  { kind: "deleteAccount", masterPassword: "correct horse battery" },
   { kind: "devices" },
   {
     kind: "renameDevice",
@@ -182,6 +183,7 @@ export const DESKTOP_KINDS: Request["kind"][] = [
   "cancelPlan",
   "resumePlan",
   "refundPlan",
+  "deleteAccount",
   // The manage page (M7.6).
   "devices",
   "renameDevice",
@@ -226,6 +228,7 @@ export const REPLIES: {
 } = {
   status: [
     { state: "signedOut" },
+    { state: "signedOut", ended: "account_deleted" },
     { state: "locked", email: "a@example.com", touchId: false },
     {
       state: "unlocked",
@@ -365,6 +368,7 @@ export const REPLIES: {
     ],
   ],
   exportVault: [{ file: "UFdN", name: "PWM export 2026-11-06.pwmx" }],
+  deleteAccount: [null],
   importDetect: [
     { format: "bitwarden", needsPassword: true, columns: null },
     { format: null, needsPassword: false, columns: null },

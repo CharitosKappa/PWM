@@ -16,6 +16,7 @@ internal object Messages {
         "server" to "The server had a problem. Try again later.",
         "device_revoked" to "This device was signed out from another device.",
         "account_deleted" to "This account was deleted.",
+        "delete_unavailable" to "Couldn't reach the server or end your plan, so nothing was deleted. Try again later.",
         "signed_out" to "You were signed out. Sign in again.",
         "locked" to "Unlock first.",
         "busy" to "Still working on the last request.",

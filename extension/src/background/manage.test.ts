@@ -362,3 +362,44 @@ describe("plan", () => {
     expect(await errorOf(background.handle({ kind: "plan" }))).toBe("locked");
   });
 });
+
+describe("deleting the account (D74)", () => {
+  it("needs the master password and changes nothing without it", async () => {
+    const { background } = await signedUp();
+    expect(
+      await errorOf(
+        background.handle({ kind: "deleteAccount", masterPassword: "nope" }),
+      ),
+    ).toBe("wrong_password");
+    expect(await background.status()).toMatchObject({ state: "unlocked" });
+  });
+
+  it("deletes nothing while a plan can't be ended", async () => {
+    const { background, core } = await signedUp();
+    core().deleteResult = "wait";
+    expect(
+      await errorOf(
+        background.handle({ kind: "deleteAccount", masterPassword: PASSWORD }),
+      ),
+    ).toBe("delete_unavailable");
+    expect(await background.status()).toMatchObject({ state: "unlocked" });
+  });
+
+  it("wipes this device and says why at sign-in", async () => {
+    const { background, platform } = await signedUp();
+    expect(
+      await background.handle({
+        kind: "deleteAccount",
+        masterPassword: PASSWORD,
+      }),
+    ).toBeNull();
+    expect(await background.status()).toEqual({
+      state: "signedOut",
+      ended: "account_deleted",
+    });
+    for (const key of ["email", "secretKey", "sealedTokens"] as const) {
+      expect(platform.disk.values.has(key)).toBe(false);
+    }
+    expect(platform.sessionBytes.value).toBeUndefined();
+  });
+});

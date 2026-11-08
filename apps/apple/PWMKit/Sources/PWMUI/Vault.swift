@@ -69,12 +69,13 @@ public final class VaultModel {
     let account: any Account
     let pasteboard: any SecretPasteboard
     let capture: ScreenCapture
-    private let onSignedOut: @MainActor () -> Void
+    /// Why the account left: `device_revoked`, `account_deleted`, or nil.
+    private let onSignedOut: @MainActor (String?) -> Void
     private var syncAgain = false
 
     init(
         account: any Account, pasteboard: any SecretPasteboard, capture: ScreenCapture = .shared,
-        onSignedOut: @escaping @MainActor () -> Void
+        onSignedOut: @escaping @MainActor (String?) -> Void
     ) {
         self.account = account
         self.pasteboard = pasteboard
@@ -185,10 +186,15 @@ public final class VaultModel {
                 } else {
                     status = PWMError(code: "signed_out").message
                 }
-            case .deviceRevoked, .accountDeleted:
+            case .deviceRevoked:
                 // The core has cleared the cache; finish signing out.
                 try? await account.signOut()
-                onSignedOut()
+                onSignedOut("device_revoked")
+                return
+            case .accountDeleted:
+                // As for a revoked device (D74 §5).
+                try? await account.signOut()
+                onSignedOut("account_deleted")
                 return
             }
             _ = try await account.purgeTrash()

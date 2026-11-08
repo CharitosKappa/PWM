@@ -275,6 +275,12 @@ public final class SettingsModel {
         ImportModel(account: account, files: app.importFiles)
     }
 
+    public func makeDeleteAccount() -> DeleteAccountModel {
+        DeleteAccountModel(account: account, plan: plan) { [unowned app] in
+            app.didSignOut(ended: "account_deleted")
+        }
+    }
+
     public func makeApprovals() -> ApprovalsModel {
         ApprovalsModel(account: account)
     }

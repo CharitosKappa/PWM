@@ -88,6 +88,8 @@ export class Background {
   private settings: Settings = DEFAULT_SETTINGS;
   private syncedAt: number | null = null;
   private syncError: string | null = null;
+  /** Why the last account left, for the sign-in screen (D74 §5, §7). */
+  private ended: "account_deleted" | "device_revoked" | null = null;
   private syncing: Promise<Status> | null = null;
   private queue: Promise<unknown> = Promise.resolve();
   /** Filling on user action (D35). */
@@ -387,6 +389,9 @@ export class Background {
         return this.manager.resumePlan();
       case "refundPlan":
         return this.manager.refundPlan();
+      case "deleteAccount":
+        await this.deleteAccount(request.masterPassword);
+        return null;
       case "devices":
         return this.manager.devices();
       case "renameDevice":
@@ -493,7 +498,11 @@ export class Background {
   }
 
   async status(): Promise<Status> {
-    if (this.core.accountId() === undefined) return { state: "signedOut" };
+    if (this.core.accountId() === undefined) {
+      return this.ended === null
+        ? { state: "signedOut" }
+        : { state: "signedOut", ended: this.ended };
+    }
     const email = (await this.platform.disk.get("email")) ?? "";
     if (!this.core.isUnlocked())
       return { state: "locked", email, touchId: await this.touchId.isOn() };
@@ -746,6 +755,32 @@ export class Background {
 
   private async signOut(): Promise<void> {
     await this.endSession();
+    this.ended = null;
+    await this.forget();
+  }
+
+  /**
+   * Deletes the account on the server and here (D74). The core checks the
+   * password first; a wait means a plan couldn't be ended or the server
+   * wasn't reached, and nothing was deleted.
+   */
+  private async deleteAccount(masterPassword: string): Promise<void> {
+    const secretKey = await this.platform.disk.get("secretKey");
+    if (secretKey === undefined) throw new ServiceError("signed_out");
+    const step = await this.run(() =>
+      this.core.startDeleteAccount(masterPassword, secretKey),
+    );
+    if (step.kind === "wait") throw new ServiceError("delete_unavailable");
+    if (step.outcome !== "account_deleted") {
+      await this.handleOutcome(step);
+      throw new ServiceError(step.outcome ?? "internal");
+    }
+    this.ended = "account_deleted";
+    await this.forget();
+  }
+
+  /** Nothing of the account stays on this device. */
+  private async forget(): Promise<void> {
     await this.touchId.turnOff();
     await this.lock();
     await this.platform.disk.remove([
@@ -932,6 +967,7 @@ export class Background {
         await this.platform.session.clear();
         await this.platform.disk.remove(["email", "secretKey", "sealedTokens"]);
         this.syncError = step.outcome;
+        this.ended = step.outcome;
         return;
       default:
         this.syncError = "internal";

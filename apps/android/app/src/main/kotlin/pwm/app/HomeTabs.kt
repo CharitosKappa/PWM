@@ -147,6 +147,7 @@ internal fun SettingsTab(app: AppModel, model: SettingsModel) {
         SettingsModel.Page.HEALTH -> return state.health?.let { HealthPage(model, it) } ?: Unit
         SettingsModel.Page.EXPORT -> return state.export?.let { ExportPage(app, model, it) } ?: Unit
         SettingsModel.Page.IMPORT -> return state.importing?.let { ImportPage(app, model, it) } ?: Unit
+        SettingsModel.Page.DELETE -> return state.deleting?.let { DeleteAccountPage(model, it) } ?: Unit
         SettingsModel.Page.MAIN -> Unit
     }
     LaunchedEffect(model) { model.prepareKit() }
@@ -254,6 +255,7 @@ internal fun SettingsTab(app: AppModel, model: SettingsModel) {
 
         Secondary(stringResource(R.string.notices), tag = "notices", onClick = model::showNotices)
         Secondary(stringResource(R.string.sign_out), tag = "signOut", onClick = model::askSignOut)
+        Secondary(stringResource(R.string.delete_account), tag = "deleteAccount", onClick = model::showDeleteAccount)
         Text(stringResource(R.string.version, version), style = Tokens.Text.caption.compose(), color = color(Tokens.Color.textMuted))
     }
 }

@@ -12,11 +12,19 @@ import { Field, Notice } from "./ui.tsx";
 const MIN_SCORE = 3;
 const SCORE_WORDS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
 
-export function SignedOut({ onDone }: { onDone: () => void }): JSX.Element {
+export function SignedOut({
+  onDone,
+  ended,
+}: {
+  onDone: () => void;
+  /** Why the last account left this device (D74 §5, §7). */
+  ended?: string | undefined;
+}): JSX.Element {
   const [mode, setMode] = useState<"signIn" | "signUp">("signIn");
   return (
     <main class="stack">
       <h1>Password manager</h1>
+      {ended && <Notice kind="info">{describeCode(ended)}</Notice>}
       <div class="tabs" role="tablist">
         <button
           role="tab"
