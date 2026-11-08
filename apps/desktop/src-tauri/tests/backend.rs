@@ -174,7 +174,12 @@ async fn signed_out_it_answers_what_needs_no_account() {
     let phrase = r
         .ok(json!({"kind": "generate", "mode": "passphrase"}))
         .await;
-    assert_eq!(phrase.as_str().unwrap().split('-').count(), 5);
+    // Five words and one digit, joined by "-". A few list words contain "-"
+    // themselves ("t-shirt"), so a phrase can split into up to ten parts.
+    let phrase = phrase.as_str().unwrap();
+    let parts = phrase.split('-').count();
+    assert!((5..=10).contains(&parts), "{parts} parts");
+    assert_eq!(phrase.chars().filter(char::is_ascii_digit).count(), 1);
     let weak = r
         .ok(json!({"kind": "score", "password": "password", "email": "a@example.com"}))
         .await;

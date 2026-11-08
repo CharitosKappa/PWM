@@ -236,7 +236,12 @@ describe("the WASM core", () => {
       kind: "generate",
       mode: "passphrase",
     });
-    expect(passphrase.split("-")).toHaveLength(5);
+    // Five words and one digit, joined by "-". A few list words contain "-"
+    // themselves ("t-shirt"), so a phrase can split into up to ten parts.
+    const parts = passphrase.split("-").length;
+    expect(parts).toBeGreaterThanOrEqual(5);
+    expect(parts).toBeLessThanOrEqual(10);
+    expect(passphrase.replace(/\D/g, "")).toHaveLength(1);
     expect(
       await background.handle({
         kind: "score",
