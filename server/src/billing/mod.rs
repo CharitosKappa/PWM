@@ -39,6 +39,16 @@ pub(crate) const ENTITLED: &str = "((s.status = 'active' AND s.current_period_en
      OR (s.status = 'canceled' AND s.current_period_end > now()) \
      OR (s.status = 'past_due' AND (s.grace_until IS NULL OR s.grace_until > now())))";
 
+/// When [`ENTITLED`] stops holding for a row if nothing renews it, which the
+/// devices keep as `plan_until` (D73 §2). A past-due row without
+/// `grace_until` counts while the provider retries, so it's given three days
+/// from now, or from its period end if that's later, and the next sync moves
+/// it on.
+const ENTITLED_UNTIL: &str = "CASE s.status \
+       WHEN 'active' THEN s.current_period_end + interval '3 days' \
+       WHEN 'canceled' THEN s.current_period_end \
+       ELSE COALESCE(s.grace_until, GREATEST(s.current_period_end, now()) + interval '3 days') END";
+
 /// How long after a charge a refund can be asked for (PRICING.md §5).
 pub(crate) const REFUND_WINDOW: &str = "interval '30 days'";
 
@@ -524,6 +534,35 @@ pub(crate) struct Summary {
     /// The providers that sell plans here; empty on a server without
     /// billing, where every account is Premium.
     pub billing: Vec<&'static str>,
+    /// Unix ms when the plan stops counting if nothing renews; null when it
+    /// has no end, as on Free or a server without billing (D73 §2).
+    pub plan_until: Option<i64>,
+    /// What the plan allows on the server (D73 §3).
+    pub limits: Limits,
+}
+
+/// The server's limits per plan (D73 §3, `PRICING.md`); null is unlimited.
+/// M13's share links and M14's attachments check them in their routes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub(crate) struct Limits {
+    pub share_links_per_day: Option<u32>,
+    pub attachment_bytes: Option<u64>,
+}
+
+impl Limits {
+    pub(crate) fn of(plan: &str) -> Self {
+        match plan {
+            "free" => Self {
+                share_links_per_day: Some(1),
+                attachment_bytes: Some(0),
+            },
+            // Premium, Family and Teams: 1 GiB per person.
+            _ => Self {
+                share_links_per_day: None,
+                attachment_bytes: Some(1 << 30),
+            },
+        }
+    }
 }
 
 /// Times are Unix milliseconds.
@@ -556,6 +595,8 @@ pub(crate) async fn summary(
             plan: "premium".to_owned(),
             subscription: None,
             billing: sells,
+            plan_until: None,
+            limits: Limits::of("premium"),
         });
     }
     let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
@@ -565,23 +606,30 @@ pub(crate) async fn summary(
                 (extract(epoch FROM s.price_locked_until) * 1000)::bigint, \
                 CASE WHEN s.provider IN ('stripe', 'play') \
                        AND s.last_charge_at > now() - {REFUND_WINDOW} \
-                     THEN (extract(epoch FROM s.last_charge_at + {REFUND_WINDOW}) * 1000)::bigint END \
+                     THEN (extract(epoch FROM s.last_charge_at + {REFUND_WINDOW}) * 1000)::bigint END, \
+                (extract(epoch FROM {ENTITLED_UNTIL}) * 1000)::bigint \
          FROM subscriptions s WHERE s.account_id = $1 AND {ENTITLED} \
          ORDER BY {RANK} DESC, s.current_period_end DESC"
     )))
     .bind(account)
     .fetch_all(pool)
     .await?;
+    // Another subscription that lasts longer keeps the plan counting too.
+    let plan_until = rows.iter().map(|r| r.get::<i64, _>(7)).max();
     let mut rows = rows.into_iter();
     let Some(first) = rows.next() else {
         return Ok(Summary {
             plan: "free".to_owned(),
             subscription: None,
             billing: sells,
+            plan_until: None,
+            limits: Limits::of("free"),
         });
     };
     let plan: String = first.get(0);
     Ok(Summary {
+        limits: Limits::of(&plan),
+        plan_until,
         plan: plan.clone(),
         subscription: Some(SubscriptionJson {
             provider: first.get(2),
@@ -600,6 +648,22 @@ pub(crate) async fn summary(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn free_gets_one_share_link_a_day_and_no_attachments() {
+        let free = Limits::of("free");
+        assert_eq!(free.share_links_per_day, Some(1));
+        assert_eq!(free.attachment_bytes, Some(0));
+        for plan in ["premium", "family", "teams"] {
+            let paid = Limits::of(plan);
+            assert_eq!(paid.share_links_per_day, None, "{plan}");
+            assert_eq!(paid.attachment_bytes, Some(1_073_741_824), "{plan}");
+        }
+        assert_eq!(
+            serde_json::to_value(free).unwrap(),
+            serde_json::json!({ "share_links_per_day": 1, "attachment_bytes": 0 })
+        );
+    }
 
     #[test]
     fn a_plan_may_name_older_prices_after_its_current_one() {

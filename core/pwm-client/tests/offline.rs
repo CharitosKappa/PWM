@@ -4,7 +4,7 @@
 
 use pwm_client::{Client, ClientError, MemoryStore, Platform, Step, Store, Tokens, new_id};
 use pwm_crypto::{KdfParams, SymmetricKey, create_account};
-use pwm_store::{AccountRecord, VaultRecord};
+use pwm_store::{AccountRecord, PlanRecord, VaultRecord};
 use pwm_vault::{Item, ItemId, ItemKind};
 use serde_json::Value;
 
@@ -395,6 +395,52 @@ fn the_current_code_of_a_login() {
         .save_item(&vault, &note_json(&note, "n"), T0)
         .unwrap();
     assert!(client.current_code(&vault, &note, T0).unwrap().is_none());
+}
+
+/// One-time codes need Premium; the secret stays in the item (D73 §1).
+#[test]
+fn codes_follow_the_plan() {
+    let (mut store, secret_key, vault) = signed_in_store();
+    store
+        .set_plan(&PlanRecord {
+            plan: "premium".to_owned(),
+            until_ms: Some(T0 + 1_000),
+        })
+        .unwrap();
+    let mut client = Client::new(store);
+    client.unlock(PASSWORD, &secret_key, tokens()).unwrap();
+    let mut login = pwm_vault::Login::default();
+    let uri = "otpauth://totp/x?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    login.totp = Some(uri.to_owned());
+    let id = ItemId::generate().unwrap().to_string();
+    let json = Item::new(ItemKind::Login(login), "2FA", T0)
+        .to_json_with_id(&id.parse().unwrap())
+        .unwrap();
+    client.save_item(&vault, json.expose_secret(), T0).unwrap();
+
+    assert_eq!(client.plan_now(T0).unwrap().as_deref(), Some("premium"));
+    assert!(client.current_code(&vault, &id, T0).unwrap().is_some());
+    // After the paid period it knew about, Free until a sync says otherwise.
+    let later = T0 + 1_000;
+    assert_eq!(client.plan_now(later).unwrap().as_deref(), Some("free"));
+    assert!(!client.codes_included(later).unwrap());
+    assert_eq!(
+        code(client.current_code(&vault, &id, later)),
+        "plan_required"
+    );
+    // The secret is still there to read, edit or export.
+    let item = client.item(&vault, &id).unwrap().unwrap();
+    assert!(item.expose_secret().contains(uri));
+}
+
+#[test]
+fn an_unknown_plan_keeps_codes() {
+    let (store, secret_key, _) = signed_in_store();
+    let mut client = Client::new(store);
+    assert_eq!(client.plan_now(T0).unwrap(), None);
+    assert!(client.codes_included(T0).unwrap());
+    client.unlock(PASSWORD, &secret_key, tokens()).unwrap();
+    assert!(client.codes_included(T0).unwrap());
 }
 
 #[test]

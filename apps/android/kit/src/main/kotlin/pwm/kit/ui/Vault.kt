@@ -315,6 +315,8 @@ class ItemDetailModel internal constructor(
         val code: CurrentCode? = null,
         /** The login's code is a kind this version can't make (HOTP, say). */
         val codeUnsupported: Boolean = false,
+        /** The plan doesn't include one-time codes (D73 §1); the secret stays readable. */
+        val codeNeedsPlan: Boolean = false,
         /** The field copied last, for its "Copied" label. */
         val copied: String? = null,
     )
@@ -340,14 +342,16 @@ class ItemDetailModel internal constructor(
     /** Reads the current one-time code; the screen calls it every second while it shows. */
     suspend fun refreshCode() {
         if (item.totp.isNullOrEmpty()) return
+        var needsPlan = false
         val code = try {
             account.currentCode(entry.id, entry.vaultId)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            needsPlan = PwmError.from(e).code == "plan_required"
             null
         }
-        mutable.update { it.copy(code = code, codeUnsupported = code == null) }
+        mutable.update { it.copy(code = code, codeUnsupported = code == null && !needsPlan, codeNeedsPlan = needsPlan) }
     }
 
     /** Masks everything again, when the screen goes away. */

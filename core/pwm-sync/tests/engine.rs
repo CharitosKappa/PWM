@@ -4,7 +4,7 @@ mod common;
 
 use common::*;
 use pwm_crypto::{Aad, Envelope, seal};
-use pwm_store::{Store, SyncState};
+use pwm_store::{PlanRecord, Store, SyncState};
 use pwm_sync::{
     BACKOFF_CAP_MS, HttpResponse, Step, SyncEngine, SyncEvent, SyncOutcome, backoff_delay_ms,
 };
@@ -781,4 +781,37 @@ fn a_restore_the_seqs_cannot_show_is_caught_by_the_epoch() {
 
     // The next sync is an ordinary one.
     assert!(!sync(&mut laptop, &mut server, T0).resynced);
+}
+
+/// The plan from the vault list's headers is kept, and a server that sends
+/// none leaves it as it was (D73 §2).
+#[test]
+fn the_plan_comes_with_every_sync() {
+    let mut server = FakeServer::new();
+    let account = Account::new();
+    let mut phone = account.device(&mut server);
+    sync(&mut phone, &mut server, T0);
+    assert_eq!(phone.store().plan().unwrap(), None);
+
+    server.plan = Some(("premium".to_owned(), Some(1_800_000_000_000)));
+    sync(&mut phone, &mut server, T0);
+    let premium = PlanRecord {
+        plan: "premium".to_owned(),
+        until_ms: Some(1_800_000_000_000),
+    };
+    assert_eq!(phone.store().plan().unwrap(), Some(premium.clone()));
+
+    server.plan = None;
+    sync(&mut phone, &mut server, T0);
+    assert_eq!(phone.store().plan().unwrap(), Some(premium));
+
+    server.plan = Some(("free".to_owned(), None));
+    sync(&mut phone, &mut server, T0);
+    assert_eq!(
+        phone.store().plan().unwrap(),
+        Some(PlanRecord {
+            plan: "free".to_owned(),
+            until_ms: None
+        })
+    );
 }

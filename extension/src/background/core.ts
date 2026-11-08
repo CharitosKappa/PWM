@@ -117,6 +117,8 @@ export interface Core {
     itemId: string,
     nowMs: number,
   ): string[] | undefined;
+  /** Whether the plan now includes one-time codes (D73 §1). */
+  codesIncluded(nowMs: number): boolean;
   setAutofillRules(
     bytes: Uint8Array,
     nowMs: number,

@@ -867,6 +867,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
 
     fn items(&self, query: &str) -> Result<Vec<ItemSummary>> {
         let needle = query.trim().to_lowercase();
+        let codes_included = self.client.codes_included(self.clock.now_ms())?;
         let mut list: Vec<ItemSummary> = self
             .stored_items()?
             .into_iter()
@@ -880,7 +881,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
                     username: login.username,
                     url: login.url,
                     has_password: !login.password.expose_secret().is_empty(),
-                    has_code: login.totp,
+                    has_code: codes_included && login.totp,
                 }
             })
             .filter(|s| {

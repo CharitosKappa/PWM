@@ -7,7 +7,7 @@
 //! whole item, without its history or its passkeys, which never leave the
 //! backend.
 
-use pwm_client::Secret;
+use pwm_client::{ClientError, Secret};
 use serde_json::{Map, Value, json};
 
 use crate::backend::{Backend, Clock, Failure};
@@ -144,6 +144,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
     }
 
     pub(crate) fn vault(&self) -> Result<VaultView> {
+        let codes_included = self.client.codes_included(self.clock.now_ms())?;
         let mut items = Vec::new();
         let mut folders = Vec::new();
         for (vault_id, item) in self.stored_items()? {
@@ -167,26 +168,31 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
                 folder_id: item["folder_id"].as_str().map(str::to_owned),
                 trashed: !item["trashed_at"].is_null(),
                 has_password: item.pointer("/login/password").is_some_and(non_empty),
-                has_code: item.pointer("/login/totp").is_some_and(non_empty),
+                has_code: codes_included && item.pointer("/login/totp").is_some_and(non_empty),
                 vault_id,
                 item_id,
             });
         }
         folders.sort_by_key(|f| f.title.to_lowercase());
-        Ok(VaultView { items, folders })
+        Ok(VaultView {
+            items,
+            folders,
+            codes_included,
+        })
     }
 
     pub(crate) fn item(&self, vault_id: &str, item_id: &str) -> Result<ItemView> {
         let item = self.stored(vault_id, item_id)?;
-        let code = self
+        // Without a plan that has codes, the screen says so (D73 §1); a code
+        // the core can't read shows no code.
+        let now = self
             .client
-            .current_code(vault_id, item_id, self.clock.now_ms())
-            .ok()
-            .flatten()
-            .map(|(code, seconds_left)| TotpNow {
-                code: code.expose_secret().clone(),
-                seconds_left,
-            });
+            .current_code(vault_id, item_id, self.clock.now_ms());
+        let code_needs_plan = matches!(now, Err(ClientError::PlanRequired));
+        let code = now.ok().flatten().map(|(code, seconds_left)| TotpNow {
+            code: code.expose_secret().clone(),
+            seconds_left,
+        });
         let passkeys = item["login"]["passkeys"]
             .as_array()
             .map(|list| {
@@ -220,6 +226,7 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
             read_only: !editable(&item),
             item: masked(&item),
             code,
+            code_needs_plan,
             passkeys,
             password_history,
         })

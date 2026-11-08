@@ -263,14 +263,21 @@ export class FakeCore implements Core {
     return this.items_.get(vaultId) ?? [];
   }
 
+  /** The plan the last sync brought; null before one (D73 §2). */
+  plan_: string | null = null;
+
+  codesIncluded(): boolean {
+    return this.plan_ !== "free";
+  }
+
   currentCode(vaultId: string, itemId: string): string[] | undefined {
     if (!this.unlocked) throw coreError("locked");
     const item = (this.items_.get(vaultId) ?? []).map(
       (j) => JSON.parse(j) as { id: string; login?: { totp?: string } },
     );
-    return item.find((i) => i.id === itemId)?.login?.totp
-      ? ["287082", "1"]
-      : undefined;
+    if (!item.find((i) => i.id === itemId)?.login?.totp) return undefined;
+    if (!this.codesIncluded()) throw coreError("plan_required");
+    return ["287082", "1"];
   }
 
   setAutofillRules(

@@ -857,6 +857,19 @@ impl WasmClient {
             .map(|(code, left)| vec![code.expose_secret().clone(), left.to_string()]))
     }
 
+    /// The plan that counts now (D73 §2); `undefined` until the server has
+    /// said, treated as Premium.
+    #[wasm_bindgen(js_name = planNow)]
+    pub fn plan_now(&self, now_ms: f64) -> Result<Option<String>, JsValue> {
+        self.inner.plan_now(ms(now_ms)).map_err(js_error)
+    }
+
+    /// Whether the plan now includes one-time codes (D73 §1).
+    #[wasm_bindgen(js_name = codesIncluded)]
+    pub fn codes_included(&self, now_ms: f64) -> Result<bool, JsValue> {
+        self.inner.codes_included(ms(now_ms)).map_err(js_error)
+    }
+
     /// Sync, then create a vault only if the account has none.
     #[wasm_bindgen(js_name = startEnsureVault)]
     pub fn start_ensure_vault(&mut self) -> Result<WasmStep, JsValue> {

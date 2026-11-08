@@ -223,6 +223,18 @@ export function ItemDetail({
               </span>
             </div>
           )}
+          {view.codeNeedsPlan && (
+            <>
+              <div class="detail-row">
+                <span class="label">One-time code</span>
+                <span class="value caption muted">
+                  One-time codes are part of Premium. See Settings › Plan.
+                </span>
+              </div>
+              {/* The secret stays the user's, to move elsewhere (D73 §1). */}
+              {row("One-time code secret", "/login/totp", true)}
+            </>
+          )}
           {view.passkeys.map((p) => (
             <div class="detail-row" key={`pk-${p.rpId}-${p.userName}`}>
               <span class="label">Passkey</span>

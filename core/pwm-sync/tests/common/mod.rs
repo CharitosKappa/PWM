@@ -60,6 +60,9 @@ pub struct FakeServer {
     pub log: Vec<String>,
     /// Sent as `pwm-epoch` with the vault list (D30).
     pub epoch: Id,
+    /// Sent as `pwm-plan` and `pwm-plan-until` with the list (D73); none
+    /// when `None`, as from a server older than D73.
+    pub plan: Option<(String, Option<i64>)>,
 }
 
 fn json_response(status: u16, body: Value) -> HttpResponse {
@@ -235,6 +238,14 @@ impl FakeServer {
         response
             .headers
             .push(("pwm-epoch".to_owned(), id_string(&self.epoch)));
+        if let Some((plan, until)) = &self.plan {
+            response.headers.push(("pwm-plan".to_owned(), plan.clone()));
+            if let Some(until) = until {
+                response
+                    .headers
+                    .push(("pwm-plan-until".to_owned(), until.to_string()));
+            }
+        }
         response
     }
 

@@ -445,9 +445,12 @@ pub struct FolderView {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VaultView {
     pub items: Vec<VaultRow>,
     pub folders: Vec<FolderView>,
+    /// The plan now includes one-time codes (D73 §1).
+    pub codes_included: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -482,6 +485,8 @@ pub struct ItemView {
     pub hidden: Vec<String>,
     pub read_only: bool,
     pub code: Option<TotpNow>,
+    /// A secret, and a plan without codes (D73 §1).
+    pub code_needs_plan: bool,
     pub passkeys: Vec<PasskeyView>,
     pub password_history: Vec<PastPassword>,
 }

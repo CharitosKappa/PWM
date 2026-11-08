@@ -7,13 +7,14 @@ use pwm_crypto::{Envelope, Id, KdfParams};
 use pwm_vault::ItemId;
 use rusqlite::{Connection, ErrorCode, OptionalExtension, Params, TransactionBehavior, params};
 
-use crate::{AccountRecord, ItemRecord, Store, StoreError, SyncState, VaultRecord};
+use crate::{AccountRecord, ItemRecord, PlanRecord, Store, StoreError, SyncState, VaultRecord};
 
 /// Migration `n` (0-based) takes the schema from version `n` to `n + 1`.
 /// Shipped entries are never edited.
 const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v1.sql"),
     include_str!("migrations/v2.sql"),
+    include_str!("migrations/v3.sql"),
 ];
 
 /// Schema version this build writes and the newest it can open.
@@ -277,6 +278,28 @@ impl Store for SqliteStore {
         Ok(())
     }
 
+    fn plan(&self) -> Result<Option<PlanRecord>, StoreError> {
+        Ok(self
+            .conn
+            .query_row("SELECT plan, until_ms FROM plan", [], |r| {
+                Ok(PlanRecord {
+                    plan: r.get(0)?,
+                    until_ms: r.get(1)?,
+                })
+            })
+            .optional()?)
+    }
+
+    fn set_plan(&mut self, plan: &PlanRecord) -> Result<(), StoreError> {
+        plan.check()?;
+        self.conn.execute(
+            "INSERT INTO plan (singleton, plan, until_ms) VALUES (1, ?1, ?2) \
+             ON CONFLICT (singleton) DO UPDATE SET plan = excluded.plan, until_ms = excluded.until_ms",
+            params![plan.plan, plan.until_ms],
+        )?;
+        Ok(())
+    }
+
     fn pending_items(&self) -> Result<Vec<ItemRecord>, StoreError> {
         self.query_items(
             &format!("SELECT {ITEM_COLUMNS} FROM items WHERE state <> 0"),
@@ -287,7 +310,8 @@ impl Store for SqliteStore {
     fn clear(&mut self) -> Result<(), StoreError> {
         let tx = self.conn.transaction()?;
         tx.execute_batch(
-            "DELETE FROM items; DELETE FROM vaults; DELETE FROM account; DELETE FROM sync_meta;",
+            "DELETE FROM items; DELETE FROM vaults; DELETE FROM account; DELETE FROM sync_meta; \
+             DELETE FROM plan;",
         )?;
         tx.commit()?;
         Ok(())

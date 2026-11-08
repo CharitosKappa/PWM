@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::str::FromStr;
 
 use pwm_crypto::{AccountKeyset, Envelope, Id, SymmetricKey};
-use pwm_store::{Store, SyncState, VaultRecord};
+use pwm_store::{PlanRecord, Store, SyncState, VaultRecord};
 use pwm_vault::{Item, ItemId, decrypt_item, encrypt_item_fitting};
 
 use crate::SyncError;
@@ -242,6 +242,12 @@ impl<S: Store> SyncEngine<S> {
 
     pub fn store(&self) -> &S {
         &self.store
+    }
+
+    /// Keeps the plan a billing reply gave (D73 §2), as a sync would.
+    pub fn set_plan(&mut self, plan: &PlanRecord) -> Result<(), SyncError> {
+        self.store.set_plan(plan)?;
+        Ok(())
     }
 
     pub fn into_store(self) -> S {
@@ -752,6 +758,20 @@ impl<S: Store> SyncEngine<S> {
         for vault_id in cached.keys().filter(|id| !listed.contains(id)) {
             self.store.delete_vault(vault_id)?;
             self.keys.remove(vault_id);
+        }
+        // The plan comes with the list (D73 §2). A server without the header
+        // (older than D73) leaves the stored plan as it was.
+        if let Some(plan) = response.header("pwm-plan") {
+            let record = PlanRecord {
+                plan: plan.to_owned(),
+                until_ms: response
+                    .header("pwm-plan-until")
+                    .and_then(|u| u.parse().ok()),
+            };
+            // A name the cache can't hold is ignored, not a failed sync.
+            if self.store.plan()?.as_ref() != Some(&record) {
+                let _ = self.store.set_plan(&record);
+            }
         }
         // A new server epoch means the database was restored from a backup:
         // seqs no longer say what changed, so every vault is pulled from 0
