@@ -18,13 +18,23 @@ public struct Entry: Identifiable, Sendable, Equatable {
 
     public var id: String { item.id ?? "" }
 
+    /// The login has a one-time code set up.
+    public var hasCode: Bool {
+        guard let totp = item.login?.totp else { return false }
+        return !totp.isEmpty
+    }
+
     /// The list row as one VoiceOver stop: "GitHub, alex.k, has a one-time
     /// code". A card says only its last four digits.
-    public var spokenLabel: String {
+    public var spokenLabel: String { spokenLabel(codeNeedsPlan: false) }
+
+    /// As `spokenLabel`; on Free the row doesn't promise a code it can't
+    /// give, and says so as the detail screen does (D73 §1).
+    public func spokenLabel(codeNeedsPlan: Bool) -> String {
         var parts = [item.title.isEmpty ? "Untitled" : item.title]
         if let login = item.login {
             if !login.username.isEmpty { parts.append(login.username) }
-            if let totp = login.totp, !totp.isEmpty { parts.append("has a one-time code") }
+            if hasCode { parts.append(codeNeedsPlan ? Self.codeNeedsPlanPhrase : "has a one-time code") }
         } else if let card = item.card, !card.lastFour.isEmpty {
             parts.append("ending in \(card.lastFour)")
         } else if let identity = item.identity {
@@ -34,6 +44,9 @@ public struct Entry: Identifiable, Sendable, Equatable {
         if item.favorite { parts.append("favorite") }
         return parts.joined(separator: ", ")
     }
+
+    /// What a row says for its code on Free.
+    public static let codeNeedsPlanPhrase = "one-time code is part of Premium"
 }
 
 /// The vault list: sections, search, sync and the actions on items.
@@ -63,6 +76,9 @@ public final class VaultModel {
     /// A sync notice, such as "Couldn't sync"; the vault still shows.
     public private(set) var status: String?
     public private(set) var error: String?
+    /// The plan doesn't include one-time codes (D73 §1), as the core said
+    /// when asked for one. Rows then offer no "Copy code".
+    public private(set) var codeNeedsPlan = false
     /// "Sign in again to sync" (D50 §5); set by the app.
     public internal(set) var signInAgain: SignInAgainModel?
 
@@ -155,6 +171,21 @@ public final class VaultModel {
         } catch {
             self.error = message(for: error)
         }
+        await checkCodePlan()
+    }
+
+    /// Asks the core for one code, so the rows know whether the plan
+    /// includes them; the code itself is dropped.
+    private func checkCodePlan() async {
+        guard let entry = entries.first(where: { $0.hasCode && $0.item.trashedAtMs == nil }) else { return }
+        do {
+            _ = try await account.currentCode(entry.id, in: entry.vaultId)
+            codeNeedsPlan = false
+        } catch let failure as PWMError where failure.code == "plan_required" {
+            codeNeedsPlan = true
+        } catch {
+            // Another failure (an unsupported kind, say) says nothing about the plan.
+        }
     }
 
     /// Syncs, empties old trash and reloads. A sync already running runs
@@ -217,12 +248,35 @@ public final class VaultModel {
         case password, username, code
     }
 
+    /// The copies a row offers: none in the trash, and no code on Free.
+    public func copies(for entry: Entry) -> [RowCopy] {
+        guard let login = entry.item.login, entry.item.trashedAtMs == nil else { return [] }
+        var copies: [RowCopy] = []
+        if !login.password.isEmpty { copies.append(.password) }
+        if !login.username.isEmpty { copies.append(.username) }
+        if entry.hasCode, !codeNeedsPlan { copies.append(.code) }
+        return copies
+    }
+
+    /// The row's VoiceOver label, as the plan allows.
+    public func spokenLabel(for entry: Entry) -> String {
+        entry.spokenLabel(codeNeedsPlan: codeNeedsPlan)
+    }
+
     public func copy(_ field: RowCopy, of entry: Entry) async {
         let value: String?
         switch field {
         case .password: value = entry.item.login?.password
         case .username: value = entry.item.login?.username
-        case .code: value = try? await account.currentCode(entry.id, in: entry.vaultId)?.code.value
+        case .code:
+            do {
+                value = try await account.currentCode(entry.id, in: entry.vaultId)?.code.value
+            } catch let failure as PWMError where failure.code == "plan_required" {
+                codeNeedsPlan = true
+                value = nil
+            } catch {
+                value = nil
+            }
         }
         guard let value, !value.isEmpty else { return }
         pasteboard.copy(Redacted(value), clearAfter: ItemDetailModel.clipboardSeconds)

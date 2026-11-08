@@ -248,6 +248,32 @@ final class VaultTests: XCTestCase {
         XCTAssertEqual(pasteboard.copied.map(\.0), ["hunter2", "alex.k", "123456"])
         XCTAssertEqual(pasteboard.copied.map(\.1), [30, 30, 30])
         XCTAssertEqual(announcer.said.count, 3)
+        XCTAssertEqual(vault.copies(for: entry), [.password, .username, .code])
+        XCTAssertEqual(vault.spokenLabel(for: entry), "GitHub, alex.k, has a one-time code")
+    }
+
+    /// On Free a row neither promises a code nor offers to copy one: it says
+    /// the code is part of Premium, as the detail screen does (D73 §1).
+    func testOnFreeARowOffersNoCode() async throws {
+        var item = loginItem("1", "GitHub", username: "alex.k", password: "hunter2")
+        item.login?.totp = "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP"
+        await account.put(item)
+        await account.setCodeNeedsPlan(true)
+        let vault = await vault()
+        let entry = try XCTUnwrap(vault.entry("1"))
+        XCTAssertTrue(vault.codeNeedsPlan)
+        XCTAssertEqual(vault.copies(for: entry), [.password, .username])
+        let spoken = vault.spokenLabel(for: entry)
+        XCTAssertEqual(spoken, "GitHub, alex.k, one-time code is part of Premium")
+        XCTAssertFalse(spoken.contains("has a one-time code"))
+
+        // Upgrading: the next load offers the code again.
+        await account.setCodeNeedsPlan(false)
+        await account.setCode("123456")
+        await vault.load()
+        XCTAssertFalse(vault.codeNeedsPlan)
+        XCTAssertEqual(vault.copies(for: entry), [.password, .username, .code])
+        XCTAssertEqual(vault.spokenLabel(for: entry), "GitHub, alex.k, has a one-time code")
     }
 
     func testCodesAreReadInTwoGroups() {

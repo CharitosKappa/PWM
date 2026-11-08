@@ -208,6 +208,7 @@
     <!-- Screen readers (design/README.md, Accessibility): what TalkBack says -->
     <string name="hidden">hidden</string>
     <string name="has_code">has a one-time code</string>
+    <string name="code_part_of_premium">one-time code is part of Premium</string>
     <string name="copy_password">Copy password</string>
     <string name="copy_username">Copy username</string>
     <string name="copy_code">Copy code</string>

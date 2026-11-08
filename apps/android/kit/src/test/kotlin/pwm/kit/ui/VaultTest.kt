@@ -307,6 +307,32 @@ class VaultTest {
         }
     }
 
+    /** On Free a row neither promises a code nor offers to copy one: it says the code is part of Premium (D73 §1). */
+    @Test
+    fun onFreeARowOffersNoCode() = runTest {
+        val h = unlocked(login("1", "GitHub", username = "alex.k").edited { password = "hunter2"; totp = "otpauth://totp/GitHub?secret=JBSWY3DPEHPK3PXP" })
+        val entry = h.vault.state.value.visible.single()
+        assertFalse(h.vault.state.value.codeNeedsPlan)
+        assertEquals(listOf(VaultModel.RowCopy.PASSWORD, VaultModel.RowCopy.USERNAME, VaultModel.RowCopy.CODE), h.vault.copies(entry))
+        assertEquals(VaultModel.RowCode.HAS_CODE, h.vault.rowCode(entry))
+
+        h.accounts.single().codeNeedsPlan = true
+        h.vault.load()
+        assertTrue(h.vault.state.value.codeNeedsPlan)
+        assertEquals(listOf(VaultModel.RowCopy.PASSWORD, VaultModel.RowCopy.USERNAME), h.vault.copies(entry))
+        assertEquals(VaultModel.RowCode.NEEDS_PLAN, h.vault.rowCode(entry))
+
+        // Upgrading: the next load offers the code again.
+        h.accounts.single().codeNeedsPlan = false
+        h.vault.load()
+        assertFalse(h.vault.state.value.codeNeedsPlan)
+        assertEquals(VaultModel.RowCode.HAS_CODE, h.vault.rowCode(entry))
+        assertEquals(VaultModel.RowCopy.CODE, h.vault.copies(entry).last())
+
+        val noCode = Entry("v", login("2", "Mail"))
+        assertEquals(VaultModel.RowCode.NONE, h.vault.rowCode(noCode))
+    }
+
     @Test
     fun codesAreShownAndReadInTwoGroups() {
         assertEquals("123 456", ItemDetailModel.grouped("123456"))
