@@ -123,6 +123,16 @@ pub async fn refresh_session(state: &AppState, refresh_token: &str) -> Result<To
         if revoked.is_some() {
             return Err(ApiError::DeviceRevoked);
         }
+        // A deleted account's devices are told so, and wipe themselves (D74 §5).
+        let deleted = sqlx::query(
+            "SELECT 1 FROM deleted_sessions WHERE refresh_hash = $1 AND expires_at > now()",
+        )
+        .bind(&hash[..])
+        .fetch_optional(&mut *tx)
+        .await?;
+        if deleted.is_some() {
+            return Err(ApiError::AccountDeleted);
+        }
         let ended = sqlx::query("DELETE FROM sessions WHERE prev_refresh_hash = $1 RETURNING id")
             .bind(&hash[..])
             .fetch_optional(&mut *tx)

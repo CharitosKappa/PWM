@@ -294,9 +294,13 @@ fn class_of(method: &Method, path: &str) -> Option<Class> {
     }
     match path {
         "/v1/auth/register/start" | "/v1/auth/register/finish" => Some(Class::Register),
-        "/v1/auth/prelogin" | "/v1/auth/login/start" | "/v1/auth/login/finish" => {
-            Some(Class::Login)
-        }
+        // Proving the password to delete an account counts as a login, so it
+        // can't be used to guess (D74 §1).
+        "/v1/auth/prelogin"
+        | "/v1/auth/login/start"
+        | "/v1/auth/login/finish"
+        | "/v1/account/delete/start"
+        | "/v1/account/delete/finish" => Some(Class::Login),
         "/v1/auth/refresh" => Some(Class::Refresh),
         "/v1/reports/autofill" => Some(Class::Report),
         _ => None,

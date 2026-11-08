@@ -138,7 +138,7 @@ class VaultModel internal constructor(
                     onSessionEnded()
                     null
                 }
-                SyncResult.DeviceRevoked -> {
+                SyncResult.DeviceRevoked, SyncResult.AccountDeleted -> {
                     // The core has cleared the cache; finish signing out.
                     runCatching { account.signOut() }
                     onSignedOut()

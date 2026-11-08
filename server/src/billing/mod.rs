@@ -25,7 +25,7 @@ use uuid::Uuid;
 pub use apple::AppleConfig;
 pub use commitments::{Mailer, OutboxMessage, record_price_change};
 pub use play::{PLAY_SCOPE, PlayConfig};
-pub(crate) use routes::routes;
+pub(crate) use routes::{end_for_deletion, routes};
 pub use stripe::{STRIPE_VERSION, StripeConfig};
 
 use crate::ServerError;

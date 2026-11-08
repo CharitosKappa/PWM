@@ -10,6 +10,7 @@ use common::flows::setup;
 use pwm_client::{
     Client, HttpRequest, KdfParams, MemoryStore, Outcome, Platform, SyncEvent, Tokens, new_id,
 };
+use pwm_store::Store as _;
 use pwm_vault::{Item, ItemId, ItemKind};
 use serde_json::Value;
 
@@ -668,5 +669,98 @@ async fn signing_out_ends_the_session_on_the_server() {
         .await
         .unwrap();
     assert_eq!(sessions, 0);
+    db.drop().await;
+}
+
+/// D74 through the app API: a wrong password is found on the device, the
+/// right one deletes the account, this device is wiped, and another device
+/// finds out on its next sync and wipes itself too, unsent changes and all.
+#[tokio::test]
+async fn deleting_the_account_wipes_every_device() {
+    let Some((db, app)) = setup().await else {
+        return;
+    };
+    let mut laptop = new_client();
+    let step = laptop.start_signup(
+        EMAIL,
+        PASSWORD,
+        &new_id().unwrap(),
+        Platform::Linux,
+        "Laptop",
+    );
+    let Outcome::SignedUp { secret_key } = run(&app, &mut laptop, step).await.unwrap() else {
+        panic!("not signed up");
+    };
+    let secret_key = secret_key.expose_secret().clone();
+    let step = laptop.start_ensure_vault();
+    let Outcome::VaultCreated { vault_id: vault } = run(&app, &mut laptop, step).await.unwrap()
+    else {
+        panic!("no vault");
+    };
+    let mut phone = new_client();
+    let step = phone.start_login(
+        EMAIL,
+        PASSWORD,
+        &secret_key,
+        &new_id().unwrap(),
+        Platform::Android,
+        "Phone",
+    );
+    run(&app, &mut phone, step).await.unwrap();
+    let step = phone.start_sync();
+    run(&app, &mut phone, step).await.unwrap();
+    let (_, json) = note("Unsent");
+    phone.save_item(&vault, &json, T0).unwrap();
+
+    // A wrong password or Secret Key: found here, nothing sent past start.
+    let other_key = pwm_crypto::SecretKey::generate()
+        .unwrap()
+        .to_text()
+        .expose_secret()
+        .clone();
+    for (password, key) in [
+        ("not the password at all", secret_key.as_str()),
+        (PASSWORD, other_key.as_str()),
+    ] {
+        let step = laptop.start_delete_account(password, key);
+        assert_eq!(
+            run(&app, &mut laptop, step).await.unwrap_err().code(),
+            "wrong_password"
+        );
+        assert!(laptop.is_unlocked(), "still signed in");
+    }
+    assert_eq!(
+        laptop
+            .start_delete_account(PASSWORD, "A1-not-a-key")
+            .unwrap_err()
+            .code(),
+        "invalid_secret_key"
+    );
+
+    let step = laptop.start_delete_account(PASSWORD, &secret_key);
+    assert!(matches!(
+        run(&app, &mut laptop, step).await.unwrap(),
+        Outcome::AccountDeleted
+    ));
+    assert!(!laptop.is_unlocked());
+    assert!(
+        laptop.store().account().unwrap().is_none(),
+        "this device wiped"
+    );
+    let accounts: i64 = sqlx::query_scalar("SELECT count(*) FROM accounts")
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    assert_eq!(accounts, 0);
+
+    // The phone's next sync: refused, told, wiped.
+    let step = phone.start_sync();
+    assert!(matches!(
+        run(&app, &mut phone, step).await.unwrap(),
+        Outcome::AccountDeleted
+    ));
+    assert!(!phone.is_unlocked());
+    assert!(phone.store().account().unwrap().is_none());
+    assert!(phone.store().pending_items().unwrap().is_empty());
     db.drop().await;
 }

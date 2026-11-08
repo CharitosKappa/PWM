@@ -428,7 +428,7 @@ class AppModel(
                     (mutable.value.screen as? Screen.Vault)?.model?.signInAgain?.sessionEnded()
                     BackgroundResult.NO_DATA
                 }
-                SyncResult.DeviceRevoked -> {
+                SyncResult.DeviceRevoked, SyncResult.AccountDeleted -> {
                     // The core has cleared the cache; finish signing out.
                     runCatching { account.signOut() }
                     didSignOut()

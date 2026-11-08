@@ -751,3 +751,42 @@ async fn subscriptions_survive_0009_and_the_outbox_follows_them() {
     );
     db.drop().await;
 }
+
+/// Rows written under 0009 survive 0010, whose two tables hold only hashes,
+/// ids and times, and check them (D74).
+#[tokio::test]
+async fn data_survives_0010_and_the_deletion_tables_check_their_rows() {
+    let Some(db) = test_db().await else { return };
+    MIGRATOR.run_to(9, &db.pool).await.unwrap();
+    exec(&db.pool, seed()).await.unwrap();
+    let before = describe_rows(&db.pool).await;
+    migrate(&db.pool).await.unwrap();
+    assert_eq!(describe_rows(&db.pool).await, before);
+    assert_eq!(count(&db.pool, "deleted_sessions").await, 0);
+    assert_eq!(count(&db.pool, "deleted_accounts").await, 0);
+
+    let session = |len: usize| {
+        format!(
+            "INSERT INTO deleted_sessions (refresh_hash, expires_at) VALUES ({}, now())",
+            bytes(len)
+        )
+    };
+    exec(&db.pool, session(32)).await.unwrap();
+    let account = format!("INSERT INTO deleted_accounts (account_id) VALUES ('{A}')");
+    exec(&db.pool, account.clone()).await.unwrap();
+    for (sql, code) in [
+        (session(31), "23514"),
+        (session(32), "23505"),
+        (account, "23505"),
+    ] {
+        let err = exec(&db.pool, sql.clone())
+            .await
+            .expect_err(&format!("accepted: {sql}"));
+        let actual = err
+            .as_database_error()
+            .and_then(|e| e.code())
+            .map(|c| c.into_owned());
+        assert_eq!(actual.as_deref(), Some(code), "{sql}: {err}");
+    }
+    db.drop().await;
+}

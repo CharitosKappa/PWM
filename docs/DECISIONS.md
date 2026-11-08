@@ -3927,3 +3927,118 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
       - **Not done yet:** the editor's caption, which needs the plan in the editors' models. The item screen says it, so nothing is hidden. It's logged here under the platform-parity rule.
     - **Settings › Plan** is named in the text rather than linked: the item screens have no route to Settings on every platform.
   - **Messages:** `plan_required` in `design/messages.json` and the screens' `api.ts`.
+- **D74 — Account deletion (M9.4): proving the master password, deleting at once, subscriptions, wiping every device, and restores** · settled 2026-11-08 · founder (approved as proposed).
+  M9.4 asks for "account deletion in every app (D72 §5): the master password proven again, everything deleted on the server, each device wiped, export offered first, and D6 §6's subscription rules". Apple requires it before launch (App Review guideline 5.1.1(v)). What exists:
+  - **The schema:** deleting the `accounts` row already cascades to everything the account owns: devices, sessions, vaults (`owner_id`), vault keys, items, tombstones, shares, subscriptions, approvals, push tokens and the reminders' outbox (D25 §3).
+  - **No deletion route.** The server never deletes an account today.
+  - **Other devices:** when a session's row is gone, its tokens are answered 401 `unauthorized`. The device then looks signed out but keeps its cache. Only a revoked device (403 `device_revoked`) clears its cache (D28).
+  - **Subscriptions:** D6 §6 says a Stripe subscription ends with a pro-rata refund and a store subscription can't be ended by us. D72 then found that Play's API refunds pro-rata (`revoke_prorated`), so only the App Store is left out.
+  - **Backups:** restoring one would bring a deleted account back. `mark-restored` (D30 §5) knows nothing about deletions.
+
+  Open: how the password is proven, whether deletion waits, what stays, what happens when a provider fails, how the other devices learn of it, restores, and the screens.
+
+  Proposal:
+  1. **Proving the master password: an OPAQUE login made only for deleting.**
+     - **The server can't check a password itself,** and the unlocked session, Face ID, Touch ID, Windows Hello and the fingerprint don't count, as for export (D24 §2).
+     - **Two calls under the device's session:**
+       - `POST /v1/account/delete/start` `{ke1}` → `{attempt, ke2}`
+       - `POST /v1/account/delete/finish` `{attempt, ke3}` → 200 when the account is gone
+     - They reuse the login's OPAQUE steps and `login_attempts` (60 s, single use), but for the session's own account only: the request names no email.
+     - **A wrong password** answers 401 `invalid_credentials` and nothing changes. Both calls count toward the login rate limit (D29), so they can't be used to guess.
+     - **Finish deletes in the same request:** no deletion token to store, expire or leak. If deletion fails after the password checked out, the user starts again.
+  2. **Deleting at once, with no waiting period.**
+     - Everything is deleted when finish answers, and nothing can bring it back. The screens say so plainly before the password step and offer export first (§7).
+     - **Why not a waiting period** (say 7 days to undo): the server would keep the vault and need a "deleting" state that every route checks. Undoing needs only an export, which the screens offer first.
+     - **The email is free at once** for a new registration.
+  3. **What's deleted, and what stays.**
+     - **Deleted:** the `accounts` row, and with it everything in the cascade above.
+     - **The Stripe customer** is deleted at Stripe after its subscription ends (`DELETE /v1/customers/{id}`), which removes the saved card. Stripe keeps its own records of charges and invoices, as the law requires of it. The App Store and Play keep theirs.
+     - **Stays on our server:**
+       - the anonymous autofill reports (D38) and the providers' event ids (30 days); neither names an account
+       - the two small lists in §5 and §6: random ids and token hashes only, never an email
+     - **Backups** keep the deleted data until they age out. `DEPLOYMENT.md` says so and recommends keeping backups at most 30 days, and the privacy text (M10) says the same.
+  4. **Subscriptions: end them first, and delete only after that worked.**
+     - **Stripe:** the subscription ends now with a pro-rata refund of the unused days, whatever the 30 days (D6 §6), through D72's refund and `end_now`. Then the customer is deleted.
+     - **Play:** the same, through `revoke_prorated` (D72 §1). This closes D6 §6's gap for Play.
+     - **App Store:** only Apple can end it. The screen says so before anything else, with the button to Apple's page (`showManageSubscriptions` on iOS, the web page elsewhere). Deleting isn't blocked: it's the user's choice. Apple's later notifications about the purchase find no account and are dropped, as for any unknown token.
+     - **When Stripe or Play can't be reached,** finish answers 503 `billing_unavailable` and deletes nothing, so nobody is charged for an account that's gone. The screen says to try again later.
+     - **A subscription that's already canceled or expired** has nothing to end.
+     - **Two subscriptions** (D6 §8): each is ended by its own rule, before the delete.
+     - **A server without billing** (self-hosted, M11) skips this step.
+  5. **The other devices: told, and wiped.**
+     - **A new code, 403 `account_deleted`.** The sync engine handles it as `device_revoked`: it clears the cache, and the core locks. Each app then finishes signing out, as it does for a revoked device, and shows "This account was deleted."
+     - **How a device gets it:** the deleting request copies the refresh-token hashes of the account's other sessions into a table `deleted_sessions (refresh_hash, expires_at)`, inside the same transaction.
+       - Each hash is kept until its refresh token would have expired (90 days unused, D26).
+       - An access token lasts 15 minutes and finds no session after the delete, so the device refreshes. A refresh token found in `deleted_sessions` gets `account_deleted` instead of `unauthorized`.
+       - The table holds no account id, email or device name.
+     - **Waking them now:** after the commit, the server sends the account's devices the existing content-free "your vault changed" push (D50, D60). Each syncs, gets `account_deleted` and wipes. A device that's off or offline wipes on its next sync.
+     - **What isn't covered:** a device that never comes online again keeps its encrypted cache, as after an offline sign-out. It still needs the master password and the Secret Key to open it.
+  6. **Restores: deleted accounts stay deleted.**
+     - **A table `deleted_accounts (account_id, deleted_at)`**, holding only the random account id, is kept 60 days: twice the recommended backup age.
+     - **`pwm-server mark-restored`** deletes again every listed account that the restored backup brought back, before clients come back. `DEPLOYMENT.md` says so, and the restore test covers it.
+     - The daily pass purges both tables when their rows expire.
+  7. **The screens, in every app** (iOS, macOS, Android, the desktop on Windows and Linux, the extensions):
+     - **Where:** Settings › Account › Delete account.
+     - **The steps:**
+       1. **What will happen:** "Your vaults and items will be deleted from every device and from our server. This can't be undone." A button **Export first**, which opens the existing export, and **Continue**.
+       2. **The subscription,** only when there is one:
+          - Stripe and Play: "Your Premium plan ends now, and you'll get back the unused days."
+          - App Store: "Apple bills this plan. Cancel it in your Apple account, or Apple will keep charging you." With the button to Apple's page.
+       3. **The master password,** and the button **Delete account**.
+       4. **Done:** the device is wiped as on sign-out, and the app shows the sign-in screen with "Your account was deleted."
+     - **No shortcuts and no extra friction:** no typed confirmation word, no countdown, no "are you sure" after the password. The password step is the confirmation.
+  8. **The core and the app API:**
+     - **`pwm-client`:** `start_delete_account(master password, Secret Key, now)` runs §1's two calls through the usual step machine and ends with `AccountDeleted`. The core then clears the store, as `sign_out` does. The master password and Secret Key are handled as at unlock and wiped after.
+     - **`account_deleted`** joins `SyncOutcome` and `Outcome` next to `DeviceRevoked`, and the codes in `design/messages.json`.
+     - **The bindings:** `pwm-ffi` and `pwm-wasm` get the same call.
+  9. **Shared vaults and families** (M13): today vaults have no other members, so §3's cascade loses nobody's data. **For M13:** an owner's vaults are deleted with the account, and the screen first lists the vaults that have members. Handing a vault to another member comes with M13.
+  10. **Not in M9.4:**
+      - **A confirmation email** after the deletion: when an email provider is chosen (D32).
+      - **Deleting from the web** without an app: there's no web vault. Every app can delete, and `PRODUCT.md`'s support text says where.
+  11. **Tests:**
+      - **Server** (Postgres):
+        - a wrong password changes nothing
+        - the right one deletes every row the account owned, and touches no other account
+        - `deleted_sessions` and `deleted_accounts` are filled
+        - another device's refresh token gets `account_deleted`
+        - an unreachable Stripe or Play deletes nothing
+        - an App Store subscription doesn't block
+        - `mark-restored` deletes a restored account again
+        - the rate limit holds
+        - the purge removes expired rows
+      - **Core:** the step machine against the fake server, the store cleared after it, and `account_deleted` clearing another client's cache.
+      - **The apps:** the view-model tests for each step on Apple, Android, the extension and the desktop, including the App Store step and `billing_unavailable`.
+  12. **The PRs:** one for the server, the core and the bindings, and one for the screens on every platform, as M5.3 was split (D43). No new dependencies, and migration 0010 adds the two tables.
+
+  Alternatives:
+  - **A waiting period with undo** (7 or 30 days): it protects someone who deletes by mistake, but the server keeps the vault meanwhile and every route needs a "deleting" state. With export offered first, the gain is small.
+  - **A deletion token from the login** (OPAQUE login, then `DELETE /v1/account` with the token): one more secret to store and expire, for the same result as deleting inside finish.
+  - **Leaving the other devices on 401:** no new table, but each would keep its cache until its user signs out by hand, which breaks "each device wiped".
+  - **Keeping every account id forever** instead of 60 days: covers very old backups, but keeps a trace of every account for good. Backups older than 30 days aren't supported.
+
+  Implementation notes (M9.4, part 1: the server, the core and the bindings):
+  - **§6 changed before building, with the founder's approval:** the database's list alone doesn't survive a restore, since it goes back in time with the backup. So each deletion is also appended to a file outside the database (`PWM_DELETIONS_FILE`, one line `<id> <unix seconds>`, on its own volume), and `mark-restored` deletes again what either lists.
+    - **Order:** the line is written after the commit, so a failed delete never lists a live account. A failed write is logged, and the table still has it.
+    - **The file:** one server writes it. The daily pass prunes lines older than 60 days (written to a new file and renamed over), and a line cut short is skipped. `compose.yaml` adds the `deletions` volume, and the image makes `/var/lib/pwm` the server's.
+  - **The server** (`server/src/deletion.rs`):
+    - The calls use the login's field names: start `{credential_request}` → `{login_id, credential_response}`, finish `{login_id, credential_finalization}` → 204.
+    - `auth.rs`'s OPAQUE steps became `begin_login` and `verify_login`, shared with login. `verify_login` refuses an attempt for another account.
+    - **A failed proof is 403 `invalid_credentials`, not 401:** under a session, 401 means the access token, and the sync engine would refresh and retry.
+    - **Every session's refresh hash** goes to `deleted_sessions`, this device's too, so a retry after a lost answer is told `account_deleted`.
+    - **The push** reuses the content-free background push, read inside the transaction before the cascade, sent after the commit, and not held back by the minute between background pushes.
+  - **Billing** (`end_for_deletion` in `billing/routes.rs`):
+    - Each Stripe and Play subscription that counts (D6's `ENTITLED`) is ended. Stripe refunds the last charge's unused days with D72's idempotency key, so a retry refunds once, then ends the subscription. Play uses `revoke_prorated`.
+    - **What counts as already over:** 404 from a provider. Any other failure is `billing_unavailable`.
+    - **The Stripe customer** is deleted after. If Stripe was turned off on the server since, it's left, with a warning: nothing of it can renew from here.
+  - **The core:**
+    - `pwm-sync`: `SyncOutcome::AccountDeleted` clears the store and keys, like `DeviceRevoked`.
+    - `pwm-client`: `start_delete_account(password, secret_key)` (`deletion.rs`).
+      - It derives the keys as at login. A wrong password or Secret Key fails on the device, as `wrong_password`.
+      - It ends with `Outcome::AccountDeleted` after `sign_out` clears the store.
+      - A 503 is the engine's usual wait: the apps say nothing was deleted, try again later.
+  - **The apps:** each handles `account_deleted` as `device_revoked` (wipe and sign out), and the message joins `design/messages.json`.
+    - Apple and Android: a new `SyncResult` case.
+    - The desktop and the extension: their outcome switches.
+  - **Tests:**
+    - **Server:** 7 in `tests/deletion.rs`, 3 for billing, 1 for push, the rate limit, and the 0010 migration and snapshot.
+    - **Elsewhere:** 1 sync engine test, 1 end-to-end client test against the server, and the extension's background.

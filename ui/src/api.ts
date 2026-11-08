@@ -34,6 +34,7 @@ const MESSAGES: Record<string, string> = {
   account_exists: "There is already an account with this email.",
   server: "The server had a problem. Try again later.",
   device_revoked: "This device was signed out from another device.",
+  account_deleted: "This account was deleted.",
   signed_out: "You were signed out. Sign in again.",
   invalid_server: "Enter an https:// address.",
   empty: "Nothing to copy.",

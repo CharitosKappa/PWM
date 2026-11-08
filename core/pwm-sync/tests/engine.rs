@@ -551,6 +551,30 @@ fn a_revoked_device_clears_its_cache() {
     assert!(other.store().vaults().unwrap().is_empty());
 }
 
+/// D74 §5: another device deleted the account. This one finds out when its
+/// access token fails and its refresh token is answered `account_deleted`,
+/// and keeps nothing, not even its unsent changes.
+#[test]
+fn a_deleted_accounts_device_clears_its_cache() {
+    let mut server = FakeServer::new();
+    let account = Account::new();
+    let mut device = account.device(&mut server);
+    let vault = create_vault(&mut device, &mut server);
+    add(&mut device, &vault, "secret", T0);
+    sync(&mut device, &mut server, T0);
+    add(&mut device, &vault, "unsent", T0);
+
+    server.delete_account();
+    let step = device.start_sync().unwrap();
+    assert!(matches!(
+        drive(&mut device, &mut server, step, T0),
+        Ran::Done(SyncOutcome::AccountDeleted)
+    ));
+    assert!(device.store().vaults().unwrap().is_empty());
+    assert!(device.store().pending_items().unwrap().is_empty());
+    assert!(device.store().account().unwrap().is_none());
+}
+
 #[test]
 fn a_crash_between_pages_repeats_only_that_page() {
     let mut server = FakeServer::new();
