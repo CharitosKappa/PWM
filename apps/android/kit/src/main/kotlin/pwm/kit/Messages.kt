@@ -15,6 +15,7 @@ internal object Messages {
         "account_exists" to "There is already an account with this email.",
         "server" to "The server had a problem. Try again later.",
         "device_revoked" to "This device was signed out from another device.",
+        "account_deleted" to "This account was deleted.",
         "signed_out" to "You were signed out. Sign in again.",
         "locked" to "Unlock first.",
         "busy" to "Still working on the last request.",

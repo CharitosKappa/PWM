@@ -13,7 +13,7 @@ use axum::http::{StatusCode, Uri};
 use axum::routing::{get, post};
 use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
-use common::flows::{Account, register};
+use common::flows::{Account, delete_account, register};
 use common::{TestDb, call, migrated_db, send};
 use hmac::{Hmac, KeyInit, Mac};
 use p256::ecdsa::SigningKey;
@@ -51,6 +51,8 @@ struct Fake {
     moves: Vec<String>,
     /// Play purchases revoked, with the request body.
     revoked: Vec<(String, String)>,
+    /// Stripe answers 503 to everything about subscriptions.
+    stripe_down: bool,
 }
 
 type Shared = Arc<Mutex<Fake>>;
@@ -99,6 +101,13 @@ async fn start_fake() -> (Shared, String) {
             }),
         )
         .route(
+            "/v1/customers/{id}",
+            axum::routing::delete(|State(f): State<Shared>, Path(id): Path<String>| async move {
+                f.lock().unwrap().calls.push(format!("delete {id}"));
+                json!({ "id": id, "deleted": true }).to_string()
+            }),
+        )
+        .route(
             "/v1/checkout/sessions",
             post(|State(f): State<Shared>, body: String| async move {
                 f.lock().unwrap().checkouts.push(form(&body));
@@ -110,6 +119,9 @@ async fn start_fake() -> (Shared, String) {
             get(|State(f): State<Shared>, Path(id): Path<String>| async move {
                 let mut f = f.lock().unwrap();
                 f.calls.push(format!("stripe {id}"));
+                if f.stripe_down {
+                    return (StatusCode::SERVICE_UNAVAILABLE, "{}".to_owned());
+                }
                 found(f.stripe.get(&id).cloned())
             })
             .post(
@@ -1564,4 +1576,119 @@ async fn without_billing_the_plan_has_no_end() {
     assert_eq!(me["plan_until"], Value::Null);
     assert_eq!(me["limits"]["share_links_per_day"], Value::Null);
     db.drop().await;
+}
+
+async fn accounts(pool: &PgPool) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM accounts")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// D74 §4: Stripe and Play end first, with the unused days back whatever
+/// the 30 days, and the Stripe customer goes; then the account.
+#[tokio::test]
+async fn deleting_ends_stripe_and_play_first_with_the_unused_days_back() {
+    let Some(w) = world().await else { return };
+    let alice = register(&w.app, "alice@example.com").await;
+    let token = token_of(&w.app, &alice).await;
+    let (status, _) = call(
+        &w.app,
+        "POST",
+        "/v1/billing/stripe/checkout",
+        Some(alice.access()),
+        Some(json!({ "plan": "premium" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "a customer for Alice");
+    // Paid 40 days ago: past the refund window, refunded on deletion anyway.
+    paying(&w, &token, "sub_d", 40, 325).await;
+    let purchase_token = "play.token-d001";
+    w.fake.lock().unwrap().play.insert(
+        purchase_token.into(),
+        play_purchase("SUBSCRIPTION_STATE_ACTIVE", &token),
+    );
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        "/v1/billing/play/purchases",
+        Some(alice.access()),
+        Some(json!({ "product_id": "premium_yearly", "purchase_token": purchase_token })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = delete_account(&w.app, &alice).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    assert_eq!(accounts(&w.db.pool).await, 0);
+    {
+        let fake = w.fake.lock().unwrap();
+        assert_eq!(fake.refunds.len(), 1);
+        let amount: i64 = fake.refunds[0].0["amount"].parse().unwrap();
+        // 2400 × 325 / 365, rounded down; a second may pass meanwhile.
+        assert!((2136..=2137).contains(&amount), "{amount}");
+        assert_eq!(fake.refunds[0].1.as_deref(), Some("pwm-refund-in_1"));
+        let at = |call: &str| fake.calls.iter().position(|c| c == call).unwrap();
+        assert!(at("refund") < at("end sub_d"), "the refund goes first");
+        assert!(
+            at("end sub_d") < at("delete cus_test1"),
+            "then the customer"
+        );
+        assert_eq!(fake.revoked.len(), 1);
+        assert_eq!(fake.revoked[0].0, purchase_token);
+    }
+    w.db.drop().await;
+}
+
+/// D74 §4: nothing is deleted while Stripe can't end the plan.
+#[tokio::test]
+async fn an_unreachable_provider_deletes_nothing() {
+    let Some(w) = world().await else { return };
+    let alice = register(&w.app, "alice@example.com").await;
+    let token = token_of(&w.app, &alice).await;
+    paying(&w, &token, "sub_u", 5, 360).await;
+    w.fake.lock().unwrap().stripe_down = true;
+    let (status, body) = delete_account(&w.app, &alice).await;
+    assert_eq!(
+        (status, &body["error"]),
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            &json!("billing_unavailable")
+        )
+    );
+    assert_eq!(accounts(&w.db.pool).await, 1);
+    let (_, me) = call(&w.app, "GET", "/v1/account", Some(alice.access()), None).await;
+    assert_eq!(me["plan"], "premium");
+    assert!(w.fake.lock().unwrap().refunds.is_empty());
+
+    // Back up: deleting works, and the refund is made once.
+    w.fake.lock().unwrap().stripe_down = false;
+    let (status, _) = delete_account(&w.app, &alice).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(w.fake.lock().unwrap().refunds.len(), 1);
+    w.db.drop().await;
+}
+
+/// D74 §4: an App Store plan is Apple's to end; it doesn't block deleting.
+#[tokio::test]
+async fn an_app_store_plan_doesnt_block_deleting() {
+    let Some(w) = world().await else { return };
+    let alice = register(&w.app, "alice@example.com").await;
+    sqlx::query(
+        "INSERT INTO subscriptions (account_id, plan, status, provider, provider_ref, price_minor, currency, \
+            current_period_end) \
+         VALUES ($1, 'premium', 'active', 'app_store', '2000000099', 2399, 'EUR', now() + interval '1 year')",
+    )
+    .bind(alice.id)
+    .execute(&w.db.pool)
+    .await
+    .unwrap();
+    let (status, _) = delete_account(&w.app, &alice).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(accounts(&w.db.pool).await, 0);
+    assert!(
+        w.fake.lock().unwrap().calls.is_empty(),
+        "no provider called"
+    );
+    w.db.drop().await;
 }

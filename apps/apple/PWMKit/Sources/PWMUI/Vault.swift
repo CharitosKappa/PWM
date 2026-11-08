@@ -168,7 +168,7 @@ public final class VaultModel {
                 } else {
                     status = PWMError(code: "signed_out").message
                 }
-            case .deviceRevoked:
+            case .deviceRevoked, .accountDeleted:
                 // The core has cleared the cache; finish signing out.
                 try? await account.signOut()
                 onSignedOut()

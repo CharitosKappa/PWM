@@ -42,6 +42,7 @@ How to run `pwm-server` outside development (decisions D25, D29, D30). The same 
 | `PWM_PLAY_PRODUCTS` | with the file | Each plan's Play subscription product id, like `premium=premium_yearly`. A plan may list more than one, the current one first. |
 | `PWM_PLAY_NOTIFY_SECRET` | with the file | At least 32 random letters and digits. Real-time developer notifications go through a Pub/Sub push subscription to `https://<server>/v1/billing/play/notifications/<secret>`. |
 | `PWM_PLAY_URL`, `PWM_PLAY_TOKEN_URL` | no | Replace Google's API and token addresses; for tests only. |
+| `PWM_DELETIONS_FILE` | yes, in production | Path to the deletions file (D74 §6): each deleted account's random id and time, kept 60 days, so a restored backup can't bring an account back. Put it on its own volume, back it up separately or not at all, and **never restore it together with a database backup**. One server writes it. `compose.yaml` mounts the `deletions` volume at `/var/lib/pwm`. Without it, only the database's own list counts, which a restore takes back in time. |
 | `PWM_LOG` | no | Log filter, default `info,sqlx=warn`. |
 | `PWM_LOG_FORMAT` | no | `json` (default in the image) or `text`. |
 
@@ -78,13 +79,15 @@ Caddy sets `X-Forwarded-For` by default. Set `PWM_TRUSTED_PROXIES` to the addres
 
 Back up Postgres with your usual tool (`pg_dump`, or snapshots plus WAL archiving). The database holds only ciphertext, ids, sizes and times, plus account emails.
 
+**Keep backups at most 30 days.** A deleted account's data stays in the backups made before it was deleted until they age out, and the privacy text says so (D74 §3). The deletions file and the database's own list keep deleted ids 60 days, twice that age, so every restore is covered.
+
 **After restoring a backup**, devices may hold changes newer than the backup. Before letting clients back in, run once:
 
 ```
 docker compose exec server /pwm-server mark-restored
 ```
 
-This gives the server a new epoch. Every device notices it on its next sync, pulls everything again, and uploads what the backup lost. **Skipping this step can make devices miss changes made after the restore.**
+This deletes again every account deleted since the backup (from the deletions file and the database's list, D74 §6) and gives the server a new epoch. Every device notices it on its next sync, pulls everything again, and uploads what the backup lost. **Skipping this step can make devices miss changes made after the restore, and brings deleted accounts back.**
 
 ## Health and logs
 

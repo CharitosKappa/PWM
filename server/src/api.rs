@@ -13,6 +13,7 @@ use serde::de::DeserializeOwned;
 use sqlx::PgPool;
 
 use crate::billing::Billing;
+use crate::deletion::DeletionLog;
 use crate::limits::{Clock, Limits, RateLimiter, TrustedProxies, system_clock};
 use crate::push::Push;
 
@@ -26,6 +27,8 @@ pub struct AppState {
     pub(crate) push: Push,
     /// Plans and billing (D6); off (every account Premium) unless configured.
     pub(crate) billing: Billing,
+    /// Deleted accounts outside the database (D74 §6); off unless configured.
+    pub(crate) deletions: DeletionLog,
 }
 
 impl AppState {
@@ -38,7 +41,13 @@ impl AppState {
             trusted_proxies: Arc::new(TrustedProxies::default()),
             push: Push::off(),
             billing: Billing::off(),
+            deletions: DeletionLog::off(),
         }
+    }
+
+    pub fn with_deletions(mut self, deletions: DeletionLog) -> Self {
+        self.deletions = deletions;
+        self
     }
 
     pub fn with_billing(mut self, billing: Billing) -> Self {
@@ -73,6 +82,8 @@ pub enum ApiError {
     /// Missing, malformed, expired or ended access or refresh token.
     Unauthorized,
     DeviceRevoked,
+    /// A refresh token of a deleted account's session (D74 §5).
+    AccountDeleted,
     /// A body or blob over its size limit (D29).
     TooLarge,
     /// A vault or item count cap (D29).
@@ -101,6 +112,7 @@ impl ApiError {
             Self::InvalidCredentials => (StatusCode::UNAUTHORIZED, "invalid_credentials"),
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             Self::DeviceRevoked => (StatusCode::FORBIDDEN, "device_revoked"),
+            Self::AccountDeleted => (StatusCode::FORBIDDEN, "account_deleted"),
             Self::TooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "too_large"),
             Self::LimitReached => (StatusCode::FORBIDDEN, "limit_reached"),
             Self::RateLimited(_) => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),

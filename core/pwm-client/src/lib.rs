@@ -11,6 +11,7 @@ mod autofill;
 mod billing;
 mod biometric;
 mod client;
+mod deletion;
 mod error;
 mod import;
 mod kit;

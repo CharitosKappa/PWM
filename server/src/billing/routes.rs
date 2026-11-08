@@ -265,6 +265,88 @@ async fn stripe_refund(
     answer(&state, auth.account_id).await
 }
 
+/// Before an account is deleted (D74 §4): each Stripe and Play subscription
+/// that counts ends now with its unused days refunded, whatever the 30 days,
+/// and the Stripe customer is deleted. An App Store subscription is Apple's
+/// to end; the screens warn first. A provider that can't be reached answers
+/// `billing_unavailable`, so nothing is deleted while a plan could renew.
+pub(crate) async fn end_for_deletion(state: &AppState, account: Uuid) -> Result<(), ApiError> {
+    let Some(inner) = state.billing.inner.as_deref() else {
+        return Ok(());
+    };
+    let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SELECT s.provider, s.provider_ref FROM subscriptions s \
+         WHERE s.account_id = $1 AND s.provider IN ('stripe', 'play') AND {}",
+        super::ENTITLED
+    )))
+    .bind(account)
+    .fetch_all(&state.pool)
+    .await?;
+    for row in rows {
+        let (provider, reference): (String, String) = (row.get(0), row.get(1));
+        let ended = if provider == "stripe" {
+            let config = inner.stripe.as_ref().ok_or(ApiError::BillingUnavailable)?;
+            end_stripe_now(config, &inner.http, &reference).await
+        } else {
+            let config = inner.play.as_ref().ok_or(ApiError::BillingUnavailable)?;
+            play::revoke_prorated(config, &inner.http, &reference).await
+        };
+        match ended {
+            // Already over at the provider.
+            Ok(()) | Err(BillingError::NotFound) => {}
+            Err(err) => return Err(err.into()),
+        }
+    }
+    let customer: Option<String> =
+        sqlx::query_scalar("SELECT stripe_customer FROM accounts WHERE id = $1")
+            .bind(account)
+            .fetch_one(&state.pool)
+            .await?;
+    match (customer, inner.stripe.as_ref()) {
+        (Some(customer), Some(config)) => {
+            match stripe::delete_customer(config, &inner.http, &customer).await {
+                Ok(()) | Err(BillingError::NotFound) => {}
+                Err(err) => return Err(err.into()),
+            }
+        }
+        // Stripe was turned off here since: nothing of it can renew.
+        (Some(_), None) => tracing::warn!("billing: a deleted account's Stripe customer was left"),
+        (None, _) => {}
+    }
+    Ok(())
+}
+
+/// The unused days of the last charge back, once whatever the retries, then
+/// the subscription ends.
+async fn end_stripe_now(
+    config: &super::StripeConfig,
+    http: &super::http::Http,
+    reference: &str,
+) -> Result<(), BillingError> {
+    match stripe::last_charge(config, http, reference).await {
+        Ok(charge) => {
+            let now = i64::try_from(stripe::now()).unwrap_or(i64::MAX);
+            let amount = stripe::refund_amount(
+                charge.amount_paid,
+                charge.period_start,
+                charge.period_end,
+                now,
+            );
+            if amount > 0 {
+                match stripe::refund(config, http, &charge.invoice, amount).await {
+                    // Paid without a card payment to refund.
+                    Ok(()) | Err(BillingError::NotFound) => {}
+                    Err(err) => return Err(err),
+                }
+            }
+        }
+        // Nothing was paid: nothing to refund.
+        Err(BillingError::NotFound) => {}
+        Err(err) => return Err(err),
+    }
+    stripe::end_now(config, http, reference).await
+}
+
 /// As for Stripe, with Google working out the pro-rata amount.
 async fn play_refund(
     State(state): State<AppState>,

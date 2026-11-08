@@ -625,6 +625,11 @@ impl<T: Transport, K: KeyStore, C: Clipboard, Q: Clock> Backend<T, K, C, Q> {
                 self.forget_account().await?;
                 self.sync_error = Some("device_revoked".to_owned());
             }
+            Step::Done(Outcome::AccountDeleted) => {
+                // As for a revoked device (D74 §5).
+                self.forget_account().await?;
+                self.sync_error = Some("account_deleted".to_owned());
+            }
             _ => self.sync_error = Some("internal".to_owned()),
         }
         Ok(())

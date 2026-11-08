@@ -31,7 +31,7 @@ With Stripe we run the subscription, so every commitment holds in full. A plan b
 - **§4 One-click cancel:** we can't cancel a store subscription. The app's button opens the store's own subscription page.
 - **§2 Notices:** the server's outbox schedules every reminder and notice for every provider, but sends nothing until an email provider is chosen (D32). Until then, no price change applies to anyone (D72 §2).
 - **§5 Refunds:** only Apple refunds App Store purchases. The iOS app opens Apple's request sheet, and the other apps point to Apple's Report a Problem page; if Apple declines, we can't refund. Play refunds pro-rata through its API, like Stripe (D72 §1).
-- **Deleting an account** can't end a store subscription; the delete screen says so first, with the link to cancel it (M9.4).
+- **Deleting an account** ends a Stripe or Play subscription with the unused days refunded, whatever the 30 days (D74 §4). Only Apple can end an App Store one: the delete screen says so first, with the button to Apple's page.
 
 ## What Free does with paid items (D73)
 

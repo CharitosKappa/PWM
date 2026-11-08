@@ -48,6 +48,9 @@ sealed class SyncResult {
 
     /** This device was revoked: its cache is cleared and the session locked. */
     data object DeviceRevoked : SyncResult()
+
+    /** The account was deleted from another device (D74 §5): as for a revoked device. */
+    data object AccountDeleted : SyncResult()
 }
 
 /** Something the app may want to show. */
@@ -303,6 +306,7 @@ class Session(
             )
             Outcome.SignedOut -> SyncResult.SignedOut
             Outcome.DeviceRevoked -> SyncResult.DeviceRevoked
+            Outcome.AccountDeleted -> SyncResult.AccountDeleted
             else -> throw PwmError("protocol")
         }
     }
@@ -558,6 +562,7 @@ class Session(
         }
         return when (outcome) {
             Outcome.DeviceRevoked -> throw PwmError("device_revoked")
+            Outcome.AccountDeleted -> throw PwmError("account_deleted")
             Outcome.SignedOut -> throw PwmError("signed_out")
             else -> outcome
         }
@@ -632,6 +637,7 @@ class Session(
             )
             Outcome.SignedOut -> SyncResult.SignedOut
             Outcome.DeviceRevoked -> SyncResult.DeviceRevoked
+            Outcome.AccountDeleted -> SyncResult.AccountDeleted
             else -> throw PwmError("protocol")
         }
     }
