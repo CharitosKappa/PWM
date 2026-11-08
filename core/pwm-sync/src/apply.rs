@@ -242,3 +242,31 @@ pub(crate) fn reupload_missing<S: Store>(
     }
     Ok(())
 }
+
+/// After a full pull caused by compacted tombstones (D76 §2): the server
+/// wasn't restored, so an item it no longer has was deleted there.
+/// - **Never uploaded** (`Modified` at revision 1): it goes up as usual.
+/// - **An unsent edit:** kept as a new item, as for a tombstone (D28).
+/// - **Synced, or deleted here too:** removed.
+pub(crate) fn drop_missing<S: Store>(
+    store: &mut S,
+    key: &SymmetricKey,
+    vault_id: &Id,
+    seen: &std::collections::HashSet<ItemId>,
+) -> Result<(), SyncError> {
+    for record in store.items(vault_id)? {
+        if seen.contains(&record.item_id) {
+            continue;
+        }
+        match record.state {
+            SyncState::Modified if record.revision == 1 => {}
+            SyncState::Modified => {
+                move_to_copy(store, Some(key), &record)?;
+            }
+            SyncState::Synced | SyncState::Deleted => {
+                store.delete_item(vault_id, &record.item_id)?;
+            }
+        }
+    }
+    Ok(())
+}

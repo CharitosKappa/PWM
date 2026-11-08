@@ -94,6 +94,8 @@ pub enum ApiError {
     ReadOnly,
     /// A write or delete without `If-Match` / `If-None-Match` (D27).
     PreconditionRequired,
+    /// A delta sync from before compacted tombstones (D76 §2): pull from 0.
+    ResyncRequired,
     Conflict(&'static str),
     /// 403 with its own code, such as `purchase_not_yours` (D6).
     Forbidden(&'static str),
@@ -120,6 +122,7 @@ impl ApiError {
             Self::PreconditionRequired => {
                 (StatusCode::PRECONDITION_REQUIRED, "precondition_required")
             }
+            Self::ResyncRequired => (StatusCode::GONE, "resync_required"),
             Self::Conflict(code) => (StatusCode::CONFLICT, code),
             Self::Forbidden(code) => (StatusCode::FORBIDDEN, code),
             Self::BillingUnavailable => (StatusCode::SERVICE_UNAVAILABLE, "billing_unavailable"),

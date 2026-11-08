@@ -57,6 +57,14 @@ secrets:
 smoke url="http://127.0.0.1:8080":
     cargo run -q -p pwm-server --example smoke -- {{url}}
 
+# back up the `just server` database to a new file (D76 §3)
+backup file:
+    sh scripts/backup.sh {{file}}
+
+# restore a backup into the `just server` stack, then mark it restored (D76 §3)
+restore file:
+    sh scripts/restore.sh {{file}}
+
 # Postgres 17 with TLS on (self-signed certificate) for the TLS test: PWM_TEST_TLS_DATABASE_URL=postgres://pwm:pwm@127.0.0.1:54330/postgres
 db-tls:
     docker run --rm -d --name pwm-test-tls -p 127.0.0.1:54330:5432 -e POSTGRES_USER=pwm -e POSTGRES_PASSWORD=pwm postgres:17 -c ssl=on -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key

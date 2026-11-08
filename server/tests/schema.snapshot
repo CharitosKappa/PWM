@@ -284,6 +284,7 @@ table tombstones
   constraint tombstones_revision_check: CHECK ((revision >= 1))
   constraint tombstones_seq_check: CHECK ((seq >= 1))
   constraint tombstones_vault_id_fkey: FOREIGN KEY (vault_id) REFERENCES vaults(id) ON DELETE CASCADE
+  index CREATE INDEX tombstones_deleted_at ON public.tombstones USING btree (deleted_at)
   index CREATE UNIQUE INDEX tombstones_pkey ON public.tombstones USING btree (vault_id, item_id)
   index CREATE UNIQUE INDEX tombstones_vault_seq ON public.tombstones USING btree (vault_id, seq)
 
@@ -311,8 +312,10 @@ table vaults
   column owner_id uuid not null
   column seq bigint not null default 0
   column created_at timestamp with time zone not null default now()
+  column purged_seq bigint not null default 0
   constraint vaults_owner_id_fkey: FOREIGN KEY (owner_id) REFERENCES accounts(id) ON DELETE CASCADE
   constraint vaults_pkey: PRIMARY KEY (id)
+  constraint vaults_purged_seq_check: CHECK ((purged_seq >= 0))
   constraint vaults_seq_check: CHECK ((seq >= 0))
   index CREATE INDEX vaults_owner_id ON public.vaults USING btree (owner_id)
   index CREATE UNIQUE INDEX vaults_pkey ON public.vaults USING btree (id)

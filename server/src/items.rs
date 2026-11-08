@@ -386,7 +386,8 @@ struct Changes {
 }
 
 /// `GET ?since=&limit=`: items and tombstones with `seq > since`, in `seq`
-/// order, all read from one snapshot.
+/// order, all read from one snapshot. 410 `resync_required` when `since` is
+/// older than the vault's compacted tombstones (D76 §2).
 async fn changes(
     State(state): State<AppState>,
     auth: Authenticated,
@@ -398,8 +399,8 @@ async fn changes(
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         .execute(&mut *tx)
         .await?;
-    let vault_seq: i64 = sqlx::query_scalar(
-        "SELECT v.seq FROM vaults v \
+    let (vault_seq, purged_seq): (i64, i64) = sqlx::query_as(
+        "SELECT v.seq, v.purged_seq FROM vaults v \
          JOIN vault_keys k ON k.vault_id = v.id AND k.account_id = $2 \
          WHERE v.id = $1",
     )
@@ -408,6 +409,10 @@ async fn changes(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(ApiError::NotFound)?;
+    // A delete after `since` may have been compacted away (D76 §2).
+    if since > 0 && since < purged_seq {
+        return Err(ApiError::ResyncRequired);
+    }
     let rows = sqlx::query(
         "SELECT id, revision, seq, blob FROM items WHERE vault_id = $1 AND seq > $2 \
          UNION ALL \

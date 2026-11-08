@@ -807,6 +807,55 @@ fn a_restore_the_seqs_cannot_show_is_caught_by_the_epoch() {
     assert!(!sync(&mut laptop, &mut server, T0).resynced);
 }
 
+#[test]
+fn a_device_behind_compacted_tombstones_drops_what_was_deleted() {
+    let mut server = FakeServer::new();
+    let account = Account::new();
+    let mut a = account.device(&mut server);
+    let vault = create_vault(&mut a, &mut server);
+    let kept = add(&mut a, &vault, "kept", T0);
+    let deleted = add(&mut a, &vault, "deleted", T0);
+    let edited = add(&mut a, &vault, "deleted on A", T0);
+    sync(&mut a, &mut server, T0);
+    let mut b = account.device(&mut server);
+    sync(&mut b, &mut server, T0);
+
+    // While B is away, A deletes two items; B edits one of them and adds one.
+    a.delete_item(&vault, &deleted).unwrap();
+    a.delete_item(&vault, &edited).unwrap();
+    sync(&mut a, &mut server, T0);
+    edit(&mut b, &vault, &edited, "edited on B", T0 + 5);
+    let added = add(&mut b, &vault, "new on B", T0 + 5);
+    // Then the server compacts those tombstones.
+    server.compact(&vault);
+
+    server.log.clear();
+    let report = sync(&mut b, &mut server, T0 + 10);
+    assert!(report.resynced);
+    let gets: Vec<&String> = server
+        .log
+        .iter()
+        .filter(|l| l.starts_with("GET /v1/vaults/"))
+        .collect();
+    assert!(gets.len() >= 2 && gets[1].contains("since=0"), "{gets:?}");
+    // The deletes reach B, nothing deleted comes back, and B's work stays:
+    // the edit as a new item, the new item uploaded.
+    assert_eq!(state(&b, &vault, &deleted), None);
+    assert_eq!(state(&b, &vault, &edited), None);
+    assert_eq!(state(&b, &vault, &kept), Some((1, SyncState::Synced)));
+    assert_eq!(state(&b, &vault, &added), Some((1, SyncState::Synced)));
+    assert_eq!(titles(&b, &vault), ["edited on B", "kept", "new on B"]);
+    let on_server = &server.vault(&vault).items;
+    assert!(!on_server.contains_key(deleted.as_bytes()));
+    assert!(!on_server.contains_key(edited.as_bytes()));
+    assert_eq!(on_server.len(), 3);
+
+    // A device past the compacted deletes just syncs on.
+    let report = sync(&mut a, &mut server, T0 + 20);
+    assert!(!report.resynced);
+    assert_eq!(titles(&a, &vault), ["edited on B", "kept", "new on B"]);
+}
+
 /// The plan from the vault list's headers is kept, and a server that sends
 /// none leaves it as it was (D73 §2).
 #[test]

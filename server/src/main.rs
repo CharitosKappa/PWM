@@ -1,7 +1,8 @@
 //! `pwm-server`: reads its settings from the environment (`PWM_DATABASE_URL`,
 //! `PWM_SERVER_SECRETS`, `PWM_LISTEN`, `PWM_TRUSTED_PROXIES`, `PWM_LOG`,
 //! `PWM_LOG_FORMAT`, and the optional `PWM_APNS_*` for push), applies pending migrations and serves the API until
-//! Ctrl-C or SIGTERM.
+//! Ctrl-C or SIGTERM. While serving, it cleans up expired rows and old
+//! tombstones every hour (D76).
 //!
 //! Subcommands:
 //! - `keygen` prints new server secrets for `PWM_SERVER_SECRETS`;
@@ -30,6 +31,7 @@ use std::process::ExitCode;
 use pwm_server::{
     AppState, Billing, Config, DEFAULT_LISTEN, DeletionLog, LogFormat, Push, ServerError, app,
     connect, generate_server_secrets, install_panic_hook, log_subscriber, migrate,
+    spawn_maintenance,
 };
 use tokio::net::TcpListener;
 
@@ -239,6 +241,8 @@ async fn run() -> Result<(), ServerError> {
         tracing::info!("push over FCM is on");
     }
     let push = Push::start(pool.clone(), config.push, config.fcm);
+    // Expired rows and old tombstones (D76).
+    let maintenance = spawn_maintenance(pool.clone());
     let billing = Billing::new(config.billing)?;
     billing.start_daily(pool.clone());
     let deletions = deletion_log(config.deletions_file);
@@ -255,6 +259,7 @@ async fn run() -> Result<(), ServerError> {
     )
     .with_graceful_shutdown(shutdown())
     .await?;
+    maintenance.abort();
     pool.close().await;
     tracing::info!("stopped");
     Ok(())
