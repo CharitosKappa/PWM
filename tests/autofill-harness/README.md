@@ -38,3 +38,20 @@ just top-sites  # the runner, against real sites (network)
 - **Release gate (D64):** `node runner/compare.ts previous.json candidate.json` counts only the sites that pass or fail in both reports, so a site that is blocked one night doesn't move it. It fails when the pass rate on those sites drops more than 0.5 points, or when the candidate counts fewer than 80% of the sites the previous report counted. It lists each site lost and gained, and those left out. Its tests are in `tests/compare.spec.ts`, which needs no browser.
 - **Adding a site:** check its login page, then add `{site, login_url}` and, if you are sure of them, the CSS selectors of the username and password inputs. Only password logins belong here. An entry taken out goes under `removed` with the reason.
 - **Its own tests:** `tests/runner.spec.ts` checks the runner against local pages.
+
+## The public dashboard
+
+- **What it is (D77):** `dashboard/build.ts` turns a night's report and the live `history.json` into a static page. It is plain HTML and CSS with no scripts, cookies, fonts or requests to other hosts.
+- **What it writes:** `index.html`, `style.css`, `report.json` (each site's status, reason and since when, without the fill targets) and `history.json` (the last 90 nights).
+- **The nightly deploy:** CI's `autofill-dashboard` job runs after the runner, on `main` only. It downloads the live `history.json` and publishes to GitHub Pages.
+  - It doesn't publish when the history can't be downloaded, when the report fails its checks, or when more than 20% of the sites ended as `error` (the runner broke). The last good page stays up.
+  - The very first deploy is a manual run of the workflow with `first_dashboard` ticked, which starts the history empty.
+- **Locally:**
+
+  ```
+  node dashboard/build.ts --report autofill-report.json --first --out site
+  ```
+
+  `--history <file>` instead of `--first` adds the night to a downloaded history. `--tranco` adds the Tranco attribution, once the site list is ordered by it.
+
+- **Its tests:** `tests/dashboard.spec.ts`, which needs no browser.

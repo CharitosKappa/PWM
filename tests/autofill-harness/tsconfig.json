@@ -13,5 +13,13 @@
     "allowImportingTsExtensions": true,
     "erasableSyntaxOnly": true
   },
-  "include": ["*.ts", "tests", "fixtures", "lib", "runner", "firefox"]
+  "include": [
+    "*.ts",
+    "tests",
+    "fixtures",
+    "lib",
+    "runner",
+    "firefox",
+    "dashboard"
+  ]
 }
