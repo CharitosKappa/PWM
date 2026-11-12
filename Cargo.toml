@@ -23,12 +23,12 @@ members = [
     "server",
 ]
 
-exclude = ["core/pwm-crypto/fuzz"]
+exclude = ["core/pwm-crypto/fuzz", "server/stubs/sqlx-sqlite"]
 
 [workspace.package]
 version = "0.0.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 license = "LicenseRef-Proprietary"
 publish = false
 
@@ -58,3 +58,9 @@ opt-level = 3
 
 [profile.dev.package.regex-automata]
 opt-level = 3
+
+# sqlx 0.9 caps libsqlite3-sys below 0.38 through its optional SQLite driver,
+# which we never build. The stub lifts that cap so pwm-store can use a SQLite
+# without RUSTSEC-2026-0459 (D79).
+[patch.crates-io]
+sqlx-sqlite = { path = "server/stubs/sqlx-sqlite" }
