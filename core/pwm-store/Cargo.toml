@@ -19,8 +19,8 @@ sqlite = ["dep:rusqlite"]
 [dependencies]
 pwm-crypto = { path = "../pwm-crypto" }
 pwm-vault = { path = "../pwm-vault" }
-# Held at 0.39: its libsqlite3-sys (0.37) is the newest that sqlx 0.9 (server)
-# accepts, and Cargo allows only one crate linking `sqlite3` per workspace,
-# even an optional one. Upgrade together with sqlx.
-rusqlite = { version = "0.39", features = ["bundled"], optional = true }
+# 0.42 bundles SQLite 3.54+ (RUSTSEC-2026-0459). sqlx 0.9 (server) would cap
+# libsqlite3-sys below 0.38; the root Cargo.toml patches its unused SQLite
+# driver with a stub so this can move ahead (D79).
+rusqlite = { version = "0.42", features = ["bundled"], optional = true }
 thiserror = "2.0.21"

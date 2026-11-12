@@ -45,7 +45,10 @@ just top-sites  # the runner, against real sites (network)
 - **What it writes:** `index.html`, `style.css`, `report.json` (each site's status, reason and since when, without the fill targets) and `history.json` (the last 90 nights).
 - **The nightly deploy:** CI's `autofill-dashboard` job runs after the runner, on `main` only. It downloads the live `history.json` and publishes to GitHub Pages.
   - It doesn't publish when the history can't be downloaded, when the report fails its checks, or when more than 20% of the sites ended as `error` (the runner broke). The last good page stays up.
-  - The very first deploy is a manual run of the workflow with `first_dashboard` ticked, which starts the history empty.
+  - It is off until the repository variable `PUBLISH_DASHBOARD` is `true`, so the nightly run isn't red before Pages exists. To turn it on:
+    1. Turn on Pages with "GitHub Actions" as the source.
+    2. Set the variable.
+    3. Run the workflow once by hand with `first_dashboard` ticked, which starts the history empty.
 - **Locally:**
 
   ```

@@ -956,7 +956,9 @@ jobs:
   # broke), nothing is published and the last good page stays up.
   autofill-dashboard:
     needs: autofill-top-sites
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    # Off until the founder turns Pages on and sets PUBLISH_DASHBOARD to true,
+    # so the nightly run isn't red every night before then (D77 notes).
+    if: vars.PUBLISH_DASHBOARD == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
@@ -971,6 +973,9 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          # setup-node v5 caches by package.json's packageManager (pnpm), which
+          # this job doesn't install: it runs the script with Node alone.
+          package-manager-cache: false
       - uses: actions/download-artifact@v4
         with:
           name: autofill-report
