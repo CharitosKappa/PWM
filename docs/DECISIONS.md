@@ -37,35 +37,6 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
 - **D8 — Final prices** (see `PRICING.md`) after user research.
 - **D32 — Transactional email provider** · open · founder. Needed for M10.7: email verification at sign-up (so registration stops revealing which emails have accounts) and account notices. To choose: provider and region (EU hosting fits D5), and its licence and data-processing terms.
 - **D9 — Licence-check scope** · proposed 2026-11-01 · Claude Code. Proposal: Rust checks every dependency including dev/build deps (`cargo deny`); npm checks only production dependencies of packages we ship (`scripts/licenses.mjs`, currently `extension/`), because dev tooling is never distributed. Today the npm dev tooling pulls in permissive licences that are not on the S6 allow-list (BlueOak-1.0.0, CC-BY-3.0 for SPDX data). Alternative: check dev deps too and add those licences to the allow-list.
-- **D79 — SQLite with RUSTSEC-2026-0459, held back by sqlx: a stub for sqlx's unused SQLite driver** · proposed 2026-11-12 · Claude Code. Since 2026-11-10 the nightly `audit` job has failed on RUSTSEC-2026-0459.
-  - **The advisory:** SQLite before 3.54.0 can return uninitialized page-cache memory when it opens a database together with a crafted `-wal` file whose page size differs from the database's. The attack is local, and the victim has to open the files.
-  - **Our copy:**
-    - `pwm-store`, the local encrypted cache (D20) on every native platform, bundles SQLite through `rusqlite` 0.39, that is `libsqlite3-sys` 0.37. The same holds in both lockfiles.
-    - The fix is `libsqlite3-sys` 0.39 or later (`rusqlite` 0.41 or later).
-    - What could leak is bytes of the app's memory, which may hold decrypted items. The risk is small but not nothing.
-  - **The blocker:**
-    - sqlx 0.9.0 is the latest release, and its optional SQLite driver (`sqlx-sqlite`) requires `libsqlite3-sys` below 0.38.
-    - Cargo allows only one crate linking `sqlite3` in a dependency graph, even one that is never built.
-    - Checked: `cargo tree -i sqlx-sqlite` is empty, yet `rusqlite` 0.42 fails to resolve on the `links` rule.
-  - **The exposure until fixed:**
-    - `pwm-store` opens only the cache file the app created in its own data folder, and no importer reads SQLite files.
-    - To use the flaw, an attacker would have to write the cache and its `-wal` into that folder: the app sandbox on iOS and Android, and the user's profile on desktop, where same-user malware could already read the app's memory.
-
-  Proposal:
-  1. **A stub for the unused driver:**
-     - **What it is:** `server/stubs/sqlx-sqlite` is a crate of our own with the same name and version (0.9.0), with no dependencies. It declares the features sqlx refers to and nothing else, and the root `Cargo.toml` swaps it in with `[patch.crates-io]`.
-     - **If something ever builds it:** its `compile_error!` stops the build, saying PWM builds sqlx with Postgres only.
-     - **What it doesn't touch:** sqlx's Postgres code.
-  2. **SQLite upgraded:**
-     - **The versions:** `rusqlite` goes to 0.42, which brings `libsqlite3-sys` 0.40 with SQLite 3.54 or later, in both lockfiles.
-     - **The Rust version:** `rusqlite` 0.42 needs Rust 1.89, so `rust-version` goes from 1.88 to 1.89 (the toolchain is stable, 1.99 today).
-  3. **When the stub goes:** once a sqlx release accepts `libsqlite3-sys` 0.39 or later, the stub and the `[patch]` are removed. The comments at both places say so.
-  4. **Checked locally:**
-     - `cargo deny` passes for both workspaces.
-     - `cargo clippy --workspace --all-targets -D warnings` passes.
-     - `pwm-store`'s tests pass on the new SQLite.
-     - `pwm-server` builds, and the stub is never compiled.
-  - **Alternative:** ignore the advisory in `deny.toml`, with the reason above, until sqlx moves. That is simpler, but it ships a known SQLite flaw in every native app in the meantime.
 
 ## Settled
 
@@ -4193,3 +4164,32 @@ Format: `D<n> — title · status (open | settled YYYY-MM-DD) · owner`. Claude 
     - A site whose run of nights starts at the oldest kept night may have had that status for longer.
   - **The CI job** runs the script with Node alone, with no install, since it imports only Node's own modules.
   - **The first deploy is a manual run** of the workflow with `first_dashboard` ticked. It needs Pages turned on first.
+- **D79 — SQLite with RUSTSEC-2026-0459, held back by sqlx: a stub for sqlx's unused SQLite driver** · settled 2026-11-12 · founder (approved as proposed). Since 2026-11-10 the nightly `audit` job has failed on RUSTSEC-2026-0459.
+  - **The advisory:** SQLite before 3.54.0 can return uninitialized page-cache memory when it opens a database together with a crafted `-wal` file whose page size differs from the database's. The attack is local, and the victim has to open the files.
+  - **Our copy:**
+    - `pwm-store`, the local encrypted cache (D20) on every native platform, bundles SQLite through `rusqlite` 0.39, that is `libsqlite3-sys` 0.37. The same holds in both lockfiles.
+    - The fix is `libsqlite3-sys` 0.39 or later (`rusqlite` 0.41 or later).
+    - What could leak is bytes of the app's memory, which may hold decrypted items. The risk is small but not nothing.
+  - **The blocker:**
+    - sqlx 0.9.0 is the latest release, and its optional SQLite driver (`sqlx-sqlite`) requires `libsqlite3-sys` below 0.38.
+    - Cargo allows only one crate linking `sqlite3` in a dependency graph, even one that is never built.
+    - Checked: `cargo tree -i sqlx-sqlite` is empty, yet `rusqlite` 0.42 fails to resolve on the `links` rule.
+  - **The exposure until fixed:**
+    - `pwm-store` opens only the cache file the app created in its own data folder, and no importer reads SQLite files.
+    - To use the flaw, an attacker would have to write the cache and its `-wal` into that folder: the app sandbox on iOS and Android, and the user's profile on desktop, where same-user malware could already read the app's memory.
+
+  Proposal:
+  1. **A stub for the unused driver:**
+     - **What it is:** `server/stubs/sqlx-sqlite` is a crate of our own with the same name and version (0.9.0), with no dependencies. It declares the features sqlx refers to and nothing else, and the root `Cargo.toml` swaps it in with `[patch.crates-io]`.
+     - **If something ever builds it:** its `compile_error!` stops the build, saying PWM builds sqlx with Postgres only.
+     - **What it doesn't touch:** sqlx's Postgres code.
+  2. **SQLite upgraded:**
+     - **The versions:** `rusqlite` goes to 0.42, which brings `libsqlite3-sys` 0.40 with SQLite 3.54 or later, in both lockfiles.
+     - **The Rust version:** `rusqlite` 0.42 needs Rust 1.89, so `rust-version` goes from 1.88 to 1.89 (the toolchain is stable, 1.99 today).
+  3. **When the stub goes:** once a sqlx release accepts `libsqlite3-sys` 0.39 or later, the stub and the `[patch]` are removed. The comments at both places say so.
+  4. **Checked locally:**
+     - `cargo deny` passes for both workspaces.
+     - `cargo clippy --workspace --all-targets -D warnings` passes.
+     - `pwm-store`'s tests pass on the new SQLite.
+     - `pwm-server` builds, and the stub is never compiled.
+  - **Alternative:** ignore the advisory in `deny.toml`, with the reason above, until sqlx moves. That is simpler, but it ships a known SQLite flaw in every native app in the meantime.
