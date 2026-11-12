@@ -39,6 +39,19 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant 5: via tauri-plugin-single-instance's zbus 5 on Linux" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names 4: via tauri-plugin-single-instance's zbus 5 on Linux" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive 5: via tauri-plugin-single-instance's zbus 5 on Linux" },
+    # SQLite < 3.54.0 can return uninitialized page-cache memory when it opens
+    # a database with a crafted -wal of a different page size. rusqlite's
+    # `bundled` SQLite (3.53.x) is affected; the fix is libsqlite3-sys 0.39
+    # (rusqlite 0.41), which sqlx 0.9.0 (the latest) rejects: sqlx-sqlite caps
+    # libsqlite3-sys below 0.38, and Cargo allows one `sqlite3` linker per
+    # workspace even though the server uses only Postgres. This workspace has
+    # no sqlx, but pwm-store holds rusqlite at 0.39 for the root one.
+    # Exposure: we open only our own cache in the app's private data dir and
+    # never enable WAL, so it needs a local attacker who can write there
+    # (SECURITY.md: compromised device, not covered). Remove when sqlx
+    # accepts libsqlite3-sys 0.39 and rusqlite goes to 0.41+. Recheck by
+    # 2026-12-12 (D80).
+    { id = "RUSTSEC-2026-0459", reason = "bundled SQLite: only our own private cache is opened, no WAL; fix blocked by sqlx 0.9's libsqlite3-sys cap (D80)" },
 ]
 
 [bans]
