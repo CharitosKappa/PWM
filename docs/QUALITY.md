@@ -30,7 +30,11 @@ Most one-star reviews in this market come from broken updates. Release safety is
 | `desktop-linux` (Ubuntu 22.04: clippy, tests with a server, end to end, Linux login through the real `pkexec`, D71) and `desktop-windows` (clippy, tests, release build), D66 §9 | PRs touching `apps/desktop`, `ui/`, `core/` or the tokens | yes |
 | `desktop-installer-windows` (the NSIS installer signed with a throwaway certificate; install, replace in place, uninstall) and `desktop-installer-linux` (the `.deb` and `.rpm`, the `.rpm` and checksums signed with a throwaway key; the `.deb` installed and started; the Flatpak built and started), D70 §9 | PRs touching `apps/desktop`, `ui/`, `core/` or the tokens | yes |
 | `audit` (cargo audit/deny, npm audit) | every PR + nightly | high severity |
+| `fuzz-quick` (every target for 60 s in one job) and `fuzz` (each for 10 minutes) | PRs and pushes touching `core/`, the Cargo files or `ci.yml`; nightly | yes |
 | `autofill-top-sites` (D39) | nightly + release candidates | release only (`runner/compare.ts`, D64: the sites both runs counted) |
+
+- **Pull requests and nightly.** The full set runs on every pull request and every night. A push to `main` after a merge runs only `audit` and the jobs gated on what changed (the apple, android, desktop and fuzz jobs), since the pull request already tested it (D78 §1).
+- **Where Linux jobs run.** On GitHub's runners, or on our own runner when the repository variable `LINUX_RUNNER` names its label (D78 §2, `docs/DEVELOPMENT.md`).
 
 ## Release process
 

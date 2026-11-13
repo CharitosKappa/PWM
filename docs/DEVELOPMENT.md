@@ -174,7 +174,7 @@ The installers (D70) are built and tested in CI (`desktop-installer-windows`, `d
 
 ## Fuzzing
 
-Targets live in `core/pwm-crypto/fuzz/fuzz_targets/` (`envelope_decode`, `vault_share_decode`, `keyset_plaintext`, `secret_key_parse`, `password_normalize`, `totp_parse`, `export_read`, `opaque_messages`, `autofill_rules`, `url_match`, `kit_qr_parse`). CI runs each for 60 s on every PR and 10 minutes nightly; crash inputs are uploaded as artifacts.
+Targets live in `core/pwm-crypto/fuzz/fuzz_targets/` (`envelope_decode`, `vault_share_decode`, `keyset_plaintext`, `secret_key_parse`, `password_normalize`, `totp_parse`, `export_read`, `opaque_messages`, `autofill_rules`, `url_match`, `kit_qr_parse`). CI runs every target for 60 s, one after another in one job (`fuzz-quick`), on pull requests and pushes that touch `core/`, the Cargo files or `ci.yml`, and each for 10 minutes nightly (`fuzz`, D78 §1). Crash inputs are uploaded as artifacts. A new target must also be added to the nightly matrix in `ci.yml`. `fuzz-quick` fails if it isn't.
 
 Linux/macOS (nightly + `cargo install cargo-fuzz`):
 
@@ -191,3 +191,19 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD:/src" -e CARGO_TARGET_DIR=/tmp/targe
 ```
 
 The fuzz crate is its own workspace so libFuzzer (Apache-2.0 WITH LLVM-exception, test-only) stays out of the shipped dependency graph that `cargo deny` checks.
+
+## CI runner
+
+Linux jobs in `ci.yml` say `runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}` (or `ubuntu-22.04`). This follows D78 §2.
+
+- **Switching:**
+  - **Unset:** every Linux job runs on GitHub's runners.
+  - **Set to our runner's label** (`pwm-linux`): every Linux job runs on our machine.
+  - **If the machine is down:** delete the variable under Settings › Secrets and variables › Actions › Variables. No workflow edit is needed.
+- **Rules for the machine:**
+  - **Never the production server,** and never a machine with production secrets or backups. CI runs code from every npm and cargo dependency.
+  - **One throwaway virtual machine per job,** made from one Ubuntu 22.04 image and destroyed afterwards (the runner's `--ephemeral` mode). A container isn't enough: `image` needs Docker, `android` the emulator, and `desktop-installer-linux` polkit.
+  - **Registration:** the runner is registered to this repository only, in a runner group limited to it, with the label `pwm-linux`.
+  - **Upkeep:** automatic security updates, a weekly clean-up of the cache disk, and the runner updates itself.
+- **Secrets:** release signing never runs here (D78 §3). Windows and macOS jobs stay on GitHub's runners.
+- **Not set up yet:** the machine and its image. When they are, this section gets how to rebuild the image and register the runner.
